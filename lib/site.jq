@@ -5,7 +5,11 @@
 
 $props[0] as $props | $state[0] as $state | $totals[0] as $totals | $qr[0] as $qr
 
-| def proposal:
+# 85 -> "85.0000": amounts are shown with 4 decimals, as ccs-back stores
+# them as DECIMAL(8,4).
+| def fixed4: (. * 10000 | round) as $n | "\($n / 10000 | floor).\("000\($n % 10000)" | .[-4:])";
+
+  def proposal:
     ($state[.file] // {}) as $s
     | ($totals[$s.subaddr_index // -1 | tostring] // {confirmed: 0, pending: 0, count: 0}) as $t
     | ($t.confirmed / 1e12 * 10000 | round / 10000) as $raised
@@ -20,8 +24,8 @@ $props[0] as $props | $state[0] as $state | $totals[0] as $totals | $qr[0] as $q
         "milestones-completed": .done,
         "milestones-percentage": ([100, (.done * 100 / .milestones | floor)] | min),
         percentage: (if .amount > 0 then [100, ($raised / .amount * 100 | round)] | min else 0 end),
-        amount: .amount,
-        "amount-funded": $raised,
+        amount: (.amount | fixed4),
+        "amount-funded": ($raised | fixed4),
         "amount-pending": ($t.pending / 1e12),
         author: (.author | @html),
         date: (if .ts > 0 then .ts | strftime("%B %-d, %Y") else null end),
