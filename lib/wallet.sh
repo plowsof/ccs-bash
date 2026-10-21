@@ -37,7 +37,7 @@ check_wallet_addresses() {
 # Runs after check_wallet_addresses, so new indexes never reuse ones in the state.
 assign_addresses() {
     local file res idx addr
-    while read -r file; do
+    while IFS= read -r file; do
         res=$(rpc create_address "$(jq -nc --arg l "$file" '{account_index: 0, label: $l}')") || return 1
         idx=$(jq -r .address_index <<<"$res")
         addr=$(jq -r .address <<<"$res")

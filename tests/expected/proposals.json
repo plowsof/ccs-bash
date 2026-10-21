@@ -21,8 +21,8 @@
         "proposals": [
             {
                 "name": "Brand new",
-                "donate-address": "80000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003",
-                "donate-qr-code": "data:image/png;base64,UVIgZm9yIG1vbmVybzo4MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMw==",
+                "donate-address": "80000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004",
+                "donate-qr-code": "data:image/png;base64,UVIgZm9yIG1vbmVybzo4MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwNA==",
                 "gitlab-url": "https://example.org/mr/8",
                 "local-url": "/proposals/new-fund.html",
                 "contributions": 0,
@@ -34,6 +34,22 @@
                 "amount-funded": 0,
                 "author": "dave",
                 "date": "October 1, 2026"
+            },
+            {
+                "name": "Name starts with a space",
+                "donate-address": "80000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003",
+                "donate-qr-code": "data:image/png;base64,UVIgZm9yIG1vbmVybzo4MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMw==",
+                "gitlab-url": null,
+                "local-url": "/proposals/ leading-space.html",
+                "contributions": 0,
+                "milestones": 1,
+                "milestones-completed": 0,
+                "milestones-percentage": 0,
+                "percentage": 0,
+                "amount": 20,
+                "amount-funded": 0,
+                "author": "ivan",
+                "date": "January 2, 2025"
             },
             {
                 "name": "Fund &lt;b&gt;this&lt;/b&gt; &amp; that",
