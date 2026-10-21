@@ -1,0 +1,23 @@
+[
+    {
+        "stage": "Completed Proposals",
+        "proposals": [
+            {
+                "name": "Finished thing",
+                "donate-address": null,
+                "donate-qr-code": null,
+                "gitlab-url": "https://example.org/mr/3",
+                "local-url": "/proposals/c done (old).html",
+                "contributions": 0,
+                "milestones": 1,
+                "milestones-completed": 1,
+                "milestones-percentage": 100,
+                "percentage": 0,
+                "amount": 10.5,
+                "amount-funded": 0,
+                "author": "carol",
+                "date": "March 1, 2020"
+            }
+        ]
+    }
+]

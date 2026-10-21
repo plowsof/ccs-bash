@@ -1,0 +1,77 @@
+[
+    {
+        "stage": "Ideas",
+        "proposals": [
+            {
+                "name": "Another idea",
+                "gitlab-url": "https://example.org/mr/13",
+                "author": "grace",
+                "date": "October 3, 2026"
+            },
+            {
+                "name": "New &lt;idea&gt;",
+                "gitlab-url": "https://example.org/mr/11",
+                "author": "erin",
+                "date": "October 1, 2026"
+            }
+        ]
+    },
+    {
+        "stage": "Funding Required",
+        "proposals": [
+            {
+                "name": "Brand new",
+                "donate-address": "80000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003",
+                "donate-qr-code": "data:image/png;base64,UVIgZm9yIG1vbmVybzo4MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMw==",
+                "gitlab-url": "https://example.org/mr/8",
+                "local-url": "/proposals/new-fund.html",
+                "contributions": 0,
+                "milestones": 1,
+                "milestones-completed": 0,
+                "milestones-percentage": 0,
+                "percentage": 0,
+                "amount": 100,
+                "amount-funded": 0,
+                "author": "dave",
+                "date": "October 1, 2026"
+            },
+            {
+                "name": "Fund &lt;b&gt;this&lt;/b&gt; &amp; that",
+                "donate-address": "80000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001",
+                "donate-qr-code": "data:image/png;base64,UVIgZm9yIG1vbmVybzo4MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMQ==",
+                "gitlab-url": "https://example.org/mr/1",
+                "local-url": "/proposals/a-fund.html",
+                "contributions": 2,
+                "milestones": 2,
+                "milestones-completed": 1,
+                "milestones-percentage": 50,
+                "percentage": 0,
+                "amount": 1500,
+                "amount-funded": 1.25,
+                "author": "alice",
+                "date": "June 25, 2021"
+            }
+        ]
+    },
+    {
+        "stage": "Work in Progress",
+        "proposals": [
+            {
+                "name": "Work in progress",
+                "donate-address": "80000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002",
+                "donate-qr-code": "data:image/png;base64,UVIgZm9yIG1vbmVybzo4MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMg==",
+                "gitlab-url": "https://example.org/mr/2",
+                "local-url": "/proposals/b-wip.html",
+                "contributions": 1,
+                "milestones": 3,
+                "milestones-completed": 1,
+                "milestones-percentage": 33,
+                "percentage": 0,
+                "amount": 85,
+                "amount-funded": 0.1235,
+                "author": "bob",
+                "date": "August 10, 2021"
+            }
+        ]
+    }
+]

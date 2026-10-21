@@ -1,0 +1,2 @@
+# Keeps its CRLF line endings: the parser must handle them.
+tests/fixtures/proposals/a-fund.md -text
