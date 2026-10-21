@@ -40,7 +40,7 @@ previous_ideas() {
 
 build_site() {
     local out
-    for out in proposals complete; do
+    for out in proposals complete projects; do
         jq -n --indent 4 --arg out "$out" \
             --slurpfile props "$WORK/props.json" --slurpfile state "$WORK/state.json" \
             --slurpfile totals "$WORK/totals.json" --slurpfile qr "$WORK/qr.json" \

@@ -38,7 +38,7 @@ if [[ ${UPDATE:-} == 1 ]]; then
     cp "$TEST_TMP/out/"* "$here/expected/"
 fi
 status=0
-for f in proposals.json complete.json proposals.tsv log; do
+for f in proposals.json complete.json projects.json proposals.tsv log; do
     if diff -u "$here/expected/$f" "$TEST_TMP/out/$f"; then echo "ok   $f"; else echo "FAIL $f"; status=1; fi
 done
 exit "$status"
