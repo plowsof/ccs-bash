@@ -2,7 +2,8 @@
 # ccs-back.sh [CONFIG]: one run of the CCS backend. Meant to be run from cron.
 #
 # Reads the proposals checkout, GitLab MRs and a view-only monero-wallet-rpc,
-# then writes proposals.json and complete.json for ccs-front (Jekyll).
+# then writes proposals.json, completed-proposals.json and projects.json into
+# OUTPUT_DIR, which is laid out like ccs-front's _data directory.
 # The only state kept between runs is STATE_DIR/proposals.tsv (+ cached QR codes).
 set -euo pipefail
 export LC_ALL=C TZ=UTC
@@ -40,7 +41,7 @@ previous_ideas() {
 
 build_site() {
     local out
-    for out in proposals complete projects; do
+    for out in proposals completed-proposals projects; do
         jq -n --indent 4 --arg out "$out" \
             --slurpfile props "$WORK/props.json" --slurpfile state "$WORK/state.json" \
             --slurpfile totals "$WORK/totals.json" --slurpfile qr "$WORK/qr.json" \
