@@ -1,0 +1,62 @@
+[
+    {
+        "address": "80000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001",
+        "author": "alice",
+        "contributions": 4,
+        "date": "June 25, 2021",
+        "percentage_funded": 0,
+        "raised_amount": "1.2500",
+        "state": "FUNDING-REQUIRED",
+        "target_amount": "1500.0000",
+        "title": "Fund &lt;b&gt;this&lt;/b&gt; &amp; that",
+        "filename": "a-fund.md"
+    },
+    {
+        "address": "80000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002",
+        "author": "bob",
+        "contributions": 1,
+        "date": "August 10, 2021",
+        "percentage_funded": 0,
+        "raised_amount": "0.1235",
+        "state": "WORK-IN-PROGRESS",
+        "target_amount": "85.0000",
+        "title": "Work in progress",
+        "filename": "b-wip.md"
+    },
+    {
+        "address": null,
+        "author": "carol",
+        "contributions": 0,
+        "date": "March 1, 2020",
+        "percentage_funded": 0,
+        "raised_amount": "0.0000",
+        "state": "COMPLETED",
+        "target_amount": "10.5000",
+        "title": "Finished thing",
+        "filename": "c done (old).md"
+    },
+    {
+        "address": "80000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003",
+        "author": "ivan",
+        "contributions": 0,
+        "date": "January 2, 2025",
+        "percentage_funded": 0,
+        "raised_amount": "0.0000",
+        "state": "FUNDING-REQUIRED",
+        "target_amount": "20.0000",
+        "title": "Name starts with a space",
+        "filename": " leading-space.md"
+    },
+    {
+        "address": "80000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004",
+        "author": "dave",
+        "contributions": 0,
+        "date": "October 1, 2026",
+        "percentage_funded": 0,
+        "raised_amount": "0.0000",
+        "state": "FUNDING-REQUIRED",
+        "target_amount": "100.0000",
+        "title": "Brand new",
+        "filename": "new-fund.md"
+    }
+]
