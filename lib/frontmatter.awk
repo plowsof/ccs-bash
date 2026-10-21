@@ -59,7 +59,7 @@ function finish(    i, err, amount, name) {
     if (!err && milestones == 0) err = "no milestones"
 
     if (err) print "skipping " name ": " err > "/dev/stderr"
-    else print name, v["layout"], v["title"], v["author"], ymd(v["date"]), amount + 0, v["gitlab_url"], milestones, done
+    else print name, v["layout"], v["title"], v["author"], ymd(v["date"]), amount, v["gitlab_url"], milestones, done
     file = ""
 }
 
