@@ -1,0 +1,23 @@
+# ccs-bash config. Copy to /etc/ccs/ccs.conf (or pass a path to ccs-back.sh).
+# This file is sourced by bash, so keep it owned by root and not world-writable.
+
+# monero-wallet-rpc running a view-only wallet, bound to localhost.
+# User and password must not contain double quotes or backslashes.
+RPC_URL=http://127.0.0.1:18082/json_rpc
+RPC_USER=ccs
+RPC_PASSWORD=change-me
+
+# GitLab API endpoint of the proposals repository.
+REPOSITORY_URL=https://repo.getmonero.org/api/v4/projects/54
+
+# Checkout of the proposals repository (kept up to date by cron, see README).
+PROPOSALS_DIR=/var/lib/ccs/proposals
+
+# Where the address mapping (proposals.tsv) and QR codes are kept. Back this up.
+STATE_DIR=/var/lib/ccs/state
+
+# Where proposals.json and complete.json are written for ccs-front.
+OUTPUT_DIR=/var/lib/ccs/out
+
+# Confirmations before a donation is counted. 0 also counts txes in the pool.
+MIN_CONFIRMATIONS=10
