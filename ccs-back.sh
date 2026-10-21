@@ -21,7 +21,7 @@ source "$CCS_LIB/wallet.sh"
 # If GitLab is down, the proposal is tried again next run.
 record_new_proposals() {
     local file url
-    while read -r file; do
+    while IFS= read -r file; do
         if ! url=$(merged_mr_url "$file"); then
             log "warning: GitLab lookup failed for new proposal $file, retrying next run"
             continue
