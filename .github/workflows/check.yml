@@ -1,0 +1,22 @@
+name: check
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  check:
+    # 22.04 has jq 1.6 (as Debian 12), 24.04 has jq 1.7, which prints numbers differently.
+    strategy:
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: shellcheck -x ccs-back.sh lib/*.sh tests/*.sh
+      - name: tests (Ubuntu's awk is mawk)
+        run: tests/run.sh
+      - name: tests with gawk
+        run: |
+          sudo apt-get install -y gawk
+          mkdir -p "$RUNNER_TEMP/gawk" && ln -s "$(command -v gawk)" "$RUNNER_TEMP/gawk/awk"
+          PATH="$RUNNER_TEMP/gawk:$PATH" tests/run.sh
