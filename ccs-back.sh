@@ -17,18 +17,20 @@ source "$CCS_LIB/gitlab.sh"
 # shellcheck source=lib/wallet.sh
 source "$CCS_LIB/wallet.sh"
 
-# Proposals seen for the first time: remember the merged MR they came from.
+# Proposals seen for the first time: remember the merged MR they came from,
+# and when funding started if they are funding-required right away.
 # If GitLab is down, the proposal is tried again next run.
 record_new_proposals() {
-    local file url
-    while IFS= read -r file; do
+    local file layout url
+    while IFS=$'\t' read -r file layout; do
         if ! url=$(merged_mr_url "$file"); then
             log "warning: GitLab lookup failed for new proposal $file, retrying next run"
             continue
         fi
-        state_update --arg f "$file" --arg u "$url" '.[$f] = {gitlab_url: (if $u == "" then null else $u end)}'
+        state_update --arg f "$file" --arg u "$url" --arg fr "$([[ $layout == fr ]] && now_utc)" \
+            '.[$f] = {gitlab_url: (if $u == "" then null else $u end), funding_required_date: (if $fr == "" then null else $fr end)}'
         log "new proposal $file ${url:-(no merged MR found)}"
-    done < <(jq -r --slurpfile state "$WORK/state.json" '.[].file | select($state[0][.] == null)' "$WORK/props.json")
+    done < <(jq -r --slurpfile state "$WORK/state.json" '.[] | select($state[0][.file] == null) | [.file, .layout] | @tsv' "$WORK/props.json")
 }
 
 # The Ideas group of the last run, used when GitLab cannot be reached.

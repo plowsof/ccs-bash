@@ -22,21 +22,24 @@ read_proposals() {
 }
 
 # The state file has one line per proposal we have seen:
-#   filename <TAB> gitlab_url <TAB> subaddr_index <TAB> address
-# It is the only data that cannot be recomputed. While running it is kept as
-# JSON in $WORK/state.json: {"file.md": {gitlab_url, subaddr_index, address}}.
+#   filename <TAB> gitlab_url <TAB> subaddr_index <TAB> address <TAB> funding_required_date
+# funding_required_date is when the proposal was first seen as "fr", e.g.
+# 2026-01-07T12:36:31Z. Empty fields mean unknown / none.
+# It is the only data that cannot be recomputed. While running it is kept as JSON
+# in $WORK/state.json: {"file.md": {gitlab_url, subaddr_index, address, funding_required_date}}.
 load_state() {
     [[ -e $STATE_DIR/proposals.tsv ]] || : > "$STATE_DIR/proposals.tsv"
     jq -R -s '
         split("\n") | map(select(. != "") | split("\t") | {key: .[0], value: {
             gitlab_url: (if (.[1] // "") == "" then null else .[1] end),
             subaddr_index: (if (.[2] // "") == "" then null else .[2] | tonumber end),
-            address: (if (.[3] // "") == "" then null else .[3] end)
+            address: (if (.[3] // "") == "" then null else .[3] end),
+            funding_required_date: (if (.[4] // "") == "" then null else .[4] end)
         }}) | from_entries' "$STATE_DIR/proposals.tsv" > "$WORK/state.json"
 }
 
 save_state() {
-    jq -r 'to_entries[] | [.key, .value.gitlab_url, .value.subaddr_index, .value.address] | map(. // "") | @tsv' \
+    jq -r 'to_entries[] | [.key, .value.gitlab_url, .value.subaddr_index, .value.address, .value.funding_required_date] | map(. // "") | @tsv' \
         "$WORK/state.json" | atomic_write "$STATE_DIR/proposals.tsv"
 }
 
