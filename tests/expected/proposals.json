@@ -34,7 +34,8 @@
                 "amount-funded": 0,
                 "amount-pending": 0,
                 "author": "dave",
-                "date": "October 1, 2026"
+                "date": "October 1, 2026",
+                "funding-required-date": "October 22, 2026"
             },
             {
                 "name": "Name starts with a space",
@@ -51,7 +52,8 @@
                 "amount-funded": 0,
                 "amount-pending": 0,
                 "author": "ivan",
-                "date": "January 2, 2025"
+                "date": "January 2, 2025",
+                "funding-required-date": "October 22, 2026"
             },
             {
                 "name": "Fund &lt;b&gt;this&lt;/b&gt; &amp; that",
@@ -68,7 +70,8 @@
                 "amount-funded": 1.25,
                 "amount-pending": 14,
                 "author": "alice",
-                "date": "June 25, 2021"
+                "date": "June 25, 2021",
+                "funding-required-date": "June 30, 2021"
             }
         ]
     },
@@ -90,7 +93,8 @@
                 "amount-funded": 0.1235,
                 "amount-pending": 0,
                 "author": "bob",
-                "date": "August 10, 2021"
+                "date": "August 10, 2021",
+                "funding-required-date": null
             }
         ]
     }

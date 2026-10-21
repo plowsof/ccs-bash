@@ -1,6 +1,7 @@
 # shellcheck shell=bash
 # Logging, config and file helpers shared by the other lib/ files.
 
+now_utc() { date -u '+%Y-%m-%dT%H:%M:%SZ'; }
 log() { printf '%s %s\n' "$(date -u '+%F %T')" "$*" >&2; }
 die() { log "error: $*"; exit 1; }
 

@@ -33,5 +33,7 @@ gitlab_get() {
     esac
 }
 
+now_utc() { echo 2026-10-22T08:00:00Z; }
+
 # Called as: qrencode -s 10 -o FILE URI
 qrencode() { printf 'QR for %s' "$5" > "$4"; }
