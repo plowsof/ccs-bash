@@ -1,6 +1,6 @@
 # Builds the files ccs-front reads, same layout as the old ccs-back:
 #   $out == "proposals": [Ideas, Funding Required, Work in Progress]
-#   $out == "complete":  [Completed Proposals]
+#   $out == "completed-proposals": [Completed Proposals]
 #   $out == "projects":  every proposal, in the order first seen (the /projects API)
 # Inputs (--slurpfile, so each is wrapped in an array): props, state, totals, qr, ideas.
 
@@ -65,7 +65,7 @@ $props[0] as $props | $state[0] as $state | $totals[0] as $totals | $qr[0] as $q
 
   if $out == "proposals" then
     [{stage: "Ideas", proposals: $ideas[0]}, stage("Funding Required"; "fr"), stage("Work in Progress"; "wip")]
-  elif $out == "complete" then
+  elif $out == "completed-proposals" then
     [stage("Completed Proposals"; "cp")]
   else
     ($props | map({key: .file, value: .}) | from_entries) as $byfile
