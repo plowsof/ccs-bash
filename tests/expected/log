@@ -1,0 +1,4 @@
+skipping broken.md: missing title
+new proposal new-fund.md https://example.org/mr/8
+new-fund.md: subaddress 3 80000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003
+skipping broken.md: missing title
