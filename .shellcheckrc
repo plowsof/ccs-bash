@@ -1,0 +1,2 @@
+# jq programs are single-quoted on purpose; $var in them is a jq variable.
+disable=SC2016
