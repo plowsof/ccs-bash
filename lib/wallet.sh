@@ -48,16 +48,22 @@ assign_addresses() {
         .[] | select(.layout == "fr") | .file | select($state[0][.] and $state[0][.].address == null)' "$WORK/props.json")
 }
 
-# Print confirmed donations per subaddress: {"<index>": {"atomic": N, "count": N}}.
-# A tx counts once it has MIN_CONFIRMATIONS (0 = count pool txes too).
+# Print donations per subaddress, in atomic units:
+#   {"<index>": {"confirmed": N, "pending": N, "count": N}}
+# A tx is confirmed once it has MIN_CONFIRMATIONS; until then (pool included)
+# it is pending. count is every tx, pending or not.
 # Time-locked txes (unlock_time set) are never counted.
 donation_totals() {
     rpc get_transfers '{"in": true, "pool": true, "account_index": 0}' | jq --argjson min "$MIN_CONFIRMATIONS" '
+        def sum: map(.amount) | add // 0;
         (.in // []) + (.pool // [])
-        | map(select((.confirmations // 0) >= $min and (.unlock_time // 0) == 0))
+        | map(select((.unlock_time // 0) == 0))
         | unique_by([.txid, .subaddr_index.minor])
         | group_by(.subaddr_index.minor)
-        | map({key: (.[0].subaddr_index.minor | tostring), value: {atomic: (map(.amount) | add), count: length}})
+        | map({key: (.[0].subaddr_index.minor | tostring), value: {
+            confirmed: (map(select((.confirmations // 0) >= $min)) | sum),
+            pending: (map(select((.confirmations // 0) < $min)) | sum),
+            count: length}})
         | from_entries'
 }
 
