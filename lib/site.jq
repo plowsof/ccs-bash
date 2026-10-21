@@ -7,8 +7,8 @@ $props[0] as $props | $state[0] as $state | $totals[0] as $totals | $qr[0] as $q
 
 | def proposal:
     ($state[.file] // {}) as $s
-    | ($totals[$s.subaddr_index // -1 | tostring] // {atomic: 0, count: 0}) as $t
-    | ($t.atomic / 1e12 * 10000 | round / 10000) as $raised
+    | ($totals[$s.subaddr_index // -1 | tostring] // {confirmed: 0, pending: 0, count: 0}) as $t
+    | ($t.confirmed / 1e12 * 10000 | round / 10000) as $raised
     | {
         name: (.title | @html),
         "donate-address": $s.address,
@@ -22,6 +22,7 @@ $props[0] as $props | $state[0] as $state | $totals[0] as $totals | $qr[0] as $q
         percentage: (if .amount > 0 then [100, ($raised / .amount * 100 | round)] | min else 0 end),
         amount: .amount,
         "amount-funded": $raised,
+        "amount-pending": ($t.pending / 1e12),
         author: (.author | @html),
         date: (if .ts > 0 then .ts | strftime("%B %-d, %Y") else null end)
       };

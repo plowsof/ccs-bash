@@ -15,6 +15,7 @@
                 "percentage": 0,
                 "amount": 10.5,
                 "amount-funded": 0,
+                "amount-pending": 0,
                 "author": "carol",
                 "date": "March 1, 2020"
             }
