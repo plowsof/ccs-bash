@@ -10,8 +10,8 @@ jobs:
         os: [ubuntu-22.04, ubuntu-24.04]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - name: install qrencode and zbarimg (tested for real, the rest of the tests use stand-ins)
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, pinned by commit
+      - name: install qrencode, and zbarimg to read its codes back (tests only)
         run: sudo apt-get update -q && sudo apt-get install -y -q qrencode zbar-tools
       - name: shellcheck
         run: shellcheck -x ccs-back.sh lib/*.sh tests/*.sh
@@ -22,3 +22,15 @@ jobs:
           sudo apt-get install -y gawk
           mkdir -p "$RUNNER_TEMP/gawk" && ln -s "$(command -v gawk)" "$RUNNER_TEMP/gawk/awk"
           PATH="$RUNNER_TEMP/gawk:$PATH" tests/run.sh
+  image:
+    # The pinned image: debs from deps.lock (sha256-checked), built with --network none,
+    # then the tests run inside it, also without network.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, pinned by commit
+      - name: build (download, then install offline)
+        run: container/build.sh ccs-bash
+      - name: tests inside the image, no network
+        run: docker run --rm --network none --read-only --tmpfs /tmp -v "$PWD:/src:ro" --entrypoint bash ccs-bash /src/tests/run.sh
+      - name: pinned image hash (two clean builds from separate clones, same hash)
+        run: container/check-pinned.sh

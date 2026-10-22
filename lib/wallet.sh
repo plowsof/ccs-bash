@@ -142,31 +142,15 @@ proposal_funds() {
         }}) | from_entries'
 }
 
-# What a QR code image says, or nothing if it can't be read.
-qr_decode() {
-    zbarimg --quiet --raw "$1" 2> /dev/null
-}
-
-# Print {"<index>": "<base64 png>"} for every address in the state.
-# PNGs are made once and kept in STATE_DIR/qr. Every run decodes each one again
-# and checks it still says monero:<address>: a swapped image would send donors'
-# money elsewhere while the address shown as text still looks right. A cached
-# image that doesn't match is logged and made again; a new one that doesn't
-# match stops the run.
+# Print {"<index>": "<base64 png>"} for every address in the state. The images are
+# made fresh on every run and never kept, so there is no stored image someone could
+# swap for one with their own address. (CI checks qrencode with a real decoder.)
 qr_codes() {
-    local idx addr png uri
+    local idx addr
+    mkdir -p "$WORK/qr"
     jq -r '.[] | select(.address) | [.subaddr_index, .address] | @tsv' "$WORK/state.json" |
         while IFS=$'\t' read -r idx addr; do
-            png=$STATE_DIR/qr/$idx.png
-            uri=monero:$addr
-            if [[ -s $png && $(qr_decode "$png") != "$uri" ]]; then
-                log "warning: $png does not decode to $uri (was it changed?), making it again"
-                rm -f "$png"
-            fi
-            if [[ ! -s $png ]]; then
-                qrencode -s 10 -o "$png" "$uri"
-                [[ $(qr_decode "$png") == "$uri" ]] || die "new QR code $png does not decode to $uri"
-            fi
-            printf '%s\t%s\n' "$idx" "$(base64 -w0 "$png")"
+            qrencode -s 10 -o "$WORK/qr/$idx.png" "monero:$addr"
+            printf '%s\t%s\n' "$idx" "$(base64 -w0 "$WORK/qr/$idx.png")"
         done | jq -R -s 'split("\n") | map(select(. != "") | split("\t") | {key: .[0], value: .[1]}) | from_entries'
 }
