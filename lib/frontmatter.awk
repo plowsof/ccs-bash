@@ -17,12 +17,10 @@
 #       done: 10 August 2021        any value at all means done
 #   ---                             (or ...)
 #
-# Top-level keys start at column 0 and appear once. Other keys (payouts, ...) are ignored.
-# Jekyll reads the same lines with a real YAML parser. Where the two could read a value
-# differently (a value over several lines, block scalars, escapes, anchors, a line that is
-# not "key: value") the file is skipped with the reason, instead of being read another way.
-# A file starting with a BOM has no frontmatter for Jekyll either (it is published as is).
-# Runs on mawk and gawk, so POSIX awk only.
+# Top-level keys at column 0, once each; others (payouts, ...) are ignored. Jekyll reads the
+# same lines as YAML: anything the two could read differently (multi-line values, block
+# scalars, escapes, anchors, not "key: value") skips the file with the reason. A leading BOM
+# means no frontmatter, for Jekyll too. POSIX awk only (mawk, gawk).
 
 BEGIN {
     OFS = "\t"
@@ -125,8 +123,7 @@ FNR == 1 {
 state >= 2 { next }
 { sub(/\r$/, ""); sub(/[ \t]+$/, ""); gsub(/\t/, " ") }
 state == 0 { state = ($0 == "---") ? 1 : 3; next }
-# Jekyll's YAML also ends the frontmatter at "...": stop there too, so nothing after it is
-# read by ccs-bash but not by Jekyll (e.g. a second title, taking another proposal's place).
+# YAML also ends at "...": stop there too, so nothing after it is read only by ccs-bash.
 $0 == "---" || $0 == "..." { state = 2; next }
 
 /^[A-Za-z0-9_-]+:( |$)/ {

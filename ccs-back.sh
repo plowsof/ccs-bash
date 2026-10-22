@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
-# ccs-back.sh [CONFIG]: one run of the CCS backend. Meant to be run from cron.
-#
-# Reads the proposals checkout, GitLab MRs and a view-only monero-wallet-rpc,
-# then writes proposals.json, completed-proposals.json and projects.json into
-# OUTPUT_DIR, which is laid out like ccs-front's _data directory.
-# The only state kept between runs is STATE_DIR/proposals.csv.
+# ccs-back.sh [CONFIG]: one run. Reads the proposals, GitLab and a view-only wallet, writes
+# the JSON into OUTPUT_DIR (ccs-front's _data). Only STATE_DIR/proposals.csv is kept.
 set -euo pipefail
 export LC_ALL=C TZ=UTC
 
@@ -18,9 +14,8 @@ source "$CCS_LIB/gitlab.sh"
 # shellcheck source=lib/wallet.sh
 source "$CCS_LIB/wallet.sh"
 
-# Proposals seen for the first time: remember the merged MR they came from,
-# and when funding started if they are funding-required right away.
-# If GitLab is down, the proposal is tried again next run.
+# New proposals: remember their merged MR, and when funding started if already fr.
+# GitLab down: tried again next run.
 record_new_proposals() {
     local file layout url
     while IFS=$'\t' read -r file layout; do
@@ -34,7 +29,7 @@ record_new_proposals() {
     done < <(jq -r --slurpfile state "$WORK/state.json" '.[] | select($state[0][.file] == null) | [.file, .layout] | @tsv' "$WORK/props.json")
 }
 
-# The Ideas group of the last run, used when GitLab cannot be reached.
+# GitLab down: keep the last run's Ideas.
 previous_ideas() {
     jq '.[0].proposals' "$OUTPUT_DIR/proposals.json" 2> /dev/null || echo '[]'
 }

@@ -2,17 +2,16 @@
 #   $out == "proposals": [Ideas, Funding Required, Work in Progress]
 #   $out == "completed-proposals": [Completed Proposals]
 #   $out == "projects":  every proposal, in the order first seen (the /projects API)
-# Inputs (--slurpfile, so each is wrapped in an array): props, state, funds, qr, ideas.
-# All XMR amounts arrive ready to show from proposal_funds (lib/wallet.sh);
-# no money arithmetic happens here, since jq numbers are doubles.
+# Inputs (--slurpfile, each wrapped in an array): props, state, funds, qr, ideas.
+# Amounts arrive ready to show (lib/wallet.sh): no money arithmetic in jq's doubles.
 
 $props[0] as $props | $state[0] as $state | $funds[0] as $funds | $qr[0] as $qr
 
 # Links on the site: only plain https urls (not javascript: and the like), HTML-escaped.
 | def link: if type == "string" and test("^https://[^\\s\"'<>\\\\]+$") then @html else null end;
 
-  # Escaped exactly as Liquid's `escape` does (jq's @html writes ' as &apos;): ccs-front finds
-  # a page's entry by comparing this with its own file name, escaped, see docs/setup.md step 4.
+  # As Liquid's `escape` (@html writes ' as &apos;): ccs-front matches its escaped file
+  # name against this (docs/setup.md step 4).
   def liquid_escape: gsub("&"; "&amp;") | gsub("<"; "&lt;") | gsub(">"; "&gt;") | gsub("\""; "&quot;") | gsub("'"; "&#39;");
 
   def proposal:

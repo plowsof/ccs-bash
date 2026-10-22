@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# verify.sh LOCK DIR: check that DIR holds exactly the files in LOCK, each with its sha256.
-# Used by fetch.sh after downloading and again inside the offline build (busybox there:
-# so no GNU-only options).
+# verify.sh LOCK DIR: DIR holds exactly LOCK's files, with their sha256. Also runs inside
+# the build, on busybox: no GNU-only options.
 set -euo pipefail
 lock=$1 dir=$2
 n=0

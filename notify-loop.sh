@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
-# notify-loop.sh COMMAND...: runs COMMAND every EVERY seconds, and sooner once the wallet's
-# --tx-notify has touched FLAG, but never twice within GAP seconds. However many
-# notifications come in (a wallet catching up after weeks offline, a flood of tiny
-# donations), that is at most one run per GAP: the hook only touches a file, and this loop
-# only checks that the file is there, it never reads it. See docs/setup.md, step 7.
+# notify-loop.sh COMMAND...: run COMMAND every EVERY seconds, or sooner once tx-notify has
+# touched FLAG, but at most once per GAP however many txes come. The flag is never read,
+# only checked for. See docs/setup.md step 7.
 set -uo pipefail   # no -e: a failed run must not end the loop
 FLAG=${FLAG:-/var/lib/ccs-notify/new-tx}
 GAP=${GAP:-30}
