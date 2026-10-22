@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
-# check-pinned.sh: check the image hash is pinned. Builds the image twice from scratch, from
-# two separate clones of the current commit (different paths, umasks and times), and fails
-# unless both give the same image hash. Anyone can do the same to check an image they were given.
-# First, though, it builds another commit (a day older) and then this one, both with the
-# build cache: what is left in the cache from another commit must not change the hash either.
+# check-pinned.sh: fail unless two clean builds of this commit from separate clones (other
+# paths, umasks, times) and one on a cache left by another commit all give the same hash.
 set -euo pipefail
 here=$(dirname "$(readlink -f "$0")")
 repo=$(git -C "$here" rev-parse --show-toplevel)

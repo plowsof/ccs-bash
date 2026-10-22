@@ -11,8 +11,8 @@ read_proposals() {
         safe_filename "${file##*/}" || { log "skipping ${file##*/}: bad filename"; continue; }
         files+=("$file") names+=("${file##*/}")
     done
-    # Not valid UTF-8: jq would turn the bad bytes into U+FFFD, so two different names could
-    # end up as one (and share an address). jq's copy differs from the name exactly then.
+    # Not UTF-8: jq would turn bad bytes into U+FFFD, so two names could become one (and
+    # share an address). Exactly then jq's copy differs from the name.
     if ((${#names[@]})); then
         mapfile -t utf8 < <(printf '%s\n' "${names[@]}" | jq -Rr .)
         for i in "${!names[@]}"; do
@@ -40,21 +40,16 @@ read_proposals() {
         })'
 }
 
-# The state file, proposals.csv, has one line per proposal we have seen:
-#   filename,gitlab_url,subaddr_index,address,funding_required_date
-# Values with a comma or a quote are quoted, as jq's @csv writes them (a real
-# proposal filename has commas). funding_required_date is when the proposal was
-# first seen as "fr", e.g. 2026-01-07T12:36:31Z. Empty fields mean unknown / none.
-# It is the only data that cannot be recomputed. While running it is kept as JSON
-# in $WORK/state.json: {"file.md": {gitlab_url, subaddr_index, address, funding_required_date}}.
+# The state, proposals.csv, one line per proposal seen (as jq's @csv writes it; filenames
+# can have commas), empty = unknown:
+#   filename,gitlab_url,subaddr_index,address,funding_required_date   (first seen as fr, UTC)
+# During a run it is $WORK/state.json: {"file.md": {gitlab_url, subaddr_index, ...}}.
 load_state() {
-    # Never recreated here: without it every funding-required proposal would quietly get a new
-    # address. A fresh install creates it empty; otherwise it has to come back from a backup.
+    # Never recreated: every fr proposal would quietly get a new address. Restore a backup.
     [[ -e $STATE_DIR/proposals.csv ]] \
         || die "no $STATE_DIR/proposals.csv: restore it from a backup, or on a fresh install create it empty"
-    # A line is read by matching ,field repeatedly after putting a comma in front:
-    # a field is either "quoted, with "" for a quote" or anything up to the next comma.
-    # (The extra comma avoids empty matches, which jq 1.6 and 1.7 handle differently.)
+    # Match ,field repeatedly on "," + line; a field is "quoted ("" inside)" or up to the
+    # next comma. (The leading comma avoids empty matches, which jq 1.6 and 1.7 differ on.)
     jq -R -s '
         def csvrow: [("," + .) | match(",(\"(?:[^\"]|\"\")*\"|[^,]*)"; "g") | (.captures[0].string // "")
                      | if startswith("\"") then .[1:-1] | gsub("\"\""; "\"") else . end];
