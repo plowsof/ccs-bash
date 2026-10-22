@@ -141,18 +141,32 @@ takes a few minutes. After that, only new proposals are looked up.
 1. **Back up** the database (`mysqldump`), the cron line, and the old JSON files.
 
 2. **Export the state**, so every proposal keeps its subaddress, and use the same wallet.
+   Replace `<ccs_db>` with the database name (and add `-u`/`-p` as needed).
    `ORDER BY id` keeps `projects.json` in the old order. With Docker, run it through
-   `docker exec <db container> mysql ...`:
+   `docker exec <db container> mysql ...`.
+
+   Upstream ccs-back (as running for getmonero.org):
 
    ```
-   mysql -B -N -e "SELECT filename, IFNULL(gitlab_url, ''), IFNULL(subaddr_index, ''), IFNULL(address, ''),
-                   IFNULL(DATE_FORMAT(funding_required_date, '%Y-%m-%dT%H:%i:%sZ'), '')
-                   FROM projects ORDER BY id" <ccs_db> > /var/lib/ccs/state/proposals.tsv
+   mysql -B -N -e "SELECT filename, IFNULL(gitlab_url, ''), IFNULL(subaddr_index, ''), IFNULL(address, ''), '' FROM projects ORDER BY id" <ccs_db> > /var/lib/ccs/state/proposals.tsv
    chown ccs:ccs /var/lib/ccs/state/proposals.tsv
    ```
 
-   Without the fork's `funding_required_date` column, export `''` for it instead.
+   Upstream has no funding-required date, so existing proposals get none; proposals
+   that become funding-required after the switch get one.
+
+   ccs-back with the `funding_required_date` column (plowsof's fork):
+
+   ```
+   mysql -B -N -e "SELECT filename, IFNULL(gitlab_url, ''), IFNULL(subaddr_index, ''), IFNULL(address, ''), IFNULL(DATE_FORMAT(funding_required_date, '%Y-%m-%dT%H:%i:%sZ'), '') FROM projects ORDER BY id" <ccs_db> > /var/lib/ccs/state/proposals.tsv
+   chown ccs:ccs /var/lib/ccs/state/proposals.tsv
+   ```
+
    The date is exported as UTC, which is what ccs-back stores (Laravel's default timezone).
+
+   Raised amounts and deposits are not exported: ccs-bash recomputes them from the
+   wallet's history, so the wallet must have the full history (the same wallet, or one
+   restored from a height before the first donation).
 
 3. **Run ccs-bash next to ccs-back once** and compare the output (see below). While both
    run, a funding-required proposal without an address would get a subaddress from each of
@@ -177,7 +191,10 @@ Differences from ccs-back:
   added up in a database, so a dropped or reorged tx no longer stays counted.
 - **Locked txes:** a tx counts as funded at `MIN_CONFIRMATIONS`, not when its outputs unlock;
   before that it is pending. Time-locked txes (`unlock_time` set) are not counted.
-- **Amounts:** `1,500` means 1500 (ccs-back read it as 1.5).
+- **Amounts:** `1,500` means 1500 (ccs-back read it as 1.5). All amounts are shown with
+  4 decimals (`"85.0000"`), as strings. Raised and pending are cut off at 4 decimals, not
+  rounded, and the percentage is rounded down: 99.99996 of 100 XMR shows as `99.9999` and
+  99%, where ccs-back showed `100.0000` and 100%. Sums are exact (integer atomic units).
 - **Authors:** `0xfffc` stays `0xfffc` (ccs-back's YAML parser turned it into the number 65532).
 - **Dates:** only written-out months are understood (`June 25th, 2021`, `10 August 2021`),
   and they keep their year (ccs-back read `10 August, 2021` as 20:21 this year).
