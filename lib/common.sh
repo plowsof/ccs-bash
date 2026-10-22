@@ -10,7 +10,7 @@ die() { log "error: $*"; exit 1; }
 # not be able to change it: it should be owned by root and only readable by ccs.
 load_config() {
     [[ -r $1 ]] || die "cannot read config $1"
-    [[ ! -w $1 ]] || die "config $1 is writable by $(id -un): it pins the wallet, so it must be owned by root and only readable by the (unprivileged) user running ccs-bash"
+    [[ ! -w $1 ]] || die "config $1 is writable by $(id -un 2> /dev/null || id -u): it pins the wallet, so it must be owned by root and only readable by the (unprivileged) user running ccs-bash"
     # shellcheck source=/dev/null
     source "$1"
     : "${RPC_URL:?} ${REPOSITORY_URL:?} ${PROPOSALS_DIR:?} ${STATE_DIR:?} ${OUTPUT_DIR:?} ${WALLET_ADDRESS:?}"
