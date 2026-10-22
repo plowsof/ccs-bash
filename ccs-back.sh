@@ -42,11 +42,10 @@ previous_ideas() {
 build_site() {
     local out
     for out in proposals completed-proposals projects; do
-        jq -n --indent 4 --arg out "$out" \
+        atomic_write "$OUTPUT_DIR/$out.json" jq -n --indent 4 --arg out "$out" \
             --slurpfile props "$WORK/props.json" --slurpfile state "$WORK/state.json" \
             --slurpfile funds "$WORK/funds.json" --slurpfile qr "$WORK/qr.json" \
-            --slurpfile ideas "$WORK/ideas.json" -f "$CCS_LIB/site.jq" |
-            atomic_write "$OUTPUT_DIR/$out.json"
+            --slurpfile ideas "$WORK/ideas.json" -f "$CCS_LIB/site.jq"
     done
 }
 
@@ -61,10 +60,11 @@ main() {
 
     read_proposals "$PROPOSALS_DIR" > "$WORK/props.json"
     load_state
-    record_new_proposals
     check_wallet_addresses
-    assign_addresses
     donation_totals > "$WORK/totals.tsv"
+    check_known_subaddresses
+    record_new_proposals
+    assign_addresses
     proposal_funds > "$WORK/funds.json"
     qr_codes > "$WORK/qr.json"
     if ! ideas > "$WORK/ideas.json"; then
