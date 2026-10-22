@@ -36,9 +36,12 @@ part was never the problem.) ccs-bash is about leaving as few ways in as possibl
 - **Few, well-kept dependencies.** About ten Debian packages (see
   [Dependencies](#dependencies)), patched by Debian's security team, instead of a framework
   and its package tree. All of ccs-bash is about 550 lines you can read in an afternoon.
-- **Least privilege.** It runs as a `ccs` user that can only write its state and output folders.
-- **Checks the wallet.** If the wallet's subaddresses don't match the state file
-  (a wrong or swapped wallet), the run stops instead of publishing other addresses.
+- **Least privilege.** It runs as a `ccs` user that can only write its state and output
+  folders. It refuses to run if it can write its own config (so not as root either).
+- **Checks the wallet.** The wallet's main address is pinned in the config (`WALLET_ADDRESS`),
+  which only root can change; every subaddress must also match the state file. A swapped
+  wallet stops the run instead of getting its addresses published, even if the state file
+  (which the `ccs` user can write) was changed to match it.
 - **Checks the QR codes.** Every run reads each QR code back with `zbarimg` and compares it
   with the address. A swapped image (which would send donors' money elsewhere while the
   address shown as text still looks right) is logged and replaced; a new one that doesn't
@@ -157,8 +160,12 @@ the same either way; steps 3 to 5 are for one machine. For two machines see
    install -d -o ccs -g ccs -m 755 /var/lib/ccs/state /var/lib/ccs/out
    git clone https://repo.getmonero.org/monero-project/ccs-proposals.git /var/lib/ccs/proposals
    install -d -g ccs -m 750 /etc/ccs
-   install -g ccs -m 640 ccs.conf.example /etc/ccs/ccs.conf    # then edit it
+   install -g ccs -m 640 ccs.conf.example /etc/ccs/ccs.conf    # root:ccs 640; then edit it
    ```
+
+   Set `WALLET_ADDRESS` to the wallet's main address, from your own records of the wallet
+   (or from `monero-wallet-cli` with the view key: `address`). It's what every run checks the
+   wallet against, so take it from somewhere you trust, not just from the running wallet-rpc.
 
 3. Point ccs-front at the output (same machine). `OUTPUT_DIR` is laid out like ccs-front's `_data` directory,
    so link or mount the **directories**:
@@ -273,7 +280,8 @@ data), and the web server stays the place to guard, see [Security](#security).
 
 1. **Back up** the database (`mysqldump`), the cron line, and the old JSON files.
 
-2. **Export the state**, so every proposal keeps its subaddress, and use the same wallet.
+2. **Export the state**, so every proposal keeps its subaddress, and use the same wallet
+   (its main address goes in `WALLET_ADDRESS`).
    Replace `<ccs_db>` with the database name (and add `-u`/`-p` as needed).
    `ORDER BY id` keeps `projects.json` in the old order. With Docker, run it through
    `docker exec <db container> mysql ...`.

@@ -12,7 +12,7 @@ rpc() {
         get_address)
             for ((i = 0; i < n; i++)); do
                 printf '{"address_index": %d, "address": "%s"}\n' "$i" "$(fake_address "$i")"
-            done | jq -s '{addresses: .}' ;;
+            done | jq -s --arg main "$(fake_address 0)" '{address: $main, addresses: .}' ;;
         create_address)
             echo $((n + 1)) > "$TEST_TMP/wallet-count"
             printf '{"address_index": %d, "address": "%s"}\n' "$n" "$(fake_address "$n")" ;;
