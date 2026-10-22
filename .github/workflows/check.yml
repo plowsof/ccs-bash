@@ -10,7 +10,7 @@ jobs:
         os: [ubuntu-22.04, ubuntu-24.04]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, pinned by commit
       - name: install qrencode, and zbarimg to read its codes back (tests only)
         run: sudo apt-get update -q && sudo apt-get install -y -q qrencode zbar-tools
       - name: shellcheck
@@ -27,7 +27,7 @@ jobs:
     # then the tests run inside it, also without network.
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, pinned by commit
       - name: build (download, then install offline)
         run: container/build.sh ccs-bash
       - name: tests inside the image, no network
