@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <title>ccs-bash</title>
+  <style>
+    .ink { fill: #000; }
+    .dark { fill: #000; }
+    .eye { fill: #fff; }
+    /* On a dark page the gear and shell turn white; the gap stays dark, so the eyes still peer out of it. */
+    @media (prefers-color-scheme: dark) { .ink { fill: #fff; } }
+  </style>
+  <defs>
+    <!-- One tooth of the gear; 32 of them around the centre. -->
+    <rect id="tooth" x="244" y="10" width="24" height="34" rx="6"/>
+    <g id="teeth8">
+      <use href="#tooth"/>
+      <use href="#tooth" transform="rotate(11.25 256 256)"/>
+      <use href="#tooth" transform="rotate(22.5 256 256)"/>
+      <use href="#tooth" transform="rotate(33.75 256 256)"/>
+      <use href="#tooth" transform="rotate(45 256 256)"/>
+      <use href="#tooth" transform="rotate(56.25 256 256)"/>
+      <use href="#tooth" transform="rotate(67.5 256 256)"/>
+      <use href="#tooth" transform="rotate(78.75 256 256)"/>
+    </g>
+    <!-- The ring's hole. -->
+    <mask id="ring-hole">
+      <rect width="512" height="512" fill="#fff"/>
+      <circle cx="256" cy="256" r="194" fill="#000"/>
+    </mask>
+    <!-- Cut into the shells: a growth ring on each, and a thin line along both lips
+         so the shells stand apart from the dark gap. -->
+    <mask id="shell-lines">
+      <rect width="512" height="512" fill="#fff"/>
+      <g fill="none" stroke="#000" stroke-linecap="round">
+        <path stroke-width="8" d="M134 232 C144 178 196 148 256 148 C316 148 368 178 378 232"/>
+        <path stroke-width="8" d="M136 318 C156 352 202 372 256 372 C310 372 356 352 376 318"/>
+        <path stroke-width="12" d="M104 266 Q256 230 408 266"/>
+        <path stroke-width="12" d="M104 266 Q256 318 408 266"/>
+      </g>
+    </mask>
+  </defs>
+
+  <!-- gear ring -->
+  <g class="ink" mask="url(#ring-hole)">
+    <circle cx="256" cy="256" r="222"/>
+    <use href="#teeth8"/>
+    <use href="#teeth8" transform="rotate(90 256 256)"/>
+    <use href="#teeth8" transform="rotate(180 256 256)"/>
+    <use href="#teeth8" transform="rotate(270 256 256)"/>
+  </g>
+
+  <!-- the darkness inside the half-open clam -->
+  <path class="dark" d="M110 266 Q256 226 402 266 Q256 322 110 266 Z"/>
+
+  <!-- two white eyes looking out of it: they blink every 4 s ... -->
+  <g class="eye">
+    <ellipse cx="218" cy="272" rx="25" ry="21">
+      <animate attributeName="ry" values="21;21;1;21;21" keyTimes="0;0.9;0.94;0.98;1" dur="4s" repeatCount="indefinite"/>
+    </ellipse>
+    <ellipse cx="294" cy="272" rx="25" ry="21">
+      <animate attributeName="ry" values="21;21;1;21;21" keyTimes="0;0.9;0.94;0.98;1" dur="4s" repeatCount="indefinite"/>
+    </ellipse>
+  </g>
+  <!-- ... and glance left and right every 8 s -->
+  <g class="dark">
+    <animateTransform attributeName="transform" type="translate" dur="8s" repeatCount="indefinite"
+        values="0 0; 0 0; -9 0; -9 0; 9 0; 9 0; 0 0; 0 0" keyTimes="0; 0.1; 0.16; 0.4; 0.48; 0.7; 0.76; 1"
+        calcMode="spline" keySplines=".4 0 .2 1; .4 0 .2 1; .4 0 .2 1; .4 0 .2 1; .4 0 .2 1; .4 0 .2 1; .4 0 .2 1"/>
+    <ellipse cx="220" cy="275" rx="10" ry="10">
+      <animate attributeName="ry" values="10;10;0;10;10" keyTimes="0;0.9;0.94;0.98;1" dur="4s" repeatCount="indefinite"/>
+    </ellipse>
+    <ellipse cx="296" cy="275" rx="10" ry="10">
+      <animate attributeName="ry" values="10;10;0;10;10" keyTimes="0;0.9;0.94;0.98;1" dur="4s" repeatCount="indefinite"/>
+    </ellipse>
+  </g>
+
+  <g class="ink" mask="url(#shell-lines)">
+    <!-- top shell, its lip hanging over the eyes like lids -->
+    <path d="M100 266 C106 166 178 118 256 118 C334 118 406 166 412 266 Q256 230 100 266 Z"/>
+    <!-- bottom shell -->
+    <path d="M100 266 Q256 318 412 266 C404 346 338 398 256 398 C174 398 108 346 100 266 Z"/>
+  </g>
+</svg>

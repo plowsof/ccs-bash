@@ -1,4 +1,20 @@
+<p align="center">
+  <img src="logo.svg" width="180" alt="A clam peeking out of its shell, inside a gear">
+</p>
+
 # ccs-bash
+
+**A blazingly fast, memory-safe CCS backend. Written in shell.**
+
+- **Blazingly fast:** a full run takes about 3 seconds, once every 2 minutes.
+- **Memory safe:** it has no memory. Everything is recomputed on each run, except one TSV file.
+- **Fearless concurrency:** `flock -n`.
+- **Zero-cost abstractions:** there are no abstractions.
+- **A strong type system:** everything is a string, the money too. That's how the amounts stay exact.
+- **A friendly compiler:** `shellcheck`.
+- **Cargo:** `apt install jq`.
+
+Not a crustacean. A mollusc.
 
 A small replacement for [ccs-back](https://repo.getmonero.org/monero-project/ccs-back),
 the backend of the Monero Community Crowdfunding System.
