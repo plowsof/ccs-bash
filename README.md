@@ -71,11 +71,25 @@ The wallet can always be restored from its keys; this file cannot be recreated.
 ## Dependencies
 
 ```
-apt install bash coreutils curl jq git qrencode util-linux
+apt install bash coreutils findutils mawk util-linux curl ca-certificates jq qrencode git logrotate
 ```
 
-`awk` can be mawk or gawk. No other runtime is needed. The tests need nothing extra.
-`qrencode` is often not installed by default (it wasn't on Ubuntu 22.04).
+| Package | Used for | Notes |
+|---|---|---|
+| `bash` | the scripts | priority required: already on every Debian system |
+| `coreutils` | `date`, `mktemp`, `base64`, `cat`, `mv`, `chmod`, `readlink`, … | priority required |
+| `findutils` | `xargs` | priority required |
+| `mawk` or `gawk` | `lib/frontmatter.awk` | mawk is priority required; either works |
+| `util-linux` | `flock` (no overlapping runs), `runuser` (cron drops to the `ccs` user) | priority required |
+| `curl` | wallet RPC and GitLab API | |
+| `ca-certificates` | HTTPS to GitLab | curl only *recommends* it, so it is missing after `--no-install-recommends` |
+| `jq` | all JSON, the site output | 1.6 or newer; CI tests 1.6 and 1.7 |
+| `qrencode` | donation QR codes | often not installed (it wasn't on Ubuntu 22.04) |
+| `git` | keeping the proposals checkout up to date (cron) | not used by `ccs-back.sh` itself |
+| `logrotate` | rotating `/var/log/ccs-bash.log` | optional |
+
+Not from Debian: `monero-wallet-rpc` (from [getmonero.org](https://www.getmonero.org/downloads/)),
+and Jekyll, which belongs to ccs-front. The tests need nothing extra.
 
 ## Setup
 
