@@ -6,7 +6,6 @@
 # `tests/rrsync.sh --loose` keeps only rrsync with its folder: then the checks for what
 # restrict, from=, -wo, -no-del and -munge stop must fail.
 set -euo pipefail
-here=$(dirname "$(readlink -f "$0")")
 name=ccs-rrsync-test
 net=172.30.99
 web=$net.2 wallet=$net.3 other=$net.4
@@ -18,9 +17,10 @@ cleanup() {
 trap cleanup EXIT
 cleanup
 
-# Debian 12's sshd and rsync (3.2.7, rrsync included), on the image's pinned base.
+# The web server is Debian 12, as in the README: its sshd and rsync (3.2.7, rrsync
+# included), on a pinned debian:bookworm-slim.
 docker buildx build -q --load -t "$name" - > /dev/null <<EOF
-FROM $(cat "$here/../container/base-image")
+FROM debian@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
 RUN apt-get update -q && apt-get install -y -q --no-install-recommends openssh-server openssh-client rsync python3 \
     && rm -rf /var/lib/apt/lists/*
 EOF

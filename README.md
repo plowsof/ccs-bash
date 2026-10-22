@@ -107,13 +107,13 @@ The wallet can always be restored from its keys; this file cannot be recreated.
 
 | | A) packages on the host | B) the pinned container |
 |---|---|---|
-| ccs-bash's tools come from | Debian's packages, as installed today | `container/deps.lock`: exact files, sha256-checked, installed offline |
+| ccs-bash's tools come from | Debian's packages, as installed today | [StageX](https://stagex.tools) packages, built from source, pinned by digest; busybox and qrencode built from pinned source here |
 | The host needs | the packages below | Docker (with buildx) and `git` |
 | Updates | `apt upgrade` | change the pin and rebuild (see [Changing the pin](#changing-the-pin)) |
 
 Both run the same scripts with the same config and folders, so you can switch between them.
-B is the one to use where the supply chain matters: what runs is exactly what the lock file
-says, and nothing can be installed into it.
+B is the one to use where the supply chain matters: everything in it is built from source,
+what runs is exactly what the pins say, and nothing can be installed into it.
 
 ## Dependencies
 
@@ -142,25 +142,33 @@ apt install bash coreutils findutils mawk util-linux curl ca-certificates jq qre
 **B) The container:** the host needs Docker with the buildx plugin (`docker-buildx-plugin` in
 Docker's packages; only needed where the image is built), `git` (for the proposals checkout), optionally
 `logrotate`, and `rsync` + `openssh-client` if ccs-front is on another machine. Everything
-ccs-bash itself uses (curl, ca-certificates, jq, qrencode, and their libraries: 24 files)
-is pinned in `container/deps.lock` and only ever inside the image. The image is built in two
-steps by `container/build.sh`:
+ccs-bash itself uses lives only inside the image, and all of it is built from source:
 
-1. **Download** (network): the Debian base image by digest (`container/base-image`), and the
-   exact `.deb` files in `container/deps.lock`, each with its sha256 and several urls
-   (snapshot.debian.org, which keeps every version, plus at least 2 mirrors). `fetch.sh` uses
-   plain curl and keeps a file only if its sha256 matches; no apt.
-2. **Install** (no network): `docker buildx build --network none` (buildx drives Docker's BuildKit
-   engine, which is what sets every file time in the image to the commit's). The Dockerfile checks every file
-   against the lock again and installs them with `dpkg -i`. Nothing can be fetched.
+- **[StageX](https://stagex.tools) packages**, pinned by digest in `container/images`: bash,
+  curl, jq, ca-certificates, and the libraries they need (musl, ncurses, openssl, zstd, zlib,
+  libpng). StageX builds every package from source, starting from a tiny bootstrap, and several
+  people rebuild and sign each release.
+- **busybox and qrencode, built here** from their upstream source, pinned by sha256 in
+  `container/sources.lock` (the same sums StageX pins). busybox gets only the 28 applets in
+  `container/busybox-applets`, so there is no shell, `nc`, `wget`, ... in the image;
+  qrencode is built with PNG output, which StageX's own leaves out.
+
+The image is about 28 MB and is built in two steps by `container/build.sh`:
+
+1. **Download** (network): the StageX images, by digest, and the source tarballs in
+   `container/sources.lock`. `fetch.sh` uses plain curl and keeps a file only if its sha256
+   matches.
+2. **Build** (no network): `docker buildx build --network none` (buildx drives Docker's BuildKit
+   engine, which is what sets every file time in the image to the commit's). The Dockerfile
+   checks the sources against the lock again, compiles busybox and qrencode with StageX's
+   compiler image, and puts the image together from the pinned packages. Nothing can be fetched.
 
 The result is a **pinned image**: its hash is pinned along with everything that goes into it.
-The code (the git commit), the packages (`deps.lock`) and the base image (its digest) are fixed,
-so the same commit always builds to the same image hash, wherever and whenever it is built;
-`build.sh` prints it. An image built elsewhere can be checked by building the same commit and
-comparing hashes, and `container/check-pinned.sh` does exactly that (two clean builds from
-separate clones), in CI on every push too. The packages are Debian's binaries, used as Debian
-built them; nothing is compiled from source here.
+The code (the git commit), the StageX packages (their digests) and the sources (their sha256)
+are fixed, so the same commit always builds to the same image hash, wherever and whenever it is
+built; `build.sh` prints it. An image built elsewhere can be checked by building the same commit
+and comparing hashes, and `container/check-pinned.sh` does exactly that (two clean builds from
+separate clones), in CI on every push too.
 
 Either way, not from Debian: `monero-wallet-rpc` (from
 [getmonero.org](https://www.getmonero.org/downloads/)). The tests need nothing extra, except
@@ -424,11 +432,11 @@ data), and the web server stays the place to guard, see [Security](#security).
 
 ### Changing the pin
 
-To use newer Debian packages, another base image, or a package more or less (B only): edit
-`container/snapshot`, `base-image` or `packages`, run `container/update-lock.sh`, review the
-`deps.lock` diff, commit it, and rebuild with `container/build.sh`. `update-lock.sh` is the only
-step that uses apt, in a throwaway container, to work out which files are needed. It also
-re-checks the mirrors: plain mirrors drop a version once Debian updates the package.
+B only. For newer StageX packages, run `container/update-images.sh` (it pins every image in
+`container/images` to StageX's current release), review the diff, commit it, and rebuild with
+`container/build.sh`. For a newer busybox or qrencode, change its line in
+`container/sources.lock` (url and sha256, e.g. the ones StageX pins) and the version in the
+Dockerfile. To give busybox another applet, add it to `container/busybox-applets`.
 
 ## Moving from ccs-back
 
@@ -509,8 +517,8 @@ Differences from ccs-back:
 
 ## To do
 
-- **Built from source.** The pinned image uses Debian's binaries; building them from
-  source too would mean Guix (which Monero already uses for its releases).
+- **Check StageX's signatures.** The images are pinned by digest; checking them against the
+  signatures StageX's maintainers publish for each release would show the digests are theirs.
 - **Watch the live site.** Fetch the published pages and check that every donation address
   (and QR code) on them matches the state file, to notice a changed web server within minutes.
 
