@@ -1,7 +1,9 @@
 # The ccs-bash image, from StageX packages: built from source by StageX, starting from a
 # tiny bootstrap, and signed by several people who rebuilt them. Every StageX image is
 # pinned by digest in container/images and handed in by build.sh as a named build context
-# (FROM toolchain, COPY --from=bash, ...). Built with --network none: nothing is downloaded here.
+# (FROM toolchain, COPY --from=bash, ...), after verify-images.sh checked their signatures.
+# Built by StageX's own BuildKit (builder.Dockerfile) with --network none: the steps below
+# download nothing.
 #
 # A pinned image: the same commit gives the same image hash. build.sh passes the commit's
 # time as SOURCE_DATE_EPOCH; every file time after it is set to it, and the result is
