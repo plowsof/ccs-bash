@@ -25,7 +25,8 @@ apt install bash coreutils findutils mawk util-linux curl ca-certificates jq qre
 
 
 **B) The container:** the host needs Docker with the buildx plugin (`docker-buildx-plugin` in
-Docker's packages; only needed where the image is built), `git` (for the proposals checkout), optionally
+Docker's packages), plus `gpg` and `jq` to check StageX's signatures (both only where the image is
+built), `git` (for the proposals checkout), optionally
 `logrotate`, and `rsync` + `openssh-client` if ccs-front is on another machine. Everything
 ccs-bash itself uses lives only inside the image, and all of it is built from source: see
 [The pinned image](image.md).
