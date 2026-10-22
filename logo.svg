@@ -1,81 +1,78 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <title>ccs-bash</title>
-  <style>
-    .ink { fill: #000; }
-    .dark { fill: #000; }
-    .eye { fill: #fff; }
-    /* On a dark page the gear and shell turn white; the gap stays dark, so the eyes still peer out of it. */
-    @media (prefers-color-scheme: dark) { .ink { fill: #fff; } }
-  </style>
+  <!-- A ribbed clam in a gear, in the colours of Ferris the Rust crab. Generated; see the
+       comments for what each part is. The eyes blink every 4 s and glance around every 8 s. -->
   <defs>
-    <!-- One tooth of the gear; 32 of them around the centre. -->
     <rect id="tooth" x="244" y="10" width="24" height="34" rx="6"/>
-    <g id="teeth8">
-      <use href="#tooth"/>
-      <use href="#tooth" transform="rotate(11.25 256 256)"/>
-      <use href="#tooth" transform="rotate(22.5 256 256)"/>
-      <use href="#tooth" transform="rotate(33.75 256 256)"/>
-      <use href="#tooth" transform="rotate(45 256 256)"/>
-      <use href="#tooth" transform="rotate(56.25 256 256)"/>
-      <use href="#tooth" transform="rotate(67.5 256 256)"/>
-      <use href="#tooth" transform="rotate(78.75 256 256)"/>
-    </g>
-    <!-- The ring's hole. -->
     <mask id="ring-hole">
       <rect width="512" height="512" fill="#fff"/>
       <circle cx="256" cy="256" r="194" fill="#000"/>
     </mask>
-    <!-- Cut into the shells: a growth ring on each, and a thin line along both lips
-         so the shells stand apart from the dark gap. -->
-    <mask id="shell-lines">
-      <rect width="512" height="512" fill="#fff"/>
-      <g fill="none" stroke="#000" stroke-linecap="round">
-        <path stroke-width="8" d="M134 232 C144 178 196 148 256 148 C316 148 368 178 378 232"/>
-        <path stroke-width="8" d="M136 318 C156 352 202 372 256 372 C310 372 356 352 376 318"/>
-        <path stroke-width="12" d="M104 266 Q256 230 408 266"/>
-        <path stroke-width="12" d="M104 266 Q256 318 408 266"/>
-      </g>
-    </mask>
   </defs>
 
   <!-- gear ring -->
-  <g class="ink" mask="url(#ring-hole)">
+  <g fill="#A52B00" mask="url(#ring-hole)">
     <circle cx="256" cy="256" r="222"/>
-    <use href="#teeth8"/>
-    <use href="#teeth8" transform="rotate(90 256 256)"/>
-    <use href="#teeth8" transform="rotate(180 256 256)"/>
-    <use href="#teeth8" transform="rotate(270 256 256)"/>
+    <use href="#tooth" transform="rotate(0 256 256)"/>
+    <use href="#tooth" transform="rotate(11.25 256 256)"/>
+    <use href="#tooth" transform="rotate(22.5 256 256)"/>
+    <use href="#tooth" transform="rotate(33.75 256 256)"/>
+    <use href="#tooth" transform="rotate(45 256 256)"/>
+    <use href="#tooth" transform="rotate(56.25 256 256)"/>
+    <use href="#tooth" transform="rotate(67.5 256 256)"/>
+    <use href="#tooth" transform="rotate(78.75 256 256)"/>
+    <use href="#tooth" transform="rotate(90 256 256)"/>
+    <use href="#tooth" transform="rotate(101.25 256 256)"/>
+    <use href="#tooth" transform="rotate(112.5 256 256)"/>
+    <use href="#tooth" transform="rotate(123.75 256 256)"/>
+    <use href="#tooth" transform="rotate(135 256 256)"/>
+    <use href="#tooth" transform="rotate(146.25 256 256)"/>
+    <use href="#tooth" transform="rotate(157.5 256 256)"/>
+    <use href="#tooth" transform="rotate(168.75 256 256)"/>
+    <use href="#tooth" transform="rotate(180 256 256)"/>
+    <use href="#tooth" transform="rotate(191.25 256 256)"/>
+    <use href="#tooth" transform="rotate(202.5 256 256)"/>
+    <use href="#tooth" transform="rotate(213.75 256 256)"/>
+    <use href="#tooth" transform="rotate(225 256 256)"/>
+    <use href="#tooth" transform="rotate(236.25 256 256)"/>
+    <use href="#tooth" transform="rotate(247.5 256 256)"/>
+    <use href="#tooth" transform="rotate(258.75 256 256)"/>
+    <use href="#tooth" transform="rotate(270 256 256)"/>
+    <use href="#tooth" transform="rotate(281.25 256 256)"/>
+    <use href="#tooth" transform="rotate(292.5 256 256)"/>
+    <use href="#tooth" transform="rotate(303.75 256 256)"/>
+    <use href="#tooth" transform="rotate(315 256 256)"/>
+    <use href="#tooth" transform="rotate(326.25 256 256)"/>
+    <use href="#tooth" transform="rotate(337.5 256 256)"/>
+    <use href="#tooth" transform="rotate(348.75 256 256)"/>
   </g>
 
   <!-- the darkness inside the half-open clam -->
-  <path class="dark" d="M110 266 Q256 226 402 266 Q256 322 110 266 Z"/>
+  <path fill="#000000" d="M88 266 Q256 210 424 266 Q256 330 88 266 Z"/>
 
-  <!-- two white eyes looking out of it: they blink every 4 s ... -->
-  <g class="eye">
-    <ellipse cx="218" cy="272" rx="25" ry="21">
-      <animate attributeName="ry" values="21;21;1;21;21" keyTimes="0;0.9;0.94;0.98;1" dur="4s" repeatCount="indefinite"/>
-    </ellipse>
-    <ellipse cx="294" cy="272" rx="25" ry="21">
-      <animate attributeName="ry" values="21;21;1;21;21" keyTimes="0;0.9;0.94;0.98;1" dur="4s" repeatCount="indefinite"/>
-    </ellipse>
+  <!-- two white eyes looking out of it, blinking ... -->
+  <g fill="#FFFFFF">
+    <ellipse cx="216" cy="270" rx="27" ry="23"><animate attributeName="ry" values="23;23;1;23;23" keyTimes="0;0.9;0.94;0.98;1" dur="4s" repeatCount="indefinite"/></ellipse>
+    <ellipse cx="296" cy="270" rx="27" ry="23"><animate attributeName="ry" values="23;23;1;23;23" keyTimes="0;0.9;0.94;0.98;1" dur="4s" repeatCount="indefinite"/></ellipse>
   </g>
-  <!-- ... and glance left and right every 8 s -->
-  <g class="dark">
+  <!-- ... and glancing left and right -->
+  <g fill="#000000">
     <animateTransform attributeName="transform" type="translate" dur="8s" repeatCount="indefinite"
         values="0 0; 0 0; -9 0; -9 0; 9 0; 9 0; 0 0; 0 0" keyTimes="0; 0.1; 0.16; 0.4; 0.48; 0.7; 0.76; 1"
         calcMode="spline" keySplines=".4 0 .2 1; .4 0 .2 1; .4 0 .2 1; .4 0 .2 1; .4 0 .2 1; .4 0 .2 1; .4 0 .2 1"/>
-    <ellipse cx="220" cy="275" rx="10" ry="10">
-      <animate attributeName="ry" values="10;10;0;10;10" keyTimes="0;0.9;0.94;0.98;1" dur="4s" repeatCount="indefinite"/>
-    </ellipse>
-    <ellipse cx="296" cy="275" rx="10" ry="10">
-      <animate attributeName="ry" values="10;10;0;10;10" keyTimes="0;0.9;0.94;0.98;1" dur="4s" repeatCount="indefinite"/>
-    </ellipse>
+    <ellipse cx="219" cy="274" rx="11" ry="11"><animate attributeName="ry" values="11;11;0;11;11" keyTimes="0;0.9;0.94;0.98;1" dur="4s" repeatCount="indefinite"/></ellipse>
+    <ellipse cx="299" cy="274" rx="11" ry="11"><animate attributeName="ry" values="11;11;0;11;11" keyTimes="0;0.9;0.94;0.98;1" dur="4s" repeatCount="indefinite"/></ellipse>
   </g>
 
-  <g class="ink" mask="url(#shell-lines)">
-    <!-- top shell, its lip hanging over the eyes like lids -->
-    <path d="M100 266 C106 166 178 118 256 118 C334 118 406 166 412 266 Q256 230 100 266 Z"/>
-    <!-- bottom shell -->
-    <path d="M100 266 Q256 318 412 266 C404 346 338 398 256 398 C174 398 108 346 100 266 Z"/>
+  <!-- the two shells, ribbed, with scalloped lips (the top one hangs over the eyes like lids) -->
+  <g fill="#F74C00" stroke="#A52B00" stroke-width="6" stroke-linejoin="round">
+    <path d="M88 266 C92 170 170 150 256 150 C342 150 420 170 424 266 Q408.7 267.4 393.5 256.7 Q378.2 259 362.9 249.3 Q347.6 252.6 332.4 243.8 Q317.1 247.9 301.8 240.1 Q286.5 245.2 271.3 238.2 Q256 244.2 240.7 238.2 Q225.5 245.2 210.2 240.1 Q194.9 247.9 179.6 243.8 Q164.4 252.6 149.1 249.3 Q133.8 259 118.5 256.7 Q103.3 267.4 88 266 Z"/>
+    <path d="M88 266 Q103.3 265.3 118.5 276.6 Q133.8 274.8 149.1 285 Q164.4 282.2 179.6 291.4 Q194.9 287.5 210.2 295.6 Q225.5 290.7 240.7 297.7 Q256 291.7 271.3 297.7 Q286.5 290.7 301.8 295.6 Q317.1 287.5 332.4 291.4 Q347.6 282.2 362.9 285 Q378.2 274.8 393.5 276.6 Q408.7 265.3 424 266 C418 360 342 376 256 376 C170 376 94 360 88 266 Z"/>
+  </g>
+  <!-- the hinge -->
+  <path fill="#F74C00" stroke="#A52B00" stroke-width="6" stroke-linejoin="round" d="M226 153 Q256 124 286 153 Z"/>
+  <g fill="none" stroke="#A52B00" stroke-width="5" stroke-linecap="round">
+    <path d="M180.4 181.7 Q107.5 215.2 118.5 251.7 M197.2 178.7 Q140.5 210 149.1 244.3 M214 175.6 Q173.5 205.7 179.6 238.8 M230.8 172.6 Q206.5 202.3 210.2 235.1 M247.6 169.5 Q239.5 199.9 240.7 233.2 M264.4 169.5 Q272.5 199.9 271.3 233.2 M281.2 172.6 Q305.5 202.3 301.8 235.1 M298 175.6 Q338.5 205.7 332.4 238.8 M314.8 178.7 Q371.5 210 362.9 244.3 M331.6 181.7 Q404.5 215.2 393.5 251.7"/>
+    <path d="M180.4 346.3 Q107.5 315.4 118.5 281.6 M197.2 349.3 Q140.5 321.2 149.1 290 M214 352.4 Q173.5 325.9 179.6 296.4 M230.8 355.4 Q206.5 329.5 210.2 300.6 M247.6 358.5 Q239.5 332.1 240.7 302.7 M264.4 358.5 Q272.5 332.1 271.3 302.7 M281.2 355.4 Q305.5 329.5 301.8 300.6 M298 352.4 Q338.5 325.9 332.4 296.4 M314.8 349.3 Q371.5 321.2 362.9 290 M331.6 346.3 Q404.5 315.4 393.5 281.6"/>
   </g>
 </svg>
