@@ -2,9 +2,8 @@
 # monero-wallet-rpc (view-only wallet): subaddresses for proposals and donation totals.
 # Everything uses account 0. Functions return non-zero on failure, see gitlab.sh.
 
-# rpc METHOD [PARAMS_JSON]: print the "result" of a JSON-RPC call.
-# Credentials go through a curl config on a pipe, so they never show up in `ps`.
-# Digest auth is only used with a login: without one curl would send an empty probe request.
+# rpc METHOD [PARAMS_JSON]: print the "result" of a JSON-RPC call. The login goes through a
+# curl config on a pipe (not in `ps`); digest only with a login (else an empty probe is sent).
 rpc() {
     local body res
     body=$(jq -nc --arg m "$1" --argjson p "${2:-"{}"}" '{jsonrpc: "2.0", id: "0", method: $m, params: $p}') || return 1
@@ -14,14 +13,9 @@ rpc() {
     jq -e '.result // error("rpc '"$1"': \(.error.message // "no result")")' <<<"$res"
 }
 
-# Make sure the wallet has created every subaddress in the state file, and that
-# they are the addresses we published. After restoring the wallet from keys it
-# only knows index 0, so this creates the missing ones (and makes the wallet scan
-# them). A different wallet fails the address check and stops the run.
-#
-# First of all, the wallet's main address must be WALLET_ADDRESS from the config.
-# The state file is writable by ccs-bash, the config is not: with both pinned, a
-# swapped wallet is caught even if the state file was changed to match it.
+# The wallet's main address must be WALLET_ADDRESS (root's config, unlike the state file
+# ccs-bash can write), and every subaddress in the state must be the one we published.
+# A restored wallet only knows index 0: create the missing ones. Another wallet stops the run.
 check_wallet_addresses() {
     local max have addrs
     max=$(jq '[.[].subaddr_index | numbers] | max // 0' "$WORK/state.json")
@@ -40,8 +34,7 @@ check_wallet_addresses() {
         || die "wallet subaddresses do not match $STATE_DIR/proposals.csv (wrong wallet?)"
 }
 
-# Give every funding-required proposal without an address a new subaddress.
-# Runs after check_wallet_addresses, so new indexes never reuse ones in the state.
+# A new subaddress for every fr proposal without one (after check_wallet_addresses).
 assign_addresses() {
     local file res idx addr max
     while IFS= read -r file; do
@@ -49,8 +42,7 @@ assign_addresses() {
         idx=$(jq -r .address_index <<<"$res")
         addr=$(jq -r .address <<<"$res")
         [[ $idx =~ ^[0-9]+$ && $addr =~ ^[0-9A-Za-z]{95}$ ]] || die "unexpected create_address result: $res"
-        # A new subaddress has to be new: above every index in the state (a wallet that
-        # answered with one already in use would give two proposals the same address).
+        # above every index in the state, or two proposals could share an address
         max=$(jq '[.[].subaddr_index | numbers] | max // 0' "$WORK/state.json")
         ((idx > max)) || die "create_address gave subaddress $idx, but the state already goes up to $max"
         state_update --arg f "$file" --argjson i "$idx" --arg a "$addr" '.[$f] += {subaddr_index: $i, address: $a}'
@@ -59,20 +51,16 @@ assign_addresses() {
         .[] | select(.layout == "fr") | .file | select($state[0][.] and $state[0][.].address == null)' "$WORK/props.json")
 }
 
-# Money is only ever added up and converted in bash, with 64-bit integers in
-# atomic units (1 XMR = 1e12), so it is exact up to 9.2 million XMR. jq has
-# only doubles: it would round sums above ~9007 XMR, and dividing by 1e12 gives
-# numbers like 1.23449999.. that come out a unit short when cut to 4 decimals.
+# Money is added and converted only in bash, as 64-bit atomic units: exact to 9.2M XMR.
+# jq's doubles round sums above ~9007 XMR and turn /1e12 into 1.23449999...
 
-# Atomic units -> XMR, cut off (not rounded) at 4 decimals: 99999960000000 -> 99.9999.
-# Never shows more than there is.
+# Atomic units -> XMR, cut (not rounded) to 4 decimals, never more than there is: 99999960000000 -> 99.9999.
 xmr4() {
     printf '%d.%04d' $(($1 / 1000000000000)) $(($1 % 1000000000000 / 100000000))
 }
 
-# Same, without trailing zeros (14.0000 -> 14, 0.1200 -> 0.12), for amounts that
-# go into the JSON as numbers: jq 1.7 keeps a number's text as written, jq 1.6
-# does not, so only this form prints the same with both.
+# Same without trailing zeros (14.0000 -> 14), for JSON numbers: the only form jq 1.6 and
+# 1.7 print alike.
 xmr4_number() {
     local x
     x=$(xmr4 "$1")
@@ -88,22 +76,17 @@ to_atomic() {
     printf '%d' $((10#$whole * 1000000000000 + 10#${frac:0:12}))
 }
 
-# Print donations per subaddress, in atomic units, one line each:
-#   index <TAB> confirmed <TAB> pending <TAB> count
-# A tx is confirmed once it has MIN_CONFIRMATIONS; until then (pool included)
-# it is pending. count is every tx, pending or not.
-# Time-locked txes (unlock_time set) are never counted.
+# Print donations per subaddress in atomic units: index TAB confirmed TAB pending TAB count.
+# Confirmed at MIN_CONFIRMATIONS, pending before (pool too); time-locked txes never count.
 donation_totals() {
     local transfers lines idx confs amount n indexes
     local -A confirmed=() pending=() count=()
-    # Only the proposals' subaddresses (1 and up), never 0: the main address can receive
-    # anything (e.g. payout change, which a view-only wallet sees as incoming).
+    # subaddresses 1+, never 0: it receives other things (payout change looks incoming)
     n=$(rpc get_address '{"account_index": 0}' | jq '.addresses | length') || return 1
     ((n > 1)) || return 0
     indexes=$(jq -nc --argjson n "$n" '[range(1; $n)]')
     transfers=$(rpc get_transfers "{\"in\": true, \"pool\": true, \"account_index\": 0, \"subaddr_indices\": $indexes}") || return 1
-    # jq only passes each amount through. Above 2^53 it could not even read it
-    # exactly, so it stops the run instead.
+    # jq only passes amounts through, and stops above 2^53, where it can't read them exactly
     lines=$(jq -r '
         (.in // []) + (.pool // [])
         | map(select((.unlock_time // 0) == 0))
@@ -113,8 +96,7 @@ donation_totals() {
         | "\(.subaddr_index.minor) \(.confirmations // 0) \(.amount)"' <<<"$transfers") || return 1
     while read -r idx confs amount; do
         [[ -n $idx ]] || continue # no transfers at all
-        # All three are used in bash arithmetic, which would run a command hidden in an array
-        # subscript (e.g. confirmations "x[$(cmd)]"), so they must be plain numbers first.
+        # plain numbers only: bash arithmetic runs commands hidden in subscripts ("x[$(cmd)]")
         [[ $idx =~ ^[0-9]+$ && $confs =~ ^[0-9]+$ && $amount =~ ^[0-9]+$ ]] \
             || die "unexpected transfer from wallet: index '$idx' confirmations '$confs' amount '$amount'"
         if ((confs >= MIN_CONFIRMATIONS)); then
@@ -129,9 +111,8 @@ donation_totals() {
     done
 }
 
-# Stop if donations sit at a subaddress the state file doesn't have: the state was lost,
-# emptied or swapped, and carrying on would give proposals new addresses. Runs before any
-# new subaddress is handed out, so a just-made one never shows up here.
+# Stop if donations sit at a subaddress the state doesn't have (lost, emptied or swapped
+# state; going on would hand out new addresses). Runs before new ones are made.
 check_known_subaddresses() {
     local unknown
     unknown=$(cut -f1 "$WORK/totals.tsv" | jq -R -s --slurpfile state "$WORK/state.json" '
@@ -141,10 +122,9 @@ check_known_subaddresses() {
     [[ -z $unknown ]] || die "donations at subaddress $unknown, which $STATE_DIR/proposals.csv doesn't have (lost or wrong state file?)"
 }
 
-# Print every proposal's money, ready to show: {"file.md": {amount, raised,
-# pending, count, percentage}}. amount and raised are "0.0000" strings, pending
-# a number (ccs-front compares it with 0). The percentage is rounded down, so
-# 100% means the target was really reached.
+# Print {"file.md": {amount, raised, pending, count, percentage}}, ready to show: amount and
+# raised "0.0000" strings, pending a number (ccs-front compares it with 0), percentage
+# rounded down (100% means really reached).
 proposal_funds() {
     local idx c p n file amount target raised pct
     local -A conf=() pend=() cnt=()
@@ -166,9 +146,8 @@ proposal_funds() {
         }}) | from_entries'
 }
 
-# Print {"<index>": "<base64 png>"} for every address in the state. The images are
-# made fresh on every run and never kept, so there is no stored image someone could
-# swap for one with their own address. (CI checks qrencode with a real decoder.)
+# Print {"<index>": "<base64 png>"} for every address in the state, made fresh each run and
+# never stored, so there is no image to swap.
 qr_codes() {
     local idx addr
     mkdir -p "$WORK/qr"

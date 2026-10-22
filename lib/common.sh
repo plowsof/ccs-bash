@@ -5,9 +5,8 @@ now_utc() { date -u '+%Y-%m-%dT%H:%M:%SZ'; }
 log() { printf '%s %s\n' "$(date -u '+%F %T')" "$*" >&2; }
 die() { log "error: $*"; exit 1; }
 
-# Source the config file and check the required settings are there.
-# The config pins the wallet (WALLET_ADDRESS), so the user running ccs-bash must
-# not be able to change it: it should be owned by root and only readable by ccs.
+# Source the config and check the required settings. It pins the wallet (WALLET_ADDRESS),
+# so ccs-bash must not be able to write it.
 load_config() {
     [[ -r $1 ]] || die "cannot read config $1"
     [[ ! -w $1 ]] || die "config $1 is writable by $(id -un 2> /dev/null || id -u): it pins the wallet, so it must be owned by root and only readable by the (unprivileged) user running ccs-bash"
@@ -21,9 +20,8 @@ load_config() {
     [[ $MIN_CONFIRMATIONS =~ ^[0-9]+$ ]] || die "MIN_CONFIRMATIONS must be a number"
 }
 
-# atomic_write FILE COMMAND...: replace FILE with what COMMAND prints, only if it succeeds
-# and prints something. Written to a temp file, flushed to disk, then renamed, so readers
-# never see half a file and a failed or killed command leaves the old one in place.
+# atomic_write FILE COMMAND...: replace FILE with COMMAND's output if it succeeds and prints
+# something (temp file, sync, rename: never half a file, a failure keeps the old one).
 atomic_write() {
     local out=$1 tmp
     shift
@@ -37,9 +35,8 @@ atomic_write() {
     return 1
 }
 
-# Filenames come from the repo and from GitLab MRs, so only accept plain
-# names: no directories, no control characters, no hidden files, and no backslash
-# (some steps pass names through jq's @tsv, which would double it).
+# Filenames come from the repo and GitLab: plain names only. No directories, control
+# characters, hidden files or backslashes (jq's @tsv would double them).
 safe_filename() {
     [[ $1 == *.md && $1 != .* && $1 != */* && $1 != *[[:cntrl:]]* && $1 != *\\* ]]
 }

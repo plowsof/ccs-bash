@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
-# update-keys.sh: refresh stagex-keys.asc, the public keys of StageX's maintainers, which
-# verify-images.sh checks the image signatures against. The fingerprints come from the
-# MAINTAINERS file in StageX's own repo, the keys from keys.openpgp.org by fingerprint.
-# Review the diff before committing it: a new fingerprint is a new person trusted to sign.
+# update-keys.sh: refresh stagex-keys.asc, StageX maintainers' keys (fingerprints from their
+# MAINTAINERS, keys from keys.openpgp.org). A new fingerprint in the diff is a new signer.
 set -euo pipefail
 here=$(dirname "$(readlink -f "$0")")
 tmp=$(mktemp -d)
