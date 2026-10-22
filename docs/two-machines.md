@@ -5,6 +5,12 @@ JSON. Running them apart keeps the wallet machine free of any incoming connectio
 each run it pushes `OUTPUT_DIR` to the web server, and the web server can only receive
 those files, into one folder, and never connect back.
 
+| | ccs-bash machine (the backend) | web server |
+|---|---|---|
+| Has | the wallet, ccs-bash (A or B), a proposals checkout, the state file | ccs-front with its own proposals checkout, nginx, the `ccs-data` account below |
+| Setup | [setup](setup.md) steps 1–3 and 7 as written, step 6 with the push below | steps 4 and 5 with `/var/lib/ccs-data`, as below |
+| The image (B) | goes here only, any way from [setup](setup.md) step 3, ID checked here | not needed: no Docker, no ccs-bash |
+
 On the **web server** (ccs-front), create an account that can only receive the files, with
 `rrsync` (shipped with Debian's rsync, 3.2.4 or newer for `-wo`). rrsync is a Python script
 and Debian's rsync only suggests Python, so install both: `apt install rsync python3`.
