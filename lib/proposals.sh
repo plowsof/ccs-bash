@@ -14,7 +14,7 @@ read_proposals() {
             title: .[2],
             author: .[3],
             ts: (if .[4] == "" then 0 else .[4] | split(" ") | map(tonumber) | .[1] -= 1 | . + [0, 0, 0, 0, 0] | mktime end),
-            amount: (.[5] | tonumber),
+            amount: .[5],
             gitlab_url: (if .[6] == "" then null else .[6] end),
             milestones: (.[7] | tonumber),
             done: (.[8] | tonumber)

@@ -5,7 +5,8 @@
     {"txid": "t2", "amount": 250000000000, "confirmations": 10, "unlock_time": 0, "subaddr_index": {"major": 0, "minor": 1}},
     {"txid": "t3", "amount": 5000000000000, "confirmations": 9, "unlock_time": 0, "subaddr_index": {"major": 0, "minor": 1}},
     {"txid": "t4", "amount": 7000000000000, "confirmations": 99, "unlock_time": 3000000, "subaddr_index": {"major": 0, "minor": 1}},
-    {"txid": "t5", "amount": 123456789012, "confirmations": 20, "unlock_time": 0, "subaddr_index": {"major": 0, "minor": 2}}
+    {"txid": "t5", "amount": 123456789012, "confirmations": 20, "unlock_time": 0, "subaddr_index": {"major": 0, "minor": 2}},
+    {"txid": "t7", "amount": 99999960000000, "confirmations": 30, "unlock_time": 0, "subaddr_index": {"major": 0, "minor": 4}}
   ],
   "pool": [
     {"txid": "t6", "amount": 9000000000000, "unlock_time": 0, "subaddr_index": {"major": 0, "minor": 1}}

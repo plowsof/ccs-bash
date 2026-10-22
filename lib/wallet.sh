@@ -48,23 +48,91 @@ assign_addresses() {
         .[] | select(.layout == "fr") | .file | select($state[0][.] and $state[0][.].address == null)' "$WORK/props.json")
 }
 
-# Print donations per subaddress, in atomic units:
-#   {"<index>": {"confirmed": N, "pending": N, "count": N}}
+# Money is only ever added up and converted in bash, with 64-bit integers in
+# atomic units (1 XMR = 1e12), so it is exact up to 9.2 million XMR. jq has
+# only doubles: it would round sums above ~9007 XMR, and dividing by 1e12 gives
+# numbers like 1.23449999.. that come out a unit short when cut to 4 decimals.
+
+# Atomic units -> XMR, cut off (not rounded) at 4 decimals: 99999960000000 -> 99.9999.
+# Never shows more than there is.
+xmr4() {
+    printf '%d.%04d' $(($1 / 1000000000000)) $(($1 % 1000000000000 / 100000000))
+}
+
+# Same, without trailing zeros (14.0000 -> 14, 0.1200 -> 0.12), for amounts that
+# go into the JSON as numbers: jq 1.7 keeps a number's text as written, jq 1.6
+# does not, so only this form prints the same with both.
+xmr4_number() {
+    local x
+    x=$(xmr4 "$1")
+    while [[ $x == *.*0 ]]; do x=${x%0}; done
+    printf '%s' "${x%.}"
+}
+
+# XMR as written in a proposal ("240.12021", "85") -> atomic units, from the text.
+to_atomic() {
+    local whole=${1%%.*} frac=
+    [[ $1 == *.* ]] && frac=${1#*.}
+    frac=${frac}000000000000
+    printf '%d' $((10#$whole * 1000000000000 + 10#${frac:0:12}))
+}
+
+# Print donations per subaddress, in atomic units, one line each:
+#   index <TAB> confirmed <TAB> pending <TAB> count
 # A tx is confirmed once it has MIN_CONFIRMATIONS; until then (pool included)
 # it is pending. count is every tx, pending or not.
 # Time-locked txes (unlock_time set) are never counted.
 donation_totals() {
-    rpc get_transfers '{"in": true, "pool": true, "account_index": 0}' | jq --argjson min "$MIN_CONFIRMATIONS" '
-        def sum: map(.amount) | add // 0;
+    local transfers lines idx confs amount
+    local -A confirmed=() pending=() count=()
+    transfers=$(rpc get_transfers '{"in": true, "pool": true, "account_index": 0}') || return 1
+    # jq only passes each amount through. Above 2^53 it could not even read it
+    # exactly, so it stops the run instead.
+    lines=$(jq -r '
         (.in // []) + (.pool // [])
         | map(select((.unlock_time // 0) == 0))
         | unique_by([.txid, .subaddr_index.minor])
-        | group_by(.subaddr_index.minor)
-        | map({key: (.[0].subaddr_index.minor | tostring), value: {
-            confirmed: (map(select((.confirmations // 0) >= $min)) | sum),
-            pending: (map(select((.confirmations // 0) < $min)) | sum),
-            count: length}})
-        | from_entries'
+        | .[]
+        | if .amount > 9007199254740992 then error("amount \(.amount) is too large for jq to read exactly") else . end
+        | "\(.subaddr_index.minor) \(.confirmations // 0) \(.amount)"' <<<"$transfers") || return 1
+    while read -r idx confs amount; do
+        [[ -n $idx ]] || continue # no transfers at all
+        [[ $amount =~ ^[0-9]+$ ]] || die "unexpected amount from wallet: $amount"
+        if ((confs >= MIN_CONFIRMATIONS)); then
+            confirmed[$idx]=$((${confirmed[$idx]:-0} + amount))
+        else
+            pending[$idx]=$((${pending[$idx]:-0} + amount))
+        fi
+        count[$idx]=$((${count[$idx]:-0} + 1))
+    done <<<"$lines"
+    for idx in "${!count[@]}"; do
+        printf '%s\t%s\t%s\t%s\n' "$idx" "${confirmed[$idx]:-0}" "${pending[$idx]:-0}" "${count[$idx]}"
+    done
+}
+
+# Print every proposal's money, ready to show: {"file.md": {amount, raised,
+# pending, count, percentage}}. amount and raised are "0.0000" strings, pending
+# a number (ccs-front compares it with 0). The percentage is rounded down, so
+# 100% means the target was really reached.
+proposal_funds() {
+    local idx c p n file amount target raised pct
+    local -A conf=() pend=() cnt=()
+    while IFS=$'\t' read -r idx c p n; do
+        conf[$idx]=$c pend[$idx]=$p cnt[$idx]=$n
+    done < "$WORK/totals.tsv"
+    jq -r --slurpfile state "$WORK/state.json" \
+        '.[] | [.file, .amount, ($state[0][.file].subaddr_index // -1)] | @tsv' "$WORK/props.json" |
+        while IFS=$'\t' read -r file amount idx; do
+            target=$(to_atomic "$amount")
+            raised=${conf[$idx]:-0}
+            pct=0
+            ((target > 0)) && pct=$((raised * 100 / target))
+            ((pct > 100)) && pct=100
+            printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$file" "$(xmr4 "$target")" "$(xmr4 "$raised")" \
+                "$(xmr4_number "${pend[$idx]:-0}")" "${cnt[$idx]:-0}" "$pct"
+        done | jq -R -s 'split("\n") | map(select(. != "") | split("\t") | {key: .[0], value: {
+            amount: .[1], raised: .[2], pending: (.[3] | tonumber), count: (.[4] | tonumber), percentage: (.[5] | tonumber)
+        }}) | from_entries'
 }
 
 # Print {"<index>": "<base64 png>"} for every address in the state.

@@ -44,7 +44,7 @@ build_site() {
     for out in proposals completed-proposals projects; do
         jq -n --indent 4 --arg out "$out" \
             --slurpfile props "$WORK/props.json" --slurpfile state "$WORK/state.json" \
-            --slurpfile totals "$WORK/totals.json" --slurpfile qr "$WORK/qr.json" \
+            --slurpfile funds "$WORK/funds.json" --slurpfile qr "$WORK/qr.json" \
             --slurpfile ideas "$WORK/ideas.json" -f "$CCS_LIB/site.jq" |
             atomic_write "$OUTPUT_DIR/$out.json"
     done
@@ -64,7 +64,8 @@ main() {
     record_new_proposals
     check_wallet_addresses
     assign_addresses
-    donation_totals > "$WORK/totals.json"
+    donation_totals > "$WORK/totals.tsv"
+    proposal_funds > "$WORK/funds.json"
     qr_codes > "$WORK/qr.json"
     if ! ideas > "$WORK/ideas.json"; then
         log "warning: could not fetch ideas from GitLab, keeping the previous list"
