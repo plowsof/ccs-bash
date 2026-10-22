@@ -248,6 +248,19 @@ machine. For two machines see [ccs-front on another machine](#ccs-front-on-anoth
    /opt/ccs-bash/container/build.sh
    ```
 
+   Or pull a release. For every `v*` tag, CI builds the image, checks it the same way, pushes
+   it to ghcr.io and puts its digest and image ID in the release notes. Pull it by digest, not
+   by tag (a tag can be moved), and check the ID:
+
+   ```
+   docker pull ghcr.io/plowsof/ccs-bash@sha256:<digest from the release notes>
+   docker tag ghcr.io/plowsof/ccs-bash@sha256:<digest> ccs-bash
+   docker image inspect ccs-bash --format '{{.Id}}'   # must be the release's image ID
+   ```
+
+   The ID is also what `container/build.sh` gives for that tag, so anyone can check that the
+   published image is the tagged code.
+
    ```
    #!/bin/sh
    # /usr/local/bin/ccs-bash-run: one ccs-bash run, in the pinned container, as the ccs user.

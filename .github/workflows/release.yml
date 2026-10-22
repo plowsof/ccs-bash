@@ -1,0 +1,45 @@
+name: release
+# On a pushed tag v*: build the pinned image, test it, check two clean builds give the same
+# hash, push it to ghcr.io/<owner>/ccs-bash:<tag> and make a GitHub release with both hashes.
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write   # the GitHub release
+  packages: write   # ghcr.io
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, pinned by commit
+      - name: build (download, then install offline)
+        run: container/build.sh ccs-bash
+      - name: tests inside the image, no network
+        run: docker run --rm --network none --read-only --tmpfs /tmp -v "$PWD:/src:ro" --entrypoint bash ccs-bash /src/tests/run.sh
+      - name: pinned image hash (two clean builds from separate clones, same hash)
+        run: container/check-pinned.sh
+      - name: push to ghcr.io and make the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          image=ghcr.io/${GITHUB_REPOSITORY,,}
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker tag ccs-bash "$image:$TAG"
+          docker push -q "$image:$TAG"
+          id=$(docker image inspect ccs-bash --format '{{.Id}}')
+          digest=$(docker image inspect "$image:$TAG" --format '{{index .RepoDigests 0}}')
+          gh release create "$TAG" --verify-tag --title "$TAG" --notes "$(cat <<EOF
+          Image, pulled by its digest (a tag can be moved, a digest can't):
+
+          \`\`\`
+          docker pull $digest
+          \`\`\`
+
+          Image ID: \`$id\`
+
+          After pulling, \`docker image inspect $digest --format '{{.Id}}'\` must print that ID.
+          It is also what building this tag yourself gives (\`container/build.sh\`), so you can
+          check that this image is the code in this tag instead of trusting this build.
+          EOF
+          )"
