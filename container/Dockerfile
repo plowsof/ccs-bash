@@ -2,7 +2,7 @@
 # The base image is pinned by digest (base-image), the .deb files are the ones in
 # deps.lock, fetched beforehand by fetch.sh and checked again below.
 #
-# Reproducible: the same commit gives the same image hash. build.sh passes the commit's
+# A pinned image: the same commit gives the same image hash. build.sh passes the commit's
 # time as SOURCE_DATE_EPOCH; every file time after it is set to it, the logs and caches
 # that record when the build ran are removed, and the result is copied into an empty
 # image as one layer, so no layer holds the time of the build. There is no user account
