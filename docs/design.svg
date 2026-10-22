@@ -63,10 +63,10 @@
   <rect x="520" y="420" width="6" height="86" rx="3" fill="#16a34a"/>
 
   <g text-anchor="middle">
-    <text x="627" y="180" font-size="15" font-weight="700" fill="#0f172a">templates/</text>
-    <text x="627" y="200" font-size="12.5" fill="#475569">plain HTML with markers,</text>
-    <text x="627" y="217" font-size="12.5" fill="#475569">from the offline build</text>
-    <text x="627" y="237" font-size="11.5" font-weight="600" fill="#64748b">FILES, NOT A PROGRAM</text>
+    <text x="627" y="180" font-size="15" font-weight="700" fill="#0f172a">site-original/</text>
+    <text x="627" y="200" font-size="12.5" fill="#475569">the framework's built site,</text>
+    <text x="627" y="217" font-size="12.5" fill="#475569">HTML with markers</text>
+    <text x="627" y="237" font-size="11.5" font-weight="600" fill="#7c3aed">NEVER MODIFIED</text>
 
     <text x="367" y="310" font-size="15" font-weight="700" fill="#0f172a">ccs-bash</text>
     <text x="367" y="330" font-size="12.5" fill="#475569">totals, addresses, ideas</text>
@@ -74,8 +74,8 @@
     <text x="367" y="367" font-size="11.5" font-weight="600" fill="#16a34a">EVERY 2 MIN OR ON A TX</text>
 
     <text x="627" y="310" font-size="15" font-weight="700" fill="#0f172a">ccs-front-bash</text>
-    <text x="627" y="330" font-size="12.5" fill="#475569">Markdown → HTML, lists,</text>
-    <text x="627" y="347" font-size="12.5" fill="#475569">donation boxes, QR codes</text>
+    <text x="627" y="330" font-size="12.5" fill="#475569">copies the original, string-</text>
+    <text x="627" y="347" font-size="12.5" fill="#475569">replaces between markers</text>
     <text x="627" y="367" font-size="11.5" font-weight="600" fill="#16a34a">EVERY RUN · BASH, AWK, JQ</text>
 
     <text x="367" y="452" font-size="15" font-weight="700" fill="#0f172a">monero-wallet-rpc</text>
@@ -83,8 +83,8 @@
     <text x="367" y="489" font-size="12.5" fill="#475569">127.0.0.1 only</text>
 
     <text x="650" y="452" font-size="15" font-weight="700" fill="#0f172a">site/</text>
-    <text x="627" y="472" font-size="12.5" fill="#475569">the complete static site,</text>
-    <text x="627" y="489" font-size="12.5" fill="#475569">new copy each run</text>
+    <text x="627" y="472" font-size="12.5" fill="#475569">lists, amounts, QR codes,</text>
+    <text x="627" y="489" font-size="12.5" fill="#475569">new pages; fresh each run</text>
   </g>
   <!-- folder icon -->
   <path d="M588,439 h10 l3,4 h15 v14 h-28 z" fill="#16a34a" opacity="0.85"/>
@@ -158,8 +158,8 @@
   <!-- offline front-end build: outside, above the backend; drawn last so the arrow is on top -->
   <rect x="455" y="80" width="340" height="92" rx="12" fill="#f5f0ff" stroke="#7c3aed" stroke-width="2" stroke-dasharray="6 4" filter="url(#sh)"/>
   <text x="625" y="104" text-anchor="middle" font-size="15" font-weight="700" fill="#0f172a">Front-end build (offline)</text>
-  <text x="625" y="123" text-anchor="middle" font-size="12.5" fill="#475569">the only place Jekyll, Astro or npm live: they make</text>
-  <text x="625" y="140" text-anchor="middle" font-size="12.5" fill="#475569">templates/ on a machine that is never live</text>
+  <text x="625" y="123" text-anchor="middle" font-size="12.5" fill="#475569">the only place Jekyll, Astro or npm live: they build</text>
+  <text x="625" y="140" text-anchor="middle" font-size="12.5" fill="#475569">the site once, on a machine that is never live</text>
   <text x="625" y="161" text-anchor="middle" font-size="11.5" font-weight="600" fill="#7c3aed">ONCE PER DESIGN CHANGE</text>
   <path d="M625,172 V261" fill="none" stroke="#7c3aed" stroke-width="2.5" stroke-dasharray="6 4" marker-end="url(#p)"/>
   <g transform="translate(372,180)">

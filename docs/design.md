@@ -25,15 +25,15 @@ so that is the machine to keep smallest.
 ## The parts
 
 **Front-end build** (offline, never live): the only place Jekyll, Astro or npm run. The site's
-design is built here into `templates/`, once per design change, and carried to the backend
-once, as a signed git commit whose hash is checked there. Nothing here runs while the CCS does.
+site is built here once per design change, with markers where content goes, and carried to
+the backend as `site-original/` in a signed git commit whose hash is checked there. Nothing here runs while the CCS does.
 
 **Backend** (no inbound connections; only outgoing to GitLab and monerod):
 
 - **monero-wallet-rpc**, view-only, its own user, on 127.0.0.1.
 - **ccs-bash**: data only, the JSON and the state file, every 2 minutes or on a new tx.
-- **ccs-front-bash**: everything a visitor sees, from `templates/`, the proposals' `.md`
-  files and ccs-bash's JSON:
+- **ccs-front-bash**: every run, copies `site-original/` to a fresh `site/` and string-replaces
+  between the markers, from the proposals' `.md` files and ccs-bash's JSON:
   - proposal pages: Markdown → HTML, re-rendered only when a `.md` file changes;
   - every run: the Ideas, Funding Required, Work in Progress and Completed lists, and each
     proposal's donation box (raised, goal, percentage, contributors, pending, address, QR code).
@@ -49,8 +49,10 @@ finished pages means a page changed on the web server is overwritten on the next
 
 ## ccs-front-bash
 
-**Templates:** plain HTML files with markers where content goes, made by the offline
-front-end build (from ccs-front's layouts today, or Astro's output) and kept in git:
+**The original:** the framework's built site (Jekyll from ccs-front's layouts today, or
+Astro), with markers where content goes. It is never modified: each run starts again from it,
+so the output depends only on the original and today's data, a bad run can't build on a bad
+one, and a new proposal's page is a copy of the original's proposal page.
 
 ```html
 <!-- ccs:fr-list -->…<!-- /ccs:fr-list -->
@@ -84,7 +86,7 @@ development machine.
 ## Getting there
 
 1. **Today:** ccs-bash pushes JSON; the web server runs Jekyll ([two machines](two-machines.md)).
-2. **ccs-front-bash:** templates, the lists and donation boxes, QR codes, and the Markdown
+2. **ccs-front-bash:** markers in the built site, the lists and donation boxes, QR codes, the Markdown
    renderer; push the whole site. The web server becomes nginx only and Jekyll is gone.
 3. **ccs-bash data only:** drop `donate-qr-code` from its JSON.
 
@@ -92,6 +94,6 @@ development machine.
 
 - **Images:** 12 proposals embed images from other sites, which tells those sites who is
   reading. Show them as links instead, or copy them in when a proposal is merged?
-- **Templates:** which framework the offline build uses, and who signs the template commits.
+- **The original:** which framework builds it, and who signs its commits.
 - **Watching the site:** with every page coming from the backend, a checker can compare the
   live site with what was pushed, byte for byte (the README's to-do).
