@@ -1,78 +1,66 @@
 # ccs-front on another machine
 
-ccs-bash only needs the proposals repo, GitLab and the wallet; ccs-front only needs the
-JSON. Running them apart keeps the wallet machine free of any incoming connection: after
-each run it pushes `OUTPUT_DIR` to the web server, and the web server can only receive
-those files, into one folder, and never connect back.
+The wallet machine then takes no incoming connections: after each run it pushes the output
+to the web server, which can only receive those files into one folder.
 
-| | ccs-bash machine (the backend) | web server |
+| | ccs-bash machine | web server |
 |---|---|---|
-| Has | the wallet, ccs-bash (A or B), a proposals checkout, the state file | ccs-front with its own proposals checkout, nginx, the `ccs-data` account below |
-| Setup | [setup](setup.md) steps 1–3 and 7 as written, step 6 with the push below | steps 4 and 5 with `/var/lib/ccs-data`, as below |
-| The image (B) | goes here only, any way from [setup](setup.md) step 3, ID checked here | not needed: no Docker, no ccs-bash |
+| Has | the wallet, ccs-bash (A or B), proposals checkout, state file | ccs-front with its own proposals checkout, nginx, `ccs-data` |
+| Setup | [setup](setup.md) steps 1–3 and 7; step 6 with the push below | steps 4 and 5 with `/var/lib/ccs-data` |
+| The image (B) | here only, ID checked here | no Docker needed |
 
-On the **web server** (ccs-front), create an account that can only receive the files, with
-`rrsync` (shipped with Debian's rsync, 3.2.4 or newer for `-wo`). rrsync is a Python script
-and Debian's rsync only suggests Python, so install both: `apt install rsync python3`.
+**Web server:** an account that can only receive, with `rrsync` (rsync 3.2.4+;
+`apt install rsync python3`):
 
 ```
-useradd --system --create-home --shell /bin/sh ccs-data   # no password; the shell only runs the forced command
-install -d -o ccs-data -m 755 /var/lib/ccs-data           # ideally a small filesystem of its own (or a quota)
-install -d -m 755 ~ccs-data/.ssh                          # owned by root: the account can't change its own key
-# ~ccs-data/.ssh/authorized_keys, owned by root, mode 644, one line with the key from the ccs-bash machine:
+useradd --system --create-home --shell /bin/sh ccs-data   # no password; only the forced command runs
+install -d -o ccs-data -m 755 /var/lib/ccs-data           # ideally its own small filesystem or a quota
+install -d -m 755 ~ccs-data/.ssh                          # root-owned: the account can't change its key
+# ~ccs-data/.ssh/authorized_keys (root, 644):
 from="<wallet machine IP>",command="rrsync -wo -no-del -munge /var/lib/ccs-data",restrict ssh-ed25519 AAAA... ccs-bash
 ```
 
-What each part stops, if the key or the wallet machine is ever taken over:
-
-| | |
+| If the key is stolen, this stops | |
 |---|---|
-| `restrict` | shells, port forwarding, agent forwarding, a terminal |
-| `-wo` | reading anything back, writing outside `/var/lib/ccs-data` |
-| `-no-del` | deleting files |
-| `-munge` | uploaded symlinks working: without it, a link named `projects.json` pointing at any readable file would get that file published by nginx |
-| `from=` | using the key from anywhere but the wallet machine |
-| root-owned `.ssh` | the account loosening its own key line |
-| own filesystem / quota | filling the web server's disk |
+| `restrict` | shells, forwarding, a terminal |
+| `-wo` | reading back, writing outside the folder |
+| `-no-del` | deleting |
+| `-munge` | symlinks (a `projects.json` link to any file would get nginx to publish it) |
+| `from=` | use from another machine |
+| root-owned `.ssh` | loosening the key line |
+| own filesystem / quota | filling the disk |
 
-Then, as in [setup](setup.md) steps 4 and 5 but with this folder, use `/var/lib/ccs-data` as ccs-front's
-`_data` (and for `/projects`, adding `disable_symlinks on;` to that nginx block).
-ccs-front keeps its own checkout of the proposals repo for the proposal pages, and its own cron:
+Use `/var/lib/ccs-data` as ccs-front's `_data` (setup steps 4–5; add `disable_symlinks on;` to
+the `/projects` block). ccs-front pulls its own proposals:
 
 ```
 */2 * * * * git -C /opt/ccs-front/proposals pull -q --ff-only ; cd /opt/ccs-front && jekyll build -q
 ```
 
-On the **ccs-bash machine**, give the `ccs` user a key, trust exactly the web server's host
-key (copied from its `/etc/ssh/ssh_host_ed25519_key.pub`, not accepted on first connect),
-and push after each run:
+**ccs-bash machine:** a key for `ccs`, and the web server's host key from its
+`/etc/ssh/ssh_host_ed25519_key.pub` (not accepted on first connect):
 
 ```
 install -d -o ccs -g ccs -m 700 /var/lib/ccs/.ssh
 runuser -u ccs -- ssh-keygen -t ed25519 -N '' -f /var/lib/ccs/.ssh/id_ed25519
-echo "<web server> ssh-ed25519 AAAA..." > /var/lib/ccs/.ssh/known_hosts    # the web server's host key
+echo "<web server> ssh-ed25519 AAAA..." > /var/lib/ccs/.ssh/known_hosts
 ```
 
-`ccs-bash-update` ([setup](setup.md) step 6) then pushes instead of building the site:
+`ccs-bash-update` (step 6) pushes instead of building; `--delay-updates` swaps the files in
+only once all have arrived:
 
 ```
 #!/bin/sh
-# /usr/local/bin/ccs-bash-update (chmod 755): one update, pushed to the web server
+# /usr/local/bin/ccs-bash-update (chmod 755)
 timeout -k 5 40 git -C /var/lib/ccs/proposals pull -q --ff-only
 { ccs-bash-run && runuser -u ccs -- rsync -a --delay-updates \
     -e "ssh -o BatchMode=yes -o StrictHostKeyChecking=yes" /var/lib/ccs/out/ ccs-data@<web server>: ; } >> /var/log/ccs-bash.log 2>&1
 ```
 
-`--delay-updates` puts the new files in place only once all of them have arrived. Run it from
-cron or `notify-loop.sh`, as in [setup](setup.md) steps 6 and 7.
+`tests/rrsync.sh` builds this in containers and tries all of the above from the wallet
+machine's key (commands, forwarding, reading back, `..`, `--temp-dir`, `--backup-dir`,
+`--link-dest` and friends, deleting, symlinks, another machine): all refused. With rrsync
+alone (`--loose`) they get through, so the test does catch them.
 
-`tests/rrsync.sh` builds this setup in three containers (web server, wallet machine, another
-machine) and tries everything in the table above from the wallet machine's key: commands,
-port forwarding, reading back, `..` and absolute paths, `--temp-dir`, `--partial-dir`,
-`--backup-dir`, `--log-file`, `--link-dest`, `--copy-dest`, `--compare-dest`, deleting,
-symlinks, and the key from another machine. All are refused or stay inside the folder.
-With `--loose` (rrsync alone, without the other restrictions) those checks fail, so the test
-does catch them.
-
-This can't stop a taken-over wallet machine from pushing false JSON (it is the source of the
-data), and the web server stays the place to guard, see [Security](../README.md#security).
+A taken-over wallet machine can still push false JSON, and the web server stays the place to
+guard ([Security](../README.md#security)).
