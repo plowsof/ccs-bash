@@ -123,8 +123,8 @@ or wrong, runs stop rather than hand out new addresses (see
 
 | | A) packages on the host | B) the pinned container |
 |---|---|---|
-| ccs-bash's tools come from | Debian's packages, as installed today | [StageX](https://stagex.tools) packages, built from source, pinned by digest; busybox and qrencode built from pinned source here |
-| The host needs | the packages in [Dependencies](docs/setup.md#dependencies) | Docker (with buildx) and `git` |
+| ccs-bash's tools come from | Debian's packages, as installed today | [StageX](https://stagex.tools) packages, built from source, pinned by digest, signatures checked; busybox and qrencode built from pinned source here, with StageX's BuildKit |
+| The host needs | the packages in [Dependencies](docs/setup.md#dependencies) | Docker (with buildx) and `git`; `gpg` and `jq` where the image is built |
 | Updates | `apt upgrade` | change the pin and rebuild (see [Changing the pin](docs/image.md#changing-the-pin)) |
 
 Both run the same scripts with the same config and folders, so you can switch between them.
@@ -142,8 +142,6 @@ and checked: [The pinned image](docs/image.md)). [Setup](docs/setup.md) step 3 h
 
 ## To do
 
-- **Check StageX's signatures.** The images are pinned by digest; checking them against the
-  signatures StageX's maintainers publish for each release would show the digests are theirs.
 - **Watch the live site.** Fetch the published pages and check that every donation address
   (and QR code) on them matches the state file, to notice a changed web server within minutes.
 
@@ -153,5 +151,5 @@ and checked: [The pinned image](docs/image.md)). [Setup](docs/setup.md) step 3 h
 tests/run.sh             # end-to-end run on tests/fixtures with a fake wallet and GitLab
 UPDATE=1 tests/run.sh    # rewrite tests/expected after an intended change, then check the diff
 tests/rrsync.sh          # the two-machine rrsync setup (docs/two-machines.md), attacked from the wallet machine (docker)
-shellcheck -x ccs-back.sh notify-loop.sh lib/*.sh tests/*.sh
+shellcheck -x ccs-back.sh notify-loop.sh lib/*.sh tests/*.sh container/*.sh
 ```
