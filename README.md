@@ -103,7 +103,21 @@ An older `proposals.tsv` converts with `jq -rR 'split("\t") | @csv' proposals.ts
 This file says which subaddress belongs to which proposal, so **back it up**.
 The wallet can always be restored from its keys; this file cannot be recreated.
 
+## Two ways to run it
+
+| | A) packages on the host | B) the pinned container |
+|---|---|---|
+| ccs-bash's tools come from | Debian's packages, as installed today | `container/deps.lock`: exact files, sha256-checked, installed offline |
+| The host needs | the packages below | Docker and `git` |
+| Updates | `apt upgrade` | change the pin and rebuild (see [Changing the pin](#changing-the-pin)) |
+
+Both run the same scripts with the same config and folders, so you can switch between them.
+B is the one to use where the supply chain matters: what runs is exactly what the lock file
+says, and nothing can be installed into it.
+
 ## Dependencies
+
+**A) Packages on the host:**
 
 ```
 apt install bash coreutils findutils mawk util-linux curl ca-certificates jq qrencode git logrotate
@@ -124,9 +138,24 @@ apt install bash coreutils findutils mawk util-linux curl ca-certificates jq qre
 | `logrotate` | rotating `/var/log/ccs-bash.log` | optional |
 | `rsync`, `openssh-client` | pushing the output to ccs-front | only when ccs-front is on another machine |
 
-Not from Debian: `monero-wallet-rpc` (from [getmonero.org](https://www.getmonero.org/downloads/)).
-The tests need nothing extra, except `zbar-tools` (`zbarimg`) for the one test that reads
-real QR codes back; it is skipped without it, but required in CI.
+
+**B) The container:** the host needs Docker, `git` (for the proposals checkout), optionally
+`logrotate`, and `rsync` + `openssh-client` if ccs-front is on another machine. Everything
+ccs-bash itself uses (curl, ca-certificates, jq, qrencode, and their libraries: 24 files)
+is pinned in `container/deps.lock` and only ever inside the image. The image is built in two
+steps by `container/build.sh`:
+
+1. **Download** (network): the Debian base image by digest (`container/base-image`), and the
+   exact `.deb` files in `container/deps.lock`, each with its sha256 and several urls
+   (snapshot.debian.org, which keeps every version, plus at least 2 mirrors). `fetch.sh` uses
+   plain curl and keeps a file only if its sha256 matches; no apt.
+2. **Install** (no network): `docker build --network none`. The Dockerfile checks every file
+   against the lock again and installs them with `dpkg -i`. Nothing can be fetched.
+
+Either way, not from Debian: `monero-wallet-rpc` (from
+[getmonero.org](https://www.getmonero.org/downloads/)). The tests need nothing extra, except
+`zbar-tools` (`zbarimg`) for the one test that reads real QR codes back; it is skipped
+without it, but required in CI.
 
 ccs-bash doesn't use Jekyll or Markdown: it only reads the proposals' frontmatter and writes
 JSON. Turning that and the proposal text into the website is ccs-front's job, so the
@@ -134,9 +163,9 @@ JSON. Turning that and the proposal text into the website is ccs-front's job, so
 
 ## Setup
 
-ccs-bash and ccs-front can run on the same machine or on separate ones. Steps 1 and 2 are
-the same either way; steps 3 to 5 are for one machine. For two machines see
-[ccs-front on another machine](#ccs-front-on-another-machine) instead.
+ccs-bash and ccs-front can run on the same machine or on separate ones. Steps 1 to 3 are
+the same either way, and the same for A and B except where marked; steps 4 to 6 are for one
+machine. For two machines see [ccs-front on another machine](#ccs-front-on-another-machine).
 
 1. Run a view-only wallet with monero-wallet-rpc, bound to localhost, with a login:
 
@@ -148,7 +177,7 @@ the same either way; steps 3 to 5 are for one machine. For two machines see
 
    It only holds the view key, so it cannot spend. If it leaks, the cost is donation privacy.
    With `--disable-rpc-login`, leave `RPC_USER` empty.
-   `--tx-notify` is optional: it runs a script on each incoming tx (see step 5).
+   `--tx-notify` is optional: it runs a script on each incoming tx (see step 6).
 
 2. Create a user and the directories. The user must be able to read the proposals checkout,
    so keep it outside `/root`:
@@ -166,8 +195,50 @@ the same either way; steps 3 to 5 are for one machine. For two machines see
    (or from `monero-wallet-cli` with the view key: `address`). It's what every run checks the
    wallet against, so take it from somewhere you trust, not just from the running wallet-rpc.
 
-3. Point ccs-front at the output (same machine). `OUTPUT_DIR` is laid out like ccs-front's `_data` directory,
-   so link or mount the **directories**:
+3. Install ccs-bash, and `/usr/local/bin/ccs-bash-run`, which does one run. Everything
+   below (cron, `--tx-notify`, moving from ccs-back) only calls `ccs-bash-run`.
+
+   **A) on the host:**
+
+   ```
+   git clone https://github.com/plowsof/ccs-bash /opt/ccs-bash
+   ```
+
+   ```
+   #!/bin/sh
+   # /usr/local/bin/ccs-bash-run: one ccs-bash run, as the ccs user
+   exec runuser -u ccs -- /opt/ccs-bash/ccs-back.sh /etc/ccs/ccs.conf
+   ```
+
+   **B) in the container:** build the image here, or build it elsewhere and copy it over
+   with `docker save ccs-bash | ssh <host> docker load`:
+
+   ```
+   git clone https://github.com/plowsof/ccs-bash /opt/ccs-bash
+   /opt/ccs-bash/container/build.sh
+   ```
+
+   ```
+   #!/bin/sh
+   # /usr/local/bin/ccs-bash-run: one ccs-bash run, in the pinned container, as the ccs user.
+   # Read-only, no capabilities; only the folders from the config are mounted, at the same
+   # paths. --network host lets it reach wallet-rpc on 127.0.0.1 without opening the wallet
+   # to the docker network.
+   exec docker run --rm --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges \
+       --network host --user "$(id -u ccs):$(id -g ccs)" \
+       -v /etc/ccs/ccs.conf:/etc/ccs/ccs.conf:ro \
+       -v /var/lib/ccs/proposals:/var/lib/ccs/proposals:ro \
+       -v /var/lib/ccs/state:/var/lib/ccs/state \
+       -v /var/lib/ccs/out:/var/lib/ccs/out \
+       ccs-bash
+   ```
+
+   Either way: `chmod 755 /usr/local/bin/ccs-bash-run`, then try it once with
+   `ccs-bash-run`. `--user` (B) and `runuser` (A) both make it the `ccs` user, so the
+   root-owned config stays read-only to it.
+
+4. Point ccs-front at the output (same machine). `OUTPUT_DIR` is laid out like ccs-front's
+   `_data` directory, so link or mount the **directories**:
 
    ```
    rm -rf ccs-front/_data ccs-front/proposals
@@ -185,7 +256,7 @@ the same either way; steps 3 to 5 are for one machine. For two machines see
    Don't bind mount the single JSON files. ccs-bash replaces them with `mv`, and a
    single-file bind mount keeps showing the old file forever.
 
-4. Optional `/projects` API, nginx:
+5. Optional `/projects` API, nginx:
 
    ```
    location = /projects {
@@ -194,10 +265,10 @@ the same either way; steps 3 to 5 are for one machine. For two machines see
    }
    ```
 
-5. Run it from root's cron, dropping to the `ccs` user for ccs-bash itself:
+6. Run it from root's cron:
 
    ```
-   */2 * * * * git -C /var/lib/ccs/proposals pull -q --ff-only ; runuser -u ccs -- /opt/ccs-bash/ccs-back.sh /etc/ccs/ccs.conf >> /var/log/ccs-bash.log 2>&1 ; cd /opt/ccs-front && jekyll build -q
+   */2 * * * * git -C /var/lib/ccs/proposals pull -q --ff-only ; ccs-bash-run >> /var/log/ccs-bash.log 2>&1 ; cd /opt/ccs-front && jekyll build -q
    ```
 
    Overlapping runs are skipped (`flock`). Files that fail to parse are logged on every run,
@@ -213,8 +284,13 @@ the same either way; steps 3 to 5 are for one machine. For two machines see
    }
    ```
 
-   For `--tx-notify`, write a script (e.g. `/usr/local/bin/ccs-notify`) with the same two
-   commands as the cron line: the `runuser ... ccs-back.sh` and the `jekyll build`.
+   For `--tx-notify`, `/usr/local/bin/ccs-notify` runs the same two things as the cron line:
+
+   ```
+   #!/bin/sh
+   ccs-bash-run >> /var/log/ccs-bash.log 2>&1
+   cd /opt/ccs-front && jekyll build -q
+   ```
 
 The first run on a fresh install looks up the merged MR of every proposal, which
 takes a few minutes. After that, only new proposals are looked up.
@@ -249,7 +325,7 @@ What each part stops, if the key or the wallet machine is ever taken over:
 | root-owned `.ssh` | the account loosening its own key line |
 | own filesystem / quota | filling the web server's disk |
 
-Then, as in step 3 and 4 but with this folder, use `/var/lib/ccs-data` as ccs-front's
+Then, as in steps 4 and 5 but with this folder, use `/var/lib/ccs-data` as ccs-front's
 `_data` (and for `/projects`, adding `disable_symlinks on;` to that nginx block).
 ccs-front keeps its own checkout of the proposals repo for the proposal pages, and its own cron:
 
@@ -266,47 +342,22 @@ install -d -o ccs -g ccs -m 700 /var/lib/ccs/.ssh
 runuser -u ccs -- ssh-keygen -t ed25519 -N '' -f /var/lib/ccs/.ssh/id_ed25519
 echo "<web server> ssh-ed25519 AAAA..." > /var/lib/ccs/.ssh/known_hosts    # the web server's host key
 
-*/2 * * * * git -C /var/lib/ccs/proposals pull -q --ff-only ; runuser -u ccs -- sh -c '/opt/ccs-bash/ccs-back.sh /etc/ccs/ccs.conf && rsync -a --delay-updates -e "ssh -o BatchMode=yes -o StrictHostKeyChecking=yes" /var/lib/ccs/out/ ccs-data@<web server>:' >> /var/log/ccs-bash.log 2>&1
+*/2 * * * * git -C /var/lib/ccs/proposals pull -q --ff-only ; { ccs-bash-run && runuser -u ccs -- rsync -a --delay-updates -e "ssh -o BatchMode=yes -o StrictHostKeyChecking=yes" /var/lib/ccs/out/ ccs-data@<web server>: ; } >> /var/log/ccs-bash.log 2>&1
 ```
 
 `--delay-updates` puts the new files in place only once all of them have arrived.
-For `--tx-notify`, use the same `runuser ...` command.
+For `--tx-notify`, use the same `ccs-bash-run && runuser -u ccs -- rsync ...`.
 
 This can't stop a taken-over wallet machine from pushing false JSON (it is the source of the
 data), and the web server stays the place to guard, see [Security](#security).
 
-### In a container (pinned, built offline)
+### Changing the pin
 
-`container/` builds an image whose every package is pinned, in two steps:
-
-1. **Download** (network): the Debian base image by digest (`container/base-image`), and the
-   exact `.deb` files listed in `container/deps.lock`, each with its sha256 and several urls
-   (snapshot.debian.org, which keeps every version, plus at least 2 mirrors). `fetch.sh` uses
-   plain curl and keeps a file only if its sha256 matches; no apt.
-2. **Install** (no network): `docker build --network none`. The Dockerfile checks every file
-   against the lock again and installs them with `dpkg -i`. Nothing can be fetched.
-
-```
-container/build.sh            # both steps; the image is called ccs-bash
-docker run --rm --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges \
-    --user "$(id -u ccs):$(id -g ccs)" \
-    -v /etc/ccs/ccs.conf:/etc/ccs/ccs.conf:ro \
-    -v /var/lib/ccs/proposals:/var/lib/ccs/proposals:ro \
-    -v /var/lib/ccs/state:/var/lib/ccs/state \
-    -v /var/lib/ccs/out:/var/lib/ccs/out \
-    ccs-bash
-```
-
-Use that `docker run` in the cron line instead of `runuser ... ccs-back.sh`. The paths inside
-are the ones in the config, so mount them at the same place. The container needs to reach the
-wallet: bind wallet-rpc to the docker bridge (e.g. `--rpc-bind-ip 172.17.0.1
---confirm-external-bind`, with a login) or add `--network host`. `--user` makes it the host's
-`ccs` user, so the root-owned config stays read-only to it.
-
-To change the pin (newer Debian packages, another base image, a package more or less), edit
-`container/snapshot`, `base-image` or `packages`, run `container/update-lock.sh`, and review
-the `deps.lock` diff before committing it. That is the only step that uses apt, in a throwaway
-container, to work out which files are needed.
+To use newer Debian packages, another base image, or a package more or less (B only): edit
+`container/snapshot`, `base-image` or `packages`, run `container/update-lock.sh`, review the
+`deps.lock` diff, commit it, and rebuild with `container/build.sh`. `update-lock.sh` is the only
+step that uses apt, in a throwaway container, to work out which files are needed. It also
+re-checks the mirrors: plain mirrors drop a version once Debian updates the package.
 
 ## Moving from ccs-back
 
@@ -337,16 +388,20 @@ container, to work out which files are needed.
 
    The date is exported as UTC, which is what ccs-back stores (Laravel's default timezone).
 
+   With the container (B), the host may not have jq; use the image's, with no network: in
+   either query, replace `jq -rR 'split("\t") | @csv'` with
+   `docker run --rm -i --network none --entrypoint jq ccs-bash -rR 'split("\t") | @csv'`.
+
    Raised amounts and deposits are not exported: ccs-bash recomputes them from the
    wallet's history, so the wallet must have the full history (the same wallet, or one
    restored from a height before the first donation).
 
-3. **Run ccs-bash next to ccs-back once** and compare the output (see below). While both
+3. **Run ccs-bash next to ccs-back once** (`ccs-bash-run`) and compare the output (see below). While both
    run, a funding-required proposal without an address would get a subaddress from each of
    them, so check there is none first, or stop ccs-back's cron before the first run.
 
-4. **Switch over:** replace ccs-back's cron line and `--tx-notify` script with ccs-bash's,
-   point ccs-front at the new output directories (setup steps 3 and 4), then stop the
+4. **Switch over:** replace ccs-back's cron line and `--tx-notify` script with ccs-bash's
+   (setup step 6), point ccs-front at the new output directories (setup steps 4 and 5), then stop the
    ccs-back and database containers or services. Keep them until you are happy, so going
    back is just restoring the cron line and starting them again.
 
