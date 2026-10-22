@@ -152,6 +152,11 @@ steps by `container/build.sh`:
 2. **Install** (no network): `docker build --network none`. The Dockerfile checks every file
    against the lock again and installs them with `dpkg -i`. Nothing can be fetched.
 
+The build is **reproducible**: the same commit always gives the same image hash, wherever
+and whenever it is built. `build.sh` prints it. So an image built elsewhere can be checked by
+building the same commit and comparing, and `container/check-reproducible.sh` does exactly
+that (two clean builds from separate clones), in CI on every push too.
+
 Either way, not from Debian: `monero-wallet-rpc` (from
 [getmonero.org](https://www.getmonero.org/downloads/)). The tests need nothing extra, except
 `zbar-tools` (`zbarimg`) for the one test that reads real QR codes back; it is skipped
@@ -211,7 +216,9 @@ machine. For two machines see [ccs-front on another machine](#ccs-front-on-anoth
    ```
 
    **B) in the container:** build the image here, or build it elsewhere and copy it over
-   with `docker save ccs-bash | ssh <host> docker load`:
+   with `docker save ccs-bash | ssh <host> docker load`. Either way, compare the image hash
+   (`docker image inspect ccs-bash --format '{{.Id}}'`) with your own build of the same commit,
+   or with the one CI printed for it:
 
    ```
    git clone https://github.com/plowsof/ccs-bash /opt/ccs-bash
