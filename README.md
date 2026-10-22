@@ -42,10 +42,10 @@ part was never the problem.) ccs-bash is about leaving as few ways in as possibl
   which only root can change; every subaddress must also match the state file. A swapped
   wallet stops the run instead of getting its addresses published, even if the state file
   (which the `ccs` user can write) was changed to match it.
-- **Checks the QR codes.** Every run reads each QR code back with `zbarimg` and compares it
-  with the address. A swapped image (which would send donors' money elsewhere while the
-  address shown as text still looks right) is logged and replaced; a new one that doesn't
-  read back correctly stops the run.
+- **QR codes made fresh.** Every run makes the QR codes again from the addresses and
+  never keeps them, so there is no stored image to swap for one with another address
+  (which would send donors' money elsewhere while the address shown as text still looks
+  right). CI reads qrencode's output back with a real decoder.
 - **Untrusted text stays text.** Proposal titles and MR names are HTML-escaped and only
   ever handled as data (no `eval`, every JSON value built by jq), filenames are checked.
 - **Can run apart from the website.** ccs-bash and ccs-front can be on
@@ -102,12 +102,11 @@ An older `proposals.tsv` converts with `jq -rR 'split("\t") | @csv' proposals.ts
 
 This file says which subaddress belongs to which proposal, so **back it up**.
 The wallet can always be restored from its keys; this file cannot be recreated.
-`STATE_DIR/qr/` only caches QR code images and can be deleted.
 
 ## Dependencies
 
 ```
-apt install bash coreutils findutils mawk util-linux curl ca-certificates jq qrencode zbar-tools git logrotate
+apt install bash coreutils findutils mawk util-linux curl ca-certificates jq qrencode git logrotate
 ```
 
 | Package | Used for | Notes |
@@ -121,13 +120,13 @@ apt install bash coreutils findutils mawk util-linux curl ca-certificates jq qre
 | `ca-certificates` | HTTPS to GitLab | curl only *recommends* it, so it is missing after `--no-install-recommends` |
 | `jq` | all JSON, the site output | 1.6 or newer; CI tests 1.6 and 1.7 |
 | `qrencode` | donation QR codes | often not installed (it wasn't on Ubuntu 22.04) |
-| `zbar-tools` | `zbarimg`, to read every QR code back and check it holds the right address | |
 | `git` | keeping the proposals checkout up to date (cron) | not used by `ccs-back.sh` itself |
 | `logrotate` | rotating `/var/log/ccs-bash.log` | optional |
 | `rsync`, `openssh-client` | pushing the output to ccs-front | only when ccs-front is on another machine |
 
 Not from Debian: `monero-wallet-rpc` (from [getmonero.org](https://www.getmonero.org/downloads/)).
-The tests need nothing extra.
+The tests need nothing extra, except `zbar-tools` (`zbarimg`) for the one test that reads
+real QR codes back; it is skipped without it, but required in CI.
 
 ccs-bash doesn't use Jekyll or Markdown: it only reads the proposals' frontmatter and writes
 JSON. Turning that and the proposal text into the website is ccs-front's job, so the
