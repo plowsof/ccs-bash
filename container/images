@@ -3,7 +3,6 @@
 toolchain                         stagex/pallet-clang-gnu-busybox@sha256:20f02219400b2b911fc687106c61090bf20879a5f74bf794c5589b7bd8acc2d2
 filesystem                 stagex/core-filesystem@sha256:da28831927652291b0fa573092fd41c8c96ca181ea224df7bff40e1833c3db13
 musl                       stagex/core-musl@sha256:94f77e4b1841987a42efce52aac54dbf230c152cb55c62da1967189a2705df89
-busybox                    stagex/core-busybox@sha256:a094d1b5ad06943713e75849248d7f89546d15a3e74f42ec5b8f02375fd3706d
 bash                       stagex/core-bash@sha256:f1e9107e8b2ce20c33dc47bf335d345bd337c51298efc7ca0e7805c3b8845bab
 ncurses                    stagex/core-ncurses@sha256:75ff2773ec899b83185e6050d9bf5c80d54459531d708adca8dbab9f6189cb2f
 ca-certificates            stagex/core-ca-certificates@sha256:fe24a3809eba30972b64ddd8b611a6494bebea7631f805d795cec4241f5a11c6
