@@ -21,26 +21,33 @@ read_proposals() {
         })'
 }
 
-# The state file has one line per proposal we have seen:
-#   filename <TAB> gitlab_url <TAB> subaddr_index <TAB> address <TAB> funding_required_date
-# funding_required_date is when the proposal was first seen as "fr", e.g.
-# 2026-01-07T12:36:31Z. Empty fields mean unknown / none.
+# The state file, proposals.csv, has one line per proposal we have seen:
+#   filename,gitlab_url,subaddr_index,address,funding_required_date
+# Values with a comma or a quote are quoted, as jq's @csv writes them (a real
+# proposal filename has commas). funding_required_date is when the proposal was
+# first seen as "fr", e.g. 2026-01-07T12:36:31Z. Empty fields mean unknown / none.
 # It is the only data that cannot be recomputed. While running it is kept as JSON
 # in $WORK/state.json: {"file.md": {gitlab_url, subaddr_index, address, funding_required_date}}.
 load_state() {
-    [[ -e $STATE_DIR/proposals.tsv ]] || : > "$STATE_DIR/proposals.tsv"
+    [[ -e $STATE_DIR/proposals.csv ]] || : > "$STATE_DIR/proposals.csv"
+    # A line is read by matching ,field repeatedly after putting a comma in front:
+    # a field is either "quoted, with "" for a quote" or anything up to the next comma.
+    # (The extra comma avoids empty matches, which jq 1.6 and 1.7 handle differently.)
     jq -R -s '
-        split("\n") | map(select(. != "") | split("\t") | {key: .[0], value: {
-            gitlab_url: (if (.[1] // "") == "" then null else .[1] end),
-            subaddr_index: (if (.[2] // "") == "" then null else .[2] | tonumber end),
-            address: (if (.[3] // "") == "" then null else .[3] end),
-            funding_required_date: (if (.[4] // "") == "" then null else .[4] end)
-        }}) | from_entries' "$STATE_DIR/proposals.tsv" > "$WORK/state.json"
+        def csvrow: [("," + .) | match(",(\"(?:[^\"]|\"\")*\"|[^,]*)"; "g") | (.captures[0].string // "")
+                     | if startswith("\"") then .[1:-1] | gsub("\"\""; "\"") else . end];
+        def opt: if . == "" then null else . end;
+        split("\n") | map(select(. != "") | csvrow | {key: .[0], value: {
+            gitlab_url: (.[1] // "" | opt),
+            subaddr_index: (.[2] // "" | opt | if . then tonumber else . end),
+            address: (.[3] // "" | opt),
+            funding_required_date: (.[4] // "" | opt)
+        }}) | from_entries' "$STATE_DIR/proposals.csv" > "$WORK/state.json"
 }
 
 save_state() {
-    jq -r 'to_entries[] | [.key, .value.gitlab_url, .value.subaddr_index, .value.address, .value.funding_required_date] | map(. // "") | @tsv' \
-        "$WORK/state.json" | atomic_write "$STATE_DIR/proposals.tsv"
+    jq -r 'to_entries[] | [.key, .value.gitlab_url, .value.subaddr_index, .value.address, .value.funding_required_date] | map(. // "") | @csv' \
+        "$WORK/state.json" | atomic_write "$STATE_DIR/proposals.csv"
 }
 
 # state_update [jq options] FILTER: change the state with a jq filter and save it.

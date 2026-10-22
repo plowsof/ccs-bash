@@ -54,11 +54,15 @@ reads, `proposals.json` and `completed-proposals.json`, plus `projects.json` for
 
 ## State
 
-Everything is recomputed on each run, except `STATE_DIR/proposals.tsv`:
+Everything is recomputed on each run, except `STATE_DIR/proposals.csv`:
 
 ```
-filename <TAB> gitlab_url <TAB> subaddr_index <TAB> address <TAB> funding_required_date
+filename,gitlab_url,subaddr_index,address,funding_required_date
+"fund-me.md","https://repo.getmonero.org/.../merge_requests/697",43,"8...","2026-09-08T18:06:19Z"
 ```
+
+Values with a comma or a quote are quoted (`jq -r '@csv'` writes it that way).
+An older `proposals.tsv` converts with `jq -rR 'split("\t") | @csv' proposals.tsv > proposals.csv`.
 
 This file says which subaddress belongs to which proposal, so **back it up**.
 The wallet can always be restored from its keys; this file cannot be recreated.
@@ -164,8 +168,8 @@ takes a few minutes. After that, only new proposals are looked up.
    Upstream ccs-back (as running for getmonero.org):
 
    ```
-   mysql -B -N -e "SELECT filename, IFNULL(gitlab_url, ''), IFNULL(subaddr_index, ''), IFNULL(address, ''), '' FROM projects ORDER BY id" <ccs_db> > /var/lib/ccs/state/proposals.tsv
-   chown ccs:ccs /var/lib/ccs/state/proposals.tsv
+   mysql -B -N -e "SELECT filename, IFNULL(gitlab_url, ''), IFNULL(subaddr_index, ''), IFNULL(address, ''), '' FROM projects ORDER BY id" <ccs_db> | jq -rR 'split("\t") | @csv' > /var/lib/ccs/state/proposals.csv
+   chown ccs:ccs /var/lib/ccs/state/proposals.csv
    ```
 
    Upstream has no funding-required date, so existing proposals get none; proposals
@@ -174,8 +178,8 @@ takes a few minutes. After that, only new proposals are looked up.
    ccs-back with the `funding_required_date` column (plowsof's fork):
 
    ```
-   mysql -B -N -e "SELECT filename, IFNULL(gitlab_url, ''), IFNULL(subaddr_index, ''), IFNULL(address, ''), IFNULL(DATE_FORMAT(funding_required_date, '%Y-%m-%dT%H:%i:%sZ'), '') FROM projects ORDER BY id" <ccs_db> > /var/lib/ccs/state/proposals.tsv
-   chown ccs:ccs /var/lib/ccs/state/proposals.tsv
+   mysql -B -N -e "SELECT filename, IFNULL(gitlab_url, ''), IFNULL(subaddr_index, ''), IFNULL(address, ''), IFNULL(DATE_FORMAT(funding_required_date, '%Y-%m-%dT%H:%i:%sZ'), '') FROM projects ORDER BY id" <ccs_db> | jq -rR 'split("\t") | @csv' > /var/lib/ccs/state/proposals.csv
+   chown ccs:ccs /var/lib/ccs/state/proposals.csv
    ```
 
    The date is exported as UTC, which is what ccs-back stores (Laravel's default timezone).

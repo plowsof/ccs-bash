@@ -9,7 +9,7 @@ TEST_TMP=$(mktemp -d)
 trap 'rm -rf "$TEST_TMP"' EXIT
 
 mkdir -p "$TEST_TMP/state"
-cp "$FIXTURES/state.tsv" "$TEST_TMP/state/proposals.tsv"
+cp "$FIXTURES/state.csv" "$TEST_TMP/state/proposals.csv"
 echo 1 > "$TEST_TMP/wallet-count"
 cat > "$TEST_TMP/ccs.conf" <<CONF
 RPC_URL=http://wallet.invalid/json_rpc
@@ -30,7 +30,7 @@ for run in 1 2; do
     fi
 done
 sed -E 's/^[0-9-]+ [0-9:]+ //' "$TEST_TMP/log-1" "$TEST_TMP/log-2" > "$TEST_TMP/log"
-cp "$TEST_TMP/state/proposals.tsv" "$TEST_TMP/out/"
+cp "$TEST_TMP/state/proposals.csv" "$TEST_TMP/out/"
 cp "$TEST_TMP/log" "$TEST_TMP/out/"
 
 if [[ ${UPDATE:-} == 1 ]]; then
@@ -64,7 +64,7 @@ money to_atomic 0.000000000001 1
 money to_atomic 1.0000000000019 1000000000001  # more than 12 decimals: cut
 money to_atomic 085 85000000000000
 
-for f in proposals.json completed-proposals.json projects.json proposals.tsv log; do
+for f in proposals.json completed-proposals.json projects.json proposals.csv log; do
     if diff -u "$here/expected/$f" "$TEST_TMP/out/$f"; then echo "ok   $f"; else echo "FAIL $f"; status=1; fi
 done
 exit "$status"
