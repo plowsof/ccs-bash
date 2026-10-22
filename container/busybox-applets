@@ -1,5 +1,6 @@
-# The busybox applets in the image: what ccs-bash runs, plus sed, grep, diff and cp for the
-# tests, so they run against exactly what ships. Nothing else is compiled into busybox.
+# The busybox applets in the image: what ccs-bash runs, plus cp, diff, grep, ln, ls, mkfifo,
+# sed, sleep, touch, tr and wc for the tests, so they run against exactly what ships.
+# Nothing else is compiled into busybox.
 awk
 base64
 cat
@@ -13,10 +14,18 @@ env
 flock
 grep
 id
+ln
+ls
 mkdir
+mkfifo
 mktemp
 mv
 readlink
 rm
 sed
+sleep
+sync
+touch
+tr
+wc
 xargs
