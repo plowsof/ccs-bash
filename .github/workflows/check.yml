@@ -14,7 +14,7 @@ jobs:
       - name: install qrencode, and zbarimg to read its codes back (tests only)
         run: sudo apt-get update -q && sudo apt-get install -y -q qrencode zbar-tools
       - name: shellcheck
-        run: shellcheck -x ccs-back.sh lib/*.sh tests/*.sh
+        run: shellcheck -x ccs-back.sh notify-loop.sh lib/*.sh tests/*.sh
       - name: tests (Ubuntu's awk is mawk)
         run: tests/run.sh
       - name: tests with gawk
@@ -34,3 +34,10 @@ jobs:
         run: docker run --rm --network none --read-only --tmpfs /tmp -v "$PWD:/src:ro" --entrypoint bash ccs-bash /src/tests/run.sh
       - name: pinned image hash (two clean builds from separate clones, same hash)
         run: container/check-pinned.sh
+  rrsync:
+    # The README's two-machine setup (rrsync), attacked from the wallet machine's key.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, pinned by commit
+      - name: rrsync restrictions
+        run: tests/rrsync.sh
