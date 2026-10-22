@@ -87,6 +87,7 @@ apt install bash coreutils findutils mawk util-linux curl ca-certificates jq qre
 | `qrencode` | donation QR codes | often not installed (it wasn't on Ubuntu 22.04) |
 | `git` | keeping the proposals checkout up to date (cron) | not used by `ccs-back.sh` itself |
 | `logrotate` | rotating `/var/log/ccs-bash.log` | optional |
+| `rsync`, `openssh-client` | pushing the output to ccs-front | only when ccs-front is on another machine |
 
 Not from Debian: `monero-wallet-rpc` (from [getmonero.org](https://www.getmonero.org/downloads/)).
 The tests need nothing extra.
@@ -96,6 +97,10 @@ JSON. Turning that and the proposal text into the website is ccs-front's job, so
 `jekyll build` in the cron line below belongs to ccs-front, not to ccs-bash.
 
 ## Setup
+
+ccs-bash and ccs-front can run on the same machine or on separate ones. Steps 1 and 2 are
+the same either way; steps 3 to 5 are for one machine. For two machines see
+[ccs-front on another machine](#ccs-front-on-another-machine) instead.
 
 1. Run a view-only wallet with monero-wallet-rpc, bound to localhost, with a login:
 
@@ -121,7 +126,7 @@ JSON. Turning that and the proposal text into the website is ccs-front's job, so
    install -g ccs -m 640 ccs.conf.example /etc/ccs/ccs.conf    # then edit it
    ```
 
-3. Point ccs-front at the output. `OUTPUT_DIR` is laid out like ccs-front's `_data` directory,
+3. Point ccs-front at the output (same machine). `OUTPUT_DIR` is laid out like ccs-front's `_data` directory,
    so link or mount the **directories**:
 
    ```
@@ -173,6 +178,46 @@ JSON. Turning that and the proposal text into the website is ccs-front's job, so
 
 The first run on a fresh install looks up the merged MR of every proposal, which
 takes a few minutes. After that, only new proposals are looked up.
+
+### ccs-front on another machine
+
+ccs-bash only needs the proposals repo, GitLab and the wallet; ccs-front only needs the
+JSON. Running them apart keeps the wallet machine free of any incoming connection: after
+each run it pushes `OUTPUT_DIR` to the web server, and the web server can only receive
+those files, into one folder, and never connect back.
+
+On the **web server** (ccs-front), create an account that can only receive the files, with
+`rrsync` (shipped with Debian's rsync):
+
+```
+useradd --system --create-home --shell /bin/sh ccs-data
+install -d -o ccs-data -m 755 /var/lib/ccs-data
+install -d -o ccs-data -m 700 ~ccs-data/.ssh
+# ~ccs-data/.ssh/authorized_keys, one line, with the key from the ccs-bash machine:
+command="rrsync -wo /var/lib/ccs-data",restrict ssh-ed25519 AAAA... ccs-bash
+```
+
+`-wo` makes it write-only: the key can't read anything back or write outside
+`/var/lib/ccs-data`. Then, as in step 3 and 4 but with this folder, use
+`/var/lib/ccs-data` as ccs-front's `_data` (and for `/projects`). ccs-front keeps its own
+checkout of the proposals repo for the proposal pages, and its own cron:
+
+```
+*/2 * * * * git -C /opt/ccs-front/proposals pull -q --ff-only ; cd /opt/ccs-front && jekyll build -q
+```
+
+On the **ccs-bash machine**, give the `ccs` user a key and push after each run:
+
+```
+install -d -o ccs -g ccs -m 700 /var/lib/ccs/.ssh
+runuser -u ccs -- ssh-keygen -t ed25519 -N '' -f /var/lib/ccs/.ssh/id_ed25519
+runuser -u ccs -- ssh ccs-data@<web server>    # once, to accept its host key; it is refused after that
+
+*/2 * * * * git -C /var/lib/ccs/proposals pull -q --ff-only ; runuser -u ccs -- sh -c '/opt/ccs-bash/ccs-back.sh /etc/ccs/ccs.conf && rsync -a --delay-updates /var/lib/ccs/out/ ccs-data@<web server>:' >> /var/log/ccs-bash.log 2>&1
+```
+
+`--delay-updates` puts the new files in place only once all of them have arrived.
+For `--tx-notify`, use the same `runuser ...` command.
 
 ## Moving from ccs-back
 
