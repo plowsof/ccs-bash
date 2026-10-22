@@ -8,11 +8,11 @@ repo=$(git -C "$here" rev-parse --show-toplevel)
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"; docker image rm -f ccs-bash:repro1 ccs-bash:repro2 > /dev/null 2>&1 || true' EXIT
 
-"$here/fetch.sh" "$tmp/debs"                   # once; both builds get the same checked files
+"$here/fetch.sh" "$tmp/sources"                # once; both builds get the same checked files
 declare -A id
 for i in 1 2; do
     (umask "$([[ $i == 1 ]] && echo 022 || echo 077)" && git clone -q "$repo" "$tmp/clone$i")
-    cp -r "$tmp/debs" "$tmp/clone$i/container/debs"
+    cp -r "$tmp/sources" "$tmp/clone$i/container/sources"
     NO_CACHE=1 "$tmp/clone$i/container/build.sh" "ccs-bash:repro$i" > /dev/null 2>&1
     id[$i]=$(docker image inspect "ccs-bash:repro$i" --format '{{.Id}}')
     echo "build $i: ${id[$i]}"
