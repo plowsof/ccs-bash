@@ -11,6 +11,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - name: install qrencode and zbarimg (tested for real, the rest of the tests use stand-ins)
+        run: sudo apt-get update -q && sudo apt-get install -y -q qrencode zbar-tools
       - name: shellcheck
         run: shellcheck -x ccs-back.sh lib/*.sh tests/*.sh
       - name: tests (Ubuntu's awk is mawk)

@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Stand-ins for the wallet, GitLab and qrencode, used by run.sh.
+# Stand-ins for the wallet, GitLab, qrencode and zbarimg, used by run.sh.
 # Needs $TEST_TMP (scratch dir) and $FIXTURES.
 
 # Fake wallet: freshly restored, so it starts with only subaddress 0 created.
@@ -35,5 +35,7 @@ gitlab_get() {
 
 now_utc() { echo 2026-10-22T08:00:00Z; }
 
-# Called as: qrencode -s 10 -o FILE URI
+# Called as: qrencode -s 10 -o FILE URI. The "image" is just the text.
 qrencode() { printf 'QR for %s' "$5" > "$4"; }
+# Called as: zbarimg --quiet --raw FILE
+zbarimg() { local qr; qr=$(cat "$3") && printf '%s\n' "${qr#QR for }"; }
