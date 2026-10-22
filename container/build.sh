@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # build.sh [TAG]: build the ccs-bash image in two steps. NO_CACHE=1 rebuilds every step.
 #   1. download (network): the base image, by digest, and the .deb files in deps.lock (fetch.sh)
-#   2. install (no network): docker build --network none, from exactly those files
+#   2. install (no network): docker buildx build --network none, from exactly those files
 set -euo pipefail
 here=$(dirname "$(readlink -f "$0")")
 tag=${1:-ccs-bash}
