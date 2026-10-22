@@ -39,6 +39,10 @@ part was never the problem.) ccs-bash is about leaving as few ways in as possibl
 - **Least privilege.** It runs as a `ccs` user that can only write its state and output folders.
 - **Checks the wallet.** If the wallet's subaddresses don't match the state file
   (a wrong or swapped wallet), the run stops instead of publishing other addresses.
+- **Checks the QR codes.** Every run reads each QR code back with `zbarimg` and compares it
+  with the address. A swapped image (which would send donors' money elsewhere while the
+  address shown as text still looks right) is logged and replaced; a new one that doesn't
+  read back correctly stops the run.
 - **Untrusted text stays text.** Proposal titles and MR names are HTML-escaped and only
   ever handled as data (no `eval`, every JSON value built by jq), filenames are checked.
 - **Can run apart from the website.** ccs-bash and ccs-front can be on
@@ -100,7 +104,7 @@ The wallet can always be restored from its keys; this file cannot be recreated.
 ## Dependencies
 
 ```
-apt install bash coreutils findutils mawk util-linux curl ca-certificates jq qrencode git logrotate
+apt install bash coreutils findutils mawk util-linux curl ca-certificates jq qrencode zbar-tools git logrotate
 ```
 
 | Package | Used for | Notes |
@@ -114,6 +118,7 @@ apt install bash coreutils findutils mawk util-linux curl ca-certificates jq qre
 | `ca-certificates` | HTTPS to GitLab | curl only *recommends* it, so it is missing after `--no-install-recommends` |
 | `jq` | all JSON, the site output | 1.6 or newer; CI tests 1.6 and 1.7 |
 | `qrencode` | donation QR codes | often not installed (it wasn't on Ubuntu 22.04) |
+| `zbar-tools` | `zbarimg`, to read every QR code back and check it holds the right address | |
 | `git` | keeping the proposals checkout up to date (cron) | not used by `ccs-back.sh` itself |
 | `logrotate` | rotating `/var/log/ccs-bash.log` | optional |
 | `rsync`, `openssh-client` | pushing the output to ccs-front | only when ccs-front is on another machine |
@@ -315,6 +320,22 @@ Differences from ccs-back:
   database rows whose file had been deleted.
 - **GitLab:** MR lists are paginated, so MRs past the first 50 are seen.
 - **Removed:** the `/projects/<index>` web pages, GitHub and Zcoin support.
+
+## To do
+
+- **Pinned, offline-built dependencies.** Today `apt install` takes whatever versions the
+  mirror has on the day. Instead:
+  1. On a machine with network, `apt-get download` the exact `.deb` files (with their
+     dependencies) for one Debian release, and commit a list of their names, versions and
+     SHA-256 sums. apt checks them against Debian's signed package lists when it downloads
+     them; the list in the repo makes the set reviewable and repeatable
+     ([snapshot.debian.org](https://snapshot.debian.org) keeps old versions available).
+  2. Build a container with **no network access** (`docker build --network none`) from a base
+     image pinned by digest, installing only those files after checking their sums.
+  3. Run ccs-bash in it. It still talks to the wallet and GitLab when it runs, but nothing can
+     be fetched or installed into it, and it only changes when the list in the repo does.
+- **Watch the live site.** Fetch the published pages and check that every donation address
+  (and QR code) on them matches the state file, to notice a changed web server within minutes.
 
 ## Tests
 

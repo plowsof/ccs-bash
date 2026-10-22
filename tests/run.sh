@@ -22,6 +22,8 @@ CONF
 # Two runs: the second must not create addresses or change the output.
 # Each run is its own bash process so that `set -e` behaves as it does under cron.
 for run in 1 2; do
+    # Before run 2, swap a cached QR code for someone else's address: it must be noticed and made again.
+    [[ $run == 2 ]] && printf 'QR for monero:attacker' > "$TEST_TMP/state/qr/1.png"
     if ! bash -c 'source "$1/../ccs-back.sh" && source "$1/stubs.sh" && main "$2"' _ "$here" "$TEST_TMP/ccs.conf" \
         2> "$TEST_TMP/log-$run"; then
         cat "$TEST_TMP/log-$run"
@@ -29,7 +31,7 @@ for run in 1 2; do
         exit 1
     fi
 done
-sed -E 's/^[0-9-]+ [0-9:]+ //' "$TEST_TMP/log-1" "$TEST_TMP/log-2" > "$TEST_TMP/log"
+sed -E "s/^[0-9-]+ [0-9:]+ //; s|$TEST_TMP|<tmp>|g" "$TEST_TMP/log-1" "$TEST_TMP/log-2" > "$TEST_TMP/log"
 cp "$TEST_TMP/state/proposals.csv" "$TEST_TMP/out/"
 cp "$TEST_TMP/log" "$TEST_TMP/out/"
 
@@ -63,6 +65,21 @@ money to_atomic 240.12021 240120210000000
 money to_atomic 0.000000000001 1
 money to_atomic 1.0000000000019 1000000000001  # more than 12 decimals: cut
 money to_atomic 085 85000000000000
+
+# The real qrencode and zbarimg (the end-to-end runs use stand-ins): a QR code made
+# for an address must read back as exactly that. CI must not skip this.
+if command -v qrencode > /dev/null && command -v zbarimg > /dev/null; then
+    uri=monero:$(printf '8%094d' 1)
+    if qrencode -s 10 -o "$TEST_TMP/qr.png" "$uri" && [[ $(qr_decode "$TEST_TMP/qr.png") == "$uri" ]]; then
+        echo "ok   real qrencode + zbarimg round trip"
+    else
+        echo "FAIL real qrencode + zbarimg round trip"; status=1
+    fi
+elif [[ ${CI:-} == true ]]; then
+    echo "FAIL qrencode or zbarimg not installed"; status=1
+else
+    echo "skip real qrencode + zbarimg round trip (not installed)"
+fi
 
 for f in proposals.json completed-proposals.json projects.json proposals.csv log; do
     if diff -u "$here/expected/$f" "$TEST_TMP/out/$f"; then echo "ok   $f"; else echo "FAIL $f"; status=1; fi
