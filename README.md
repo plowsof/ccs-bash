@@ -193,18 +193,53 @@ server instead and `ccs-bash-update` (step 6) pushes the files there, see
 [ccs-front on another machine](#ccs-front-on-another-machine).
 
 1. Run a view-only wallet with monero-wallet-rpc, as its own unprivileged user, bound to
-   localhost, with a login:
+   localhost, with a login. The options go in a config file, so the password isn't in `ps`:
 
    ```
-   monero-wallet-rpc --daemon-address 127.0.0.1:18081 --wallet-file /var/lib/ccs/wallet/ccs \
-       --rpc-bind-ip 127.0.0.1 --rpc-bind-port 18082 --rpc-login ccs:<password>
+   useradd --system --home-dir /var/lib/ccs/wallet --shell /usr/sbin/nologin ccs-wallet
+   install -d -o ccs-wallet -g ccs-wallet -m 700 /var/lib/ccs/wallet   # the view-only wallet files go here
+   install -d -g ccs-wallet -m 750 /etc/ccs-wallet
    ```
+
+   ```
+   # /etc/ccs-wallet/wallet-rpc.conf (root:ccs-wallet, 640)
+   wallet-file=/var/lib/ccs/wallet/ccs
+   password=<wallet password>
+   daemon-address=127.0.0.1:18081
+   rpc-bind-ip=127.0.0.1
+   rpc-bind-port=18082
+   rpc-login=ccs:<rpc password>
+   log-file=/var/lib/ccs/wallet/monero-wallet-rpc.log
+   ```
+
+   ```
+   # /etc/systemd/system/ccs-wallet-rpc.service, then: systemctl enable --now ccs-wallet-rpc
+   [Unit]
+   Description=monero-wallet-rpc (view-only) for ccs-bash
+   After=network-online.target
+
+   [Service]
+   User=ccs-wallet
+   Group=ccs-wallet
+   ExecStart=/usr/local/bin/monero-wallet-rpc --config-file /etc/ccs-wallet/wallet-rpc.conf --non-interactive
+   Restart=on-failure
+   NoNewPrivileges=yes
+   ProtectSystem=strict
+   ReadWritePaths=/var/lib/ccs/wallet
+   ProtectHome=yes
+   PrivateTmp=yes
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+
+   `RPC_USER` and `RPC_PASSWORD` in ccs-bash's config are the `rpc-login` pair.
 
    It only holds the view key, so it cannot spend. If it leaks, the cost is donation privacy.
-   With `--disable-rpc-login`, leave `RPC_USER` empty. Keep it on the same machine as
+   With `disable-rpc-login=1`, leave `RPC_USER` empty. Keep it on the same machine as
    ccs-bash: over plain HTTP to another host, someone on the network could change its answers
    (if it must be elsewhere, reach it through an SSH tunnel).
-   No `--tx-notify` that starts ccs-bash itself: that needs root (to become the `ccs`
+   No `tx-notify` that starts ccs-bash itself: that needs root (to become the `ccs`
    user), so wallet-rpc would have to run as root. For updates right after a donation, see
    step 7; without it, cron picks donations up within 2 minutes.
 
@@ -251,10 +286,22 @@ server instead and `ccs-bash-update` (step 6) pushes the files there, see
    docker tag ghcr.io/plowsof/ccs-bash@sha256:<digest> ccs-bash   # CI pushes one to ghcr.io)
    ```
 
-   Pull by the digest in the release notes, not by tag (a tag can be moved). Whichever way,
-   check `docker image inspect ccs-bash --format '{{.Id}}'`: the same commit always gives the
-   same ID, so it must match your own build of that commit, or the one CI printed or the
-   release notes give.
+   Pull by the digest in the release notes, not by tag (a tag can be moved).
+
+   Whichever way it got there, check it **before the first run**:
+
+   ```
+   docker image inspect ccs-bash --format '{{.Id}}'
+   ```
+
+   The image ID is the sha256 of the image's config, which lists the sha256 of every layer's
+   content, so the same ID means exactly the same files. And the same commit always builds to
+   the same ID, so take the ID to expect from somewhere other than the image itself, ideally
+   two of: your own build of that commit on another machine, CI's log for that commit
+   (`pinned: commit ... builds to sha256:...`), the release notes. The way the image travelled
+   (ssh, a registry, a USB stick) then doesn't have to be trusted: anything changed on the way
+   gives another ID. `docker load` and `docker pull` only store an image; nothing in it runs
+   until `docker run`.
 
    ```
    #!/bin/sh
@@ -315,7 +362,7 @@ server instead and `ccs-bash-update` (step 6) pushes the files there, see
    ```
    #!/bin/sh
    # /usr/local/bin/ccs-bash-update (chmod 755): one update
-   git -C /var/lib/ccs/proposals pull -q --ff-only
+   timeout -k 5 40 git -C /var/lib/ccs/proposals pull -q --ff-only   # GitLab down: give up
    ccs-bash-run >> /var/log/ccs-bash.log 2>&1
    cd /opt/ccs-front && jekyll build -q
    ```
@@ -350,9 +397,11 @@ server instead and `ccs-bash-update` (step 6) pushes the files there, see
    most one run per 30 seconds, and the loop only checks that the file exists, never reads it.
 
    ```
-   install -d -o <wallet-rpc user> -m 755 /var/lib/ccs-notify
-   # add to monero-wallet-rpc's options:
-   --tx-notify "/usr/bin/touch /var/lib/ccs-notify/new-tx"
+   install -d -o ccs-wallet -g ccs-wallet -m 755 /var/lib/ccs-notify
+   # add to /etc/ccs-wallet/wallet-rpc.conf:
+   tx-notify=/usr/bin/touch /var/lib/ccs-notify/new-tx
+   # and to ccs-wallet-rpc.service, so it may write there:
+   ReadWritePaths=/var/lib/ccs/wallet /var/lib/ccs-notify
    ```
 
    Remove the cron line from step 6 and run the loop instead:
@@ -431,7 +480,7 @@ echo "<web server> ssh-ed25519 AAAA..." > /var/lib/ccs/.ssh/known_hosts    # the
 ```
 #!/bin/sh
 # /usr/local/bin/ccs-bash-update (chmod 755): one update, pushed to the web server
-git -C /var/lib/ccs/proposals pull -q --ff-only
+timeout -k 5 40 git -C /var/lib/ccs/proposals pull -q --ff-only
 { ccs-bash-run && runuser -u ccs -- rsync -a --delay-updates \
     -e "ssh -o BatchMode=yes -o StrictHostKeyChecking=yes" /var/lib/ccs/out/ ccs-data@<web server>: ; } >> /var/log/ccs-bash.log 2>&1
 ```
@@ -459,6 +508,8 @@ B only. For newer StageX packages, run `container/update-images.sh` (it pins eve
 Dockerfile. To give busybox another applet, add it to `container/busybox-applets`.
 
 ## Moving from ccs-back
+
+Do setup steps 1 to 3 first (A or B; with B, check the image ID before the first run), then:
 
 1. **Back up** the database (`mysqldump`), the cron line, and the old JSON files.
 
@@ -498,6 +549,20 @@ Dockerfile. To give busybox another applet, add it to `container/busybox-applets
 3. **Run ccs-bash next to ccs-back once** (`ccs-bash-run`) and compare the output (see below). While both
    run, a funding-required proposal without an address would get a subaddress from each of
    them, so check there is none first, or stop ccs-back's cron before the first run.
+
+   If the run stops with `donations at subaddress ..., which proposals.csv doesn't have`,
+   the wallet holds donations at subaddresses no proposal in the export has, for example from
+   before the database was reset. Find out where they came from first: on a real CCS this
+   means the export is incomplete. Old ones that belong to nothing can be recorded as
+   retired, so they are known but never handed out or shown, with the wallet's own address
+   for each index (here 8 and 9):
+
+   ```
+   curl -s --digest -u 'ccs:<rpc password>' http://127.0.0.1:18082/json_rpc \
+       -d '{"jsonrpc":"2.0","id":0,"method":"get_address","params":{"account_index":0,"address_index":[8,9]}}' \
+     | jq -r '.result.addresses[] | ["retired-subaddress-\(.address_index)", "", .address_index, .address, ""] | @csv' \
+     >> /var/lib/ccs/state/proposals.csv
+   ```
 
 4. **Switch over:** replace ccs-back's cron line with ccs-bash's (setup step 6), drop
    ccs-back's `--tx-notify` script (it needs wallet-rpc to run as root; setup step 7 does the
