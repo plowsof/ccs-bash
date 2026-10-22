@@ -232,6 +232,24 @@ evil=$(mktemp -d)
 if [[ -e $evil/ran ]]; then echo "FAIL a command in the wallet's answer was run"; status=1; else echo "ok   a command in the wallet's answer is not run"; fi
 rm -rf "$evil"
 
+# notify-loop.sh: a flood of notifications gives at most one run per GAP, and none without one.
+nl=$(mktemp -d)
+FLAG=$nl/new-tx GAP=2 EVERY=1000 "$here/../notify-loop.sh" sh -c "echo run >> $nl/runs" &
+loop=$!
+for _ in $(seq 60); do touch "$nl/new-tx"; sleep 0.1; done   # 6 seconds of notifications
+sleep 3                                                        # the last one still gets its run
+spam=$(wc -l < "$nl/runs")
+sleep 3                                                        # then 3 quiet seconds
+quiet=$(wc -l < "$nl/runs")
+kill "$loop"
+# 1 at the start, then one per 2 seconds: about 4 more (+-1 for where the seconds fall)
+if ((spam >= 4 && spam <= 6 && quiet == spam)); then
+    echo "ok   notify-loop: 60 notifications in 6s gave $spam runs, none after"
+else
+    echo "FAIL notify-loop: $spam runs during the flood, $quiet after"; status=1
+fi
+rm -rf "$nl"
+
 # The real qrencode, read back with a real decoder (zbarimg, only needed here): a QR code
 # made for an address must read back as exactly that. CI must not skip this.
 if command -v qrencode > /dev/null && command -v zbarimg > /dev/null; then
