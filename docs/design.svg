@@ -14,7 +14,7 @@
 
   <!-- title -->
   <text x="30" y="40" font-size="22" font-weight="700" fill="#0f172a">CCS: recommended architecture</text>
-  <text x="30" y="62" font-size="13.5" fill="#475569">The backend computes and renders everything and only connects out. The public web server only receives files and serves them.</text>
+  <text x="30" y="62" font-size="13.5" fill="#475569">Bash on the backend computes and renders everything and only connects out. The public web server only receives files and serves them.</text>
 
   <!-- zones -->
   <rect x="230" y="85" width="530" height="545" rx="16" fill="#eef4ff" stroke="#3b6fd8" stroke-width="2" stroke-dasharray="7 5"/>
@@ -55,27 +55,27 @@
     <rect x="265" y="420" width="200" height="86" rx="10"/>
     <rect x="520" y="420" width="210" height="86" rx="10"/>
   </g>
-  <rect x="520" y="150" width="6" height="98" rx="3" fill="#7c3aed"/>
+  <rect x="520" y="150" width="6" height="98" rx="3" fill="#64748b"/>
   <rect x="265" y="280" width="6" height="98" rx="3" fill="#16a34a"/>
   <rect x="520" y="280" width="6" height="98" rx="3" fill="#16a34a"/>
   <rect x="265" y="420" width="6" height="86" rx="3" fill="#3b6fd8"/>
   <rect x="520" y="420" width="6" height="86" rx="3" fill="#16a34a"/>
 
   <g text-anchor="middle">
-    <text x="627" y="180" font-size="15" font-weight="700" fill="#0f172a">site build</text>
-    <text x="627" y="200" font-size="12.5" fill="#475569">ccs-front in a pinned image,</text>
-    <text x="627" y="217" font-size="12.5" fill="#475569">no network; renders Markdown</text>
-    <text x="627" y="237" font-size="11.5" font-weight="600" fill="#7c3aed">ON A MERGE OR RELEASE</text>
+    <text x="627" y="180" font-size="15" font-weight="700" fill="#0f172a">templates/</text>
+    <text x="627" y="200" font-size="12.5" fill="#475569">plain HTML with markers,</text>
+    <text x="627" y="217" font-size="12.5" fill="#475569">made once from ccs-front</text>
+    <text x="627" y="237" font-size="11.5" font-weight="600" fill="#64748b">FILES IN GIT, NOT A PROGRAM</text>
 
     <text x="367" y="310" font-size="15" font-weight="700" fill="#0f172a">ccs-bash</text>
     <text x="367" y="330" font-size="12.5" fill="#475569">totals, addresses, ideas</text>
-    <text x="367" y="347" font-size="12.5" fill="#475569">→ JSON</text>
+    <text x="367" y="347" font-size="12.5" fill="#475569">→ JSON (data only)</text>
     <text x="367" y="367" font-size="11.5" font-weight="600" fill="#16a34a">EVERY 2 MIN OR ON A TX</text>
 
     <text x="627" y="310" font-size="15" font-weight="700" fill="#0f172a">ccs-front-bash</text>
-    <text x="627" y="330" font-size="12.5" fill="#475569">fills lists + donation boxes</text>
-    <text x="627" y="347" font-size="12.5" fill="#475569">into the built pages (escaped)</text>
-    <text x="627" y="367" font-size="11.5" font-weight="600" fill="#16a34a">EVERY RUN</text>
+    <text x="627" y="330" font-size="12.5" fill="#475569">Markdown → HTML, lists,</text>
+    <text x="627" y="347" font-size="12.5" fill="#475569">donation boxes, QR codes</text>
+    <text x="627" y="367" font-size="11.5" font-weight="600" fill="#16a34a">EVERY RUN · BASH, AWK, JQ</text>
 
     <text x="367" y="452" font-size="15" font-weight="700" fill="#0f172a">monero-wallet-rpc</text>
     <text x="367" y="472" font-size="12.5" fill="#475569">view-only, own user</text>
@@ -115,8 +115,8 @@
     <text x="1120" y="442" font-size="12.5" fill="#475569">Tor welcome</text>
     <text x="1120" y="459" font-size="12.5" fill="#475569">no JS needed</text>
   </g>
-  <text x="905" y="510" text-anchor="middle" font-size="12" fill="#9a3412">no Node, npm, Ruby,</text>
-  <text x="905" y="527" text-anchor="middle" font-size="12" fill="#9a3412">PHP or build tools here</text>
+  <text x="905" y="510" text-anchor="middle" font-size="12" fill="#9a3412">no Node, npm, Jekyll,</text>
+  <text x="905" y="527" text-anchor="middle" font-size="12" fill="#9a3412">Ruby or PHP here</text>
   <!-- globe icon -->
   <g transform="translate(1158,404)" fill="none" stroke="#64748b" stroke-width="1.4">
     <circle cx="8" cy="8" r="8"/><ellipse cx="8" cy="8" rx="3.5" ry="8"/><path d="M0,8 h16"/>
@@ -124,12 +124,10 @@
 
   <!-- arrows: data in (outgoing connections) -->
   <g fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#s)">
-    <path d="M195,165 H516"/>
-    <path d="M195,190 H240 V310 H261"/>
+    <path d="M195,175 H240 V310 H261"/>
     <path d="M195,463 H261"/>
   </g>
-  <text x="255" y="157" font-size="12" fill="#475569">git pull (proposals)</text>
-  <text x="200" y="250" font-size="12" fill="#475569" transform="rotate(-90 205 250)">API (MRs)</text>
+    <text x="200" y="262" font-size="12" fill="#475569" transform="rotate(-90 205 262)">git pull, API</text>
   <!-- every run -->
   <g fill="none" stroke="#16a34a" stroke-width="2.5" marker-end="url(#g)">
     <path d="M367,420 V382"/>
@@ -138,11 +136,11 @@
   </g>
   <path d="M290,378 V548" fill="none" stroke="#3b6fd8" stroke-width="2" stroke-dasharray="4 4"/>
   <text x="375" y="400" font-size="12" fill="#15803d">RPC</text>
-  <text x="472" y="317" font-size="12" fill="#15803d">JSON</text>
+  <text x="490" y="316" text-anchor="middle" font-size="12" fill="#15803d">JSON</text>
+  <text x="490" y="342" text-anchor="middle" font-size="12" fill="#15803d">.md</text>
   <!-- on a merge -->
-  <path d="M627,248 V276" fill="none" stroke="#7c3aed" stroke-width="2.5" stroke-dasharray="6 4" marker-end="url(#p)"/>
-  <text x="635" y="266" font-size="12" fill="#6d28d9">built site</text>
-  <!-- the push -->
+  <path d="M627,248 V276" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#s)"/>
+    <!-- the push -->
   <path d="M730,463 H770 V290 H809" fill="none" stroke="#16a34a" stroke-width="3.5" marker-end="url(#gb)"/>
   <g transform="translate(700,580)">
     <rect x="0" y="0" width="230" height="30" rx="15" fill="#dcfce7" stroke="#16a34a"/>
@@ -157,8 +155,7 @@
   <!-- legend -->
   <g transform="translate(30,660)" font-size="12.5" fill="#334155">
     <path d="M0,10 H34" stroke="#16a34a" stroke-width="3"/><text x="42" y="14">every run (2 min, or on a new tx)</text>
-    <path d="M265,10 H299" stroke="#7c3aed" stroke-width="3" stroke-dasharray="6 4"/><text x="307" y="14">only when a proposal is merged or the front end changes</text>
-    <path d="M660,10 H694" stroke="#64748b" stroke-width="2.5"/><text x="702" y="14">fetched by the backend (it only connects out)</text>
-    <text x="0" y="40" fill="#64748b">Proposal Markdown is only rendered on the backend, without network. Every page is pushed again each run, so a changed page on the web server doesn't last.</text>
+    <path d="M265,10 H299" stroke="#64748b" stroke-width="2.5"/><text x="307" y="14">fetched or read by the backend (it only connects out)</text>
+    <text x="0" y="40" fill="#64748b">No Jekyll or front-end framework on any machine. Proposal pages are re-rendered only when their .md changes; every page is pushed each run.</text>
   </g>
 </svg>
