@@ -24,6 +24,28 @@ it uses a view-only `monero-wallet-rpc` and a few Debian packages.
 It writes the files [ccs-front](https://repo.getmonero.org/monero-project/ccs-front) (Jekyll)
 reads, `proposals.json` and `completed-proposals.json`, plus `projects.json` for a `/projects` API.
 
+## Security
+
+- **Nothing to connect to.** ccs-bash is a cron job, not a service: no web server, no open
+  port, no database. It only makes outgoing calls, to the wallet and to GitLab.
+- **A view-only wallet.** It can't spend. If it leaks, the cost is donation privacy.
+- **Few, well-kept dependencies.** About ten Debian packages (see
+  [Dependencies](#dependencies)), patched by Debian's security team, instead of a framework
+  and its package tree. All of ccs-bash is about 550 lines you can read in an afternoon.
+- **Least privilege.** It runs as a `ccs` user that can only write its state and output folders.
+- **Checks the wallet.** If the wallet's subaddresses don't match the state file
+  (a wrong or swapped wallet), the run stops instead of publishing other addresses.
+- **Exact amounts.** Donations are summed in integer atomic units and never rounded up, so
+  the site never shows more than was received.
+- **Can run apart from the website.** ccs-bash and ccs-front can be on
+  [separate machines](#ccs-front-on-another-machine). Then the wallet machine accepts no
+  connections at all: it pushes the JSON to the web server, whose key can only write into
+  one folder (`rrsync -wo`). A break-in on the web server can't reach the wallet, the
+  state file or GitLab access, and can't read anything back from the wallet machine.
+  It can still change what the website shows, including donation addresses, until the
+  next push overwrites the JSON (or for good, if the attacker changes the site itself),
+  so the web server still needs looking after; it just no longer endangers the wallet.
+
 ## What a run does
 
 `ccs-back.sh` runs these steps from top to bottom:
