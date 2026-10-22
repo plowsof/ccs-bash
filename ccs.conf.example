@@ -1,5 +1,6 @@
 # ccs-bash config. Copy to /etc/ccs/ccs.conf (or pass a path to ccs-back.sh).
 # This file is sourced by bash, so keep it owned by root and not world-writable.
+# Give each key once: a second line for the same key (even an empty one) wins.
 
 # monero-wallet-rpc running a view-only wallet, bound to localhost.
 # User and password must not contain double quotes or backslashes.
