@@ -1,7 +1,7 @@
 # Recommended design
 
-A proposal for how the CCS should run: **no Jekyll or front-end framework on any machine, and
-no application code on the public web server.** Bash, awk and jq on a backend machine that
+A proposal for how the CCS should run: **no Jekyll, Astro or other front-end framework on any
+live machine, and no application code on the public web server.** Bash, awk and jq on a backend machine that
 accepts no connections turn the proposals and the wallet into finished HTML; the web server
 only receives the files and serves them.
 
@@ -24,6 +24,10 @@ so that is the machine to keep smallest.
 
 ## The parts
 
+**Front-end build** (offline, never live): the only place Jekyll, Astro or npm run. The site's
+design is built here into `templates/`, once per design change, and carried to the backend
+once, as a signed git commit whose hash is checked there. Nothing here runs while the CCS does.
+
 **Backend** (no inbound connections; only outgoing to GitLab and monerod):
 
 - **monero-wallet-rpc**, view-only, its own user, on 127.0.0.1.
@@ -45,8 +49,8 @@ finished pages means a page changed on the web server is overwritten on the next
 
 ## ccs-front-bash
 
-**Templates:** plain HTML files with markers where content goes, made once by hand from
-ccs-front's layouts and kept in git:
+**Templates:** plain HTML files with markers where content goes, made by the offline
+front-end build (from ccs-front's layouts today, or Astro's output) and kept in git:
 
 ```html
 <!-- ccs:fr-list -->…<!-- /ccs:fr-list -->
@@ -88,6 +92,6 @@ development machine.
 
 - **Images:** 12 proposals embed images from other sites, which tells those sites who is
   reading. Show them as links instead, or copy them in when a proposal is merged?
-- **Templates:** who keeps them in step with ccs-front's design.
+- **Templates:** which framework the offline build uses, and who signs the template commits.
 - **Watching the site:** with every page coming from the backend, a checker can compare the
   live site with what was pushed, byte for byte (the README's to-do).
