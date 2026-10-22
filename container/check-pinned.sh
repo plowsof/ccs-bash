@@ -2,14 +2,26 @@
 # check-pinned.sh: check the image hash is pinned. Builds the image twice from scratch, from
 # two separate clones of the current commit (different paths, umasks and times), and fails
 # unless both give the same image hash. Anyone can do the same to check an image they were given.
+# First, though, it builds another commit (a day older) and then this one, both with the
+# build cache: what is left in the cache from another commit must not change the hash either.
 set -euo pipefail
 here=$(dirname "$(readlink -f "$0")")
 repo=$(git -C "$here" rev-parse --show-toplevel)
 tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"; docker image rm -f ccs-bash:repro1 ccs-bash:repro2 > /dev/null 2>&1 || true' EXIT
+trap 'rm -rf "$tmp"; docker image rm -f ccs-bash:other ccs-bash:warm ccs-bash:repro1 ccs-bash:repro2 > /dev/null 2>&1 || true' EXIT
 
-"$here/fetch.sh" "$tmp/sources"                # once; both builds get the same checked files
+"$here/fetch.sh" "$tmp/sources"                # once; every build gets the same checked files
 declare -A id
+for c in other warm; do
+    git clone -q "$repo" "$tmp/$c"
+    cp -r "$tmp/sources" "$tmp/$c/container/sources"
+done
+GIT_COMMITTER_DATE="@$(($(git -C "$repo" log -1 --format=%ct) - 86400)) +0000" \
+    git -C "$tmp/other" -c user.name=check -c user.email=check@invalid commit -q --allow-empty -m other
+"$tmp/other/container/build.sh" ccs-bash:other > /dev/null 2>&1
+"$tmp/warm/container/build.sh" ccs-bash:warm > /dev/null 2>&1
+id[warm]=$(docker image inspect ccs-bash:warm --format '{{.Id}}')
+echo "build with a cache from another commit: ${id[warm]}"
 for i in 1 2; do
     (umask "$([[ $i == 1 ]] && echo 022 || echo 077)" && git clone -q "$repo" "$tmp/clone$i")
     cp -r "$tmp/sources" "$tmp/clone$i/container/sources"
@@ -20,6 +32,10 @@ for i in 1 2; do
 done
 if [[ ${id[1]} != "${id[2]}" ]]; then
     echo "error: the image hash is not pinned, the two builds differ" >&2
+    exit 1
+fi
+if [[ ${id[warm]} != "${id[1]}" ]]; then
+    echo "error: a build cache from another commit changes the image hash" >&2
     exit 1
 fi
 echo "pinned: commit $(git -C "$repo" rev-parse --short HEAD) builds to ${id[1]}"
