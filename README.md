@@ -189,8 +189,9 @@ machine. For two machines see [ccs-front on another machine](#ccs-front-on-anoth
    With `--disable-rpc-login`, leave `RPC_USER` empty. Keep it on the same machine as
    ccs-bash: over plain HTTP to another host, someone on the network could change its answers
    (if it must be elsewhere, reach it through an SSH tunnel).
-   No `--tx-notify`: cron already runs ccs-bash every 2 minutes, and a hook that starts it
-   would need wallet-rpc to run as root.
+   No `--tx-notify` that starts ccs-bash itself: that needs root (to become the `ccs`
+   user), so wallet-rpc would have to run as root. For updates right after a donation, see
+   step 7; without it, cron picks donations up within 2 minutes.
 
 2. Create a user and the directories. The user must be able to read the proposals checkout,
    so keep it outside `/root`:
@@ -316,6 +317,44 @@ machine. For two machines see [ccs-front on another machine](#ccs-front-on-anoth
    symlink would otherwise be copied into the built site as one, and could point the web
    server at other files. (ccs-bash itself skips symlinks.)
 
+7. Optional, **instant updates**: a run right after a donation arrives, instead of within
+   2 minutes. wallet-rpc's hook only touches a file, as wallet-rpc's own user;
+   `notify-loop.sh` (as root, in place of the cron line) runs ccs-bash every 2 minutes, or
+   sooner when that file is there, but never twice within 30 seconds. Lots of notifications
+   (a wallet catching up after a long time offline, a flood of tiny donations) are still at
+   most one run per 30 seconds, and the loop only checks that the file exists, never reads it.
+
+   ```
+   install -d -o <wallet-rpc user> -m 755 /var/lib/ccs-notify
+   # add to monero-wallet-rpc's options:
+   --tx-notify "/usr/bin/touch /var/lib/ccs-notify/new-tx"
+   ```
+
+   Put what the cron line runs into a script, remove the cron line, and run the loop instead:
+
+   ```
+   #!/bin/sh
+   # /usr/local/bin/ccs-bash-update (chmod 755): what the cron line ran
+   git -C /var/lib/ccs/proposals pull -q --ff-only ; ccs-bash-run >> /var/log/ccs-bash.log 2>&1 ; cd /opt/ccs-front && jekyll build -q
+   ```
+
+   ```
+   # /etc/systemd/system/ccs-bash.service, then: systemctl enable --now ccs-bash
+   [Unit]
+   Description=ccs-bash, every 2 minutes and after each new tx
+   After=network-online.target
+
+   [Service]
+   ExecStart=/opt/ccs-bash/notify-loop.sh /usr/local/bin/ccs-bash-update
+   Restart=always
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+
+   `GAP` (30) and `EVERY` (120) seconds can be changed with `Environment=` lines. `GAP` has
+   to be well below `EVERY`, or a notification only ever waits for the next regular run.
+
 The first run on a fresh install looks up the merged MR of every proposal, which
 takes a few minutes. After that, only new proposals are looked up.
 
@@ -378,7 +417,7 @@ port forwarding, reading back, `..` and absolute paths, `--temp-dir`, `--partial
 `--backup-dir`, `--log-file`, `--link-dest`, `--copy-dest`, `--compare-dest`, deleting,
 symlinks, and the key from another machine. All are refused or stay inside the folder.
 With `--loose` (rrsync alone, without the other restrictions) those checks fail, so the test
-does catch them.
+does catch them. For instant updates, run the push line through `notify-loop.sh` as in step 7.
 
 This can't stop a taken-over wallet machine from pushing false JSON (it is the source of the
 data), and the web server stays the place to guard, see [Security](#security).
@@ -432,8 +471,8 @@ re-checks the mirrors: plain mirrors drop a version once Debian updates the pack
    run, a funding-required proposal without an address would get a subaddress from each of
    them, so check there is none first, or stop ccs-back's cron before the first run.
 
-4. **Switch over:** replace ccs-back's cron line (and any `--tx-notify` script; ccs-bash needs none) with ccs-bash's
-   (setup step 6), point ccs-front at the new output directories (setup steps 4 and 5), then stop the
+4. **Switch over:** replace ccs-back's cron line with ccs-bash's (setup step 6), and drop ccs-back's
+   `--tx-notify` script (it needs wallet-rpc to run as root; setup step 7 does the same without), point ccs-front at the new output directories (setup steps 4 and 5), then stop the
    ccs-back and database containers or services. Keep them until you are happy, so going
    back is just restoring the cron line and starting them again.
 
@@ -481,5 +520,5 @@ Differences from ccs-back:
 tests/run.sh             # end-to-end run on tests/fixtures with a fake wallet and GitLab
 UPDATE=1 tests/run.sh    # rewrite tests/expected after an intended change, then check the diff
 tests/rrsync.sh          # the two-machine rrsync setup, attacked from the wallet machine (docker)
-shellcheck -x ccs-back.sh lib/*.sh tests/*.sh
+shellcheck -x ccs-back.sh notify-loop.sh lib/*.sh tests/*.sh
 ```
