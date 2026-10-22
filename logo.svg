@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <title>ccs-bash</title>
   <!-- A ribbed clam in a gear, in the colours of Ferris the Rust crab. Generated; see the
-       comments for what each part is. The eyes blink every 4 s and glance around every 8 s. -->
+       comments for what each part is. In a 12 s loop the eyes glance around, blink twice and wink. -->
   <defs>
     <rect id="tooth" x="244" y="10" width="24" height="34" rx="6"/>
     <mask id="ring-hole">
@@ -50,18 +50,18 @@
   <!-- the darkness inside the half-open clam -->
   <path fill="#000000" d="M88 266 Q256 210 424 266 Q256 330 88 266 Z"/>
 
-  <!-- two white eyes looking out of it, blinking ... -->
+  <!-- two white eyes looking out of it, blinking and winking ... -->
   <g fill="#FFFFFF">
-    <ellipse cx="216" cy="270" rx="27" ry="23"><animate attributeName="ry" values="23;23;1;23;23" keyTimes="0;0.9;0.94;0.98;1" dur="4s" repeatCount="indefinite"/></ellipse>
-    <ellipse cx="296" cy="270" rx="27" ry="23"><animate attributeName="ry" values="23;23;1;23;23" keyTimes="0;0.9;0.94;0.98;1" dur="4s" repeatCount="indefinite"/></ellipse>
+    <ellipse cx="216" cy="270" rx="27" ry="23"><animate attributeName="ry" values="23;23;1;23;23;1;23;23" keyTimes="0;0.283;0.3;0.317;0.617;0.633;0.65;1" dur="12s" repeatCount="indefinite"/></ellipse>
+    <ellipse cx="296" cy="270" rx="27" ry="23"><animate attributeName="ry" values="23;23;1;23;23;1;23;23;1;1;23;23" keyTimes="0;0.283;0.3;0.317;0.617;0.633;0.65;0.867;0.879;0.917;0.933;1" dur="12s" repeatCount="indefinite"/></ellipse>
   </g>
   <!-- ... and glancing left and right -->
   <g fill="#000000">
-    <animateTransform attributeName="transform" type="translate" dur="8s" repeatCount="indefinite"
-        values="0 0; 0 0; -9 0; -9 0; 9 0; 9 0; 0 0; 0 0" keyTimes="0; 0.1; 0.16; 0.4; 0.48; 0.7; 0.76; 1"
+    <animateTransform attributeName="transform" type="translate" dur="12s" repeatCount="indefinite"
+        values="0 0; 0 0; -9 0; -9 0; 9 0; 9 0; 0 0; 0 0" keyTimes="0; 0.06; 0.1; 0.25; 0.4; 0.55; 0.6; 1"
         calcMode="spline" keySplines=".4 0 .2 1; .4 0 .2 1; .4 0 .2 1; .4 0 .2 1; .4 0 .2 1; .4 0 .2 1; .4 0 .2 1"/>
-    <ellipse cx="219" cy="274" rx="11" ry="11"><animate attributeName="ry" values="11;11;0;11;11" keyTimes="0;0.9;0.94;0.98;1" dur="4s" repeatCount="indefinite"/></ellipse>
-    <ellipse cx="299" cy="274" rx="11" ry="11"><animate attributeName="ry" values="11;11;0;11;11" keyTimes="0;0.9;0.94;0.98;1" dur="4s" repeatCount="indefinite"/></ellipse>
+    <ellipse cx="219" cy="274" rx="11" ry="11"><animate attributeName="ry" values="11;11;0;11;11;0;11;11" keyTimes="0;0.283;0.3;0.317;0.617;0.633;0.65;1" dur="12s" repeatCount="indefinite"/></ellipse>
+    <ellipse cx="299" cy="274" rx="11" ry="11"><animate attributeName="ry" values="11;11;0;11;11;0;11;11;0;0;11;11" keyTimes="0;0.283;0.3;0.317;0.617;0.633;0.65;0.867;0.879;0.917;0.933;1" dur="12s" repeatCount="indefinite"/></ellipse>
   </g>
 
   <!-- the two shells, ribbed, with scalloped lips (the top one hangs over the eyes like lids) -->
