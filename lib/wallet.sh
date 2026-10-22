@@ -43,12 +43,16 @@ check_wallet_addresses() {
 # Give every funding-required proposal without an address a new subaddress.
 # Runs after check_wallet_addresses, so new indexes never reuse ones in the state.
 assign_addresses() {
-    local file res idx addr
+    local file res idx addr max
     while IFS= read -r file; do
         res=$(rpc create_address "$(jq -nc --arg l "$file" '{account_index: 0, label: $l}')") || return 1
         idx=$(jq -r .address_index <<<"$res")
         addr=$(jq -r .address <<<"$res")
         [[ $idx =~ ^[0-9]+$ && $addr =~ ^[0-9A-Za-z]{95}$ ]] || die "unexpected create_address result: $res"
+        # A new subaddress has to be new: above every index in the state (a wallet that
+        # answered with one already in use would give two proposals the same address).
+        max=$(jq '[.[].subaddr_index | numbers] | max // 0' "$WORK/state.json")
+        ((idx > max)) || die "create_address gave subaddress $idx, but the state already goes up to $max"
         state_update --arg f "$file" --argjson i "$idx" --arg a "$addr" '.[$f] += {subaddr_index: $i, address: $a}'
         log "$file: subaddress $idx $addr"
     done < <(jq -r --slurpfile state "$WORK/state.json" '
@@ -90,9 +94,14 @@ to_atomic() {
 # it is pending. count is every tx, pending or not.
 # Time-locked txes (unlock_time set) are never counted.
 donation_totals() {
-    local transfers lines idx confs amount
+    local transfers lines idx confs amount n indexes
     local -A confirmed=() pending=() count=()
-    transfers=$(rpc get_transfers '{"in": true, "pool": true, "account_index": 0}') || return 1
+    # Only the proposals' subaddresses (1 and up), never 0: the main address can receive
+    # anything (e.g. payout change, which a view-only wallet sees as incoming).
+    n=$(rpc get_address '{"account_index": 0}' | jq '.addresses | length') || return 1
+    ((n > 1)) || return 0
+    indexes=$(jq -nc --argjson n "$n" '[range(1; $n)]')
+    transfers=$(rpc get_transfers "{\"in\": true, \"pool\": true, \"account_index\": 0, \"subaddr_indices\": $indexes}") || return 1
     # jq only passes each amount through. Above 2^53 it could not even read it
     # exactly, so it stops the run instead.
     lines=$(jq -r '
@@ -104,7 +113,10 @@ donation_totals() {
         | "\(.subaddr_index.minor) \(.confirmations // 0) \(.amount)"' <<<"$transfers") || return 1
     while read -r idx confs amount; do
         [[ -n $idx ]] || continue # no transfers at all
-        [[ $amount =~ ^[0-9]+$ ]] || die "unexpected amount from wallet: $amount"
+        # All three are used in bash arithmetic, which would run a command hidden in an array
+        # subscript (e.g. confirmations "x[$(cmd)]"), so they must be plain numbers first.
+        [[ $idx =~ ^[0-9]+$ && $confs =~ ^[0-9]+$ && $amount =~ ^[0-9]+$ ]] \
+            || die "unexpected transfer from wallet: index '$idx' confirmations '$confs' amount '$amount'"
         if ((confs >= MIN_CONFIRMATIONS)); then
             confirmed[$idx]=$((${confirmed[$idx]:-0} + amount))
         else
@@ -115,6 +127,18 @@ donation_totals() {
     for idx in "${!count[@]}"; do
         printf '%s\t%s\t%s\t%s\n' "$idx" "${confirmed[$idx]:-0}" "${pending[$idx]:-0}" "${count[$idx]}"
     done
+}
+
+# Stop if donations sit at a subaddress the state file doesn't have: the state was lost,
+# emptied or swapped, and carrying on would give proposals new addresses. Runs before any
+# new subaddress is handed out, so a just-made one never shows up here.
+check_known_subaddresses() {
+    local unknown
+    unknown=$(cut -f1 "$WORK/totals.tsv" | jq -R -s --slurpfile state "$WORK/state.json" '
+        ([$state[0][] | .subaddr_index | numbers | tostring]) as $known
+        | split("\n") | map(select(. != "" and (IN($known[]) | not))) | join(" ")') || return 1
+    unknown=$(jq -r . <<<"$unknown")
+    [[ -z $unknown ]] || die "donations at subaddress $unknown, which $STATE_DIR/proposals.csv doesn't have (lost or wrong state file?)"
 }
 
 # Print every proposal's money, ready to show: {"file.md": {amount, raised,

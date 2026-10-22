@@ -21,19 +21,25 @@ load_config() {
     [[ $MIN_CONFIRMATIONS =~ ^[0-9]+$ ]] || die "MIN_CONFIRMATIONS must be a number"
 }
 
-# Write stdin to file $1 via a temp file, so readers never see half a file.
+# atomic_write FILE COMMAND...: replace FILE with what COMMAND prints, only if it succeeds
+# and prints something. Written to a temp file, flushed to disk, then renamed, so readers
+# never see half a file and a failed or killed command leaves the old one in place.
 atomic_write() {
-    local tmp
-    tmp=$(mktemp "$1.XXXXXX") || return 1
-    if cat > "$tmp" && chmod 644 "$tmp" && mv -f "$tmp" "$1"; then
+    local out=$1 tmp
+    shift
+    (($#)) || { log "error: atomic_write $out: no command"; return 1; }
+    tmp=$(mktemp "$out.XXXXXX") || return 1
+    if "$@" > "$tmp" && [[ -s $tmp ]] && chmod 644 "$tmp" && sync "$tmp" && mv -f "$tmp" "$out"; then
         return 0
     fi
     rm -f "$tmp"
+    log "error: could not write $out, keeping the old one"
     return 1
 }
 
 # Filenames come from the repo and from GitLab MRs, so only accept plain
-# names: no directories, no control characters, no hidden files.
+# names: no directories, no control characters, no hidden files, and no backslash
+# (some steps pass names through jq's @tsv, which would double it).
 safe_filename() {
-    [[ $1 == *.md && $1 != .* && $1 != */* && $1 != *[[:cntrl:]]* ]]
+    [[ $1 == *.md && $1 != .* && $1 != */* && $1 != *[[:cntrl:]]* && $1 != *\\* ]]
 }

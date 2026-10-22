@@ -13,10 +13,13 @@ rpc() {
             for ((i = 0; i < n; i++)); do
                 printf '{"address_index": %d, "address": "%s"}\n' "$i" "$(fake_address "$i")"
             done | jq -s --arg main "$(fake_address 0)" '{address: $main, addresses: .}' ;;
-        create_address)
+        create_address) # TEST_REUSE_INDEX=1: a wallet that hands out subaddress 1 again
             echo $((n + 1)) > "$TEST_TMP/wallet-count"
+            [[ -z ${TEST_REUSE_INDEX:-} ]] || n=1
             printf '{"address_index": %d, "address": "%s"}\n' "$n" "$(fake_address "$n")" ;;
-        get_transfers) cat "$FIXTURES/rpc/get_transfers.json" ;;
+        get_transfers) # like the real one: only the subaddresses asked for
+            jq --argjson want "$(jq -c '.subaddr_indices // []' <<<"$2")" \
+                'map_values(map(select(.subaddr_index.minor | IN($want[]))))' "$FIXTURES/rpc/get_transfers.json" ;;
         *) return 1 ;;
     esac
 }
@@ -28,6 +31,7 @@ gitlab_get() {
         merge_requests\?state=merged*) cat "$FIXTURES/gitlab/merged.json" ;;
         merge_requests/*/changes)
             iid=${1#merge_requests/}
+            [[ ${iid%/changes} != "${TEST_FAIL_MR:-}" ]] || return 1 # TEST_FAIL_MR=N: that MR fails
             cat "$FIXTURES/gitlab/changes-${iid%/changes}.json" ;;
         *) return 1 ;;
     esac

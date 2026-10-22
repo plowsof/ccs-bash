@@ -37,6 +37,18 @@
     },
     {
         "address": "80000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003",
+        "author": "judy",
+        "contributions": 1,
+        "date": "October 5, 2026",
+        "percentage_funded": 99,
+        "raised_amount": "99.9999",
+        "state": "FUNDING-REQUIRED",
+        "target_amount": "100.0000",
+        "title": "Nearly funded",
+        "filename": "near-funded.md"
+    },
+    {
+        "address": "80000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004",
         "author": "ivan",
         "contributions": 0,
         "date": "January 2, 2025",
@@ -48,15 +60,39 @@
         "filename": " leading-space.md"
     },
     {
-        "address": "80000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004",
+        "address": null,
+        "author": "lee",
+        "contributions": 0,
+        "date": "May 2, 2023",
+        "percentage_funded": 0,
+        "raised_amount": "0.0000",
+        "state": "COMPLETED",
+        "target_amount": "3.0000",
+        "title": "Ends with dots",
+        "filename": "dots-end.md"
+    },
+    {
+        "address": "80000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005",
         "author": "dave",
-        "contributions": 1,
+        "contributions": 0,
         "date": "October 1, 2026",
-        "percentage_funded": 99,
-        "raised_amount": "99.9999",
+        "percentage_funded": 0,
+        "raised_amount": "0.0000",
         "state": "FUNDING-REQUIRED",
         "target_amount": "100.0000",
         "title": "Brand new",
         "filename": "new-fund.md"
+    },
+    {
+        "address": null,
+        "author": "kim",
+        "contributions": 0,
+        "date": "March 1, 2022",
+        "percentage_funded": 0,
+        "raised_amount": "0.0000",
+        "state": "COMPLETED",
+        "target_amount": "5.0000",
+        "title": "Name with a quote",
+        "filename": "o'quote.md"
     }
 ]
