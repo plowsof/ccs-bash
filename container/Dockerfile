@@ -25,12 +25,40 @@ RUN --mount=type=bind,source=container,target=/pin \
     && make DESTDIR=/rootfs install \
     && rm -rf /rootfs/usr/include /rootfs/usr/lib/pkgconfig /rootfs/usr/share /rootfs/usr/lib/*.a /rootfs/usr/lib/*.la
 
-# Everything ccs-bash runs, and nothing else. busybox gives the small tools (env, date,
-# mktemp, base64, xargs, awk, flock, sed, grep, diff, ...) in one package; bash runs the scripts.
+# busybox, built from source with only the applets in busybox-applets (and those applets'
+# own options, like readlink -f or xargs -0): the small tools (env, date, mktemp, base64,
+# xargs, awk, flock, ...), and nothing else compiled in.
+# (The toolchain's compiler is clang, as cc; its build shell sets its own MAKEFLAGS.)
+FROM toolchain AS busybox
+COPY --from=bash / /
+COPY --from=ncurses / /
+# no build time or date in the binary
+ENV KCONFIG_NOTIMESTAMP=1
+RUN --mount=type=bind,source=container,target=/pin \
+    bash /pin/verify.sh /pin/sources.lock /pin/sources \
+    && tar -xjf /pin/sources/busybox-1.38.0.tar.bz2 -C / \
+    && cd /busybox-1.38.0 \
+    && make HOSTCC=cc CC=cc allnoconfig > /dev/null \
+    && for applet in $(grep -v '^#' /pin/busybox-applets); do \
+        config=CONFIG_$(echo "$applet" | tr 'a-z-' 'A-Z_'); \
+        grep -q "^# $config is not set$" .config || { echo "no applet $applet" >&2; exit 1; }; \
+        sed -i "s/^# $config is not set$/$config=y/" .config; \
+        sed -i "s/^# \(CONFIG_FEATURE_${config#CONFIG_}_[A-Z0-9_]*\) is not set$/\1=y/" .config; \
+    done \
+    && sed -i "s/^# CONFIG_LONG_OPTS is not set$/CONFIG_LONG_OPTS=y/" .config \
+    && yes "" | make HOSTCC=cc CC=cc oldconfig > /dev/null \
+    && make HOSTCC=cc CC=cc > /dev/null \
+    && install -D -m 755 busybox /rootfs/usr/bin/busybox \
+    && for applet in $(grep -v '^#' /pin/busybox-applets); do \
+        ln -s busybox "/rootfs/usr/bin/$applet"; \
+        ! "/rootfs/usr/bin/$applet" --help 2>&1 | grep -q "applet not found" || { echo "$applet not built" >&2; exit 1; }; \
+    done
+
+# Everything ccs-bash runs, and nothing else. bash runs the scripts.
 FROM scratch AS tree
 COPY --from=filesystem / /
 COPY --from=musl / /
-COPY --from=busybox / /
+COPY --from=busybox /rootfs/ /
 COPY --from=bash / /
 COPY --from=ncurses / /
 COPY --from=ca-certificates / /
