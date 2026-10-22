@@ -17,10 +17,10 @@ REPOSITORY_URL=https://repo.getmonero.org/api/v4/projects/54
 # Checkout of the proposals repository (kept up to date by cron, see README).
 PROPOSALS_DIR=/var/lib/ccs/proposals
 
-# Where the address mapping (proposals.csv) and QR codes are kept. Back this up.
+# Where the address mapping (proposals.csv) is kept. Back this up.
 STATE_DIR=/var/lib/ccs/state
 
-# Where proposals.json and complete.json are written for ccs-front.
+# Where proposals.json, completed-proposals.json and projects.json are written.
 OUTPUT_DIR=/var/lib/ccs/out
 
 # Confirmations before a donation is counted. 0 also counts txes in the pool.
