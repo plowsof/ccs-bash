@@ -49,6 +49,9 @@ Then:
    wallet's history, so the wallet must have the full history (the same wallet, or one
    restored from a height before the first donation).
 
+   From an older ccs-bash that kept `proposals.tsv`: convert it with
+   `jq -rR 'split("\t") | @csv' proposals.tsv > proposals.csv`.
+
    Moving the wallet to [setup](setup.md) step 1's service: stop the old wallet-rpc (it saves the wallet
    on exit), copy the wallet's two files (`<name>` and `<name>.keys`) into `/var/lib/ccs/wallet`
    owned by `ccs-wallet` (mode 600), point `wallet-file` at them and start the service. Check

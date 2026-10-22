@@ -18,12 +18,15 @@ Not a crustacean. A mollusc.
 
 A small replacement for [ccs-back](https://repo.getmonero.org/monero-project/ccs-back),
 the backend of the Monero Community Crowdfunding System.
-It is a bash script run from cron. It has no web server, database or PHP;
-it uses a view-only `monero-wallet-rpc` and either a few Debian packages or a pinned
-container image (see [Two ways to run it](#two-ways-to-run-it)).
+It is a bash script, run from cron or a small loop that also runs it when a donation
+arrives. It has no web server, database or PHP; it uses a view-only `monero-wallet-rpc` and
+either a few Debian packages or a pinned container image (see [Two ways to run it](#two-ways-to-run-it)).
 
 It writes the files [ccs-front](https://repo.getmonero.org/monero-project/ccs-front) (Jekyll)
 reads, `proposals.json` and `completed-proposals.json`, plus `projects.json` for a `/projects` API.
+
+To install it, see [Setup](docs/setup.md); to replace a running ccs-back, see
+[Moving from ccs-back](docs/migrating.md). All the documentation is listed [below](#documentation).
 
 ## Security
 
@@ -32,16 +35,19 @@ that writes the JSON or serves the site, they can swap in their own address and 
 donations. (The wallet is view-only, so the coins already received are not at risk; that
 part was never the problem.) ccs-bash is about leaving as few ways in as possible:
 
-- **Nothing to connect to.** ccs-bash is a cron job, not a service: no web server, no open
-  port, no database. It only makes outgoing calls, to the wallet and to GitLab.
+- **Nothing to connect to.** ccs-bash runs from cron (or a loop, [setup](docs/setup.md) step 7),
+  not as a server: no web server, no open port, no database. It only makes outgoing calls,
+  to the wallet and to GitLab.
 - **Few, well-kept dependencies.** About ten Debian packages, patched by Debian's security
   team, or the same tools from StageX, built from source (see [Dependencies](docs/setup.md#dependencies)),
   instead of a framework and its package tree. All of ccs-bash is about 700 lines (500
   without comments) you can read in an afternoon.
 - **Least privilege.** It runs as a `ccs` user that can only write its state and output
-  folders. It refuses to run if it can write its own config (so not as root either).
+  folders ([setup](docs/setup.md) step 2); the wallet runs as a user of its own (step 1).
+  It refuses to run if it can write its own config (so not as root either).
 - **Checks the wallet.** The wallet's main address is pinned in the config (`WALLET_ADDRESS`),
-  which only root can change; every subaddress must also match the state file. A swapped
+  which only root can change ([setup](docs/setup.md) step 2); every subaddress must also
+  match the state file. A swapped
   wallet stops the run instead of getting its addresses published, even if the state file
   (which the `ccs` user can write) was changed to match it.
 - **QR codes made fresh.** Every run makes the QR codes again from the addresses and
@@ -53,7 +59,8 @@ part was never the problem.) ccs-bash is about leaving as few ways in as possibl
 - **Can run apart from the website.** ccs-bash and ccs-front can be on
   [separate machines](docs/two-machines.md). Then the wallet machine accepts no
   connections at all: it pushes the JSON to the web server, whose key can only write into
-  one folder (`rrsync -wo`). Nothing on the web server can reach the wallet machine, the
+  one folder (`rrsync -wo`, set up in [ccs-front on another machine](docs/two-machines.md)).
+  Nothing on the web server can reach the wallet machine, the
   state file (which says which address belongs to which proposal) or read anything back.
 
 What it can't fix: whoever gets a shell on the **web server** can still change the site and
@@ -103,11 +110,14 @@ filename,gitlab_url,subaddr_index,address,funding_required_date
 "fund-me.md","https://repo.getmonero.org/.../merge_requests/697",43,"8...","2026-09-08T18:06:19Z"
 ```
 
-Values with a comma or a quote are quoted (`jq -r '@csv'` writes it that way).
-An older `proposals.tsv` converts with `jq -rR 'split("\t") | @csv' proposals.tsv > proposals.csv`.
+Values with a comma or a quote are quoted (`jq -r '@csv'` writes it that way). A fresh
+install starts it empty ([setup](docs/setup.md) step 2); moving from ccs-back, it is exported
+from the database ([Moving from ccs-back](docs/migrating.md) step 2).
 
 This file says which subaddress belongs to which proposal, so **back it up**.
-The wallet can always be restored from its keys; this file cannot be recreated.
+The wallet can always be restored from its keys; this file cannot be recreated. If it is lost
+or wrong, runs stop rather than hand out new addresses (see
+[When something is wrong](docs/troubleshooting.md)).
 
 ## Two ways to run it
 
@@ -119,7 +129,8 @@ The wallet can always be restored from its keys; this file cannot be recreated.
 
 Both run the same scripts with the same config and folders, so you can switch between them.
 B is the one to use where the supply chain matters: everything in it is built from source,
-what runs is exactly what the pins say, and nothing can be installed into it.
+what runs is exactly what the pins say, and nothing can be installed into it (how it is built
+and checked: [The pinned image](docs/image.md)). [Setup](docs/setup.md) step 3 has both.
 
 ## Documentation
 
@@ -141,6 +152,6 @@ what runs is exactly what the pins say, and nothing can be installed into it.
 ```
 tests/run.sh             # end-to-end run on tests/fixtures with a fake wallet and GitLab
 UPDATE=1 tests/run.sh    # rewrite tests/expected after an intended change, then check the diff
-tests/rrsync.sh          # the two-machine rrsync setup, attacked from the wallet machine (docker)
+tests/rrsync.sh          # the two-machine rrsync setup (docs/two-machines.md), attacked from the wallet machine (docker)
 shellcheck -x ccs-back.sh notify-loop.sh lib/*.sh tests/*.sh
 ```
