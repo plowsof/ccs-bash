@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # update-images.sh: pin every image in images to the digest StageX's "latest" tag has now.
-# Review the diff before committing it.
+# Checks the new pins' signatures (verify-images.sh); review the diff before committing it.
 set -euo pipefail
 here=$(dirname "$(readlink -f "$0")")
 while read -r line; do
@@ -15,3 +15,4 @@ while read -r line; do
 done < "$here/images" > "$here/images.new"
 mv "$here/images.new" "$here/images"
 git -C "$here" diff --stat -- images >&2
+"$here/verify-images.sh"
