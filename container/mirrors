@@ -1,0 +1,10 @@
+# archive  base url. Besides snapshot.debian.org (always listed first: it keeps every
+# version forever), each file in deps.lock gets every mirror here that serves it with
+# the right sha256. Plain mirrors only carry current versions, so once Debian updates a
+# package they drop it; update-lock.sh then needs rerunning to stay at 2+ mirrors.
+debian           https://deb.debian.org/debian
+debian           https://mirrors.kernel.org/debian
+debian           https://mirrors.dotsrc.org/debian
+debian-security  https://deb.debian.org/debian-security
+debian-security  https://mirrors.dotsrc.org/debian-security
+debian-security  https://mirror.init7.net/debian-security
