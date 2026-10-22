@@ -2,30 +2,15 @@
 #   $out == "proposals": [Ideas, Funding Required, Work in Progress]
 #   $out == "completed-proposals": [Completed Proposals]
 #   $out == "projects":  every proposal, in the order first seen (the /projects API)
-# Inputs (--slurpfile, so each is wrapped in an array): props, state, totals, qr, ideas.
+# Inputs (--slurpfile, so each is wrapped in an array): props, state, funds, qr, ideas.
+# All XMR amounts arrive ready to show from proposal_funds (lib/wallet.sh);
+# no money arithmetic happens here, since jq numbers are doubles.
 
-$props[0] as $props | $state[0] as $state | $totals[0] as $totals | $qr[0] as $qr
+$props[0] as $props | $state[0] as $state | $funds[0] as $funds | $qr[0] as $qr
 
-# 85 -> "85.0000": amounts are shown with 4 decimals, as ccs-back stores
-# them as DECIMAL(8,4).
-| def fixed4: (. * 10000 | round) as $n | "\($n / 10000 | floor).\("000\($n % 10000)" | .[-4:])";
-
-  # Donations to a proposal. raised is rounded to 4 decimals before the
-  # percentage is worked out, as ccs-back did.
-  def funds:
+| def proposal:
     ($state[.file] // {}) as $s
-    | ($totals[$s.subaddr_index // -1 | tostring] // {confirmed: 0, pending: 0, count: 0}) as $t
-    | ($t.confirmed / 1e12 * 10000 | round / 10000) as $raised
-    | {
-        raised: $raised,
-        pending: ($t.pending / 1e12),
-        count: $t.count,
-        percentage: (if .amount > 0 then [100, ($raised / .amount * 100 | round)] | min else 0 end)
-      };
-
-  def proposal:
-    ($state[.file] // {}) as $s
-    | funds as $f
+    | $funds[.file] as $f
     | {
         name: (.title | @html),
         "donate-address": $s.address,
@@ -37,8 +22,8 @@ $props[0] as $props | $state[0] as $state | $totals[0] as $totals | $qr[0] as $q
         "milestones-completed": .done,
         "milestones-percentage": ([100, (.done * 100 / .milestones | floor)] | min),
         percentage: $f.percentage,
-        amount: (.amount | fixed4),
-        "amount-funded": ($f.raised | fixed4),
+        amount: $f.amount,
+        "amount-funded": $f.raised,
         "amount-pending": $f.pending,
         author: (.author | @html),
         date: (if .ts > 0 then .ts | strftime("%B %-d, %Y") else null end),
@@ -46,16 +31,16 @@ $props[0] as $props | $state[0] as $state | $totals[0] as $totals | $qr[0] as $q
       };
 
   def project:
-    funds as $f
+    $funds[.file] as $f
     | {
         address: $state[.file].address,
         author: (.author | @html),
         contributions: $f.count,
         date: (if .ts > 0 then .ts | strftime("%B %-d, %Y") else null end),
         percentage_funded: $f.percentage,
-        raised_amount: ($f.raised | fixed4),
+        raised_amount: $f.raised,
         state: {fr: "FUNDING-REQUIRED", wip: "WORK-IN-PROGRESS", cp: "COMPLETED"}[.layout],
-        target_amount: (.amount | fixed4),
+        target_amount: $f.amount,
         title: (.title | @html),
         filename: .file
       };
