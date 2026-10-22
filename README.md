@@ -99,6 +99,7 @@ Docker on the host and gets Debian's security updates automatically.
 
 ## Documentation
 
+- [Recommended design](docs/design.md): bash renders the site on the backend, the web server only serves files
 - [Setup](docs/setup.md): dependencies, installing step by step
 - [ccs-front on another machine](docs/two-machines.md): the wallet machine pushes, the web server only receives
 - [Moving from ccs-back](docs/migrating.md): exporting the state, switching over, what differs
