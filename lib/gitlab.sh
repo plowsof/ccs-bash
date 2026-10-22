@@ -57,7 +57,11 @@ ideas() {
     local mrs iid file keep=()
     mrs=$(gitlab_mrs opened) || return 1
     while read -r iid; do
-        file=$(mr_proposal_file "$iid") || return 1
+        # One MR that can't be read is left out this time, not the whole list frozen.
+        if ! file=$(mr_proposal_file "$iid"); then
+            log "warning: could not read MR !$iid, leaving it out of the ideas this run"
+            continue
+        fi
         if [[ -n $file && ! -e $PROPOSALS_DIR/$file ]]; then
             keep+=("$iid")
         fi
@@ -66,7 +70,7 @@ ideas() {
     jq --argjson keep "$(printf '%s\n' "${keep[@]}" | jq -s .)" '
         map(select(.iid | IN($keep[])) | {
             name: (.title | sub("^\\s+"; "") | sub("\\s+$"; "") | @html),
-            "gitlab-url": (.web_url | @html),
+            "gitlab-url": (.web_url | if type == "string" and test("^https://[^\\s\"\\x27<>\\\\]+$") then @html else null end),
             author: (.author.username | @html),
             date: (.created_at | sub("\\.[0-9]+"; "") | fromdate | strftime("%B %-d, %Y")),
             ts: (.created_at | sub("\\.[0-9]+"; "") | fromdate)
