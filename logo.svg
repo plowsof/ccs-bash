@@ -1,13 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <title>ccs-bash</title>
-  <!-- A ribbed clam in a gear, in the colours of Ferris the Rust crab. Generated; see the
-       comments for what each part is. In a 12 s loop the eyes glance around, blink twice and wink. -->
+  <!-- A clam in a gear, in the colours of Ferris the Rust crab, seen from the side: the hinge is
+       on the left and the mouth opens to the right. Generated. In a 12 s loop the eyes glance
+       around, blink twice and wink. -->
   <defs>
     <rect id="tooth" x="244" y="10" width="24" height="34" rx="6"/>
     <mask id="ring-hole">
       <rect width="512" height="512" fill="#fff"/>
       <circle cx="256" cy="256" r="194" fill="#000"/>
     </mask>
+    <clipPath id="upper-shell"><path d="M112 270 C122 150 180 122 300 122 C386 122 424 174 418 236 Q396.1 245.4 374.3 240.9 Q352.4 250.3 330.6 245.7 Q308.7 255.1 286.9 250.6 Q265 260 243.1 255.4 Q221.3 264.9 199.4 260.3 Q177.6 269.7 155.7 265.1 Q133.9 274.6 112 270 Z"/></clipPath>
+    <clipPath id="lower-shell"><path d="M112 270 C122 390 180 418 300 418 C386 418 424 366 418 304 Q396.1 294.6 374.3 299.1 Q352.4 289.7 330.6 294.3 Q308.7 284.9 286.9 289.4 Q265 280 243.1 284.6 Q221.3 275.1 199.4 279.7 Q177.6 270.3 155.7 274.9 Q133.9 265.4 112 270 Z"/></clipPath>
   </defs>
 
   <!-- gear ring -->
@@ -47,31 +50,32 @@
     <use href="#tooth" transform="rotate(348.75 256 256)"/>
   </g>
 
-  <!-- the darkness inside the half-open clam -->
-  <path fill="#000000" d="M88 266 Q256 210 424 266 Q256 330 88 266 Z"/>
+  <!-- the darkness inside the open clam -->
+  <path fill="#000000" d="M112 270 L418 236 Q436 270 418 304 Z"/>
 
-  <!-- two white eyes looking out of it, blinking and winking ... -->
+  <!-- two white eyes peeking out of it, blinking and winking ... -->
   <g fill="#FFFFFF">
-    <ellipse cx="216" cy="270" rx="27" ry="23"><animate attributeName="ry" values="23;23;1;23;23;1;23;23" keyTimes="0;0.283;0.3;0.317;0.617;0.633;0.65;1" dur="12s" repeatCount="indefinite"/></ellipse>
-    <ellipse cx="296" cy="270" rx="27" ry="23"><animate attributeName="ry" values="23;23;1;23;23;1;23;23;1;1;23;23" keyTimes="0;0.283;0.3;0.317;0.617;0.633;0.65;0.867;0.879;0.917;0.933;1" dur="12s" repeatCount="indefinite"/></ellipse>
+    <ellipse cx="318" cy="270" rx="22" ry="20"><animate attributeName="ry" values="20;20;1;20;20;1;20;20" keyTimes="0;0.283;0.3;0.317;0.617;0.633;0.65;1" dur="12s" repeatCount="indefinite"/></ellipse>
+    <ellipse cx="372" cy="270" rx="22" ry="20"><animate attributeName="ry" values="20;20;1;20;20;1;20;20;1;1;20;20" keyTimes="0;0.283;0.3;0.317;0.617;0.633;0.65;0.867;0.879;0.917;0.933;1" dur="12s" repeatCount="indefinite"/></ellipse>
   </g>
   <!-- ... and glancing left and right -->
   <g fill="#000000">
     <animateTransform attributeName="transform" type="translate" dur="12s" repeatCount="indefinite"
-        values="0 0; 0 0; -9 0; -9 0; 9 0; 9 0; 0 0; 0 0" keyTimes="0; 0.06; 0.1; 0.25; 0.4; 0.55; 0.6; 1"
+        values="0 0; 0 0; -7 0; -7 0; 7 0; 7 0; 0 0; 0 0" keyTimes="0; 0.06; 0.1; 0.25; 0.4; 0.55; 0.6; 1"
         calcMode="spline" keySplines=".4 0 .2 1; .4 0 .2 1; .4 0 .2 1; .4 0 .2 1; .4 0 .2 1; .4 0 .2 1; .4 0 .2 1"/>
-    <ellipse cx="219" cy="274" rx="11" ry="11"><animate attributeName="ry" values="11;11;0;11;11;0;11;11" keyTimes="0;0.283;0.3;0.317;0.617;0.633;0.65;1" dur="12s" repeatCount="indefinite"/></ellipse>
-    <ellipse cx="299" cy="274" rx="11" ry="11"><animate attributeName="ry" values="11;11;0;11;11;0;11;11;0;0;11;11" keyTimes="0;0.283;0.3;0.317;0.617;0.633;0.65;0.867;0.879;0.917;0.933;1" dur="12s" repeatCount="indefinite"/></ellipse>
+    <ellipse cx="322" cy="273" rx="10" ry="10"><animate attributeName="ry" values="10;10;0;10;10;0;10;10" keyTimes="0;0.283;0.3;0.317;0.617;0.633;0.65;1" dur="12s" repeatCount="indefinite"/></ellipse>
+    <ellipse cx="376" cy="273" rx="10" ry="10"><animate attributeName="ry" values="10;10;0;10;10;0;10;10;0;0;10;10" keyTimes="0;0.283;0.3;0.317;0.617;0.633;0.65;0.867;0.879;0.917;0.933;1" dur="12s" repeatCount="indefinite"/></ellipse>
   </g>
 
-  <!-- the two shells, ribbed, with scalloped lips (the top one hangs over the eyes like lids) -->
+  <!-- the two shells, ribs fanning out from the hinge -->
   <g fill="#F74C00" stroke="#A52B00" stroke-width="6" stroke-linejoin="round">
-    <path d="M88 266 Q122 180 230 142 L220 128 L292 128 L282 142 Q390 180 424 266 Q405.3 270.5 386.7 254.9 Q368 260.8 349.3 246.6 Q330.7 253.9 312 241.1 Q293.3 249.7 274.7 238.3 Q256 248.3 237.3 238.3 Q218.7 249.7 200 241.1 Q181.3 253.9 162.7 246.6 Q144 260.8 125.3 254.9 Q106.7 270.5 88 266 Z"/>
-    <path d="M88 266 Q106.7 262.3 125.3 278.6 Q144 273.4 162.7 288.1 Q181.3 281.3 200 294.4 Q218.7 286 237.3 297.6 Q256 287.6 274.7 297.6 Q293.3 286 312 294.4 Q330.7 281.3 349.3 288.1 Q368 273.4 386.7 278.6 Q405.3 262.3 424 266 C418 360 342 376 256 376 C170 376 94 360 88 266 Z"/>
+    <path d="M112 270 C122 150 180 122 300 122 C386 122 424 174 418 236 Q396.1 245.4 374.3 240.9 Q352.4 250.3 330.6 245.7 Q308.7 255.1 286.9 250.6 Q265 260 243.1 255.4 Q221.3 264.9 199.4 260.3 Q177.6 269.7 155.7 265.1 Q133.9 274.6 112 270 Z"/>
+    <path d="M112 270 C122 390 180 418 300 418 C386 418 424 366 418 304 Q396.1 294.6 374.3 299.1 Q352.4 289.7 330.6 294.3 Q308.7 284.9 286.9 289.4 Q265 280 243.1 284.6 Q221.3 275.1 199.4 279.7 Q177.6 270.3 155.7 274.9 Q133.9 265.4 112 270 Z"/>
   </g>
-  <clipPath id="lower-shell"><path d="M88 266 Q106.7 262.3 125.3 278.6 Q144 273.4 162.7 288.1 Q181.3 281.3 200 294.4 Q218.7 286 237.3 297.6 Q256 287.6 274.7 297.6 Q293.3 286 312 294.4 Q330.7 281.3 349.3 288.1 Q368 273.4 386.7 278.6 Q405.3 262.3 424 266 C418 360 342 376 256 376 C170 376 94 360 88 266 Z"/></clipPath>
   <g fill="none" stroke="#A52B00" stroke-width="5" stroke-linecap="round">
-    <path d="M227.3 165.3 L125.3 250.9 M235.5 163.5 L162.7 242.6 M243.7 162.2 L200 237.1 M251.9 161.6 L237.3 234.3 M260.1 161.6 L274.7 234.3 M268.3 162.2 L312 237.1 M276.5 163.5 L349.3 242.6 M284.7 165.3 L386.7 250.9"/>
-    <path d="M125.3 282.6 L206.3 397.3 M162.7 292.1 L220.5 400.9 M200 298.4 L234.7 403.3 M237.3 301.6 L248.9 404.5 M274.7 301.6 L263.1 404.5 M312 298.4 L277.3 403.3 M349.3 292.1 L291.5 400.9 M386.7 282.6 L305.7 397.3" clip-path="url(#lower-shell)"/>
+    <path d="M157.8 255.6 L436.3 167.8 M154.8 248.2 L414.9 115.6 M150.6 241.4 L385.3 67.8 M145.3 235.5 L348.2 25.4 M139.2 230.4 L304.6 -10.2 M132.3 226.5 L255.7 -38.1 M124.8 223.7 L202.9 -57.6 M117 222.3 L147.5 -68.1" clip-path="url(#upper-shell)"/>
+    <path d="M157.8 284.4 L436.3 372.2 M154.8 291.8 L414.9 424.4 M150.6 298.6 L385.3 472.2 M145.3 304.5 L348.2 514.6 M139.2 309.6 L304.6 550.2 M132.3 313.5 L255.7 578.1 M124.8 316.3 L202.9 597.6 M117 317.7 L147.5 608.1" clip-path="url(#lower-shell)"/>
   </g>
+  <!-- the hinge -->
+  <circle cx="112" cy="270" r="13" fill="#A52B00"/>
 </svg>
