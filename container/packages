@@ -4,4 +4,3 @@ curl
 ca-certificates
 jq
 qrencode
-zbar-tools

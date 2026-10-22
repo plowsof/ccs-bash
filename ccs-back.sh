@@ -4,7 +4,7 @@
 # Reads the proposals checkout, GitLab MRs and a view-only monero-wallet-rpc,
 # then writes proposals.json, completed-proposals.json and projects.json into
 # OUTPUT_DIR, which is laid out like ccs-front's _data directory.
-# The only state kept between runs is STATE_DIR/proposals.csv (+ cached QR codes).
+# The only state kept between runs is STATE_DIR/proposals.csv.
 set -euo pipefail
 export LC_ALL=C TZ=UTC
 
@@ -52,7 +52,7 @@ build_site() {
 
 main() {
     load_config "${1:-/etc/ccs/ccs.conf}"
-    mkdir -p "$STATE_DIR/qr" "$OUTPUT_DIR"
+    mkdir -p "$STATE_DIR" "$OUTPUT_DIR"
 
     exec 9> "$STATE_DIR/lock"
     flock -n 9 || { log "another run is still going, skipping"; exit 0; }
