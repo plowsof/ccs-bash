@@ -30,7 +30,7 @@ check_wallet_addresses() {
         (.addresses | map({key: (.address_index | tostring), value: .address}) | from_entries) as $wallet
         | [$state[0] | to_entries[] | select(.value.address)
            | select($wallet[.value.subaddr_index | tostring] != .value.address)] | length == 0' > /dev/null \
-        || die "wallet subaddresses do not match $STATE_DIR/proposals.tsv (wrong wallet?)"
+        || die "wallet subaddresses do not match $STATE_DIR/proposals.csv (wrong wallet?)"
 }
 
 # Give every funding-required proposal without an address a new subaddress.
