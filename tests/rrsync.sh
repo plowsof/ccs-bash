@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Tests the README's "ccs-front on another machine" setup from the side of a taken-over
+# Tests the "ccs-front on another machine" setup (docs/two-machines.md) from the side of a taken-over
 # wallet machine: three containers (web server, wallet machine, some other machine), the web
-# server set up exactly as the README says, then everything the key should not be able to do.
+# server set up exactly as the docs say, then everything the key should not be able to do.
 # Needs docker and network (to install sshd and rsync from Debian). Not part of tests/run.sh.
 # `tests/rrsync.sh --loose` keeps only rrsync with its folder: then the checks for what
 # restrict, from=, -wo, -no-del and -munge stop must fail.
@@ -17,7 +17,7 @@ cleanup() {
 trap cleanup EXIT
 cleanup
 
-# The web server is Debian 12, as in the README: its sshd and rsync (3.2.7, rrsync
+# The web server is Debian 12, as in the docs: its sshd and rsync (3.2.7, rrsync
 # included), on a pinned debian:bookworm-slim.
 docker buildx build -q --load -t "$name" - > /dev/null <<EOF
 FROM debian@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
@@ -35,7 +35,7 @@ on wallet 'mkdir -p ~/.ssh && ssh-keygen -q -t ed25519 -N "" -f ~/.ssh/id_ed2551
 key=$(on wallet 'cat ~/.ssh/id_ed25519.pub')
 docker exec "$name-wallet" cat /root/.ssh/id_ed25519 | docker exec -i "$name-other" bash -c 'mkdir -p ~/.ssh && cat > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519'
 
-# The web server, as in the README.
+# The web server, as in the docs.
 line="from=\"$wallet\",command=\"rrsync -wo -no-del -munge /var/lib/ccs-data\",restrict $key"
 [[ ${1:-} == --loose ]] && line="command=\"rrsync /var/lib/ccs-data\" $key"
 on web "
@@ -57,10 +57,10 @@ fail() { echo "FAIL $1"; status=1; }
 ssh_opts="ssh -o BatchMode=yes -o StrictHostKeyChecking=yes"
 push() { on "${2:-wallet}" "cd /out && rsync $1 -e '$ssh_opts' 2>&1"; }
 
-# The normal push from the README.
+# The normal push from the docs.
 on wallet 'mkdir -p /out && echo "[1]" > /out/proposals.json && echo "[2]" > /out/projects.json'
 push "-a --delay-updates /out/ ccs-data@$web:" > /dev/null
-if [[ $(on web 'cat /var/lib/ccs-data/proposals.json') == '[1]' ]]; then ok "the README's push works"; else fail "the README's push"; fi
+if [[ $(on web 'cat /var/lib/ccs-data/proposals.json') == '[1]' ]]; then ok "the documented push works"; else fail "the documented push"; fi
 
 out=$(on wallet "$ssh_opts -tt ccs-data@$web id 2>&1" || true)
 if [[ $out != *uid=* ]]; then ok "no commands, no shell"; else fail "ran a command: $out"; fi

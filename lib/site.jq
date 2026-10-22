@@ -12,7 +12,7 @@ $props[0] as $props | $state[0] as $state | $funds[0] as $funds | $qr[0] as $qr
 | def link: if type == "string" and test("^https://[^\\s\"'<>\\\\]+$") then @html else null end;
 
   # Escaped exactly as Liquid's `escape` does (jq's @html writes ' as &apos;): ccs-front finds
-  # a page's entry by comparing this with its own file name, escaped, see README.
+  # a page's entry by comparing this with its own file name, escaped, see docs/setup.md step 4.
   def liquid_escape: gsub("&"; "&amp;") | gsub("<"; "&lt;") | gsub(">"; "&gt;") | gsub("\""; "&quot;") | gsub("'"; "&#39;");
 
   def proposal:

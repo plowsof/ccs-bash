@@ -35,7 +35,7 @@ jobs:
       - name: pinned image hash (two clean builds, and one after another commit, same hash)
         run: container/check-pinned.sh
   rrsync:
-    # The README's two-machine setup (rrsync), attacked from the wallet machine's key.
+    # The two-machine setup (docs/two-machines.md, rrsync), attacked from the wallet machine's key.
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, pinned by commit

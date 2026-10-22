@@ -86,7 +86,7 @@ RUN cd /rootfs \
 FROM scratch AS image
 COPY --from=fix /rootfs/ /
 ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-# Run as the host's ccs user (docker run --user), see README; this is only the default.
+# Run as the host's ccs user (docker run --user), see docs/setup.md step 3; this is only the default.
 USER 10001:10001
 ENTRYPOINT ["/opt/ccs-bash/ccs-back.sh"]
 CMD ["/etc/ccs/ccs.conf"]

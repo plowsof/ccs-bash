@@ -15,7 +15,7 @@ RPC_PASSWORD=change-me
 # GitLab API endpoint of the proposals repository.
 REPOSITORY_URL=https://repo.getmonero.org/api/v4/projects/54
 
-# Checkout of the proposals repository (kept up to date by cron, see README).
+# Checkout of the proposals repository (kept up to date by ccs-bash-update, see docs/setup.md).
 PROPOSALS_DIR=/var/lib/ccs/proposals
 
 # Where the address mapping (proposals.csv) is kept. Back this up.
