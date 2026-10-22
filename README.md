@@ -177,17 +177,21 @@ ccs-bash and ccs-front can run on the same machine or on separate ones. Steps 1 
 the same either way, and the same for A and B except where marked; steps 4 to 6 are for one
 machine. For two machines see [ccs-front on another machine](#ccs-front-on-another-machine).
 
-1. Run a view-only wallet with monero-wallet-rpc, bound to localhost, with a login:
+1. Run a view-only wallet with monero-wallet-rpc, as its own unprivileged user, bound to
+   localhost, with a login:
 
    ```
    monero-wallet-rpc --daemon-address 127.0.0.1:18081 --wallet-file /var/lib/ccs/wallet/ccs \
-       --rpc-bind-ip 127.0.0.1 --rpc-bind-port 18082 --rpc-login ccs:<password> \
-       --tx-notify /usr/local/bin/ccs-notify
+       --rpc-bind-ip 127.0.0.1 --rpc-bind-port 18082 --rpc-login ccs:<password>
    ```
 
    It only holds the view key, so it cannot spend. If it leaks, the cost is donation privacy.
-   With `--disable-rpc-login`, leave `RPC_USER` empty.
-   `--tx-notify` is optional: it runs a script on each incoming tx (see step 6).
+   With `--disable-rpc-login`, leave `RPC_USER` empty. Keep it on the same machine as
+   ccs-bash: over plain HTTP to another host, someone on the network could change its answers
+   (if it must be elsewhere, reach it through an SSH tunnel).
+   No `--tx-notify` that starts ccs-bash itself: that needs root (to become the `ccs`
+   user), so wallet-rpc would have to run as root. For updates right after a donation, see
+   step 7; without it, cron picks donations up within 2 minutes.
 
 2. Create a user and the directories. The user must be able to read the proposals checkout,
    so keep it outside `/root`:
@@ -196,17 +200,23 @@ machine. For two machines see [ccs-front on another machine](#ccs-front-on-anoth
    useradd --system --home-dir /var/lib/ccs --shell /usr/sbin/nologin ccs
    install -d -m 755 /var/lib/ccs
    install -d -o ccs -g ccs -m 755 /var/lib/ccs/state /var/lib/ccs/out
+   install -o ccs -g ccs -m 644 /dev/null /var/lib/ccs/state/proposals.csv   # fresh install only
    git clone https://repo.getmonero.org/monero-project/ccs-proposals.git /var/lib/ccs/proposals
    install -d -g ccs -m 750 /etc/ccs
    install -g ccs -m 640 ccs.conf.example /etc/ccs/ccs.conf    # root:ccs 640; then edit it
    ```
+
+   The empty `proposals.csv` is for a fresh install; when moving from ccs-back it comes from the
+   export instead. ccs-bash never creates it itself: if it goes missing, or loses track of
+   subaddresses that hold donations, the run stops rather than give proposals new addresses.
+   Restore it from your backup.
 
    Set `WALLET_ADDRESS` to the wallet's main address, from your own records of the wallet
    (or from `monero-wallet-cli` with the view key: `address`). It's what every run checks the
    wallet against, so take it from somewhere you trust, not just from the running wallet-rpc.
 
 3. Install ccs-bash, and `/usr/local/bin/ccs-bash-run`, which does one run. Everything
-   below (cron, `--tx-notify`, moving from ccs-back) only calls `ccs-bash-run`.
+   below (cron, moving from ccs-back) only calls `ccs-bash-run`.
 
    **A) on the host:**
 
@@ -268,12 +278,18 @@ machine. For two machines see [ccs-front on another machine](#ccs-front-on-anoth
    Don't bind mount the single JSON files. ccs-bash replaces them with `mv`, and a
    single-file bind mount keeps showing the old file forever.
 
+   ccs-front's proposal layouts (`_layouts/fr.html`, `wip.html`, `cp.html`) must find their
+   entry by `local-url`, not by title (ccs-front commit "layouts: find a page's entry by
+   local-url, not title"). Matched by title, a proposal whose title has `&`, `<` or a quote
+   shows no donation box, and a merged proposal with another one's title can show its own
+   box on that page.
+
 5. Optional `/projects` API, nginx:
 
    ```
    location = /projects {
        alias /var/lib/ccs/out/projects.json;
-       add_header Content-Type application/json;
+       default_type application/json;
    }
    ```
 
@@ -296,13 +312,48 @@ machine. For two machines see [ccs-front on another machine](#ccs-front-on-anoth
    }
    ```
 
-   For `--tx-notify`, `/usr/local/bin/ccs-notify` runs the same two things as the cron line:
+   The proposals checkouts (here and ccs-front's) should not turn symlinks into real links:
+   `git -C /var/lib/ccs/proposals config core.symlinks false`. A merged proposal that is a
+   symlink would otherwise be copied into the built site as one, and could point the web
+   server at other files. (ccs-bash itself skips symlinks.)
+
+7. Optional, **instant updates**: a run right after a donation arrives, instead of within
+   2 minutes. wallet-rpc's hook only touches a file, as wallet-rpc's own user;
+   `notify-loop.sh` (as root, in place of the cron line) runs ccs-bash every 2 minutes, or
+   sooner when that file is there, but never twice within 30 seconds. Lots of notifications
+   (a wallet catching up after a long time offline, a flood of tiny donations) are still at
+   most one run per 30 seconds, and the loop only checks that the file exists, never reads it.
+
+   ```
+   install -d -o <wallet-rpc user> -m 755 /var/lib/ccs-notify
+   # add to monero-wallet-rpc's options:
+   --tx-notify "/usr/bin/touch /var/lib/ccs-notify/new-tx"
+   ```
+
+   Put what the cron line runs into a script, remove the cron line, and run the loop instead:
 
    ```
    #!/bin/sh
-   ccs-bash-run >> /var/log/ccs-bash.log 2>&1
-   cd /opt/ccs-front && jekyll build -q
+   # /usr/local/bin/ccs-bash-update (chmod 755): what the cron line ran
+   git -C /var/lib/ccs/proposals pull -q --ff-only ; ccs-bash-run >> /var/log/ccs-bash.log 2>&1 ; cd /opt/ccs-front && jekyll build -q
    ```
+
+   ```
+   # /etc/systemd/system/ccs-bash.service, then: systemctl enable --now ccs-bash
+   [Unit]
+   Description=ccs-bash, every 2 minutes and after each new tx
+   After=network-online.target
+
+   [Service]
+   ExecStart=/opt/ccs-bash/notify-loop.sh /usr/local/bin/ccs-bash-update
+   Restart=always
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+
+   `GAP` (30) and `EVERY` (120) seconds can be changed with `Environment=` lines. `GAP` has
+   to be well below `EVERY`, or a notification only ever waits for the next regular run.
 
 The first run on a fresh install looks up the merged MR of every proposal, which
 takes a few minutes. After that, only new proposals are looked up.
@@ -315,7 +366,8 @@ each run it pushes `OUTPUT_DIR` to the web server, and the web server can only r
 those files, into one folder, and never connect back.
 
 On the **web server** (ccs-front), create an account that can only receive the files, with
-`rrsync` (shipped with Debian's rsync, 3.2.4 or newer for `-wo`):
+`rrsync` (shipped with Debian's rsync, 3.2.4 or newer for `-wo`). rrsync is a Python script
+and Debian's rsync only suggests Python, so install both: `apt install rsync python3`.
 
 ```
 useradd --system --create-home --shell /bin/sh ccs-data   # no password; the shell only runs the forced command
@@ -358,7 +410,14 @@ echo "<web server> ssh-ed25519 AAAA..." > /var/lib/ccs/.ssh/known_hosts    # the
 ```
 
 `--delay-updates` puts the new files in place only once all of them have arrived.
-For `--tx-notify`, use the same `ccs-bash-run && runuser -u ccs -- rsync ...`.
+
+`tests/rrsync.sh` builds this setup in three containers (web server, wallet machine, another
+machine) and tries everything in the table above from the wallet machine's key: commands,
+port forwarding, reading back, `..` and absolute paths, `--temp-dir`, `--partial-dir`,
+`--backup-dir`, `--log-file`, `--link-dest`, `--copy-dest`, `--compare-dest`, deleting,
+symlinks, and the key from another machine. All are refused or stay inside the folder.
+With `--loose` (rrsync alone, without the other restrictions) those checks fail, so the test
+does catch them. For instant updates, run the push line through `notify-loop.sh` as in step 7.
 
 This can't stop a taken-over wallet machine from pushing false JSON (it is the source of the
 data), and the web server stays the place to guard, see [Security](#security).
@@ -412,8 +471,8 @@ re-checks the mirrors: plain mirrors drop a version once Debian updates the pack
    run, a funding-required proposal without an address would get a subaddress from each of
    them, so check there is none first, or stop ccs-back's cron before the first run.
 
-4. **Switch over:** replace ccs-back's cron line and `--tx-notify` script with ccs-bash's
-   (setup step 6), point ccs-front at the new output directories (setup steps 4 and 5), then stop the
+4. **Switch over:** replace ccs-back's cron line with ccs-bash's (setup step 6), and drop ccs-back's
+   `--tx-notify` script (it needs wallet-rpc to run as root; setup step 7 does the same without), point ccs-front at the new output directories (setup steps 4 and 5), then stop the
    ccs-back and database containers or services. Keep them until you are happy, so going
    back is just restoring the cron line and starting them again.
 
@@ -438,7 +497,11 @@ Differences from ccs-back:
 - **Authors:** `0xfffc` stays `0xfffc` (ccs-back's YAML parser turned it into the number 65532).
 - **Dates:** only written-out months are understood (`June 25th, 2021`, `10 August 2021`),
   and they keep their year (ccs-back read `10 August, 2021` as 20:21 this year).
-  Numeric dates like `02/14/2017` show no date.
+  `2021-06-25` works too. Numeric dates like `02/14/2017` show no date.
+- **Frontmatter:** read as YAML (so Jekyll) reads it: `title: Talks #2` is `Talks` (the rest
+  is a comment), `'single'` quotes work. What could be read two ways (a value over several
+  lines, `>` or `|` blocks, `\` escapes, anchors, a line that isn't `key: value`, a key given
+  twice) skips the file with the reason in the log. None of the current proposals do this.
 - **`/projects`:** lists proposals that still have a file in the repo. ccs-back also listed
   database rows whose file had been deleted.
 - **GitLab:** MR lists are paginated, so MRs past the first 50 are seen.
@@ -456,5 +519,6 @@ Differences from ccs-back:
 ```
 tests/run.sh             # end-to-end run on tests/fixtures with a fake wallet and GitLab
 UPDATE=1 tests/run.sh    # rewrite tests/expected after an intended change, then check the diff
-shellcheck -x ccs-back.sh lib/*.sh tests/*.sh
+tests/rrsync.sh          # the two-machine rrsync setup, attacked from the wallet machine (docker)
+shellcheck -x ccs-back.sh notify-loop.sh lib/*.sh tests/*.sh
 ```

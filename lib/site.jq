@@ -8,15 +8,22 @@
 
 $props[0] as $props | $state[0] as $state | $funds[0] as $funds | $qr[0] as $qr
 
-| def proposal:
+# Links on the site: only plain https urls (not javascript: and the like), HTML-escaped.
+| def link: if type == "string" and test("^https://[^\\s\"'<>\\\\]+$") then @html else null end;
+
+  # Escaped exactly as Liquid's `escape` does (jq's @html writes ' as &apos;): ccs-front finds
+  # a page's entry by comparing this with its own file name, escaped, see README.
+  def liquid_escape: gsub("&"; "&amp;") | gsub("<"; "&lt;") | gsub(">"; "&gt;") | gsub("\""; "&quot;") | gsub("'"; "&#39;");
+
+  def proposal:
     ($state[.file] // {}) as $s
     | $funds[.file] as $f
     | {
         name: (.title | @html),
         "donate-address": $s.address,
         "donate-qr-code": (if $s.address then "data:image/png;base64,\($qr[$s.subaddr_index | tostring])" else null end),
-        "gitlab-url": ((.gitlab_url // $s.gitlab_url) | if . then @html else null end),
-        "local-url": "/proposals/\(.file | sub("\\.md$"; "")).html",
+        "gitlab-url": ((.gitlab_url // $s.gitlab_url) | link),
+        "local-url": ("/proposals/\(.file | sub("\\.md$"; "")).html" | liquid_escape),
         contributions: $f.count,
         milestones: .milestones,
         "milestones-completed": .done,
