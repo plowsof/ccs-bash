@@ -23,8 +23,8 @@ jobs:
           mkdir -p "$RUNNER_TEMP/gawk" && ln -s "$(command -v gawk)" "$RUNNER_TEMP/gawk/awk"
           PATH="$RUNNER_TEMP/gawk:$PATH" tests/run.sh
   image:
-    # The pinned image: debs from deps.lock (sha256-checked), built with --network none,
-    # then the tests run inside it, also without network.
+    # The pinned image: StageX images by digest + qrencode built from a sha256-checked source,
+    # built with --network none, then the tests run inside it, also without network.
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, pinned by commit
