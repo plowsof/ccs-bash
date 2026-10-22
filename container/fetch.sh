@@ -23,4 +23,4 @@ grep -v '^#' "$here/deps.lock" | while read -r sum size urls; do
     rm -f "$file.part"
     [[ -f $file ]] || { echo "error: no url gave $(basename "$file") with sha256 $sum ($size bytes)" >&2; exit 1; }
 done
-echo "$(grep -vc '^#' "$here/deps.lock") files in $out, all matching deps.lock" >&2
+"$here/verify.sh" "$here/deps.lock" "$out"
