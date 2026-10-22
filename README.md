@@ -108,7 +108,7 @@ The wallet can always be restored from its keys; this file cannot be recreated.
 | | A) packages on the host | B) the pinned container |
 |---|---|---|
 | ccs-bash's tools come from | Debian's packages, as installed today | `container/deps.lock`: exact files, sha256-checked, installed offline |
-| The host needs | the packages below | Docker and `git` |
+| The host needs | the packages below | Docker (with buildx) and `git` |
 | Updates | `apt upgrade` | change the pin and rebuild (see [Changing the pin](#changing-the-pin)) |
 
 Both run the same scripts with the same config and folders, so you can switch between them.
@@ -139,7 +139,8 @@ apt install bash coreutils findutils mawk util-linux curl ca-certificates jq qre
 | `rsync`, `openssh-client` | pushing the output to ccs-front | only when ccs-front is on another machine |
 
 
-**B) The container:** the host needs Docker, `git` (for the proposals checkout), optionally
+**B) The container:** the host needs Docker with the buildx plugin (`docker-buildx-plugin` in
+Docker's packages; only needed where the image is built), `git` (for the proposals checkout), optionally
 `logrotate`, and `rsync` + `openssh-client` if ccs-front is on another machine. Everything
 ccs-bash itself uses (curl, ca-certificates, jq, qrencode, and their libraries: 24 files)
 is pinned in `container/deps.lock` and only ever inside the image. The image is built in two
@@ -149,7 +150,8 @@ steps by `container/build.sh`:
    exact `.deb` files in `container/deps.lock`, each with its sha256 and several urls
    (snapshot.debian.org, which keeps every version, plus at least 2 mirrors). `fetch.sh` uses
    plain curl and keeps a file only if its sha256 matches; no apt.
-2. **Install** (no network): `docker build --network none`. The Dockerfile checks every file
+2. **Install** (no network): `docker buildx build --network none` (buildx drives Docker's BuildKit
+   engine, which is what sets every file time in the image to the commit's). The Dockerfile checks every file
    against the lock again and installs them with `dpkg -i`. Nothing can be fetched.
 
 The result is a **pinned image**: its hash is pinned along with everything that goes into it.
