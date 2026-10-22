@@ -1,0 +1,6 @@
+# What ccs-bash needs on top of the base image (bash, coreutils, findutils, mawk and
+# util-linux are already in it). Dependencies are worked out by update-lock.sh.
+curl
+ca-certificates
+jq
+qrencode
