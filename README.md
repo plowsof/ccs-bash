@@ -341,11 +341,15 @@ server instead and `ccs-bash-update` (step 6) pushes the files there, see
    Don't bind mount the single JSON files. ccs-bash replaces them with `mv`, and a
    single-file bind mount keeps showing the old file forever.
 
-   ccs-front's proposal layouts (`_layouts/fr.html`, `wip.html`, `cp.html`) must find their
-   entry by `local-url`, not by title (ccs-front commit "layouts: find a page's entry by
-   local-url, not title"). Matched by title, a proposal whose title has `&`, `<` or a quote
-   shows no donation box, and a merged proposal with another one's title can show its own
-   box on that page.
+   Then let ccs-front's proposal pages find their entry by `local-url` instead of by title:
+
+   ```
+   git -C ccs-front apply /opt/ccs-bash/contrib/ccs-front-local-url.patch   # _layouts/fr, wip, cp
+   ```
+
+   Matched by title (as ccs-front does today, with ccs-back too), a proposal whose title has
+   `&`, `<` or a quote shows no donation box, and a merged proposal with another one's title
+   can show its own box on that page. Without the patch everything works as it does now.
 
 5. Optional `/projects` API, nginx:
 
@@ -509,7 +513,19 @@ Dockerfile. To give busybox another applet, add it to `container/busybox-applets
 
 ## Moving from ccs-back
 
-Do setup steps 1 to 3 first (A or B; with B, check the image ID before the first run), then:
+Do setup steps 1 to 3 first (A or B; with B, check the image ID before the first run).
+Where upstream ccs-back's readme put things, and what replaces them:
+
+| ccs-back | ccs-bash |
+|---|---|
+| proposals checkout in `/var/www/html/ccs-back/storage/app/proposals` | its own checkout in `/var/lib/ccs/proposals` (setup step 2) |
+| `ccs-front/_data/*.json` symlinked to single files in `ccs-back/storage/app` | the whole `_data` directory is `/var/lib/ccs/out` (setup step 4) |
+| `.env`: `RPC_URL`, `RPC_USER`, `RPC_PASSWORD`, `REPOSITORY_URL` | the same names in `/etc/ccs/ccs.conf`, plus `WALLET_ADDRESS` |
+| cron: `git pull; php artisan schedule:run; jekyll build`, every minute | `ccs-bash-update` (setup step 6, or step 7) |
+| nginx: `/index.php` fallback and the `location ~ \.php$` block | removed; `/projects` is the static file (setup step 5) |
+| wallet-rpc, however it was started | its own user and service (setup step 1), see step 2 below |
+
+Then:
 
 1. **Back up** the database (`mysqldump`), the cron line, and the old JSON files.
 
@@ -546,6 +562,14 @@ Do setup steps 1 to 3 first (A or B; with B, check the image ID before the first
    wallet's history, so the wallet must have the full history (the same wallet, or one
    restored from a height before the first donation).
 
+   Moving the wallet to setup step 1's service: stop the old wallet-rpc (it saves the wallet
+   on exit), copy the wallet's two files (`<name>` and `<name>.keys`) into `/var/lib/ccs/wallet`
+   owned by `ccs-wallet` (mode 600), point `wallet-file` at them and start the service. Check
+   it is view-only: `monero-wallet-cli --wallet-file <name>`, then `wallet_info` must say
+   `Watch only`. If it can spend, make a view-only one from the main address and the secret view key
+   (`monero-wallet-cli --generate-from-view-key <name>`, restore height from before the first
+   donation) and use that instead.
+
 3. **Run ccs-bash next to ccs-back once** (`ccs-bash-run`) and compare the output (see below). While both
    run, a funding-required proposal without an address would get a subaddress from each of
    them, so check there is none first, or stop ccs-back's cron before the first run.
@@ -567,7 +591,8 @@ Do setup steps 1 to 3 first (A or B; with B, check the image ID before the first
 4. **Switch over:** replace ccs-back's cron line with ccs-bash's (setup step 6), drop
    ccs-back's `--tx-notify` script (it needs wallet-rpc to run as root; setup step 7 does the
    same without), point ccs-front at the new output directories (setup steps 4 and 5), then
-   stop the ccs-back and database containers or services. Keep them until you are happy, so going
+   stop the ccs-back and database containers or services (with upstream's readme: php-fpm
+   and mysql). Keep them until you are happy, so going
    back is just restoring the cron line and starting them again.
 
 Comparing the output: the JSON should match except for `donate-qr-code` (a different QR
