@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
-# fetch.sh DIR: download every file in deps.lock into DIR with plain curl, no apt.
-# Each file's urls are tried in order; a download only counts if its sha256 matches
-# the lock, so a mirror can't hand over a different file.
+# fetch.sh DIR: download every file in sources.lock into DIR with plain curl. Each file's
+# urls are tried in order; a download only counts if its sha256 matches the lock.
 set -euo pipefail
 here=$(dirname "$(readlink -f "$0")")
 out=$1
 mkdir -p "$out"
 
-grep -v '^#' "$here/deps.lock" | while read -r sum size urls; do
+grep -v '^#' "$here/sources.lock" | while read -r sum size urls; do
     read -ra urls <<<"$urls"
-    file=$out/$(basename "${urls[0]}" | sed 's/%2b/+/g; s/%7e/~/g; s/%3a/:/g')
+    file=$out/$(basename "${urls[0]}")
     if [[ -f $file ]] && echo "$sum  $file" | sha256sum -c --status; then
         continue
     fi
@@ -23,4 +22,4 @@ grep -v '^#' "$here/deps.lock" | while read -r sum size urls; do
     rm -f "$file.part"
     [[ -f $file ]] || { echo "error: no url gave $(basename "$file") with sha256 $sum ($size bytes)" >&2; exit 1; }
 done
-"$here/verify.sh" "$here/deps.lock" "$out"
+"$here/verify.sh" "$here/sources.lock" "$out"
