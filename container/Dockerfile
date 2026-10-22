@@ -25,17 +25,14 @@ RUN --mount=type=bind,source=container,target=/pin \
     && make DESTDIR=/rootfs install \
     && rm -rf /rootfs/usr/include /rootfs/usr/lib/pkgconfig /rootfs/usr/share /rootfs/usr/lib/*.a /rootfs/usr/lib/*.la
 
-# Everything ccs-bash runs, and nothing else.
-FROM scratch AS assemble
-ARG SOURCE_DATE_EPOCH
+# Everything ccs-bash runs, and nothing else. busybox gives the small tools (env, date,
+# mktemp, base64, xargs, awk, flock, sed, grep, diff, ...) in one package; bash runs the scripts.
+FROM scratch AS tree
 COPY --from=filesystem / /
 COPY --from=musl / /
+COPY --from=busybox / /
 COPY --from=bash / /
 COPY --from=ncurses / /
-COPY --from=coreutils / /
-COPY --from=findutils / /
-COPY --from=gawk / /
-COPY --from=util-linux / /
 COPY --from=ca-certificates / /
 COPY --from=curl / /
 COPY --from=openssl / /
@@ -46,31 +43,22 @@ COPY --from=jq / /
 COPY --from=qrencode /rootfs/ /
 COPY ccs-back.sh /opt/ccs-bash/
 COPY lib/ /opt/ccs-bash/lib/
-# There is no /bin/sh in this image (nothing needs one), so run the step below with bash.
-SHELL ["/usr/bin/bash", "-c"]
-# Same modes and times whatever the checkout's umask and file times were, and the commit's
-# time on everything made during this build. (/proc, /sys, /dev and /etc/hosts, hostname,
-# resolv.conf are mounted in by docker.)
-# StageX packages also carry what only compiling needs: headers, static libraries, manuals.
-RUN rm -rf /usr/include /usr/lib/pkgconfig /usr/lib/*.a /usr/share/man /usr/share/doc /usr/share/info \
-    && chmod 755 /opt/ccs-bash /opt/ccs-bash/lib /opt/ccs-bash/ccs-back.sh && chmod 644 /opt/ccs-bash/lib/* \
-    && find /opt/ccs-bash -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} + \
-    && find / -xdev \( -path /proc -o -path /sys -o -path /dev \
-        -o -path /etc/hosts -o -path /etc/hostname -o -path /etc/resolv.conf \) -prune \
-        -o -newermt "@$SOURCE_DATE_EPOCH" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
+
+# Tidy a copy of that tree with the toolchain's busybox: drop what only compiling needs
+# (headers, static libraries, manuals), fix the modes of our files whatever the checkout's
+# umask was, and give every file the commit's time.
+FROM toolchain AS fix
+ARG SOURCE_DATE_EPOCH
+COPY --from=tree / /rootfs/
+RUN cd /rootfs \
+    && rm -rf usr/include usr/lib/pkgconfig usr/lib/*.a usr/share/man usr/share/doc usr/share/info \
+    && chmod 755 opt/ccs-bash opt/ccs-bash/lib opt/ccs-bash/ccs-back.sh && chmod 644 opt/ccs-bash/lib/* \
+    && find . -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
 
 FROM scratch AS image
-# /dev, /proc and /sys are made by docker for each container (here they were only mount
-# points for the step above, with that moment's time on them).
-COPY --exclude=dev --exclude=proc --exclude=sys --from=assemble / /
+COPY --from=fix /rootfs/ /
 ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # Run as the host's ccs user (docker run --user), see README; this is only the default.
 USER 10001:10001
 ENTRYPOINT ["/opt/ccs-bash/ccs-back.sh"]
 CMD ["/etc/ccs/ccs.conf"]
-
-# For CI: the image plus what the tests use (sed, grep, diff).
-FROM image AS test
-COPY --from=sed / /
-COPY --from=grep / /
-COPY --from=diffutils / /
