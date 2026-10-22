@@ -32,3 +32,5 @@ jobs:
         run: container/build.sh ccs-bash
       - name: tests inside the image, no network
         run: docker run --rm --network none --read-only --tmpfs /tmp -v "$PWD:/src:ro" --entrypoint bash ccs-bash /src/tests/run.sh
+      - name: reproducible (two clean builds from separate clones, same hash)
+        run: container/check-reproducible.sh
