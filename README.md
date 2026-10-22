@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.svg" width="180" alt="A ribbed orange clam peeking out of its shell, inside a gear">
+  <img src="logo.svg" width="180" alt="An orange clam seen from the side, eyes peeking out of its open shell, inside a gear">
 </p>
 
 # ccs-bash
