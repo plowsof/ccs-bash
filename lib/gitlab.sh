@@ -1,9 +1,6 @@
 # shellcheck shell=bash
-# GitLab API: open MRs become "Ideas", merged MRs give each proposal its gitlab-url.
-# The proposals repo is public, so no token is needed.
-#
-# Functions that can fail return non-zero explicitly: they are called from
-# `|| ...` contexts, where bash ignores `set -e`.
+# GitLab API (public, no token): open MRs are "Ideas", merged MRs give each proposal its
+# gitlab-url. Failures return non-zero explicitly: callers use `||`, where set -e is off.
 
 gitlab_get() {
     curl -fsS --max-time 30 "$REPOSITORY_URL/$1"
@@ -21,8 +18,7 @@ gitlab_mrs() {
     printf '%s\n' "$all"
 }
 
-# Print the proposal file MR $1 adds, or nothing if it is not a proposal MR.
-# A proposal MR adds exactly one new .md file in the repo root.
+# Print the proposal file MR $1 adds: exactly one new .md in the repo root, else nothing.
 mr_proposal_file() {
     local files
     files=$(gitlab_get "merge_requests/$1/changes" | jq -r '.changes[] | select(.new_file) | .new_path') || return 1
@@ -31,8 +27,7 @@ mr_proposal_file() {
     fi
 }
 
-# Print the URL of the merged MR that added proposal file $1, or nothing.
-# The merged MR list, and which file each MR added, are fetched once per run.
+# Print the URL of the merged MR that added file $1, or nothing. Fetched once per run.
 merged_mr_url() {
     local iid url file cache=$WORK/merged-files.tsv
     if [[ ! -s $WORK/merged.json ]]; then
@@ -57,7 +52,7 @@ ideas() {
     local mrs iid file keep=()
     mrs=$(gitlab_mrs opened) || return 1
     while read -r iid; do
-        # One MR that can't be read is left out this time, not the whole list frozen.
+        # an unreadable MR is left out, not the whole list
         if ! file=$(mr_proposal_file "$iid"); then
             log "warning: could not read MR !$iid, leaving it out of the ideas this run"
             continue

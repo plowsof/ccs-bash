@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
-# Tests the "ccs-front on another machine" setup (docs/two-machines.md) from the side of a taken-over
-# wallet machine: three containers (web server, wallet machine, some other machine), the web
-# server set up exactly as the docs say, then everything the key should not be able to do.
-# Needs docker and network (to install sshd and rsync from Debian). Not part of tests/run.sh.
-# `tests/rrsync.sh --loose` keeps only rrsync with its folder: then the checks for what
-# restrict, from=, -wo, -no-del and -munge stop must fail.
+# docs/two-machines.md, attacked from a taken-over wallet machine: web server (as documented),
+# wallet machine, another machine, in containers. Needs docker and network.
+# --loose keeps only rrsync and its folder: then the checks for the other restrictions must fail.
 set -euo pipefail
 name=ccs-rrsync-test
 net=172.30.99

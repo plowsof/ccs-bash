@@ -1,13 +1,11 @@
-# ccs-bash config. Copy to /etc/ccs/ccs.conf (or pass a path to ccs-back.sh).
-# This file is sourced by bash, so keep it owned by root and not world-writable.
-# Give each key once: a second line for the same key (even an empty one) wins.
+# ccs-bash config: /etc/ccs/ccs.conf (or a path given to ccs-back.sh). Sourced by bash:
+# keep it root:ccs 640, and give each key once (a later line, even empty, wins).
 
 # monero-wallet-rpc running a view-only wallet, bound to localhost.
 # User and password must not contain double quotes or backslashes.
 RPC_URL=http://127.0.0.1:18082/json_rpc
-# The wallet's main address (subaddress 0). Every run stops if the wallet has a different
-# one, so a swapped wallet is caught. This file must be owned by root and only readable
-# by the ccs user (root:ccs, 640): ccs-bash refuses to run if it can write it.
+# The wallet's main address: a run stops if the wallet has another, so a swapped wallet is
+# caught. ccs-bash refuses to run if it can write this file.
 WALLET_ADDRESS=4...
 RPC_USER=ccs
 RPC_PASSWORD=change-me
@@ -15,7 +13,7 @@ RPC_PASSWORD=change-me
 # GitLab API endpoint of the proposals repository.
 REPOSITORY_URL=https://repo.getmonero.org/api/v4/projects/54
 
-# Checkout of the proposals repository (kept up to date by ccs-bash-update, see docs/setup.md).
+# Checkout of the proposals repository (pulled by ccs-bash-update).
 PROPOSALS_DIR=/var/lib/ccs/proposals
 
 # Where the address mapping (proposals.csv) is kept. Back this up.

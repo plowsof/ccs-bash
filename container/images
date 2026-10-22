@@ -1,5 +1,4 @@
-# StageX images, pinned by digest: name  image@sha256. build.sh hands each to the build as a
-# named build context, so the Dockerfile says COPY --from=<name>. update-images.sh refreshes them.
+# StageX images by digest: name image@sha256 (COPY --from=<name>). update-images.sh refreshes them.
 toolchain                         stagex/pallet-clang-gnu-busybox@sha256:20f02219400b2b911fc687106c61090bf20879a5f74bf794c5589b7bd8acc2d2
 filesystem                 stagex/core-filesystem@sha256:da28831927652291b0fa573092fd41c8c96ca181ea224df7bff40e1833c3db13
 musl                       stagex/core-musl@sha256:94f77e4b1841987a42efce52aac54dbf230c152cb55c62da1967189a2705df89
