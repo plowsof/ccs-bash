@@ -26,25 +26,32 @@ reads, `proposals.json` and `completed-proposals.json`, plus `projects.json` for
 
 ## Security
 
+What an attacker wants is the donation addresses on the website: with a shell on a machine
+that writes the JSON or serves the site, they can swap in their own address and collect the
+donations. (The wallet is view-only, so the coins already received are not at risk; that
+part was never the problem.) ccs-bash is about leaving as few ways in as possible:
+
 - **Nothing to connect to.** ccs-bash is a cron job, not a service: no web server, no open
   port, no database. It only makes outgoing calls, to the wallet and to GitLab.
-- **A view-only wallet.** It can't spend. If it leaks, the cost is donation privacy.
 - **Few, well-kept dependencies.** About ten Debian packages (see
   [Dependencies](#dependencies)), patched by Debian's security team, instead of a framework
   and its package tree. All of ccs-bash is about 550 lines you can read in an afternoon.
 - **Least privilege.** It runs as a `ccs` user that can only write its state and output folders.
 - **Checks the wallet.** If the wallet's subaddresses don't match the state file
   (a wrong or swapped wallet), the run stops instead of publishing other addresses.
-- **Exact amounts.** Donations are summed in integer atomic units and never rounded up, so
-  the site never shows more than was received.
+- **Untrusted text stays text.** Proposal titles and MR names are HTML-escaped and only
+  ever handled as data (no `eval`, every JSON value built by jq), filenames are checked.
 - **Can run apart from the website.** ccs-bash and ccs-front can be on
   [separate machines](#ccs-front-on-another-machine). Then the wallet machine accepts no
   connections at all: it pushes the JSON to the web server, whose key can only write into
-  one folder (`rrsync -wo`). A break-in on the web server can't reach the wallet, the
-  state file or GitLab access, and can't read anything back from the wallet machine.
-  It can still change what the website shows, including donation addresses, until the
-  next push overwrites the JSON (or for good, if the attacker changes the site itself),
-  so the web server still needs looking after; it just no longer endangers the wallet.
+  one folder (`rrsync -wo`). Nothing on the web server can reach the wallet machine, the
+  state file (which says which address belongs to which proposal) or read anything back.
+
+What it can't fix: whoever gets a shell on the **web server** can still change the site and
+its donation addresses. With the split, a changed JSON is overwritten by the next push
+within minutes, but a changed page or template stays until someone notices. So the web
+server is now the machine to guard, and the only place left where an attack redirects
+donations.
 
 ## What a run does
 
