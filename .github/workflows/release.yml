@@ -1,5 +1,5 @@
 name: release
-# On a pushed tag v*: build the pinned image, test it, check two clean builds give the same
+# On a pushed tag v*: build the pinned image, test it, check (check-pinned.sh) builds give the same
 # hash, push it to ghcr.io/<owner>/ccs-bash:<tag> and make a GitHub release with both hashes.
 on:
   push:
@@ -16,7 +16,7 @@ jobs:
         run: container/build.sh ccs-bash
       - name: tests inside the image, no network
         run: docker run --rm --network none --read-only --tmpfs /tmp -v "$PWD:/src:ro" --entrypoint bash ccs-bash /src/tests/run.sh
-      - name: pinned image hash (two clean builds from separate clones, same hash)
+      - name: pinned image hash (two clean builds, and one after another commit, same hash)
         run: container/check-pinned.sh
       - name: push to ghcr.io and make the release
         env:
@@ -29,7 +29,7 @@ jobs:
           docker push -q "$image:$TAG"
           id=$(docker image inspect ccs-bash --format '{{.Id}}')
           digest=$(docker image inspect "$image:$TAG" --format '{{index .RepoDigests 0}}')
-          gh release create "$TAG" --verify-tag --title "$TAG" --notes "$(cat <<EOF
+          notes=$(cat <<EOF
           Image, pulled by its digest (a tag can be moved, a digest can't):
 
           \`\`\`
@@ -42,4 +42,10 @@ jobs:
           It is also what building this tag yourself gives (\`container/build.sh\`), so you can
           check that this image is the code in this tag instead of trusting this build.
           EOF
-          )"
+          )
+          # a release made by hand on GitHub (which also makes the tag) keeps its text
+          if gh release view "$TAG" > /dev/null 2>&1; then
+              gh release edit "$TAG" --notes "$(gh release view "$TAG" --json body -q .body)"$'\n\n'"$notes"
+          else
+              gh release create "$TAG" --verify-tag --title "$TAG" --notes "$notes"
+          fi

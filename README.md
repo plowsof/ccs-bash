@@ -174,7 +174,7 @@ The code (the git commit), the StageX packages (their digests) and the sources (
 are fixed, so the same commit always builds to the same image hash, wherever and whenever it is
 built; `build.sh` prints it. An image built elsewhere can be checked by building the same commit
 and comparing hashes, and `container/check-pinned.sh` does exactly that (two clean builds from
-separate clones), in CI on every push too.
+separate clones, and one with a build cache left by another commit), in CI on every push too.
 
 Either way, not from Debian: `monero-wallet-rpc` (from
 [getmonero.org](https://www.getmonero.org/downloads/)). The tests need nothing extra, except

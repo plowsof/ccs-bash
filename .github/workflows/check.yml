@@ -32,7 +32,7 @@ jobs:
         run: container/build.sh ccs-bash
       - name: tests inside the image, no network
         run: docker run --rm --network none --read-only --tmpfs /tmp -v "$PWD:/src:ro" --entrypoint bash ccs-bash /src/tests/run.sh
-      - name: pinned image hash (two clean builds from separate clones, same hash)
+      - name: pinned image hash (two clean builds, and one after another commit, same hash)
         run: container/check-pinned.sh
   rrsync:
     # The README's two-machine setup (rrsync), attacked from the wallet machine's key.
