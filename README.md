@@ -88,8 +88,12 @@ apt install bash coreutils findutils mawk util-linux curl ca-certificates jq qre
 | `git` | keeping the proposals checkout up to date (cron) | not used by `ccs-back.sh` itself |
 | `logrotate` | rotating `/var/log/ccs-bash.log` | optional |
 
-Not from Debian: `monero-wallet-rpc` (from [getmonero.org](https://www.getmonero.org/downloads/)),
-and Jekyll, which belongs to ccs-front. The tests need nothing extra.
+Not from Debian: `monero-wallet-rpc` (from [getmonero.org](https://www.getmonero.org/downloads/)).
+The tests need nothing extra.
+
+ccs-bash doesn't use Jekyll or Markdown: it only reads the proposals' frontmatter and writes
+JSON. Turning that and the proposal text into the website is ccs-front's job, so the
+`jekyll build` in the cron line below belongs to ccs-front, not to ccs-bash.
 
 ## Setup
 
