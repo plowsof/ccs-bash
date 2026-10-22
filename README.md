@@ -275,6 +275,39 @@ For `--tx-notify`, use the same `runuser ...` command.
 This can't stop a taken-over wallet machine from pushing false JSON (it is the source of the
 data), and the web server stays the place to guard, see [Security](#security).
 
+### In a container (pinned, built offline)
+
+`container/` builds an image whose every package is pinned, in two steps:
+
+1. **Download** (network): the Debian base image by digest (`container/base-image`), and the
+   exact `.deb` files listed in `container/deps.lock`, each with its sha256 and several urls
+   (snapshot.debian.org, which keeps every version, plus at least 2 mirrors). `fetch.sh` uses
+   plain curl and keeps a file only if its sha256 matches; no apt.
+2. **Install** (no network): `docker build --network none`. The Dockerfile checks every file
+   against the lock again and installs them with `dpkg -i`. Nothing can be fetched.
+
+```
+container/build.sh            # both steps; the image is called ccs-bash
+docker run --rm --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges \
+    --user "$(id -u ccs):$(id -g ccs)" \
+    -v /etc/ccs/ccs.conf:/etc/ccs/ccs.conf:ro \
+    -v /var/lib/ccs/proposals:/var/lib/ccs/proposals:ro \
+    -v /var/lib/ccs/state:/var/lib/ccs/state \
+    -v /var/lib/ccs/out:/var/lib/ccs/out \
+    ccs-bash
+```
+
+Use that `docker run` in the cron line instead of `runuser ... ccs-back.sh`. The paths inside
+are the ones in the config, so mount them at the same place. The container needs to reach the
+wallet: bind wallet-rpc to the docker bridge (e.g. `--rpc-bind-ip 172.17.0.1
+--confirm-external-bind`, with a login) or add `--network host`. `--user` makes it the host's
+`ccs` user, so the root-owned config stays read-only to it.
+
+To change the pin (newer Debian packages, another base image, a package more or less), edit
+`container/snapshot`, `base-image` or `packages`, run `container/update-lock.sh`, and review
+the `deps.lock` diff before committing it. That is the only step that uses apt, in a throwaway
+container, to work out which files are needed.
+
 ## Moving from ccs-back
 
 1. **Back up** the database (`mysqldump`), the cron line, and the old JSON files.
@@ -346,17 +379,8 @@ Differences from ccs-back:
 
 ## To do
 
-- **Pinned, offline-built dependencies.** Today `apt install` takes whatever versions the
-  mirror has on the day. Instead:
-  1. On a machine with network, `apt-get download` the exact `.deb` files (with their
-     dependencies) for one Debian release, and commit a list of their names, versions and
-     SHA-256 sums. apt checks them against Debian's signed package lists when it downloads
-     them; the list in the repo makes the set reviewable and repeatable
-     ([snapshot.debian.org](https://snapshot.debian.org) keeps old versions available).
-  2. Build a container with **no network access** (`docker build --network none`) from a base
-     image pinned by digest, installing only those files after checking their sums.
-  3. Run ccs-bash in it. It still talks to the wallet and GitLab when it runs, but nothing can
-     be fetched or installed into it, and it only changes when the list in the repo does.
+- **Reproducible from source.** The container pins Debian's binaries; building them from
+  source too would mean Guix (which Monero already uses for its releases).
 - **Watch the live site.** Fetch the published pages and check that every donation address
   (and QR code) on them matches the state file, to notice a changed web server within minutes.
 
