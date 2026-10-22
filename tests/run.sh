@@ -17,7 +17,9 @@ REPOSITORY_URL=https://gitlab.invalid/api/v4/projects/1
 PROPOSALS_DIR=$FIXTURES/proposals
 STATE_DIR=$TEST_TMP/state
 OUTPUT_DIR=$TEST_TMP/out
+WALLET_ADDRESS=8$(printf '%094d' 0)
 CONF
+chmod 444 "$TEST_TMP/ccs.conf"   # not writable, like the root-owned config ccs-bash insists on
 
 # Two runs: the second must not create addresses or change the output.
 # Each run is its own bash process so that `set -e` behaves as it does under cron.
@@ -31,6 +33,19 @@ for run in 1 2; do
         exit 1
     fi
 done
+# A different wallet (another main address) must stop the run, before anything is written.
+cp -r "$TEST_TMP/out" "$TEST_TMP/out-before"
+# shellcheck disable=SC2016
+if bash -c 'source "$1/../ccs-back.sh" && source "$1/stubs.sh" && fake_address() { printf "9%094d" "$1"; } && main "$2"' \
+    _ "$here" "$TEST_TMP/ccs.conf" 2> "$TEST_TMP/log-wrong-wallet"; then
+    echo "FAIL run with a different wallet did not stop"; exit 1
+fi
+if ! grep -q "main address is not WALLET_ADDRESS" "$TEST_TMP/log-wrong-wallet" \
+    || ! diff -r -q "$TEST_TMP/out-before" "$TEST_TMP/out" > /dev/null; then
+    cat "$TEST_TMP/log-wrong-wallet"; echo "FAIL run with a different wallet"; exit 1
+fi
+rm -r "$TEST_TMP/out-before"
+wrong_wallet="ok   a different wallet stops the run"
 sed -E "s/^[0-9-]+ [0-9:]+ //; s|$TEST_TMP|<tmp>|g" "$TEST_TMP/log-1" "$TEST_TMP/log-2" > "$TEST_TMP/log"
 cp "$TEST_TMP/state/proposals.csv" "$TEST_TMP/out/"
 cp "$TEST_TMP/log" "$TEST_TMP/out/"
@@ -40,6 +55,7 @@ if [[ ${UPDATE:-} == 1 ]]; then
     cp "$TEST_TMP/out/"* "$here/expected/"
 fi
 status=0
+echo "$wrong_wallet"
 
 # Money conversion, exact in integers (see lib/wallet.sh).
 # shellcheck source=lib/wallet.sh

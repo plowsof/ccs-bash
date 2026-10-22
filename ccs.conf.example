@@ -4,6 +4,10 @@
 # monero-wallet-rpc running a view-only wallet, bound to localhost.
 # User and password must not contain double quotes or backslashes.
 RPC_URL=http://127.0.0.1:18082/json_rpc
+# The wallet's main address (subaddress 0). Every run stops if the wallet has a different
+# one, so a swapped wallet is caught. This file must be owned by root and only readable
+# by the ccs user (root:ccs, 640): ccs-bash refuses to run if it can write it.
+WALLET_ADDRESS=4...
 RPC_USER=ccs
 RPC_PASSWORD=change-me
 

@@ -18,10 +18,17 @@ rpc() {
 # they are the addresses we published. After restoring the wallet from keys it
 # only knows index 0, so this creates the missing ones (and makes the wallet scan
 # them). A different wallet fails the address check and stops the run.
+#
+# First of all, the wallet's main address must be WALLET_ADDRESS from the config.
+# The state file is writable by ccs-bash, the config is not: with both pinned, a
+# swapped wallet is caught even if the state file was changed to match it.
 check_wallet_addresses() {
-    local max have
+    local max have addrs
     max=$(jq '[.[].subaddr_index | numbers] | max // 0' "$WORK/state.json")
-    have=$(rpc get_address '{"account_index": 0}' | jq '.addresses | length') || return 1
+    addrs=$(rpc get_address '{"account_index": 0}') || return 1
+    [[ $(jq -r .address <<<"$addrs") == "$WALLET_ADDRESS" ]] \
+        || die "the wallet's main address is not WALLET_ADDRESS from the config (wrong wallet?)"
+    have=$(jq '.addresses | length' <<<"$addrs")
     while ((have <= max)); do
         rpc create_address '{"account_index": 0}' > /dev/null || return 1
         have=$((have + 1))
