@@ -149,8 +149,8 @@ ccs-bash itself uses lives only inside the image, and all of it is built from so
   libpng). StageX builds every package from source, starting from a tiny bootstrap, and several
   people rebuild and sign each release.
 - **busybox and qrencode, built here** from their upstream source, pinned by sha256 in
-  `container/sources.lock` (the same sums StageX pins). busybox gets only the 20 applets in
-  `container/busybox-applets`, so there is no shell, `ls`, `nc`, `wget`, ... in the image;
+  `container/sources.lock` (the same sums StageX pins). busybox gets only the 28 applets in
+  `container/busybox-applets`, so there is no shell, `nc`, `wget`, ... in the image;
   qrencode is built with PNG output, which StageX's own leaves out.
 
 The image is about 28 MB and is built in two steps by `container/build.sh`:
