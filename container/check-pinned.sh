@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# check-reproducible.sh: build the image twice from scratch, from two separate clones of the
-# current commit (different paths, umasks and times), and fail unless both give the same
-# image hash. Anyone can do the same to check an image they were given.
+# check-pinned.sh: check the image hash is pinned. Builds the image twice from scratch, from
+# two separate clones of the current commit (different paths, umasks and times), and fails
+# unless both give the same image hash. Anyone can do the same to check an image they were given.
 set -euo pipefail
 here=$(dirname "$(readlink -f "$0")")
 repo=$(git -C "$here" rev-parse --show-toplevel)
@@ -19,7 +19,7 @@ for i in 1 2; do
     sleep 2
 done
 if [[ ${id[1]} != "${id[2]}" ]]; then
-    echo "error: not reproducible, the two builds differ" >&2
+    echo "error: the image hash is not pinned, the two builds differ" >&2
     exit 1
 fi
-echo "reproducible: commit $(git -C "$repo" rev-parse --short HEAD) builds to ${id[1]}"
+echo "pinned: commit $(git -C "$repo" rev-parse --short HEAD) builds to ${id[1]}"

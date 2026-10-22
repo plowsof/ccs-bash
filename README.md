@@ -152,10 +152,13 @@ steps by `container/build.sh`:
 2. **Install** (no network): `docker build --network none`. The Dockerfile checks every file
    against the lock again and installs them with `dpkg -i`. Nothing can be fetched.
 
-The build is **reproducible**: the same commit always gives the same image hash, wherever
-and whenever it is built. `build.sh` prints it. So an image built elsewhere can be checked by
-building the same commit and comparing, and `container/check-reproducible.sh` does exactly
-that (two clean builds from separate clones), in CI on every push too.
+The result is a **pinned image**: its hash is pinned along with everything that goes into it.
+The code (the git commit), the packages (`deps.lock`) and the base image (its digest) are fixed,
+so the same commit always builds to the same image hash, wherever and whenever it is built;
+`build.sh` prints it. An image built elsewhere can be checked by building the same commit and
+comparing hashes, and `container/check-pinned.sh` does exactly that (two clean builds from
+separate clones), in CI on every push too. The packages are Debian's binaries, used as Debian
+built them; nothing is compiled from source here.
 
 Either way, not from Debian: `monero-wallet-rpc` (from
 [getmonero.org](https://www.getmonero.org/downloads/)). The tests need nothing extra, except
@@ -441,7 +444,7 @@ Differences from ccs-back:
 
 ## To do
 
-- **Reproducible from source.** The container pins Debian's binaries; building them from
+- **Built from source.** The pinned image uses Debian's binaries; building them from
   source too would mean Guix (which Monero already uses for its releases).
 - **Watch the live site.** Fetch the published pages and check that every donation address
   (and QR code) on them matches the state file, to notice a changed web server within minutes.
