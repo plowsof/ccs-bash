@@ -135,7 +135,7 @@ server instead and `ccs-bash-update` (step 6) pushes the files there, see
 
    ```
    /opt/ccs-bash/container/build.sh                       # build it here
-   docker save ccs-bash | ssh <host> docker load          # or build it elsewhere and copy it
+   docker save ccs-bash | ssh <this host> docker load     # or build it elsewhere and copy it here
    docker pull ghcr.io/plowsof/ccs-bash@sha256:<digest>   # or pull a release (for every v* tag,
    docker tag ghcr.io/plowsof/ccs-bash@sha256:<digest> ccs-bash   # CI pushes one to ghcr.io)
    ```
