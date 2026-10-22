@@ -11,6 +11,11 @@ Where to look: `/var/log/ccs-bash.log` (every run), and with [setup](setup.md) s
 | `could not fetch ideas from GitLab` | GitLab is down; the previous Ideas list is kept. The proposals `git pull` gives up after 40 seconds. |
 | `skipping <file>: ...` | That proposal's frontmatter isn't read (the reason follows); it is left off the site. |
 
+Building the image (B), `container/build.sh` stops with `error: <name>: 1 of 2 maintainer
+signatures` when a pinned StageX image isn't signed by two maintainers whose keys are in
+`container/stagex-keys.asc`. Don't work around it: if StageX added a maintainer, refresh the
+keys ([Signatures](image.md#signatures)); otherwise ask StageX before building with that pin.
+
 Inside the image (B) there is no shell but bash, and only the busybox commands in
 `container/busybox-applets` (no `head`, `less`, `ps`, ...). To look around:
 `docker run --rm -it --entrypoint bash ccs-bash`, with the same `-v` options as `ccs-bash-run`
