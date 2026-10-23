@@ -73,10 +73,12 @@ if out=$(push) && [[ $(live) == v1 ]]; then ok "a push with the wallet's address
 site 2 "$(addr 9 B)"
 # The reason is written after rsync is done: the backend gets it only if ssh relays it before the
 # rsync client exits (a race). The push failing and the web server's log are what's certain.
-if ! out=$(push) && [[ $(live) == v1 ]] && on web "grep -q 'proposals/p.html: $(addr 9 B)' /var/log/ccs-gate.log"; then
+rc=0; out=$(push) || rc=$?
+if ((rc)) && [[ $(live) == v1 ]] && on web "grep -q 'proposals/p.html: $(addr 9 B)' /var/log/ccs-gate.log"; then
     ok "an address that isn't the wallet's: refused, the live site unchanged, which and where in the web server's log$([[ $out == *"not the wallet's"* ]] && echo ", and the backend's")"
 else
-    echo "$out"; fail "a foreign address"
+    echo "push exit $rc, live $(live), output: $out"; echo "gate log:"; on web 'cat /var/log/ccs-gate.log; ls -la /var/log/ccs-gate.log'
+    fail "a foreign address"
 fi
 
 site 3 "$(addr 2)"
