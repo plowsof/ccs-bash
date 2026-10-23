@@ -36,34 +36,10 @@ jobs:
         run: docker run --rm --network none --read-only --tmpfs /tmp -v "$PWD:/src:ro" --entrypoint bash ccs-bash /src/tests/run.sh
       - id: id
         run: echo "id=$(docker image inspect ccs-bash --format '{{.Id}}')" >> "$GITHUB_OUTPUT"
-  # The same commit must build to the same image ID on every machine: three more builds, each on
-  # its own runner at the same time as the one above (check-pinned.sh does them in a row locally).
-  pinned-clean-a:
-    # no cache, a fresh clone made under umask 022
-    runs-on: ubuntu-24.04
-    outputs:
-      id: ${{ steps.id.outputs.id }}
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, pinned by commit
-      - id: id
-        run: |
-          id=$(container/check-pinned.sh clean 022 | sed -n 's/^id: //p')
-          echo "clean 022: $id"
-          echo "id=$id" >> "$GITHUB_OUTPUT"
-  pinned-clean-b:
-    # no cache, a fresh clone made under umask 077
-    runs-on: ubuntu-24.04
-    outputs:
-      id: ${{ steps.id.outputs.id }}
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, pinned by commit
-      - id: id
-        run: |
-          id=$(container/check-pinned.sh clean 077 | sed -n 's/^id: //p')
-          echo "clean 077: $id"
-          echo "id=$id" >> "$GITHUB_OUTPUT"
+  # The same commit must build to the same image ID anywhere: a second machine, a fresh clone made
+  # under umask 077, building another commit first and then this one on its cache (as node3 does).
+  # The same ID as the clean build above covers machines, umasks and caches at once.
   pinned-warm:
-    # another commit's build first, then this one on its cache
     runs-on: ubuntu-24.04
     outputs:
       id: ${{ steps.id.outputs.id }}
@@ -71,20 +47,20 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, pinned by commit
       - id: id
         run: |
-          id=$(container/check-pinned.sh warm | sed -n 's/^id: //p')
+          id=$(umask 077 && container/check-pinned.sh warm | sed -n 's/^id: //p')
           echo "warm: $id"
           echo "id=$id" >> "$GITHUB_OUTPUT"
   pinned:
-    needs: [image, pinned-clean-a, pinned-clean-b, pinned-warm]
+    needs: [image, pinned-warm]
     runs-on: ubuntu-24.04
     steps:
-      - name: pinned image hash (four builds, four machines, one ID)
+      - name: pinned image hash (two machines, a clean build and a cached one, one ID)
         env:
-          IDS: ${{ needs.image.outputs.id }} ${{ needs.pinned-clean-a.outputs.id }} ${{ needs.pinned-clean-b.outputs.id }} ${{ needs.pinned-warm.outputs.id }}
+          IDS: ${{ needs.image.outputs.id }} ${{ needs.pinned-warm.outputs.id }}
         run: |
-          read -r a b c d <<<"$IDS"
-          echo "build and test: $a"; echo "clean, umask 022: $b"; echo "clean, umask 077: $c"; echo "on another commit's cache: $d"
-          [[ $a == sha256:* && $a == "$b" && $a == "$c" && $a == "$d" ]] || { echo "error: the builds differ, or one is missing" >&2; exit 1; }
+          read -r a b <<<"$IDS"
+          echo "clean build (and tests): $a"; echo "another machine, umask 077, on another commit's cache: $b"
+          [[ $a == sha256:* && $a == "$b" ]] || { echo "error: the builds differ, or one is missing" >&2; exit 1; }
           echo "pinned: commit ${GITHUB_SHA::7} builds to $a"
   rrsync:
     # The two-machine setup (docs/two-machines.md, rrsync), attacked from the wallet machine's key.
