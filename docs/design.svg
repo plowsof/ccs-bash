@@ -190,7 +190,8 @@
     <text x="577" y="712" font-size="11.5" font-weight="600" fill="#c2410c">#irc-room</text>
   </g>
   <path d="M680,665 H788 V568 H811" fill="none" stroke="#c2410c" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#o)"/>
-  <text x="700" y="658" font-size="11" fill="#c2410c">HTTPS</text>
+  <text x="686" y="646" font-size="11" fill="#c2410c">HTTPS,</text>
+  <text x="686" y="658" font-size="11" fill="#c2410c">as a visitor</text>
 
   <!-- IRC: where both alarms go (the gate's from the web server, ccs-watch's from the backend) -->
   <rect x="1040" y="660" width="148" height="78" rx="10" fill="#ffffff" stroke="#cbd5e1" filter="url(#sh)"/>
@@ -202,9 +203,9 @@
     <text x="1117" y="730" font-size="11" fill="#475569">from ccs-watch</text>
   </g>
   <path d="M995,395 H1028 V690 H1036" fill="none" stroke="#c2410c" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#o)"/>
-  <text x="1000" y="388" font-size="11" fill="#c2410c">bad address</text>
+  <text x="1000" y="388" font-size="11" fill="#c2410c">pushed file: address not in the list</text>
   <path d="M600,722 V760 H1110 V742" fill="none" stroke="#c2410c" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#o)"/>
-  <text x="790" y="754" font-size="11" fill="#c2410c">ccs-watch: a live page isn't what was pushed</text>
+  <text x="790" y="754" font-size="11" fill="#c2410c">served page ≠ what was pushed</text>
 
   <!-- legend -->
   <g transform="translate(30,775)" font-size="12.5" fill="#334155">
