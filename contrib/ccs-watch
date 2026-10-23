@@ -55,7 +55,25 @@ send() {
     fi
 }
 
-fetch() { curl -fsS --max-time 60 ${WATCH_PROXY:+--proxy "$WATCH_PROXY"} -o "$2" "$1"; }
+# fetch URL FILE: only a whole answer counts: HTTP 200, not empty, within 60s (curl also fails a
+# body cut short of its Content-Length). Anything else is a failed fetch, never a "differs".
+fetch() {
+    local code
+    code=$(curl -sS --max-time 60 ${WATCH_PROXY:+--proxy "$WATCH_PROXY"} -o "$2" -w '%{http_code}' "$1" 2> /dev/null) || return 1
+    [[ $code == 200 && -s $2 ]]
+}
+
+# differs URL LOCAL: 0 if the page still differs from LOCAL on two more whole fetches, 10s and 30s
+# later (a push may be landing); 1 if it matches again; 2 if a fetch fails (then nothing is known)
+differs() {
+    local wait
+    for wait in ${CCS_WATCH_WAITS:-10 30}; do   # (tests make them shorter)
+        sleep "$wait"
+        fetch "$1" "$tmp/page" || return 2
+        cmp -s "$tmp/page" "$2" && return 1
+    done
+    return 0
+}
 
 if [[ $test_only ]]; then
     [[ $ALERT_URL ]] || { echo "no ALERT_URL in $conf" >&2; exit 1; }
@@ -74,13 +92,22 @@ bad=0 failed=0
 for p in "${pages[@]}"; do
     [[ -f $local_site/$p ]] || continue
     url=$site_url/$(jq -rn --arg p "${p%index.html}" '$p | split("/") | map(@uri) | join("/")')
+    seen=$state/differs-${p//[^A-Za-z0-9._-]/_}
     if ! fetch "$url" "$tmp/page"; then
         failed=$((failed + 1)); log "could not fetch $url"; continue
     fi
-    cmp -s "$tmp/page" "$local_site/$p" && continue
-    sleep 5   # a push may be landing: look once more before calling it
-    fetch "$url" "$tmp/page" && cmp -s "$tmp/page" "$local_site/$p" && continue
+    if cmp -s "$tmp/page" "$local_site/$p"; then rm -f "$seen"; continue; fi
+    rc=0; differs "$url" "$local_site/$p" || rc=$?
+    case $rc in
+        1) rm -f "$seen"; continue ;;
+        2) failed=$((failed + 1)); log "could not fetch $url again"; continue ;;
+    esac
+    # It differed on three whole fetches over 40s. Only the second run in a row that sees it
+    # (about two minutes later) alerts: no single moment, push or glitch, raises an alarm.
     bad=$((bad + 1))
+    if [[ ! -f $seen ]]; then
+        touch "$seen"; log "$url differs from what was pushed; alerting if it still does next run"; continue
+    fi
     # n1oc's style: "<what> @ <link>"; an address shortened to its first 6 and last 4
     what="the page differs from what was pushed"
     if [[ $SUBADDRESSES && -f $SUBADDRESSES ]]; then
@@ -96,5 +123,5 @@ if ((failed == ${#pages[@]})); then
 else
     rm -f "$state/unreachable"
 fi
-((bad == 0)) && log "the ${#pages[@]} pages on $site_url are what was pushed"
+((bad == 0 && failed == 0)) && log "the ${#pages[@]} pages on $site_url are what was pushed"
 exit $((bad > 0))
