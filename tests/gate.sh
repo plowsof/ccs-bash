@@ -42,7 +42,7 @@ on web "
     install -d -o ccs-data -m 755 /var/lib/ccs-data /var/lib/ccs-staging
     install -d -m 755 /etc/ccs-gate
     printf '%s\n' '$list' > /etc/ccs-gate/subaddresses.txt
-    sha256sum < /etc/ccs-gate/subaddresses.txt | cut -d' ' -f1 > /etc/ccs-gate/subaddresses.sha256
+    printf 'sha256 %s\nkey %040d\n' \"\$(sha256sum < /etc/ccs-gate/subaddresses.txt | cut -d' ' -f1)\" 0 > /etc/ccs-gate/subaddresses.txt.pin
     printf '%s  # the General Fund\n' '$fund' > /etc/ccs-gate/allowed
     chmod 644 /etc/ccs-gate/*
     install -d -m 755 ~ccs-data/.ssh
@@ -85,7 +85,7 @@ if push > /dev/null && [[ $(live) == v4 ]]; then ok "the next good push goes liv
 
 on web "echo '3 $(addr 3)' >> /etc/ccs-gate/subaddresses.txt"
 site 5 "$(addr 3)"
-if ! out=$(push) && [[ $(live) == v4 && $out == *"is not the list in"* ]]; then ok "a list that isn't the pinned one: every push refused"; else echo "$out"; fail "a changed list"; fi
+if ! out=$(push) && [[ $(live) == v4 && $out == *"is not the list"*".pin names"* ]]; then ok "a list that isn't the pinned one: every push refused"; else echo "$out"; fail "a changed list"; fi
 
 # rrsync's limits still hold through the gate: no deleting, nothing outside its folder
 on web "echo keep > /var/lib/ccs-data/keep.txt"
