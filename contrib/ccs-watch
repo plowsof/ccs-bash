@@ -9,7 +9,7 @@
 #                                                         (CptHook's simple module, ntfy, ...)
 #   ALERT_TARGET=#channel  ALERT_PASSWORD=...             instead, wmb's /directedMessage JSON
 #                                                         (ALERT_URL=http://127.0.0.1:8081/directedMessage)
-#   WATCH_PROXY=socks5h://127.0.0.1:9050                  optional: fetch through Tor
+#   WATCH_PROXY=socks5h://127.0.0.1:9050                  recommended: fetch through Tor
 #   SUBADDRESSES=/etc/ccs-front/subaddresses.txt          optional: name addresses not on it
 #   ALERT_PREFIX=[CCS-watch]                              optional: how messages start
 #   ALERT_PLAIN=1                                         optional: no IRC colours (for ntfy and the like)

@@ -41,8 +41,8 @@ and is "the original". Nothing here runs while the CCS does.
   subaddresses (made once offline from a view-only copy, signed with a key destroyed right
   after), a donation address that isn't in it stops the run, and the list goes out with the
   site so visitors can check an address themselves.
-- **ccs-watch**, right after each push: fetches the live donation pages over HTTPS, as a visitor
-  would, and checks they are what was pushed; if one isn't (three whole fetches and the next run
+- **ccs-watch**, right after each push: fetches the live donation pages over HTTPS through Tor,
+  so the web server can't tell it from a visitor, and checks they are what was pushed; if one isn't (three whole fetches and the next run
   agreeing, so a slow or down web server is never mistaken for it), an alert goes to IRC
   (`#irc-room`). It catches what the gate can't: the web server itself taken over
   ([two machines](two-machines.md#watching-the-web-server-way-a-the-backend-raises-the-alarm)).
