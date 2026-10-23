@@ -122,10 +122,20 @@ a short bash script, run by the push key instead of rrsync. Each push, it
    the same `-wo -no-del -munge`);
 2. finds every address-shaped string (95 base58 characters) in its pages and JSON (the QR codes'
    base64 skipped) and checks each against the wallet's signed list and an `allowed` file;
-3. only if all pass, copies staging into the live site. Otherwise the live site stays as it
-   was and the push fails (the backend's log shows that); which address, in which page, is in
-   the web server's journal (`journalctl -t ccs-gate`, and `/var/log/ccs-gate.log` if created
-   for ccs-data), and usually in the backend's log too.
+3. copies staging into the live site, except a page with any other address: that one keeps its
+   last good copy (a new one stays out), so one bad page doesn't stop the site updating, and the
+   gate never rewrites a page. The push then fails (the backend's log shows it); which address,
+   in which page, is in the web server's journal (`journalctl -t ccs-gate`, and
+   `/var/log/ccs-gate.log` if created for ccs-data), and goes to IRC (below);
+4. refuses the whole push if its own list isn't the one its `.pin` names (it can't check then).
+
+With `/etc/ccs-gate/alert.conf` it also tells IRC itself, once an hour per address: the one alarm
+that still sounds when the backend is the one lying.
+
+```
+[CCS-watch] the web server held back a page: donation address 9yQXrj…4Kd2 is not in the signed list (its last good copy stays) @ https://<site>/proposals/<page>
+[CCS-watch] the web server refuses every push: its signed list isn't the one its .pin names
+```
 
 Nothing runs between pushes: no daemon, no timer. Set it up once, as root:
 
@@ -134,6 +144,9 @@ install -m 755 contrib/ccs-receive /usr/local/bin/ccs-receive        # from this
 install -d -o ccs-data -m 755 /var/lib/ccs-staging
 install -d -m 755 /etc/ccs-gate
 install -o ccs-data -m 644 /dev/null /var/log/ccs-gate.log          # optional: the refusals, as a file
+install -d -o ccs-data -m 755 /var/lib/ccs-gate                      # optional, with alert.conf: when it last alerted
+install -m 640 -g ccs-data /dev/null /etc/ccs-gate/alert.conf        # optional: the bot (as ccs-watch's, plain text POST)
+printf 'ALERT_URL=http://<bot>:8086/<path>\nSITE_URL=https://<site>\n' > /etc/ccs-gate/alert.conf
 install -m 644 subaddresses.txt subaddresses.txt.pin /etc/ccs-gate/  # the signed list and its pin (ccs-front-bash, setup step 5)
 cat > /etc/ccs-gate/allowed <<'LIST'                                # other addresses allowed on the site, one a line
 888tNkZrPN6JsEgekjMnABU4TBzc2Dt29EPAvkRxbANsAnjyPbb3iQ1YBRk1UXcdRsiKc9dhwMVgN5S9cQUiyoogDavup3H  # the General Fund
