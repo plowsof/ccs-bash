@@ -182,7 +182,7 @@ The alert goes to one URL, POSTed as plain text: an IRC bot (CptHook's `simple` 
 `https://<host>/<endpoint>?channel=%23<channel>`), ntfy (`https://ntfy.sh/<a long random topic>`),
 or anything else that takes a POST; or, with `ALERT_TARGET` and `ALERT_PASSWORD` set, as wmb's
 `/directedMessage` JSON (the bot must be in that channel: Libera won't take it from outside).
-`ccs-watch --test` sends one message to check it. It lives in a file only root and ccs read, in no repository:
+`ccs-watch --test https://<the site>` sends one message to check it. It lives in a file only root and ccs read, in no repository:
 
 ```
 install -m 640 -g ccs /dev/null /etc/ccs/alert.conf
