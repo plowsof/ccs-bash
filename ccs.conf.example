@@ -10,7 +10,9 @@ WALLET_ADDRESS=4...
 RPC_USER=ccs
 RPC_PASSWORD=change-me
 
-# GitLab API endpoint of the proposals repository.
+# API endpoint of the proposals repository, GitLab or Forgejo/Gitea (public, no token):
+#   GitLab:  https://<host>/api/v4/projects/<id>
+#   Forgejo: https://<host>/api/v1/repos/<owner>/<repo>   (git.disroot.org, codeberg.org...)
 REPOSITORY_URL=https://repo.getmonero.org/api/v4/projects/54
 
 # Checkout of the proposals repository (pulled by ccs-bash-update).
