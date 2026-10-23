@@ -50,9 +50,9 @@
   </g>
   <rect x="30" y="130" width="6" height="86" rx="3" fill="#64748b"/>
   <rect x="30" y="420" width="6" height="86" rx="3" fill="#64748b"/>
-  <text x="115" y="162" text-anchor="middle" font-size="15" font-weight="700" fill="#0f172a">GitLab</text>
+  <text x="115" y="162" text-anchor="middle" font-size="15" font-weight="700" fill="#0f172a">GitLab or Forgejo</text>
   <text x="115" y="182" text-anchor="middle" font-size="12.5" fill="#475569">ccs-proposals repo</text>
-  <text x="115" y="199" text-anchor="middle" font-size="12.5" fill="#475569">merge requests</text>
+  <text x="115" y="199" text-anchor="middle" font-size="12.5" fill="#475569">merge / pull requests</text>
   <text x="115" y="452" text-anchor="middle" font-size="15" font-weight="700" fill="#0f172a">monerod</text>
   <text x="115" y="472" text-anchor="middle" font-size="12.5" fill="#475569">local, or a node</text>
   <text x="115" y="489" text-anchor="middle" font-size="12.5" fill="#475569">you trust</text>
