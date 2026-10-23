@@ -50,4 +50,17 @@ if ! watch && [[ $(alerts) == 1 ]]; then ok "still changed an hour later or less
 kill "${pids[0]}"; sleep 0.5
 for _ in 1 2 3; do watch || true; done
 if [[ $(alerts) == 2 ]] && tail -n 1 "$tmp/bot.txt" | grep -qF "[CCS Proposals] ccs-watch: http://127.0.0.1:$web could not be fetched (3 checks in a row)"; then ok "the site down three checks in a row: an alert"; else cat "$tmp/bot.txt"; fail "unreachable"; fi
+# wmb's /directedMessage: JSON with the target, the message and the password (on stdin, so not
+# in any command line ps shows), and --test sends one message to check the setup
+printf 'ALERT_URL=http://127.0.0.1:%s/directedMessage\nALERT_TARGET=#monero-ccs-emojis\nALERT_PASSWORD=s3cr3t\n' "$bot" > "$tmp/wmb.conf"
+: > "$tmp/bot.txt"
+if "$here/../contrib/ccs-watch" --test "$tmp/wmb.conf" > /dev/null \
+    && jq -e '.Target == "#monero-ccs-emojis" and .IncomingMessage.Password == "s3cr3t"
+              and (.IncomingMessage.Message | startswith("[CCS Proposals] ccs-watch: test, please ignore @ "))' \
+        <(cut -d' ' -f2- "$tmp/bot.txt") > /dev/null \
+    && ! grep -q 's3cr3t' "$here/../contrib/ccs-watch"; then
+    ok "wmb: the JSON it wants, and --test sends one message"
+else
+    cat "$tmp/bot.txt"; fail "wmb"
+fi
 exit "$status"
