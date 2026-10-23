@@ -108,6 +108,7 @@ function finish(    i, err, amount, name) {
         print "ignoring gitlab_url of " name ": not an https link" > "/dev/stderr"
         v["gitlab_url"] = ""
     }
+    gsub(/[\001-\037\177]/, "?", err)   # it quotes the file: no terminal escapes in the log
     if (err) print "skipping " name ": " err > "/dev/stderr"
     else print name, v["layout"], v["title"], v["author"], ymd(v["date"]), amount, v["gitlab_url"], milestones, done
     file = ""

@@ -183,6 +183,10 @@ for c in "${yaml_cases[@]}"; do
 done
 [[ $(awk -f "$CCS_LIB/frontmatter.awk" "$yaml/zero.md" | cut -f8,9) == $'1\t1' ]] || { echo "FAIL a list at column 0"; yaml_ok=0; }
 [[ $(awk -f "$CCS_LIB/frontmatter.awk" "$yaml/bom.md" 2>&1) == *"no frontmatter"* ]] || { echo "FAIL a BOM file was read"; yaml_ok=0; }
+# a bad line is quoted in the log: without its terminal escapes
+sed 's/^author: a$/author: a\n\x1b[2Jgone\x07/' "$yaml/1.md" > "$yaml/esc.md"
+esc=$(awk -f "$CCS_LIB/frontmatter.awk" "$yaml/esc.md" 2>&1; log $'x\x1b[2Jy' 2>&1)
+[[ $esc == *"?[2Jgone?"*"x?[2Jy" && $esc != *$'\x1b'* ]] || { echo "FAIL control characters reach the log: $(cat -v <<<"$esc")"; yaml_ok=0; }
 # The same files through Ruby's YAML, which Jekyll uses: every title read must match it.
 if command -v ruby > /dev/null; then
     for f in "$yaml"/[0-9]*.md; do
@@ -231,6 +235,41 @@ evil=$(mktemp -d)
 ) > /dev/null 2>&1 || true
 if [[ -e $evil/ran ]]; then echo "FAIL a command in the wallet's answer was run"; status=1; else echo "ok   a command in the wallet's answer is not run"; fi
 rm -rf "$evil"
+
+# verify-images.sh: a signature file counts for one maintainer at most. One holding the same
+# signature twice (gpg then reports it twice) must not count, nor a key not trusted.
+if command -v gpg > /dev/null; then
+    sig=$(
+        # shellcheck source=container/verify-images.sh
+        source "$here/../container/verify-images.sh"
+        tmp=$(mktemp -d)
+        trap 'rm -rf "$tmp"' EXIT
+        export GNUPGHOME=$tmp/gnupg
+        install -d -m 700 "$GNUPGHOME"
+        key() { gpg -q --batch --passphrase '' --quick-gen-key "$1 <$1@invalid>" ed25519 sign never 2> /dev/null
+                gpg --batch --with-colons --list-keys "$1@invalid" 2> /dev/null | awk -F: '$1 == "fpr" { print $10; exit }'; }
+        good=$(key good) other=$(key other)
+        echo "$good" > "$tmp/trusted"
+        m=sha256:$(printf '%064d' 1)
+        printf '{"critical":{"identity":{"docker-reference":"stagex/core-x:1"},"image":{"docker-manifest-digest":"%s"},"type":"atomic container signature"},"optional":{}}' "$m" > "$tmp/p"
+        s() { gpg -q --batch -z0 -u "$1" --output "$tmp/$2" --sign "$tmp/p"; }
+        s "$good" one && s "$other" untrusted
+        gpg -q --batch -z0 --output "$tmp/lit" --store "$tmp/p"
+        gpg -q --batch -u "$good" --output "$tmp/det" --detach-sign "$tmp/p"
+        cat "$tmp/det" "$tmp/det" "$tmp/lit" > "$tmp/twice"
+        for f in one twice untrusted; do
+            printf '%s=%s ' "$f" "$(signature_signer "$tmp/$f" stagex/core-x "$m" | cut -c1-4)"
+        done
+        printf 'wrong-image=%s' "$(signature_signer "$tmp/one" stagex/core-y "$m")"
+    )
+    if [[ $sig == "one="????" twice= untrusted= wrong-image=" ]]; then
+        echo "ok   a signature counts once, only by a trusted key, only for its image"
+    else
+        echo "FAIL signature check: $sig"; status=1
+    fi
+elif [[ ${CI:-} == true ]]; then
+    echo "FAIL gpg not installed"; status=1
+fi
 
 # notify-loop.sh: a flood of notifications gives at most one run per GAP, and none without one.
 nl=$(mktemp -d)
