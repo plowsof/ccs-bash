@@ -16,8 +16,7 @@ The proposed new ccs-front is a Node application served live. Compared with stat
 | Code reachable from the internet | the app and its npm dependency tree | nginx serving files |
 | Supply chain on live machines | npm (and for today's ccs-front, Ruby gems) | bash, awk, jq, qrencode |
 | Proposal Markdown rendered by | the framework, on the public server | a small awk renderer that escapes everything first, on the backend |
-| A compromised web server | can change any page until noticed | can too, but every page is pushed again each run |
-| JavaScript needed by visitors | usually | no; works over Tor with JS off |
+| A compromised web server | can change any page until noticed | can too, but every page is pushed again each run, and ccs-watch alerts IRC within minutes |
 
 The donation addresses are what an attacker wants, and the web server is where they are shown,
 so that is the machine to keep smallest.
@@ -42,6 +41,11 @@ and is "the original". Nothing here runs while the CCS does.
   subaddresses (made once offline from a view-only copy, signed with a key destroyed right
   after), a donation address that isn't in it stops the run, and the list goes out with the
   site so visitors can check an address themselves.
+- **ccs-watch**, right after each push: fetches the live donation pages over HTTPS through Tor,
+  so the web server can't tell it from a visitor, and checks they are what was pushed; if one isn't (three whole fetches and the next run
+  agreeing, so a slow or down web server is never mistaken for it), an alert goes to IRC
+  (`#irc-room`). It catches what the gate can't: the web server itself taken over
+  ([two machines](two-machines.md#watching-the-web-server-way-a-the-backend-raises-the-alarm)).
 - **Both from pinned images:** ccs-bash and ccs-front-bash each run in their own
   [StageX](https://stagex.tools) image ([the pinned image](image.md)): source-built parts
   signed by two or more StageX maintainers, the same image ID from the same commit anywhere.
@@ -110,8 +114,8 @@ on purpose; each copy has its own job, and they are all the same file:
 | web server, `/etc/ccs-gate/` | the list and its pin (installed by hand, root-owned) | the gate checks every pushed page against it: a taken-over backend still can't get a wrong address live |
 | the site, `/subaddresses.txt(.asc, .key.asc)` | the list, signature and key, pushed with the pages; the Verify page with the fingerprint | visitors check an address themselves (`gpg --verify`, `grep`): the defence left if the web server itself is taken over |
 
-So a wrong address has to get past the backend's check, then the web server's, then anyone who
-looks. Nothing about the list is in the design (ccs-front-hugo only has the Verify page's words,
+So a wrong address has to get past the backend's check, then the web server's, then the
+backend's watcher (ccs-watch, which raises the alarm on IRC), then anyone who looks. Nothing about the list is in the design (ccs-front-hugo only has the Verify page's words,
 and the fingerprint in its README for people to check against): a new list, when the wallet
 nears index 100,000, is made and signed the same way and its files copied to both machines.
 

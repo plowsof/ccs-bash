@@ -19,7 +19,7 @@ cleanup
 # Debian 12, as in the docs (the same pinned image as tests/rrsync.sh)
 docker buildx build -q --load -t "$name" - > /dev/null <<IMG
 FROM debian@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
-RUN apt-get update -q && apt-get install -y -q --no-install-recommends openssh-server openssh-client rsync python3 \
+RUN apt-get update -q && apt-get install -y -q --no-install-recommends openssh-server openssh-client rsync python3 curl \
     && rm -rf /var/lib/apt/lists/*
 IMG
 docker network create --subnet "$net.0/24" "$name" > /dev/null
@@ -42,6 +42,8 @@ on web "
     install -d -o ccs-data -m 755 /var/lib/ccs-data /var/lib/ccs-staging
     install -d -m 755 /etc/ccs-gate
     install -o ccs-data -m 644 /dev/null /var/log/ccs-gate.log
+    install -d -o ccs-data -m 755 /var/lib/ccs-gate
+    printf 'ALERT_URL=http://127.0.0.1:9999/simple\nSITE_URL=https://ccs.test\n' > /etc/ccs-gate/alert.conf
     printf '%s\n' '$list' > /etc/ccs-gate/subaddresses.txt
     printf 'sha256 %s\nkey %040d\n' \"\$(sha256sum < /etc/ccs-gate/subaddresses.txt | cut -d' ' -f1)\" 0 > /etc/ccs-gate/subaddresses.txt.pin
     printf '%s  # the General Fund\n' '$fund' > /etc/ccs-gate/allowed
@@ -52,6 +54,17 @@ on web "
     mkdir -p /run/sshd && ssh-keygen -A && /usr/sbin/sshd
 "
 on backend "echo '$web $(on web 'cat /etc/ssh/ssh_host_ed25519_key.pub')' > ~/.ssh/known_hosts"
+# a fake bot on the web server, keeping what it is sent (the gate's alerts)
+docker exec -d "$name-web" python3 -c '
+import http.server
+class H(http.server.BaseHTTPRequestHandler):
+    def do_POST(self):
+        n = int(self.headers.get("Content-Length", 0))
+        open("/tmp/bot.txt", "ab").write(self.rfile.read(n) + b"\n")
+        self.send_response(200); self.end_headers()
+    def log_message(self, *a): pass
+http.server.HTTPServer(("127.0.0.1", 9999), H).serve_forever()'
+bot() { on web 'cat /tmp/bot.txt 2> /dev/null || true' | tr -d '\003' | sed 's/12CCS-watch/CCS-watch/; s/04\([0-9A-Za-z]\{6\}…\)/\1/g'; }
 
 status=0
 ok() { echo "ok   $1"; }
@@ -68,6 +81,7 @@ site() {
 }
 push() { on backend "rsync -a --delay-updates -e 'ssh -o BatchMode=yes -o StrictHostKeyChecking=yes' /out/ ccs-data@$web: 2>&1"; }
 live() { on web 'cat /var/lib/ccs-data/version.txt 2> /dev/null'; }
+livepage() { on web "cat /var/lib/ccs-data/proposals/${1:-p.html} 2> /dev/null || true"; }
 
 site 1 "$(addr 1)"
 if out=$(push) && [[ $(live) == v1 ]]; then ok "a push with the wallet's addresses goes live"; else echo "$out"; fail "a good push"; fi
@@ -76,23 +90,33 @@ site 2 "$(addr 9 B)"
 # The reason is written after rsync is done: the backend gets it only if ssh relays it before the
 # rsync client exits (a race). The push failing and the web server's log are what's certain.
 rc=0; out=$(push) || rc=$?
-if ((rc)) && [[ $(live) == v1 ]] && on web "grep -q 'proposals/p.html: $(addr 9 B)' /var/log/ccs-gate.log"; then
-    ok "an address that isn't the wallet's: refused, the live site unchanged, which and where in the web server's log$([[ $out == *"not the wallet's"* ]] && echo ", and the backend's")"
+if ((rc)) && [[ $(live) == v2 && $(livepage) == *"$(addr 1)"* && $(livepage) != *"$(addr 9 B)"* ]] \
+    && on web "grep -q 'proposals/p.html: $(addr 9 B)' /var/log/ccs-gate.log"; then
+    ok "an address that isn't the wallet's: the rest of the push live, that page keeps its last good copy, the push fails, which and where in the log"
+    fake=$(addr 9 B)
+    if [[ $(bot | grep -c .) == 1 ]] && bot | grep -qF "[CCS-watch] the web server held back a page: donation address ${fake:0:6}…${fake: -4} is not in the signed list (its last good copy stays) @ https://ccs.test/proposals/p.html"; then
+        ok "the web server tells IRC itself (it sees a bad push even when the backend is the one lying)"
+    else
+        bot; fail "the web server's alert"
+    fi
 else
     echo "push exit $rc, live $(live), output: $out"; echo "gate log:"; on web 'cat /var/log/ccs-gate.log; ls -la /var/log/ccs-gate.log'
     fail "a foreign address"
 fi
 
+push > /dev/null || true
+if [[ $(bot | grep -c .) == 1 ]]; then ok "the same address refused again within the hour: no second alert"; else bot; fail "a repeated alert"; fi
 site 3 "$(addr 2)"
 on backend "printf 'pay %s here\n' '$(addr 8 A)' > /out/proposals/sneaky.html"
-if ! push > /dev/null && [[ $(live) == v1 ]]; then ok "an address anywhere in a page is checked, not only the donation box"; else fail "a hidden address"; fi
+if ! push > /dev/null && [[ $(live) == v3 && -z $(livepage sneaky.html) ]]; then ok "an address anywhere in a page is checked, not only the donation box (a new page with one stays out)"; else fail "a hidden address"; fi
 
 site 4 "$(addr 2)"
 if push > /dev/null && [[ $(live) == v4 ]]; then ok "the next good push goes live again"; else fail "recovery"; fi
 
 on web "echo '3 $(addr 3)' >> /etc/ccs-gate/subaddresses.txt"
 site 5 "$(addr 3)"
-if ! out=$(push) && [[ $(live) == v4 && $out == *"is not the list"*".pin names"* ]]; then ok "a list that isn't the pinned one: every push refused"; else echo "$out"; fail "a changed list"; fi
+if ! out=$(push) && [[ $(live) == v4 && $out == *"is not the list"*".pin names"* ]] \
+    && bot | grep -qF "[CCS-watch] the web server refuses every push: its signed list isn't the one its .pin names"; then ok "a list that isn't the pinned one: every push refused"; else echo "$out"; fail "a changed list"; fi
 
 # rrsync's limits still hold through the gate: no deleting, nothing outside its folder
 on web "echo keep > /var/lib/ccs-data/keep.txt"

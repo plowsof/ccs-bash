@@ -122,10 +122,20 @@ a short bash script, run by the push key instead of rrsync. Each push, it
    the same `-wo -no-del -munge`);
 2. finds every address-shaped string (95 base58 characters) in its pages and JSON (the QR codes'
    base64 skipped) and checks each against the wallet's signed list and an `allowed` file;
-3. only if all pass, copies staging into the live site. Otherwise the live site stays as it
-   was and the push fails (the backend's log shows that); which address, in which page, is in
-   the web server's journal (`journalctl -t ccs-gate`, and `/var/log/ccs-gate.log` if created
-   for ccs-data), and usually in the backend's log too.
+3. copies staging into the live site, except a page with any other address: that one keeps its
+   last good copy (a new one stays out), so one bad page doesn't stop the site updating, and the
+   gate never rewrites a page. The push then fails (the backend's log shows it); which address,
+   in which page, is in the web server's journal (`journalctl -t ccs-gate`, and
+   `/var/log/ccs-gate.log` if created for ccs-data), and goes to IRC (below);
+4. refuses the whole push if its own list isn't the one its `.pin` names (it can't check then).
+
+With `/etc/ccs-gate/alert.conf` it also tells IRC itself, once an hour per address: the one alarm
+that still sounds when the backend is the one lying.
+
+```
+[CCS-watch] the web server held back a page: donation address 9yQXrj…4Kd2 is not in the signed list (its last good copy stays) @ https://<site>/proposals/<page>
+[CCS-watch] the web server refuses every push: its signed list isn't the one its .pin names
+```
 
 Nothing runs between pushes: no daemon, no timer. Set it up once, as root:
 
@@ -134,6 +144,9 @@ install -m 755 contrib/ccs-receive /usr/local/bin/ccs-receive        # from this
 install -d -o ccs-data -m 755 /var/lib/ccs-staging
 install -d -m 755 /etc/ccs-gate
 install -o ccs-data -m 644 /dev/null /var/log/ccs-gate.log          # optional: the refusals, as a file
+install -d -o ccs-data -m 755 /var/lib/ccs-gate                      # optional, with alert.conf: when it last alerted
+install -m 640 -g ccs-data /dev/null /etc/ccs-gate/alert.conf        # optional: the bot (as ccs-watch's, plain text POST)
+printf 'ALERT_URL=http://<bot>:8086/<path>\nSITE_URL=https://<site>\n' > /etc/ccs-gate/alert.conf
 install -m 644 subaddresses.txt subaddresses.txt.pin /etc/ccs-gate/  # the signed list and its pin (ccs-front-bash, setup step 5)
 cat > /etc/ccs-gate/allowed <<'LIST'                                # other addresses allowed on the site, one a line
 888tNkZrPN6JsEgekjMnABU4TBzc2Dt29EPAvkRxbANsAnjyPbb3iQ1YBRk1UXcdRsiKc9dhwMVgN5S9cQUiyoogDavup3H  # the General Fund
@@ -155,3 +168,38 @@ nothing outside the folder, as with rrsync alone.
 
 It can't help if the web server itself is taken over (whoever has it can turn the gate off):
 there, visitors checking an address against the signed list is the defence.
+
+## Watching the web server (way A): the backend raises the alarm
+
+The gate can't help if the web server itself is taken over. `contrib/ccs-watch`, run on the
+backend right after each push, fetches the pages where donations are asked for (home, Funding
+Required, Donate, Verify, every funding-required proposal) from the site as a visitor would, and
+compares each, byte for byte, with what was just pushed. A difference is an alert, naming the page
+and any address on it that isn't on the signed list. (A push doesn't fix such a page by itself:
+rsync skips a file whose size and time were kept.) Nine pages took about a second on the testnet.
+
+The alert goes to one URL, POSTed as plain text: an IRC bot (CptHook's `simple` module:
+`https://<host>/<endpoint>?channel=%23<channel>`), ntfy (`https://ntfy.sh/<a long random topic>`),
+or anything else that takes a POST; or, with `ALERT_TARGET` and `ALERT_PASSWORD` set, as wmb's
+`/directedMessage` JSON (the bot must be in that channel: Libera won't take it from outside).
+`ccs-watch --test` sends one message to check it. It lives in a file only root and ccs read, in no repository:
+
+```
+install -m 640 -g ccs /dev/null /etc/ccs/alert.conf
+cat > /etc/ccs/alert.conf <<'CONF'
+ALERT_URL=https://<the bot>/simple?channel=%23<channel>
+SUBADDRESSES=/etc/ccs-front/subaddresses.txt        # to name addresses not on the list
+WATCH_PROXY=socks5h://127.0.0.1:9050               # recommended: through Tor (apt install tor), as any visitor
+CONF
+```
+
+and, at the end of `ccs-bash-update`, after the push:
+
+```
+&& runuser -u ccs -- /opt/ccs-bash/contrib/ccs-watch https://<the site> /var/lib/ccs/www/site >> /var/log/ccs-bash.log 2>&1
+```
+
+One alert per problem an hour while it lasts; "could not be fetched" after three checks in a row.
+A careful attacker on the web server could serve the backend's IP the right pages: `WATCH_PROXY`
+(Tor) or a second watcher elsewhere (a laptop, another machine) makes that much harder.
+`tests/watch.sh` runs it against a local web server and a fake bot.
