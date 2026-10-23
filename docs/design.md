@@ -32,17 +32,26 @@ and is "the original". Nothing here runs while the CCS does.
 **Backend** (no inbound connections; only outgoing to GitLab and monerod):
 
 - **monero-wallet-rpc**, view-only, its own user, on 127.0.0.1.
-- **ccs-bash**: data only, the JSON and the state file, every 2 minutes or on a new tx.
+- **ccs-bash**: data only, the JSON (with the QR codes, as PNGs) and the state file, every 2
+  minutes or on a new tx.
 - **ccs-front-bash**: every run, fills a fresh copy of the original from the proposals' `.md`
   files and ccs-bash's JSON: every proposal page (its Markdown as HTML, its milestones and
   payouts), the Ideas, Funding Required, Work in Progress and Completed lists, and each
   donation box (raised, goal, percentage, contributors, pending, address, QR code). All of it,
-  every run: about 1.5 seconds for 316 proposals.
+  every run: about 1.5 seconds for 316 proposals. With a signed list of the wallet's
+  subaddresses (made once offline from a view-only copy, signed with a key destroyed right
+  after), a donation address that isn't in it stops the run, and the list goes out with the
+  site so visitors can check an address themselves.
+- **Both from pinned images:** ccs-bash and ccs-front-bash each run in their own
+  [StageX](https://stagex.tools) image ([the pinned image](image.md)): source-built parts
+  signed by two or more StageX maintainers, the same image ID from the same commit anywhere.
+  Read-only, no capabilities; ccs-front-bash also without network.
 - **Push:** the complete `site/` to the web server, as in [two machines](two-machines.md) but
   with HTML instead of JSON (`rsync --checksum --delay-updates`).
 
 **Web server:** nginx serving `/var/lib/ccs-data`, and the write-only `ccs-data` account
 (`rrsync -wo -no-del -munge`). Nothing else: no checkout, no cron, no Jekyll, Node, Ruby or PHP.
+Its nginx is the distribution's, not StageX's: StageX has no nginx, and builds for amd64 only.
 
 ccs-front-bash runs on the backend, not on its own machine or the web server: whatever writes
 the addresses into the pages can redirect donations, so it belongs with ccs-bash, and pushing
@@ -92,7 +101,10 @@ development machine.
 2. **ccs-front-hugo and ccs-front-bash:** done, and running the testnet CCS since 2026-10-23,
    on two machines as in [two machines](two-machines.md): the ccs-bash machine makes the site
    and pushes it to a separate web server (an Oracle VM, nginx only, HTTPS, the CSP above).
-3. **ccs-bash data only:** drop `donate-qr-code` from its JSON, once nothing reads it.
+   Both steps run from their pinned StageX images there, built on the machine to the same
+   image IDs as CI and the releases.
+3. **The signed subaddress list:** made, signed and pinned in ccs-front-hugo (ccs-front-bash's
+   docs/setup.md, step 5). Until then there is no address check.
 
 ## Open questions
 
