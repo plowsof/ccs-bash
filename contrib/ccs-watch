@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# ccs-watch SITE_URL LOCAL_SITE [CONF]: the backend watching the web server. Right after a push,
+# fetch the pages where donations are asked for (home, Funding Required, Donate, Verify, every
+# funding-required proposal) from SITE_URL, as a visitor would, and compare each, byte for byte,
+# with LOCAL_SITE, what was just pushed. A difference means the web server serves something the
+# backend didn't make (a push skips a file whose size and time were kept: this doesn't): alert.
+# CONF (default /etc/ccs/alert.conf, root-owned, not in any repository):
+#   ALERT_URL=https://bot.example/simple?channel=%23ccs   POSTed the message as plain text
+#                                                         (CptHook's simple module, ntfy, ...)
+#   WATCH_PROXY=socks5h://127.0.0.1:9050                  optional: fetch through Tor
+#   SUBADDRESSES=/etc/ccs-front/subaddresses.txt          optional: name addresses not on it
+# One alert per problem an hour; "unreachable" after 3 runs in a row. Logs to stderr.
+set -euo pipefail
+site_url=${1:?SITE_URL} local_site=${2:?LOCAL_SITE} conf=${3:-/etc/ccs/alert.conf}
+state=${CCS_WATCH_STATE:-/var/lib/ccs/state/watch}
+ALERT_URL='' WATCH_PROXY='' SUBADDRESSES=''
+if [[ -f $conf ]]; then
+    # only these keys, KEY=value lines; nothing in it is run
+    while IFS='=' read -r k v; do
+        case $k in ALERT_URL|WATCH_PROXY|SUBADDRESSES) printf -v "$k" '%s' "$v" ;; esac
+    done < <(grep -E '^(ALERT_URL|WATCH_PROXY|SUBADDRESSES)=' "$conf")
+fi
+mkdir -p "$state"
+log() { printf '%s ccs-watch: %s\n' "$(date -u '+%F %T')" "$*" >&2; }
+
+# alert KEY MESSAGE: post MESSAGE (to the log always), at most once an hour for the same KEY
+alert() {
+    local stamp=$state/alert-${1//[^A-Za-z0-9._-]/_}
+    log "ALERT: $2"
+    [[ -f $stamp && $(($(date +%s) - $(stat -c %Y "$stamp"))) -lt 3600 ]] && return 0
+    touch "$stamp"
+    [[ $ALERT_URL ]] || return 0
+    curl -fsS --max-time 20 --data-binary "CCS: $2" -H 'Content-Type: text/plain' "$ALERT_URL" > /dev/null \
+        || log "could not send the alert to ALERT_URL"
+}
+
+fetch() { curl -fsS --max-time 60 ${WATCH_PROXY:+--proxy "$WATCH_PROXY"} -o "$2" "$1"; }
+
+# the pages: the fixed ones, and every proposal page with a donation box
+pages=(index.html funding-required/index.html donate/index.html verify/index.html)
+while IFS= read -r f; do pages+=("proposals/${f##*/}"); done \
+    < <(grep -l 'class="contribute"' "$local_site"/proposals/*.html 2> /dev/null || true)   # the Contribute box: funding-required only
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+bad=0 failed=0
+for p in "${pages[@]}"; do
+    [[ -f $local_site/$p ]] || continue
+    url=$site_url/$(jq -rn --arg p "${p%index.html}" '$p | split("/") | map(@uri) | join("/")')
+    if ! fetch "$url" "$tmp/page"; then
+        failed=$((failed + 1)); log "could not fetch $url"; continue
+    fi
+    cmp -s "$tmp/page" "$local_site/$p" && continue
+    sleep 5   # a push may be landing: look once more before calling it
+    fetch "$url" "$tmp/page" && cmp -s "$tmp/page" "$local_site/$p" && continue
+    bad=$((bad + 1))
+    why="differs from what was pushed"
+    if [[ $SUBADDRESSES && -f $SUBADDRESSES ]]; then
+        foreign=$(grep -o 'monero:[0-9A-Za-z]\{95\}\|class="address">[0-9A-Za-z]\{95\}' "$tmp/page" | grep -o '[0-9A-Za-z]\{95\}$' \
+            | awk 'NR == FNR { ok[$2] = 1; next } !($0 in ok)' "$SUBADDRESSES" - | sort -u | head -n 3 || true)
+        [[ $foreign ]] && why="$why: an address not in the signed list, $(echo "$foreign" | cut -c1-12 | sed 's/$/…/' | paste -sd ' ')"
+    fi
+    alert "page-$p" "the web server's $url $why"
+done
+if ((failed == ${#pages[@]})); then
+    n=$(($(cat "$state/unreachable" 2> /dev/null || echo 0) + 1)); echo "$n" > "$state/unreachable"
+    ((n < 3)) || alert unreachable "$site_url could not be fetched ($n checks in a row)"
+else
+    rm -f "$state/unreachable"
+fi
+((bad == 0)) && log "the ${#pages[@]} pages on $site_url are what was pushed"
+exit $((bad > 0))
