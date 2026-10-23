@@ -12,6 +12,7 @@
 #   WATCH_PROXY=socks5h://127.0.0.1:9050                  optional: fetch through Tor
 #   SUBADDRESSES=/etc/ccs-front/subaddresses.txt          optional: name addresses not on it
 #   ALERT_PREFIX=[CCS Proposals] ccs-watch:              optional: how messages start (n1oc's style)
+#   ALERT_PLAIN=1                                         optional: no IRC colours (for ntfy and the like)
 # One alert per problem an hour; "unreachable" after 3 runs in a row. Logs to stderr.
 set -euo pipefail
 # ccs-watch --test [CONF]: send one test message, to check ALERT_URL works
@@ -19,13 +20,17 @@ test_only=''
 if [[ ${1:-} == --test ]]; then test_only=1; set -- https://example.invalid /nonexistent "${2:-/etc/ccs/alert.conf}"; fi
 site_url=${1:?SITE_URL} local_site=${2:?LOCAL_SITE} conf=${3:-/etc/ccs/alert.conf}
 state=${CCS_WATCH_STATE:-/var/lib/ccs/state/watch}
-ALERT_URL='' WATCH_PROXY='' SUBADDRESSES='' ALERT_PREFIX='[CCS Proposals] ccs-watch:' ALERT_TARGET='' ALERT_PASSWORD=''
+ALERT_URL='' WATCH_PROXY='' SUBADDRESSES='' ALERT_PREFIX='' ALERT_TARGET='' ALERT_PASSWORD='' ALERT_PLAIN=''
 if [[ -f $conf ]]; then
     # only these keys, KEY=value lines; nothing in it is run
     while IFS='=' read -r k v; do
-        case $k in ALERT_URL|WATCH_PROXY|SUBADDRESSES|ALERT_PREFIX|ALERT_TARGET|ALERT_PASSWORD) printf -v "$k" '%s' "$v" ;; esac
-    done < <(grep -E '^(ALERT_URL|WATCH_PROXY|SUBADDRESSES|ALERT_PREFIX|ALERT_TARGET|ALERT_PASSWORD)=' "$conf")
+        case $k in ALERT_URL|WATCH_PROXY|SUBADDRESSES|ALERT_PREFIX|ALERT_TARGET|ALERT_PASSWORD|ALERT_PLAIN) printf -v "$k" '%s' "$v" ;; esac
+    done < <(grep -E '^(ALERT_URL|WATCH_PROXY|SUBADDRESSES|ALERT_PREFIX|ALERT_TARGET|ALERT_PASSWORD|ALERT_PLAIN)=' "$conf")
 fi
+# IRC colours as CptHook's GitLab messages have them: the [CCS Proposals] tag light blue (12), a
+# bad address red (04); none with ALERT_PLAIN
+if [[ $ALERT_PLAIN ]]; then blue='' red='' off=''; else blue=$'\x0312' red=$'\x0304' off=$'\x03'; fi
+ALERT_PREFIX=${ALERT_PREFIX:-"[${blue}CCS Proposals${off}] ccs-watch:"}
 [[ $test_only ]] || mkdir -p "$state"
 log() { printf '%s ccs-watch: %s\n' "$(date -u '+%F %T')" "$*" >&2; }
 
@@ -81,7 +86,7 @@ for p in "${pages[@]}"; do
     if [[ $SUBADDRESSES && -f $SUBADDRESSES ]]; then
         foreign=$(grep -o 'monero:[0-9A-Za-z]\{95\}\|class="address">[0-9A-Za-z]\{95\}' "$tmp/page" | grep -o '[0-9A-Za-z]\{95\}$' \
             | awk 'NR == FNR { ok[$2] = 1; next } !($0 in ok)' "$SUBADDRESSES" - | sort -u | head -n 3 || true)
-        [[ $foreign ]] && what="donation address $(sed -E 's/^(.{6}).*(.{4})$/\1…\2/' <<<"$foreign" | paste -sd ' ') does not match the CCS wallet"
+        [[ $foreign ]] && what="donation address $red$(sed -E 's/^(.{6}).*(.{4})$/\1…\2/' <<<"$foreign" | paste -sd ' ')$off does not match the CCS wallet"
     fi
     alert "page-$p" "$what @ $url"
 done

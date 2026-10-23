@@ -33,7 +33,7 @@ class H(http.server.BaseHTTPRequestHandler):
     def log_message(self, *a): pass
 http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()' "$bot" "$tmp/bot.txt" & pids+=($!)
 sleep 1
-printf 'ALERT_URL=http://127.0.0.1:%s/simple?channel=%%23ccs\nSUBADDRESSES=%s\n' "$bot" "$tmp/list.txt" > "$tmp/alert.conf"
+printf 'ALERT_URL=http://127.0.0.1:%s/simple?channel=%%23ccs\nSUBADDRESSES=%s\nALERT_PLAIN=1\n' "$bot" "$tmp/list.txt" > "$tmp/alert.conf"
 watch() { CCS_WATCH_STATE=$tmp/state "$here/../contrib/ccs-watch" "http://127.0.0.1:$web" "$tmp/local" "$tmp/alert.conf" 2> "$tmp/log"; }
 alerts() { [[ -f $tmp/bot.txt ]] && wc -l < "$tmp/bot.txt" || echo 0; }
 
@@ -56,10 +56,10 @@ printf 'ALERT_URL=http://127.0.0.1:%s/directedMessage\nALERT_TARGET=#monero-ccs-
 : > "$tmp/bot.txt"
 if "$here/../contrib/ccs-watch" --test "$tmp/wmb.conf" > /dev/null \
     && jq -e '.Target == "#monero-ccs-emojis" and .IncomingMessage.Password == "s3cr3t"
-              and (.IncomingMessage.Message | startswith("[CCS Proposals] ccs-watch: test, please ignore @ "))' \
+              and (.IncomingMessage.Message | startswith("[\u000312CCS Proposals\u0003] ccs-watch: test, please ignore @ "))' \
         <(cut -d' ' -f2- "$tmp/bot.txt") > /dev/null \
     && ! grep -q 's3cr3t' "$here/../contrib/ccs-watch"; then
-    ok "wmb: the JSON it wants, and --test sends one message"
+    ok "wmb: the JSON it wants (IRC colours on: the tag light blue), and --test sends one message"
 else
     cat "$tmp/bot.txt"; fail "wmb"
 fi
