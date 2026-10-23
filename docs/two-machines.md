@@ -155,3 +155,36 @@ nothing outside the folder, as with rrsync alone.
 
 It can't help if the web server itself is taken over (whoever has it can turn the gate off):
 there, visitors checking an address against the signed list is the defence.
+
+## Watching the web server (way A): the backend raises the alarm
+
+The gate can't help if the web server itself is taken over. `contrib/ccs-watch`, run on the
+backend right after each push, fetches the pages where donations are asked for (home, Funding
+Required, Donate, Verify, every funding-required proposal) from the site as a visitor would, and
+compares each, byte for byte, with what was just pushed. A difference is an alert, naming the page
+and any address on it that isn't on the signed list. (A push doesn't fix such a page by itself:
+rsync skips a file whose size and time were kept.) Nine pages took about a second on the testnet.
+
+The alert goes to one URL, POSTed as plain text: an IRC bot (CptHook's `simple` module:
+`https://<host>/<endpoint>?channel=%23<channel>`), ntfy (`https://ntfy.sh/<a long random topic>`),
+or anything else that takes a POST. It lives in a file only root and ccs read, in no repository:
+
+```
+install -m 640 -g ccs /dev/null /etc/ccs/alert.conf
+cat > /etc/ccs/alert.conf <<'CONF'
+ALERT_URL=https://<the bot>/simple?channel=%23<channel>
+SUBADDRESSES=/etc/ccs-front/subaddresses.txt        # to name addresses not on the list
+# WATCH_PROXY=socks5h://127.0.0.1:9050             # fetch through Tor: the web server can't tell it from a visitor
+CONF
+```
+
+and, at the end of `ccs-bash-update`, after the push:
+
+```
+&& runuser -u ccs -- /opt/ccs-bash/contrib/ccs-watch https://<the site> /var/lib/ccs/www/site >> /var/log/ccs-bash.log 2>&1
+```
+
+One alert per problem an hour while it lasts; "could not be fetched" after three checks in a row.
+A careful attacker on the web server could serve the backend's IP the right pages: `WATCH_PROXY`
+(Tor) or a second watcher elsewhere (a laptop, another machine) makes that much harder.
+`tests/watch.sh` runs it against a local web server and a fake bot.
