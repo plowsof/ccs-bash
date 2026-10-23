@@ -185,6 +185,9 @@ server and step 6 pushes there ([two machines](two-machines.md)).
    `useradd --system --no-create-home --shell /usr/sbin/nologin ccs-front` and
    `chown -R ccs-front: /opt/ccs-front`. With Docker, run the Jekyll container as such a user.
 
+   Without Jekyll: ccs-front-bash makes the whole site from ccs-front-hugo's design, in bash,
+   and this line runs it instead (see [the design](design.md) and ccs-front-bash's docs/setup.md).
+
    ```
    */2 * * * * /usr/local/bin/ccs-bash-update
    ```
