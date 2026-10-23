@@ -57,12 +57,14 @@ status=0
 ok() { echo "ok   $1"; }
 fail() { echo "FAIL $1"; status=1; }
 # site N ADDRESS: the backend's site, version N, a donation box with ADDRESS and the General Fund
-# in the footer, plus a QR code whose base64 has an address-shaped run in it
+# in the footer, plus a QR code whose base64 has an address-shaped run in it. Each version gets
+# its own file times: two made in the same second, the same size, rsync would skip as unchanged.
 site() {
     on backend "rm -rf /out && mkdir -p /out/proposals && echo 'v$1' > /out/version.txt
         printf '<a href=\"monero:%s\">QR</a><div class=\"address\">%s</div><img src=\"data:image/png;base64,ab+%s/cd\">\n<p class=\"address\">%s</p>\n' \
             '$2' '$2' '$(addr 5 Z)' '$fund' > /out/proposals/p.html
-        echo '[{\"address\": \"$2\"}]' > /out/projects.json"
+        echo '[{\"address\": \"$2\"}]' > /out/projects.json
+        find /out -exec touch -d @\$((1700000000 + $1 * 100)) {} +"
 }
 push() { on backend "rsync -a --delay-updates -e 'ssh -o BatchMode=yes -o StrictHostKeyChecking=yes' /out/ ccs-data@$web: 2>&1"; }
 live() { on web 'cat /var/lib/ccs-data/version.txt 2> /dev/null'; }
