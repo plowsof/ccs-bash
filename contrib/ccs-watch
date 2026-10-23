@@ -77,7 +77,8 @@ differs() {
 
 if [[ $test_only ]]; then
     [[ $ALERT_URL ]] || { echo "no ALERT_URL in $conf" >&2; exit 1; }
-    send "$ALERT_PREFIX test, please ignore @ ${TEST_LINK:-https://ccs.monerodevs.org/}" && echo "sent" || { echo "could not send" >&2; exit 1; }
+    if ! send "$ALERT_PREFIX test, please ignore @ ${TEST_LINK:-https://ccs.monerodevs.org/}"; then echo "could not send" >&2; exit 1; fi
+    echo "sent"
     exit 0
 fi
 

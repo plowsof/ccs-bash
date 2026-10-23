@@ -67,7 +67,7 @@ trap 'rm -f "$held"' EXIT
 if [[ $bad ]]; then
     # rsync patterns, anchored, wildcards escaped: exactly these files
     cut -f1 <<<"$bad" | sort -u | while IFS= read -r file; do
-        f=${file#"$staging"/}; printf '/%s\n' "$(sed 's/[][*?\\]/\\&/g' <<<"$f")"
+        f=${file#"$staging"/}; printf '/%s\n' "${f//[][*?\\]/\\&}"
     done > "$held"
     say "held back $(wc -l < "$held") page(s), address(es) not the wallet's nor allowed; the rest goes live"
     while IFS=$'\t' read -r file addr; do say "  ${file#"$staging"/}: $addr"; done < <(head -n 10 <<<"$bad")

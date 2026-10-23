@@ -45,7 +45,7 @@ and is "the original". Nothing here runs while the CCS does.
 - **ccs-watch**, right after each push: fetches the live donation pages over HTTPS, as a visitor
   would, and checks they are what was pushed; if one isn't (three whole fetches and the next run
   agreeing, so a slow or down web server is never mistaken for it), an alert goes to IRC
-  (`#monero-ccs-emojis`). It catches what the gate can't: the web server itself taken over
+  (`#irc-room`). It catches what the gate can't: the web server itself taken over
   ([two machines](two-machines.md#watching-the-web-server-way-a-the-backend-raises-the-alarm)).
 - **Both from pinned images:** ccs-bash and ccs-front-bash each run in their own
   [StageX](https://stagex.tools) image ([the pinned image](image.md)): source-built parts
