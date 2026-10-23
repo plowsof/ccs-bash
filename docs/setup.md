@@ -82,13 +82,19 @@ server and step 6 pushes there ([two machines](two-machines.md)).
    ```
    git clone https://github.com/plowsof/ccs-bash /opt/ccs-bash
    useradd --system --home-dir /var/lib/ccs --shell /usr/sbin/nologin ccs
+   useradd --system --no-create-home --shell /usr/sbin/nologin ccs-git   # owns the proposals checkout
    install -d -m 755 /var/lib/ccs
    install -d -o ccs -g ccs -m 755 /var/lib/ccs/state /var/lib/ccs/out
    install -o ccs -g ccs -m 644 /dev/null /var/lib/ccs/state/proposals.csv   # fresh install only
-   git clone https://repo.getmonero.org/monero-project/ccs-proposals.git /var/lib/ccs/proposals
+   install -d -o ccs-git -g ccs-git -m 755 /var/lib/ccs/proposals
+   runuser -u ccs-git -- env HOME=/ git clone -q -c core.symlinks=false \
+       https://repo.getmonero.org/monero-project/ccs-proposals.git /var/lib/ccs/proposals
    install -d -g ccs -m 750 /etc/ccs
    install -g ccs -m 640 /opt/ccs-bash/ccs.conf.example /etc/ccs/ccs.conf    # then edit it
    ```
+
+   `core.symlinks=false`: a merged symlink stays a plain file, so it can't point the web server
+   at other files. (`HOME=/` because root's isn't readable to other users.)
 
    Moving from ccs-back, `proposals.csv` comes from the [export](migrating.md) instead.
    ccs-bash never creates it: if it is missing or incomplete, runs stop; restore your backup.
@@ -163,15 +169,21 @@ server and step 6 pushes there ([two machines](two-machines.md)).
    }
    ```
 
-6. **One update** (pull, run, build the site), from root's cron:
+6. **One update** (pull, run, build the site), from root's cron. Root only starts the steps:
+   git and Jekyll read merged proposals, so they run as their own users.
 
    ```
    #!/bin/sh
    # /usr/local/bin/ccs-bash-update (chmod 755)
-   timeout -k 5 40 git -C /var/lib/ccs/proposals pull -q --ff-only   # GitLab down: give up
+   timeout -k 5 40 runuser -u ccs-git -- env HOME=/ \
+       git -C /var/lib/ccs/proposals pull -q --ff-only   # GitLab down: give up
    ccs-bash-run >> /var/log/ccs-bash.log 2>&1
-   cd /opt/ccs-front && jekyll build -q
+   runuser -u ccs-front -- env HOME=/ jekyll build -q -s /opt/ccs-front -d /opt/ccs-front/_site
    ```
+
+   `ccs-front` owns the ccs-front checkout:
+   `useradd --system --no-create-home --shell /usr/sbin/nologin ccs-front` and
+   `chown -R ccs-front: /opt/ccs-front`. With Docker, run the Jekyll container as such a user.
 
    ```
    */2 * * * * /usr/local/bin/ccs-bash-update
@@ -189,8 +201,6 @@ server and step 6 pushes there ([two machines](two-machines.md)).
    }
    ```
 
-   In every proposals checkout, `git config core.symlinks false`, so a merged symlink can't
-   point the web server at other files.
 
 7. **Optional, instant updates.** wallet-rpc's hook only touches a file; `notify-loop.sh`
    (root, instead of the cron line) runs `ccs-bash-update` every 2 minutes, or sooner when the

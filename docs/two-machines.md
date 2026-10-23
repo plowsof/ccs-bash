@@ -31,7 +31,9 @@ from="<wallet machine IP>",command="rrsync -wo -no-del -munge /var/lib/ccs-data"
 | own filesystem / quota | filling the disk |
 
 Use `/var/lib/ccs-data` as ccs-front's `_data` (setup steps 4–5; add `disable_symlinks on;` to
-the `/projects` block). ccs-front pulls its own proposals:
+the `/projects` block). ccs-front pulls its own proposals, cloned with
+`git clone -c core.symlinks=false`, from the crontab of a user that owns `/opt/ccs-front`, not
+root's (`crontab -u ccs-front -e`, see [setup](setup.md) step 6):
 
 ```
 */2 * * * * git -C /opt/ccs-front/proposals pull -q --ff-only ; cd /opt/ccs-front && jekyll build -q
@@ -52,7 +54,7 @@ only once all have arrived:
 ```
 #!/bin/sh
 # /usr/local/bin/ccs-bash-update (chmod 755)
-timeout -k 5 40 git -C /var/lib/ccs/proposals pull -q --ff-only
+timeout -k 5 40 runuser -u ccs-git -- env HOME=/ git -C /var/lib/ccs/proposals pull -q --ff-only
 { ccs-bash-run && runuser -u ccs -- rsync -a --delay-updates \
     -e "ssh -o BatchMode=yes -o StrictHostKeyChecking=yes" /var/lib/ccs/out/ ccs-data@<web server>: ; } >> /var/log/ccs-bash.log 2>&1
 ```
