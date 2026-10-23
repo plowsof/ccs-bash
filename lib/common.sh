@@ -2,7 +2,8 @@
 # Logging, config and file helpers shared by the other lib/ files.
 
 now_utc() { date -u '+%Y-%m-%dT%H:%M:%SZ'; }
-log() { printf '%s %s\n' "$(date -u '+%F %T')" "$*" >&2; }
+# Control characters (terminal escapes from a proposal file, say) are logged as ?.
+log() { local m=$*; printf '%s %s\n' "$(date -u '+%F %T')" "${m//[[:cntrl:]]/?}" >&2; }
 die() { log "error: $*"; exit 1; }
 
 # Source the config and check the required settings. It pins the wallet (WALLET_ADDRESS),
