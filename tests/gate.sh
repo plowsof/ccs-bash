@@ -41,6 +41,7 @@ on web "
     useradd --system --create-home --shell /bin/sh ccs-data
     install -d -o ccs-data -m 755 /var/lib/ccs-data /var/lib/ccs-staging
     install -d -m 755 /etc/ccs-gate
+    install -o ccs-data -m 644 /dev/null /var/log/ccs-gate.log
     printf '%s\n' '$list' > /etc/ccs-gate/subaddresses.txt
     printf 'sha256 %s\nkey %040d\n' \"\$(sha256sum < /etc/ccs-gate/subaddresses.txt | cut -d' ' -f1)\" 0 > /etc/ccs-gate/subaddresses.txt.pin
     printf '%s  # the General Fund\n' '$fund' > /etc/ccs-gate/allowed
@@ -56,12 +57,14 @@ status=0
 ok() { echo "ok   $1"; }
 fail() { echo "FAIL $1"; status=1; }
 # site N ADDRESS: the backend's site, version N, a donation box with ADDRESS and the General Fund
-# in the footer, plus a QR code whose base64 has an address-shaped run in it
+# in the footer, plus a QR code whose base64 has an address-shaped run in it. Each version gets
+# its own file times: two made in the same second, the same size, rsync would skip as unchanged.
 site() {
     on backend "rm -rf /out && mkdir -p /out/proposals && echo 'v$1' > /out/version.txt
         printf '<a href=\"monero:%s\">QR</a><div class=\"address\">%s</div><img src=\"data:image/png;base64,ab+%s/cd\">\n<p class=\"address\">%s</p>\n' \
             '$2' '$2' '$(addr 5 Z)' '$fund' > /out/proposals/p.html
-        echo '[{\"address\": \"$2\"}]' > /out/projects.json"
+        echo '[{\"address\": \"$2\"}]' > /out/projects.json
+        find /out -exec touch -d @\$((1700000000 + $1 * 100)) {} +"
 }
 push() { on backend "rsync -a --delay-updates -e 'ssh -o BatchMode=yes -o StrictHostKeyChecking=yes' /out/ ccs-data@$web: 2>&1"; }
 live() { on web 'cat /var/lib/ccs-data/version.txt 2> /dev/null'; }
@@ -70,10 +73,14 @@ site 1 "$(addr 1)"
 if out=$(push) && [[ $(live) == v1 ]]; then ok "a push with the wallet's addresses goes live"; else echo "$out"; fail "a good push"; fi
 
 site 2 "$(addr 9 B)"
-if ! out=$(push) && [[ $(live) == v1 && $out == *"not the wallet's nor allowed"* && $out == *"proposals/p.html: $(addr 9 B)"* ]]; then
-    ok "an address that isn't the wallet's: refused, the live site unchanged, the backend told which and where"
+# The reason is written after rsync is done: the backend gets it only if ssh relays it before the
+# rsync client exits (a race). The push failing and the web server's log are what's certain.
+rc=0; out=$(push) || rc=$?
+if ((rc)) && [[ $(live) == v1 ]] && on web "grep -q 'proposals/p.html: $(addr 9 B)' /var/log/ccs-gate.log"; then
+    ok "an address that isn't the wallet's: refused, the live site unchanged, which and where in the web server's log$([[ $out == *"not the wallet's"* ]] && echo ", and the backend's")"
 else
-    echo "$out"; fail "a foreign address"
+    echo "push exit $rc, live $(live), output: $out"; echo "gate log:"; on web 'cat /var/log/ccs-gate.log; ls -la /var/log/ccs-gate.log'
+    fail "a foreign address"
 fi
 
 site 3 "$(addr 2)"

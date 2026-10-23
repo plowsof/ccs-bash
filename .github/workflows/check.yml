@@ -1,5 +1,13 @@
 name: check
-on: [push, pull_request]
+# Once per change: pull requests, and pushes to master (a PR branch's push would run it twice).
+on:
+  push:
+    branches: [master]
+  pull_request:
+# A newer commit on the same branch or PR cancels the run it replaces.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
@@ -26,14 +34,42 @@ jobs:
     # The pinned image: StageX images by digest + qrencode built from a sha256-checked source,
     # built with --network none, then the tests run inside it, also without network.
     runs-on: ubuntu-24.04
+    outputs:
+      id: ${{ steps.id.outputs.id }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, pinned by commit
       - name: build (download, then install offline)
         run: container/build.sh ccs-bash
       - name: tests inside the image, no network
         run: docker run --rm --network none --read-only --tmpfs /tmp -v "$PWD:/src:ro" --entrypoint bash ccs-bash /src/tests/run.sh
-      - name: pinned image hash (two clean builds, and one after another commit, same hash)
-        run: container/check-pinned.sh
+      - id: id
+        run: echo "id=$(docker image inspect ccs-bash --format '{{.Id}}')" >> "$GITHUB_OUTPUT"
+  # The same commit must build to the same image ID anywhere: a second machine, a fresh clone made
+  # under umask 077, building another commit first and then this one on its cache (as node3 does).
+  # The same ID as the clean build above covers machines, umasks and caches at once.
+  pinned-warm:
+    runs-on: ubuntu-24.04
+    outputs:
+      id: ${{ steps.id.outputs.id }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, pinned by commit
+      - id: id
+        run: |
+          id=$(umask 077 && container/check-pinned.sh warm | sed -n 's/^id: //p')
+          echo "warm: $id"
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+  pinned:
+    needs: [image, pinned-warm]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: pinned image hash (two machines, a clean build and a cached one, one ID)
+        env:
+          IDS: ${{ needs.image.outputs.id }} ${{ needs.pinned-warm.outputs.id }}
+        run: |
+          read -r a b <<<"$IDS"
+          echo "clean build (and tests): $a"; echo "another machine, umask 077, on another commit's cache: $b"
+          [[ $a == sha256:* && $a == "$b" ]] || { echo "error: the builds differ, or one is missing" >&2; exit 1; }
+          echo "pinned: commit ${GITHUB_SHA::7} builds to $a"
   rrsync:
     # The two-machine setup (docs/two-machines.md, rrsync), attacked from the wallet machine's key.
     runs-on: ubuntu-24.04
