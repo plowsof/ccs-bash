@@ -32,7 +32,7 @@ fi
 if [[ $ALERT_PLAIN ]]; then blue='' red='' off=''; else blue=$'\x0312' red=$'\x0304' off=$'\x03'; fi
 ALERT_PREFIX=${ALERT_PREFIX:-"[${blue}CCS Proposals${off}] ccs-watch:"}
 [[ $test_only ]] || mkdir -p "$state"
-log() { printf '%s ccs-watch: %s\n' "$(date -u '+%F %T')" "$*" >&2; }
+log() { printf '%s ccs-watch: %s\n' "$(date -u '+%F %T')" "$*" | sed 's/\x03[0-9]*//g' >&2; }   # no IRC colours in the log
 
 # alert KEY MESSAGE: post MESSAGE (to the log always), at most once an hour for the same KEY
 alert() {
@@ -111,8 +111,11 @@ for p in "${pages[@]}"; do
     # n1oc's style: "<what> @ <link>"; an address shortened to its first 6 and last 4
     what="the page differs from what was pushed"
     if [[ $SUBADDRESSES && -f $SUBADDRESSES ]]; then
-        foreign=$(grep -o 'monero:[0-9A-Za-z]\{95\}\|class="address">[0-9A-Za-z]\{95\}' "$tmp/page" | grep -o '[0-9A-Za-z]\{95\}$' \
-            | awk 'NR == FNR { ok[$2] = 1; next } !($0 in ok)' "$SUBADDRESSES" - | sort -u | head -n 3 || true)
+        # the addresses on the live page that aren't on the pushed one (the General Fund in every
+        # footer is on both), and of those, the ones not on the wallet's signed list
+        addrs() { grep -o 'monero:[0-9A-Za-z]\{95\}\|class="address">[0-9A-Za-z]\{95\}' "$1" | grep -o '[0-9A-Za-z]\{95\}$' | sort -u; }
+        foreign=$(comm -23 <(addrs "$tmp/page") <(addrs "$local_site/$p") \
+            | awk 'NR == FNR { ok[$2] = 1; next } !($0 in ok)' "$SUBADDRESSES" - | head -n 3 || true)
         [[ $foreign ]] && what="donation address $red$(sed -E 's/^(.{6}).*(.{4})$/\1…\2/' <<<"$foreign" | paste -sd ' ')$off does not match the CCS wallet"
     fi
     alert "page-$p" "$what @ $url"

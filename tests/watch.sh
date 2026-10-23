@@ -17,7 +17,8 @@ mkdir -p "$tmp/local/proposals" "$tmp/local/funding-required" "$tmp/local/donate
 for i in 0 1 2; do echo "$i $(addr "$i")"; done > "$tmp/list.txt"
 echo home > "$tmp/local/index.html"
 for d in funding-required donate verify; do echo "$d" > "$tmp/local/$d/index.html"; done
-echo "<details class=\"contribute\"><a class=\"qr\" href=\"monero:$(addr 1)\"></a><div class=\"address\">$(addr 1)</div></details>" > "$tmp/local/proposals/a b.html"
+# a donation box, and the General Fund in the footer (on every page, not the wallet's)
+echo "<details class=\"contribute\"><a class=\"qr\" href=\"monero:$(addr 1)\"></a><div class=\"address\">$(addr 1)</div></details><p class=\"address\">$(addr 3 8)</p>" > "$tmp/local/proposals/a b.html"
 echo "<a class=\"qr\" href=\"monero:$(addr 0)\"></a> the General Fund in the footer, no Contribute box" > "$tmp/local/proposals/done.html"
 cp -r "$tmp/local" "$tmp/remote"
 
@@ -57,8 +58,9 @@ cp "$tmp/page.good" "$page"
 sed -i "s/$(addr 1)/$(addr 7 B)/g" "$page"
 watch || true
 if [[ $(alerts) == 0 ]] && grep -q "alerting if it still does next run" "$tmp/log"; then ok "a page changed: no alert on the first run that sees it"; else cat "$tmp/log"; fail "first sight"; fi
-if ! watch && [[ $(alerts) == 1 ]] && grep -qF "/simple?channel=%23ccs [CCS Proposals] ccs-watch: donation address $(addr 7 B | sed -E 's/^(.{6}).*(.{4})$/\1…\2/') does not match the CCS wallet @ http://127.0.0.1:$web/proposals/a%20b.html" "$tmp/bot.txt"; then
-    ok "still changed on the next run: one alert, naming the page and the address that isn't the wallet's"
+if ! watch && [[ $(alerts) == 1 ]] && grep -qF "/simple?channel=%23ccs [CCS Proposals] ccs-watch: donation address $(addr 7 B | sed -E 's/^(.{6}).*(.{4})$/\1…\2/') does not match the CCS wallet @ http://127.0.0.1:$web/proposals/a%20b.html" "$tmp/bot.txt" \
+    && ! grep -qF "$(addr 3 8 | cut -c1-6)" "$tmp/bot.txt"; then
+    ok "still changed on the next run: one alert, naming the page and only the new address (not the General Fund)"
 else
     cat "$tmp/log" "$tmp/bot.txt" 2> /dev/null; fail "a changed page"
 fi
