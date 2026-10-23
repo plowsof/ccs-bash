@@ -6,7 +6,7 @@ set -euo pipefail
 here=$(dirname "$(readlink -f "$0")")
 tmp=$(mktemp -d)
 pids=()
-trap 'kill "${pids[@]}" 2> /dev/null || true; rm -rf "$tmp"' EXIT
+trap 'kill "${pids[@]}" 2> /dev/null || true; [[ ${SHOW:-} ]] && cat "$tmp/bot.txt"; rm -rf "$tmp"' EXIT
 status=0
 ok() { echo "ok   $1"; }
 fail() { echo "FAIL $1"; status=1; }
@@ -40,7 +40,7 @@ alerts() { [[ -f $tmp/bot.txt ]] && wc -l < "$tmp/bot.txt" || echo 0; }
 if watch && [[ $(alerts) == 0 ]] && grep -q "the 5 pages" "$tmp/log"; then ok "nothing changed: no alert (5 pages: 4 fixed, 1 with a donation box)"; else cat "$tmp/log"; fail "unchanged site"; fi
 
 sed -i "s/$(addr 1)/$(addr 7 B)/g" "$tmp/remote/proposals/a b.html"
-if ! watch && [[ $(alerts) == 1 ]] && grep -q "^/simple?channel=%23ccs CCS: the web server's http://127.0.0.1:$web/proposals/a%20b.html differs from what was pushed: an address not in the signed list, $(addr 7 B | cut -c1-12)…" "$tmp/bot.txt"; then
+if ! watch && [[ $(alerts) == 1 ]] && grep -qF "/simple?channel=%23ccs [CCS Proposals] ccs-watch: donation address $(addr 7 B | sed -E 's/^(.{6}).*(.{4})$/\1…\2/') does not match the CCS wallet @ http://127.0.0.1:$web/proposals/a%20b.html" "$tmp/bot.txt"; then
     ok "a page changed on the web server: the bot is told which, and the address that isn't the wallet's"
 else
     cat "$tmp/log" "$tmp/bot.txt" 2> /dev/null; fail "a changed page"
@@ -49,5 +49,5 @@ if ! watch && [[ $(alerts) == 1 ]]; then ok "still changed an hour later or less
 
 kill "${pids[0]}"; sleep 0.5
 for _ in 1 2 3; do watch || true; done
-if [[ $(alerts) == 2 ]] && tail -n 1 "$tmp/bot.txt" | grep -q "could not be fetched (3 checks in a row)"; then ok "the site down three checks in a row: an alert"; else cat "$tmp/bot.txt"; fail "unreachable"; fi
+if [[ $(alerts) == 2 ]] && tail -n 1 "$tmp/bot.txt" | grep -qF "[CCS Proposals] ccs-watch: http://127.0.0.1:$web could not be fetched (3 checks in a row)"; then ok "the site down three checks in a row: an alert"; else cat "$tmp/bot.txt"; fail "unreachable"; fi
 exit "$status"
