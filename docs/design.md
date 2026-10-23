@@ -28,7 +28,7 @@ runs. It builds the site once per design change, with markers where content goes
 site is carried to the backend (a signed git commit, or a copy whose sha256 is checked there)
 and is "the original". Nothing here runs while the CCS does.
 
-**Backend** (no inbound connections; only outgoing to GitLab and monerod):
+**Backend** (no inbound connections; only outgoing to GitLab or Forgejo, and monerod):
 
 - **monero-wallet-rpc**, view-only, its own user, on 127.0.0.1.
 - **ccs-bash**: data only, the JSON (with the QR codes, as PNGs) and the state file, every 2
