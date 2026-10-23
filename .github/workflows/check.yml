@@ -1,5 +1,13 @@
 name: check
-on: [push, pull_request]
+# Once per change: pull requests, and pushes to master (a PR branch's push would run it twice).
+on:
+  push:
+    branches: [master]
+  pull_request:
+# A newer commit on the same branch or PR cancels the run it replaces.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
