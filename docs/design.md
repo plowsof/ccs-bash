@@ -52,6 +52,8 @@ and is "the original". Nothing here runs while the CCS does.
 **Web server:** nginx serving `/var/lib/ccs-data`, and the write-only `ccs-data` account
 (`rrsync -wo -no-del -munge`). Nothing else: no checkout, no cron, no Jekyll, Node, Ruby or PHP.
 Its nginx is the distribution's, not StageX's: StageX has no nginx, and builds for amd64 only.
+One script of ours runs there, and only when a push comes in: the gate (`contrib/ccs-receive`),
+which refuses any push with an address that isn't the wallet's ([two machines](two-machines.md#the-gate-way-a-recommended-the-web-server-checks-every-address)).
 
 ccs-front-bash runs on the backend, not on its own machine or the web server: whatever writes
 the addresses into the pages can redirect donations, so it belongs with ccs-bash, and pushing
@@ -95,6 +97,24 @@ anything not understood stays plain text. In the 268 proposals checked:
 Before switching over, every proposal's page is compared with today's site once, on a
 development machine.
 
+## The signed subaddress list: one list, checked three times
+
+The donation addresses are what an attacker wants, so the wallet's subaddresses are listed once,
+in advance, and every address shown is checked against that list. It turns up in several places
+on purpose; each copy has its own job, and they are all the same file:
+
+| Where | What | Its job |
+|---|---|---|
+| the offline machine | made from a view-only wallet, signed with a key destroyed right after | the only place the list is made or signed; it writes the four files: the list, `.asc` (signature), `.key.asc` (public key), `.pin` (sha256 and fingerprint) |
+| backend, `/etc/ccs-front/` | the four files | ccs-front-bash checks the list against its pin, then every donation address, before each push; a run with a wrong address makes no site |
+| web server, `/etc/ccs-gate/` | the list and its pin (installed by hand, root-owned) | the gate checks every pushed page against it: a taken-over backend still can't get a wrong address live |
+| the site, `/subaddresses.txt(.asc, .key.asc)` | the list, signature and key, pushed with the pages; the Verify page with the fingerprint | visitors check an address themselves (`gpg --verify`, `grep`): the defence left if the web server itself is taken over |
+
+So a wrong address has to get past the backend's check, then the web server's, then anyone who
+looks. Nothing about the list is in the design (ccs-front-hugo only has the Verify page's words,
+and the fingerprint in its README for people to check against): a new list, when the wallet
+nears index 100,000, is made and signed the same way and its files copied to both machines.
+
 ## Getting there
 
 1. **Before:** ccs-bash makes JSON; Jekyll builds the site from it ([two machines](two-machines.md)).
@@ -103,8 +123,8 @@ development machine.
    and pushes it to a separate web server (an Oracle VM, nginx only, HTTPS, the CSP above).
    Both steps run from their pinned StageX images there, built on the machine to the same
    image IDs as CI and the releases.
-3. **The signed subaddress list:** made, signed and pinned in ccs-front-hugo (ccs-front-bash's
-   docs/setup.md, step 5). Until then there is no address check.
+3. **The signed subaddress list:** made, signed and pinned on the testnet (ccs-front-bash's
+   docs/setup.md, step 5), and the web server's gate in front of it (two machines).
 
 ## Open questions
 
