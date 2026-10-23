@@ -10,6 +10,7 @@ Logs: `/var/log/ccs-bash.log`, and with [setup](setup.md) step 7
 | `donations at subaddress ..., which proposals.csv doesn't have` | The state file lacks entries, see [Moving from ccs-back](migrating.md) step 3. Nothing written. |
 | `could not fetch ideas from GitLab` | GitLab is down; the old Ideas list stays. |
 | `skipping <file>: ...` | That proposal's frontmatter can't be read (reason follows); it's left off. |
+| `ignoring tags of <file>: ...` | Its `tags:` can't be read (reason follows): the proposal shows, without tags. A list of up to 5, each up to 40 bytes. |
 | `error: <name>: 1 of 2 maintainer signatures` (build) | A StageX pin lacks two trusted signatures. Don't work around it: refresh the [keys](image.md#signatures) if StageX added a maintainer, else ask StageX. |
 
 Inside the image there is only bash and the busybox applets in `container/busybox-applets`.

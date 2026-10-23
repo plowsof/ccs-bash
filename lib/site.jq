@@ -33,7 +33,8 @@ $props[0] as $props | $state[0] as $state | $funds[0] as $funds | $qr[0] as $qr
         "amount-pending": $f.pending,
         author: (.author | @html),
         date: (if .ts > 0 then .ts | strftime("%B %-d, %Y") else null end),
-        "funding-required-date": ($s.funding_required_date | if . then fromdate | strftime("%B %-d, %Y") else null end)
+        "funding-required-date": ($s.funding_required_date | if . then fromdate | strftime("%B %-d, %Y") else null end),
+        tags: (.tags | map(@html))
       };
 
   def project:
