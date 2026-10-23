@@ -189,7 +189,7 @@ install -m 640 -g ccs /dev/null /etc/ccs/alert.conf
 cat > /etc/ccs/alert.conf <<'CONF'
 ALERT_URL=https://<the bot>/simple?channel=%23<channel>
 SUBADDRESSES=/etc/ccs-front/subaddresses.txt        # to name addresses not on the list
-# WATCH_PROXY=socks5h://127.0.0.1:9050             # fetch through Tor: the web server can't tell it from a visitor
+WATCH_PROXY=socks5h://127.0.0.1:9050               # recommended: through Tor (apt install tor), as any visitor
 CONF
 ```
 
