@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # verify-images.sh [IMAGES]: every pinned StageX image (default: images) must be signed by
 # two or more maintainers whose keys are in stagex-keys.asc. A pin is an index digest; the
-# signatures (sigs.stagex.tools) are on its linux/<arch> manifest. Needs gpg and jq.
+# signatures are on its linux/<arch> manifest. They are read from sigs/ (update-sigs.sh copies
+# them from sigs.stagex.tools when the pins change), so a build needs nothing from that site;
+# only a manifest with none stored there is looked up online. Needs gpg and jq.
 set -euo pipefail
 quorum=2
 lookaside=https://sigs.stagex.tools
@@ -35,7 +37,7 @@ trust_keys() {
 }
 
 main() {
-    local dir list arch failed=0 name ref repo index manifest n code signer signers others
+    local dir list arch failed=0 name ref repo index manifest n code signer signers others stored
     dir=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
     list=${1:-$dir/images}
     arch=$(docker version --format '{{.Server.Arch}}')
@@ -53,10 +55,17 @@ main() {
         [[ $manifest =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "error: $name: no single linux/$arch manifest in $index" >&2; exit 1; }
 
         signers=() others=()
+        stored=$dir/sigs/$repo/${manifest#sha256:}
+        [[ -d $stored ]] || echo "$name: no signatures in sigs/ for $manifest, fetching them" >&2
         for n in $(seq 1 20); do
-            code=$(curl -sS --max-time 60 -o "$tmp/sig" -w '%{http_code}' "$lookaside/$repo@${manifest/:/=}/signature-$n")
-            [[ $code == 404 ]] && break
-            [[ $code == 200 ]] || { echo "error: $name: signature-$n: HTTP $code from $lookaside" >&2; exit 1; }
+            if [[ -d $stored ]]; then
+                [[ -f $stored/signature-$n ]] || break
+                cp "$stored/signature-$n" "$tmp/sig"
+            else
+                code=$(curl -sS --max-time 60 -o "$tmp/sig" -w '%{http_code}' "$lookaside/$repo@${manifest/:/=}/signature-$n")
+                [[ $code == 404 ]] && break
+                [[ $code == 200 ]] || { echo "error: $name: signature-$n: HTTP $code from $lookaside" >&2; exit 1; }
+            fi
             signer=$(signature_signer "$tmp/sig" "$repo" "$manifest")
             if [[ -z $signer ]]; then
                 others+=("signature-$n")   # unknown key (say a former maintainer's) or bad
