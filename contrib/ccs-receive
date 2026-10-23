@@ -1,15 +1,34 @@
 #!/bin/bash
 # ccs-receive: the web server's last check (docs/two-machines.md, "The gate"). The backend's push
-# key runs only this (command= in authorized_keys). It receives the push as rrsync always did,
-# but into a staging folder; then every Monero address in its pages and JSON must be one of the
-# wallet's (the signed list and its .pin, installed here by hand) or in the allowed file; only then is it
-# copied into the live site. Anything else, or a list that isn't the pinned one, leaves the live
-# site as it was. Needs bash, awk, grep, rsync (rrsync), coreutils. Root-owned, 755.
+# key runs only this (command= in authorized_keys). It receives the push as rrsync always did, but
+# into a staging folder; then every Monero address in its pages and JSON must be one of the
+# wallet's (the signed list and its .pin, installed here by hand) or in the allowed file. The push
+# goes live, except a page with any other address: that one keeps its last good copy, and IRC is
+# told (alert.conf). A list that isn't the pinned one refuses the whole push. Needs bash, awk,
+# grep, rsync (rrsync), coreutils, curl. Root-owned, 755.
 set -euo pipefail
 staging=/var/lib/ccs-staging live=/var/lib/ccs-data conf=/etc/ccs-gate
 
 # The reason goes to the web server's journal (and /var/log/ccs-gate.log, if ccs-data may write
 # it), and to the backend: that last one only if ssh relays it before the rsync client exits.
+# alert KEY MESSAGE: also to IRC (/etc/ccs-gate/alert.conf: ALERT_URL, SITE_URL), at most once an
+# hour per KEY: a taken-over backend retrying every two minutes mustn't flood the channel. Here
+# is where a bad push is seen even when the backend is the one lying.
+alert() {
+    local url='' site='' k v stamp=/var/lib/ccs-gate/alert-${1//[^A-Za-z0-9._-]/_}
+    [[ -r $conf/alert.conf ]] || return 0
+    while IFS='=' read -r k v; do
+        case $k in ALERT_URL) url=$v ;; SITE_URL) site=$v ;; esac
+    done < <(grep -E '^(ALERT_URL|SITE_URL)=' "$conf/alert.conf")
+    [[ $url ]] || return 0
+    if [[ -f $stamp && $(($(date +%s) - $(stat -c %Y "$stamp"))) -lt 3600 ]]; then return 0; fi
+    touch "$stamp" 2> /dev/null || true
+    curl -fsS --max-time 10 --data-binary "[${blue}CCS-watch${off}] ${2//@SITE@/${site:-}}" -H 'Content-Type: text/plain' "$url" > /dev/null 2>&1 \
+        || say "could not send the alert"
+}
+
+blue=$'\x0312' red=$'\x0304' off=$'\x03'   # IRC colours, as ccs-watch's
+
 say() {
     logger -t ccs-gate -- "$*" 2> /dev/null || true
     printf '%s %s\n' "$(date -u '+%F %T')" "$*" >> /var/log/ccs-gate.log 2> /dev/null || true
@@ -35,13 +54,28 @@ rrsync -wo -no-del -munge "$staging"
 # the list and its pin, as ccs-front-bash has them (tools/sign-subaddresses.sh: "sha256 <hex>")
 list=$conf/subaddresses.txt
 [[ -f $list && $(sha256sum < "$list" | cut -d' ' -f1) == "$(sed -n 's/^sha256 *//p' "$list.pin" 2> /dev/null)" ]] \
-    || { say "refused the push: $list is not the list $list.pin names"; exit 1; }
+    || { say "refused the push: $list is not the list $list.pin names"
+         alert list "the web server refuses every push: its signed list isn't the one its .pin names"; exit 1; }
 # the list's addresses, then the allowed file's (first word of each line; # comments)
 bad=$(scan "$staging" | awk -F '\t' 'NR == FNR { if ($1 !~ /^#/ && NF) ok[$1] = 1; next } !($2 in ok)' \
     <(cut -d' ' -f2 "$list"; awk '{ print $1 }' "$conf/allowed" 2> /dev/null) -)
+# The rest of the push goes live; a page with an address that isn't the wallet's keeps its last
+# good copy (a new one stays out): one bad page doesn't stop the site updating, and nothing here
+# rewrites a page. The push still fails, so the backend's log shows it.
+held=$(mktemp)
+trap 'rm -f "$held"' EXIT
 if [[ $bad ]]; then
-    say "refused the push: $(wc -l <<<"$bad") address(es) not the wallet's nor allowed; the live site is unchanged"
+    # rsync patterns, anchored, wildcards escaped: exactly these files
+    cut -f1 <<<"$bad" | sort -u | while IFS= read -r file; do
+        f=${file#"$staging"/}; printf '/%s\n' "$(sed 's/[][*?\\]/\\&/g' <<<"$f")"
+    done > "$held"
+    say "held back $(wc -l < "$held") page(s), address(es) not the wallet's nor allowed; the rest goes live"
     while IFS=$'\t' read -r file addr; do say "  ${file#"$staging"/}: $addr"; done < <(head -n 10 <<<"$bad")
-    exit 1
+    n=0
+    while IFS=$'\t' read -r file addr; do
+        ((n++ < 3)) || break
+        alert "addr-$addr" "the web server held back a page: donation address $red${addr:0:6}…${addr: -4}$off is not in the signed list (its last good copy stays) @ @SITE@/${file#"$staging"/}"
+    done < <(awk -F '\t' '$1 ~ /\.html$/' <<<"$bad"; awk -F '\t' '$1 !~ /\.html$/' <<<"$bad")   # a page before the JSON
 fi
-rsync -a --delay-updates "$staging/" "$live/"
+rsync -a --delay-updates --exclude-from="$held" "$staging/" "$live/"
+[[ ! -s $held ]]
