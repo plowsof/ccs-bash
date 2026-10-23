@@ -40,6 +40,11 @@ gitlab_get() {
             gitlab_forgejo < "$FIXTURES/gitlab/merged.json" | jq 'map(. + {merged: true})
                 + [{number: 99, html_url: "https://example.org/pr/99", title: "Closed, not merged", user: {login: "x"},
                     created_at: "2026-10-01T14:00:00+02:00", merged: false}]' ;;
+        issues/*/reactions*)   # the MR's votes as reactions (and a heart, not a vote); none is null
+            iid=${1#issues/}; iid=${iid%%/*}
+            [[ $iid != "${TEST_FAIL_VOTES:-}" ]] || return 1   # TEST_FAIL_VOTES=N: its reactions fail
+            jq --argjson i "$iid" '.[] | select(.iid == $i) | [range(.upvotes) | {content: "+1"}] + [range(.downvotes) | {content: "-1"}]
+                | if length == 0 then null else . + [{content: "heart"}] end' "$FIXTURES/gitlab/opened.json" ;;
         pulls/*/files*)
             iid=${1#pulls/}; iid=${iid%%/*}
             [[ $iid != "${TEST_FAIL_MR:-}" ]] || return 1
