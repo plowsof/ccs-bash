@@ -51,6 +51,31 @@ server {
 
 (A `location` with its own `add_header` drops the server's, hence the CSP twice.)
 
+**The theme** (Light, Dark or System, in the site's footer) is kept in the address, without
+cookies or JavaScript: `/dark/…` and `/light/…` are the same files, except that there
+`assets/theme.css` is `theme-dark.css` or `theme-light.css`. The footer's links are
+`?theme=light|dark|system`, which nginx turns into the same page under that prefix. Every link
+in the site is relative, so the prefix stays while browsing. In the `server`, beside the
+`location`s above (and the `map` outside it, in the `http` context, e.g. at the top of the file):
+
+```
+map $request_uri $ccs_page {                       # the page, without a theme prefix or query
+    ~^/(?:dark|light)(/[^?]*) $1;
+    ~^([^?]*)                 $1;
+}
+
+    if ($arg_theme = light)  { return 302 /light$ccs_page; }
+    if ($arg_theme = dark)   { return 302 /dark$ccs_page; }
+    if ($arg_theme = system) { return 302 $ccs_page; }
+    location = /dark/assets/theme.css  { alias /var/lib/ccs-data/assets/theme-dark.css; }
+    location = /light/assets/theme.css { alias /var/lib/ccs-data/assets/theme-light.css; }
+    location ^~ /dark/  { alias /var/lib/ccs-data/; }
+    location ^~ /light/ { alias /var/lib/ccs-data/; }
+```
+
+The pages are the very files the gate checked and ccs-watch compares, under another address.
+Without these lines the toggle just reloads the page in the browser's own setting.
+
 HTTPS: point a DNS A record at the web server, set `server_name` to that name, then
 `certbot --nginx -d <name> --redirect` (`apt install certbot python3-certbot-nginx`). It adds
 the 443 server with the certificate and a redirect from 80, keeps the headers above, and
