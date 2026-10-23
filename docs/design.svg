@@ -180,6 +180,18 @@
     <text x="120" y="15" text-anchor="middle" font-size="11.5" font-weight="600" fill="#6d28d9">carried over once: signed, hash checked</text>
   </g>
 
+  <!-- the watcher: after each push, the live donation pages fetched as a visitor and compared -->
+  <rect x="470" y="640" width="210" height="82" rx="10" fill="#ffffff" stroke="#cbd5e1" filter="url(#sh)"/>
+  <rect x="470" y="640" width="6" height="82" rx="3" fill="#c2410c"/>
+  <g text-anchor="middle">
+    <text x="577" y="662" font-size="14" font-weight="700" fill="#0f172a">ccs-watch</text>
+    <text x="577" y="680" font-size="12" fill="#475569">the live pages = what was pushed?</text>
+    <text x="577" y="696" font-size="12" fill="#475569">if not, an alert to IRC:</text>
+    <text x="577" y="712" font-size="11.5" font-weight="600" fill="#c2410c">#monero-ccs-emojis</text>
+  </g>
+  <path d="M680,672 H788 V568 H811" fill="none" stroke="#c2410c" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#o)"/>
+  <text x="700" y="664" font-size="11" fill="#c2410c">HTTPS</text>
+
   <!-- legend -->
   <g transform="translate(30,775)" font-size="12.5" fill="#334155">
     <path d="M0,10 H34" stroke="#16a34a" stroke-width="3"/><text x="42" y="14">every run (2 min, or on a new tx)</text>
