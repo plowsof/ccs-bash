@@ -33,8 +33,27 @@ gitlab_get() {
             iid=${1#merge_requests/}
             [[ ${iid%/changes} != "${TEST_FAIL_MR:-}" ]] || return 1 # TEST_FAIL_MR=N: that MR fails
             cat "$FIXTURES/gitlab/changes-${iid%/changes}.json" ;;
+        # Forgejo: the same MRs as Forgejo pull requests (times with an offset, a closed PR
+        # that was not merged among the merged ones)
+        pulls\?state=open*) gitlab_forgejo < "$FIXTURES/gitlab/opened.json" ;;
+        pulls\?state=closed*)
+            gitlab_forgejo < "$FIXTURES/gitlab/merged.json" | jq 'map(. + {merged: true})
+                + [{number: 99, html_url: "https://example.org/pr/99", title: "Closed, not merged", user: {login: "x"},
+                    created_at: "2026-10-01T14:00:00+02:00", merged: false}]' ;;
+        pulls/*/files*)
+            iid=${1#pulls/}; iid=${iid%%/*}
+            [[ $iid != "${TEST_FAIL_MR:-}" ]] || return 1
+            jq '.changes | map({filename: .new_path, status: (if .new_file then "added" else "changed" end)})' \
+                "$FIXTURES/gitlab/changes-$iid.json" ;;
         *) return 1 ;;
     esac
+}
+
+# GitLab MRs -> Forgejo pull requests; Z times become the same moment at +14:00 (the next
+# day in that zone: a wrong conversion shows the wrong date)
+gitlab_forgejo() {
+    jq 'map({number: .iid, html_url: .web_url, title, user: {login: .author.username}, merged: false,
+        created_at: (.created_at | if . == null then null else sub("\\.[0-9]+Z$"; "Z") | fromdate + 50400 | todate | sub("Z$"; "+14:00") end)})'
 }
 
 now_utc() { echo 2026-10-22T08:00:00Z; }
