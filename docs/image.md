@@ -29,7 +29,10 @@ one on a cache from another commit must agree.
 
 StageX publishes an image once two or more maintainers have rebuilt it and signed its digest
 ([containers signature format](https://github.com/containers/image/blob/main/docs/containers-signature.5.md),
-at `https://sigs.stagex.tools`). `container/verify-images.sh` checks, for each pin:
+at `https://sigs.stagex.tools`). A copy of them for every pin is kept in `container/sigs/`
+(`container/update-sigs.sh` makes it when the pins change), so a build reads them here and needs
+nothing from that site; stored or fetched, they are checked the same way. `container/verify-images.sh`
+checks, for each pin:
 
 - the registry's index hashes to the pin; its `linux/<arch>` manifest is what's signed;
 - a signature counts if it is good, by a key in `container/stagex-keys.asc`, and names that
@@ -46,8 +49,8 @@ This proves StageX's maintainers reproduced and signed what we pin, not that we 
 
 ## Changing the pin
 
-`container/update-images.sh` pins every image to StageX's current release and checks the
-signatures; review the diff, commit, rebuild. A new builder pin makes a new builder; remove old
+`container/update-images.sh` pins every image to StageX's current release, stores its
+signatures in `container/sigs/` and checks them; review the diff, commit, rebuild. A new builder pin makes a new builder; remove old
 ones with `docker buildx rm ccs-bash-builder-<id>`. For a newer busybox or qrencode, change its
 line in `container/sources.lock` and the version in the Dockerfile. More applets go in
 `container/busybox-applets`.

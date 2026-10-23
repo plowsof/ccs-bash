@@ -15,4 +15,5 @@ while read -r line; do
 done < "$here/images" > "$here/images.new"
 mv "$here/images.new" "$here/images"
 git -C "$here" diff --stat -- images >&2
+"$here/update-sigs.sh"
 "$here/verify-images.sh"
