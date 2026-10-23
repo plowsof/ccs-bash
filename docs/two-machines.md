@@ -132,21 +132,21 @@ Nothing runs between pushes: no daemon, no timer. Set it up once, as root:
 install -m 755 contrib/ccs-receive /usr/local/bin/ccs-receive        # from this repository
 install -d -o ccs-data -m 755 /var/lib/ccs-staging
 install -d -m 755 /etc/ccs-gate
-install -m 644 subaddresses.txt /etc/ccs-gate/                       # the signed list (ccs-front-bash, setup step 5)
-echo <its sha256, as pinned in ccs-front-hugo> > /etc/ccs-gate/subaddresses.sha256
+install -m 644 subaddresses.txt subaddresses.txt.pin /etc/ccs-gate/  # the signed list and its pin (ccs-front-bash, setup step 5)
 cat > /etc/ccs-gate/allowed <<'LIST'                                # other addresses allowed on the site, one a line
 888tNkZrPN6JsEgekjMnABU4TBzc2Dt29EPAvkRxbANsAnjyPbb3iQ1YBRk1UXcdRsiKc9dhwMVgN5S9cQUiyoogDavup3H  # the General Fund
 LIST
 ```
 
-Check the list against the sha256 pinned in ccs-front-hugo (its README) before installing it;
-`ccs-receive` refuses every push while the two don't match. Then the push key's
+They are the same files as on the backend (`/etc/ccs-front/`); `gpg --verify` the list there
+first, with the key whose fingerprint ccs-front-hugo's README publishes. `ccs-receive` refuses
+every push while the list isn't the one its `.pin` names. Then the push key's
 `command="rrsync -wo -no-del -munge /var/lib/ccs-data"` becomes `command="/usr/local/bin/ccs-receive"`.
 
 A proposal whose text quotes some other address stops the site updating until you add that
 address to `allowed` (the refusal names it): the safe way to fail. On the testnet that was two
 (`utxobr-monero-k8s-operator`, `el00ruobuob-oct-dec-2018`). A new list: install it and its
-sha256 the same way. `tests/gate.sh` builds this in containers: a good push goes live; a foreign
+`.pin` the same way. `tests/gate.sh` builds this in containers: a good push goes live; a foreign
 address, in the donation box or anywhere in a page, is refused and the live site kept; the next
 good push goes through; a list that isn't the pinned one refuses everything; no deleting and
 nothing outside the folder, as with rrsync alone.

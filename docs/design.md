@@ -105,15 +105,15 @@ on purpose; each copy has its own job, and they are all the same file:
 
 | Where | What | Its job |
 |---|---|---|
-| the offline machine | made from a view-only wallet, signed with a key destroyed right after | the only place the list is made or signed |
-| ccs-front-hugo | the list's **sha256**, the key's **fingerprint** and public key (not the list) | the pin: built offline and hash-checked, so the backend can't swap the list unnoticed; the Verify page; the fingerprint in its README too |
-| backend, `/etc/ccs-front/` | the list and its signature | ccs-front-bash checks it against the pin, then every address on every page, before each push; a run with a wrong address makes no site |
-| web server, `/etc/ccs-gate/` | the list (installed by hand, root-owned) | the gate checks every pushed page against it: a taken-over backend still can't get a wrong address live |
-| the site, `/subaddresses.txt(.asc)` | the list and its signature, pushed with the pages | visitors check an address themselves (`gpg --verify`, `grep`): the defence left if the web server itself is taken over |
+| the offline machine | made from a view-only wallet, signed with a key destroyed right after | the only place the list is made or signed; it writes the four files: the list, `.asc` (signature), `.key.asc` (public key), `.pin` (sha256 and fingerprint) |
+| backend, `/etc/ccs-front/` | the four files | ccs-front-bash checks the list against its pin, then every donation address, before each push; a run with a wrong address makes no site |
+| web server, `/etc/ccs-gate/` | the list and its pin (installed by hand, root-owned) | the gate checks every pushed page against it: a taken-over backend still can't get a wrong address live |
+| the site, `/subaddresses.txt(.asc, .key.asc)` | the list, signature and key, pushed with the pages; the Verify page with the fingerprint | visitors check an address themselves (`gpg --verify`, `grep`): the defence left if the web server itself is taken over |
 
 So a wrong address has to get past the backend's check, then the web server's, then anyone who
-looks. The list never changes by itself: a new one (when the wallet nears index 100,000) is made,
-signed and pinned the same way, and copied to the backend and the web server by hand.
+looks. Nothing about the list is in the design (ccs-front-hugo only has the Verify page's words,
+and the fingerprint in its README for people to check against): a new list, when the wallet
+nears index 100,000, is made and signed the same way and its files copied to both machines.
 
 ## Getting there
 
