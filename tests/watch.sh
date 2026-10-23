@@ -96,9 +96,9 @@ fi
 # in any command line ps shows), and --test sends one message to check the setup
 printf 'ALERT_URL=http://127.0.0.1:%s/directedMessage\nALERT_TARGET=#irc-room\nALERT_PASSWORD=s3cr3t\n' "$bot" > "$tmp/wmb.conf"
 : > "$tmp/bot.txt"
-if "$here/../contrib/ccs-watch" --test "$tmp/wmb.conf" > /dev/null \
+if "$here/../contrib/ccs-watch" --test https://ccs.test/ "$tmp/wmb.conf" > /dev/null \
     && jq -e '.Target == "#irc-room" and .IncomingMessage.Password == "s3cr3t"
-              and (.IncomingMessage.Message | startswith("[\u000312CCS-watch\u0003] test, please ignore @ "))' \
+              and (.IncomingMessage.Message == "[\u000312CCS-watch\u0003] test, please ignore @ https://ccs.test/")' \
         <(cut -d' ' -f2- "$tmp/bot.txt") > /dev/null \
     && ! grep -q 's3cr3t' "$here/../contrib/ccs-watch"; then
     ok "wmb: the JSON it wants (IRC colours on: the tag light blue), and --test sends one message"
