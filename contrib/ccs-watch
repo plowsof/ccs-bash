@@ -7,21 +7,26 @@
 # CONF (default /etc/ccs/alert.conf, root-owned, not in any repository):
 #   ALERT_URL=https://bot.example/simple?channel=%23ccs   POSTed the message as plain text
 #                                                         (CptHook's simple module, ntfy, ...)
+#   ALERT_TARGET=#channel  ALERT_PASSWORD=...             instead, wmb's /directedMessage JSON
+#                                                         (ALERT_URL=http://127.0.0.1:8081/directedMessage)
 #   WATCH_PROXY=socks5h://127.0.0.1:9050                  optional: fetch through Tor
 #   SUBADDRESSES=/etc/ccs-front/subaddresses.txt          optional: name addresses not on it
 #   ALERT_PREFIX=[CCS Proposals] ccs-watch:              optional: how messages start (n1oc's style)
 # One alert per problem an hour; "unreachable" after 3 runs in a row. Logs to stderr.
 set -euo pipefail
+# ccs-watch --test [CONF]: send one test message, to check ALERT_URL works
+test_only=''
+if [[ ${1:-} == --test ]]; then test_only=1; set -- https://example.invalid /nonexistent "${2:-/etc/ccs/alert.conf}"; fi
 site_url=${1:?SITE_URL} local_site=${2:?LOCAL_SITE} conf=${3:-/etc/ccs/alert.conf}
 state=${CCS_WATCH_STATE:-/var/lib/ccs/state/watch}
-ALERT_URL='' WATCH_PROXY='' SUBADDRESSES='' ALERT_PREFIX='[CCS Proposals] ccs-watch:'
+ALERT_URL='' WATCH_PROXY='' SUBADDRESSES='' ALERT_PREFIX='[CCS Proposals] ccs-watch:' ALERT_TARGET='' ALERT_PASSWORD=''
 if [[ -f $conf ]]; then
     # only these keys, KEY=value lines; nothing in it is run
     while IFS='=' read -r k v; do
-        case $k in ALERT_URL|WATCH_PROXY|SUBADDRESSES|ALERT_PREFIX) printf -v "$k" '%s' "$v" ;; esac
-    done < <(grep -E '^(ALERT_URL|WATCH_PROXY|SUBADDRESSES|ALERT_PREFIX)=' "$conf")
+        case $k in ALERT_URL|WATCH_PROXY|SUBADDRESSES|ALERT_PREFIX|ALERT_TARGET|ALERT_PASSWORD) printf -v "$k" '%s' "$v" ;; esac
+    done < <(grep -E '^(ALERT_URL|WATCH_PROXY|SUBADDRESSES|ALERT_PREFIX|ALERT_TARGET|ALERT_PASSWORD)=' "$conf")
 fi
-mkdir -p "$state"
+[[ $test_only ]] || mkdir -p "$state"
 log() { printf '%s ccs-watch: %s\n' "$(date -u '+%F %T')" "$*" >&2; }
 
 # alert KEY MESSAGE: post MESSAGE (to the log always), at most once an hour for the same KEY
@@ -31,11 +36,27 @@ alert() {
     [[ -f $stamp && $(($(date +%s) - $(stat -c %Y "$stamp"))) -lt 3600 ]] && return 0
     touch "$stamp"
     [[ $ALERT_URL ]] || return 0
-    curl -fsS --max-time 20 --data-binary "$ALERT_PREFIX $2" -H 'Content-Type: text/plain' "$ALERT_URL" > /dev/null \
-        || log "could not send the alert to ALERT_URL"
+    send "$ALERT_PREFIX $2" || log "could not send the alert to ALERT_URL"
+}
+
+# send MESSAGE: to ALERT_URL, as wmb's JSON when ALERT_TARGET is set (the password goes in the
+# body, on stdin: never on a command line), else as plain text
+send() {
+    if [[ $ALERT_TARGET ]]; then
+        jq -n --arg t "$ALERT_TARGET" --arg m "$1" --arg p "$ALERT_PASSWORD" '{Target: $t, IncomingMessage: {Message: $m, Password: $p}}' \
+            | curl -fsS --max-time 20 --data-binary @- -H 'Content-Type: application/json' "$ALERT_URL" > /dev/null
+    else
+        curl -fsS --max-time 20 --data-binary "$1" -H 'Content-Type: text/plain' "$ALERT_URL" > /dev/null
+    fi
 }
 
 fetch() { curl -fsS --max-time 60 ${WATCH_PROXY:+--proxy "$WATCH_PROXY"} -o "$2" "$1"; }
+
+if [[ $test_only ]]; then
+    [[ $ALERT_URL ]] || { echo "no ALERT_URL in $conf" >&2; exit 1; }
+    send "$ALERT_PREFIX test, please ignore @ ${TEST_LINK:-https://ccs.monerodevs.org/}" && echo "sent" || { echo "could not send" >&2; exit 1; }
+    exit 0
+fi
 
 # the pages: the fixed ones, and every proposal page with a donation box
 pages=(index.html funding-required/index.html donate/index.html verify/index.html)
