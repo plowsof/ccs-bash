@@ -89,9 +89,9 @@ development machine.
 ## Getting there
 
 1. **Before:** ccs-bash makes JSON; Jekyll builds the site from it ([two machines](two-machines.md)).
-2. **ccs-front-hugo and ccs-front-bash:** done, and running the testnet CCS since 2026-10-23
-   (nginx serving ccs-front-bash's site, under the CSP above). Left: pushing the site to a
-   separate web server, as in [two machines](two-machines.md).
+2. **ccs-front-hugo and ccs-front-bash:** done, and running the testnet CCS since 2026-10-23,
+   on two machines as in [two machines](two-machines.md): the ccs-bash machine makes the site
+   and pushes it to a separate web server (an Oracle VM, nginx only, HTTPS, the CSP above).
 3. **ccs-bash data only:** drop `donate-qr-code` from its JSON, once nothing reads it.
 
 ## Open questions

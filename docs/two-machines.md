@@ -51,6 +51,11 @@ server {
 
 (A `location` with its own `add_header` drops the server's, hence the CSP twice.)
 
+HTTPS: point a DNS A record at the web server, set `server_name` to that name, then
+`certbot --nginx -d <name> --redirect` (`apt install certbot python3-certbot-nginx`). It adds
+the 443 server with the certificate and a redirect from 80, keeps the headers above, and
+renews itself (`certbot.timer`).
+
 **B) With Jekyll:** use `/var/lib/ccs-data` as ccs-front's `_data` (setup steps 4–5; add
 `disable_symlinks on;` to the `/projects` block). ccs-front pulls its own proposals, cloned with
 `git clone -c core.symlinks=false`, from the crontab of a user that owns `/opt/ccs-front`, not
