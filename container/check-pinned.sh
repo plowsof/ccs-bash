@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # check-pinned.sh: fail unless two clean builds of this commit from separate clones (other
 # paths, umasks, times) and one on a cache left by another commit all give the same hash.
-# One of those builds alone, printing "id: <image id>" (CI runs each on its own machine, at once,
-# and compares): check-pinned.sh clean UMASK | warm.
+# One of those builds alone, printing "id: <image id>": check-pinned.sh clean UMASK | warm (CI
+# runs warm, under umask 077, on a second machine and compares it with its clean build).
 set -euo pipefail
 here=$(dirname "$(readlink -f "$0")")
 repo=$(git -C "$here" rev-parse --show-toplevel)
