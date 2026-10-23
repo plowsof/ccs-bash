@@ -15,9 +15,12 @@
 #   ALERT_PLAIN=1                                         optional: no IRC colours (for ntfy and the like)
 # One alert per problem an hour; "unreachable" after 3 runs in a row. Logs to stderr.
 set -euo pipefail
-# ccs-watch --test [CONF]: send one test message, to check ALERT_URL works
+# ccs-watch --test SITE_URL [CONF]: send one test message, to check ALERT_URL works
 test_only=''
-if [[ ${1:-} == --test ]]; then test_only=1; set -- https://example.invalid /nonexistent "${2:-/etc/ccs/alert.conf}"; fi
+if [[ ${1:-} == --test ]]; then
+    [[ ${2:-} == http* ]] || { echo "usage: ccs-watch --test SITE_URL [CONF]" >&2; exit 2; }
+    test_only=1; set -- "$2" /nonexistent "${3:-/etc/ccs/alert.conf}"
+fi
 site_url=${1:?SITE_URL} local_site=${2:?LOCAL_SITE} conf=${3:-/etc/ccs/alert.conf}
 state=${CCS_WATCH_STATE:-/var/lib/ccs/state/watch}
 ALERT_URL='' WATCH_PROXY='' SUBADDRESSES='' ALERT_PREFIX='' ALERT_TARGET='' ALERT_PASSWORD='' ALERT_PLAIN=''
@@ -77,7 +80,7 @@ differs() {
 
 if [[ $test_only ]]; then
     [[ $ALERT_URL ]] || { echo "no ALERT_URL in $conf" >&2; exit 1; }
-    if ! send "$ALERT_PREFIX test, please ignore @ ${TEST_LINK:-https://ccs.monerodevs.org/}"; then echo "could not send" >&2; exit 1; fi
+    if ! send "$ALERT_PREFIX test, please ignore @ $1"; then echo "could not send" >&2; exit 1; fi
     echo "sent"
     exit 0
 fi
