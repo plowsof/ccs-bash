@@ -346,6 +346,14 @@ for f in proposals.json completed-proposals.json projects.json proposals.csv; do
     diff -u "$here/expected/$f" "$fj/out/$f" || fj_ok=0
 done
 if ((fj_ok)); then echo "ok   Forgejo: the same JSON and state as GitLab"; else echo "FAIL Forgejo"; status=1; fi
+# reactions that can't be read: the idea stays, without counts
+got=$(
+    # shellcheck source=tests/stubs.sh
+    source "$here/stubs.sh"
+    REPOSITORY_URL=https://forgejo.invalid/api/v1/repos/monero/ccs-proposals PROPOSALS_DIR=$FIXTURES/proposals TEST_FAIL_VOTES=11 \
+        ideas 2> /dev/null | jq -c 'map([.upvotes, .downvotes])'
+)
+if [[ $got == '[[1,0],[null,null]]' ]]; then echo "ok   unreadable reactions leave the idea, without counts"; else echo "FAIL unreadable reactions: $got"; status=1; fi
 
 for f in proposals.json completed-proposals.json projects.json proposals.csv log; do
     if diff -u "$here/expected/$f" "$TEST_TMP/out/$f"; then echo "ok   $f"; else echo "FAIL $f"; status=1; fi

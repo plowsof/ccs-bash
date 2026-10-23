@@ -82,9 +82,23 @@ merged_mr_url() {
     done < <(jq -r '.[] | [.iid, .web_url] | @tsv' "$WORK/merged.json")
 }
 
-# Print the "Ideas" list for ccs-front: open MRs adding a proposal that is not merged yet.
+# Forgejo: the 👍 and 👎 reactions on pull request $1 as {"upvotes": n, "downvotes": n}
+# (GitLab has both on each MR already). 50 a page.
+forgejo_votes() {
+    local page=1 batch all='[]'
+    while :; do
+        batch=$(gitlab_get "issues/$1/reactions?limit=50&page=$page") || return 1
+        all=$(jq -s '.[0] + (.[1] // [])' <<<"$all $batch") || return 1
+        [[ $(jq 'length' <<<"$batch") -eq 50 ]] || break   # Forgejo sends null for none
+        page=$((page + 1))
+    done
+    jq -c '{upvotes: map(select(.content == "+1")) | length, downvotes: map(select(.content == "-1")) | length}' <<<"$all"
+}
+
+# Print the "Ideas" list for ccs-front: open MRs adding a proposal that is not merged yet,
+# with their 👍/👎 counts (null if they couldn't be read: the idea still shows).
 ideas() {
-    local mrs iid file keep=()
+    local mrs iid file keep=() votes='{}' v
     mrs=$(gitlab_mrs opened) || return 1
     while read -r iid; do
         # an unreadable MR is left out, not the whole list
@@ -94,15 +108,21 @@ ideas() {
         fi
         if [[ -n $file && ! -e $PROPOSALS_DIR/$file ]]; then
             keep+=("$iid")
+            if forgejo; then
+                v=$(forgejo_votes "$iid") || { log "warning: could not read the reactions on PR #$iid"; v=null; }
+                votes=$(jq -c --arg i "$iid" --argjson v "$v" '.[$i] = $v' <<<"$votes")
+            fi
         fi
     done < <(jq -r '.[].iid' <<<"$mrs")
 
-    jq --argjson keep "$(printf '%s\n' "${keep[@]}" | jq -s .)" '
-        map(select(.iid | IN($keep[])) | {
+    jq --argjson keep "$(printf '%s\n' "${keep[@]}" | jq -s .)" --argjson votes "$votes" '
+        map(select(.iid | IN($keep[])) | ($votes[.iid | tostring] // {upvotes, downvotes}) as $v | {
             name: (.title | sub("^\\s+"; "") | sub("\\s+$"; "") | @html),
             "gitlab-url": (.web_url | if type == "string" and test("^https://[^\\s\"\\x27<>\\\\]+$") then @html else null end),
             author: (.author.username | @html),
             date: (.created_at | sub("\\.[0-9]+"; "") | fromdate | strftime("%B %-d, %Y")),
-            ts: (.created_at | sub("\\.[0-9]+"; "") | fromdate)
+            ts: (.created_at | sub("\\.[0-9]+"; "") | fromdate),
+            upvotes: ($v.upvotes // null | if type == "number" then . else null end),
+            downvotes: ($v.downvotes // null | if type == "number" then . else null end)
         }) | sort_by(-.ts) | map(del(.ts))' <<<"$mrs"
 }
