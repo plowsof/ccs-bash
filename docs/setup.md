@@ -234,3 +234,36 @@ server and step 6 pushes there ([two machines](two-machines.md)).
    `Environment=GAP=30 EVERY=120` changes the timings; keep `GAP` well below `EVERY`.
 
 The first run looks up the merged MR of every proposal, which takes a few minutes.
+
+## Proposals on Forgejo (disroot, Codeberg) instead of GitLab
+
+Two changes, both on this machine; nothing else in ccs-bash knows the difference:
+
+1. **The API**, in `/etc/ccs/ccs.conf`:
+
+   ```
+   REPOSITORY_URL=https://git.disroot.org/api/v1/repos/<owner>/<repo>
+   ```
+
+   `.../api/v1/repos/...` is what makes it Forgejo (or Gitea). The repository must be public:
+   ccs-bash reads it without a token.
+
+2. **The checkout**, so `ccs-bash-update` pulls from there:
+
+   ```
+   runuser -u ccs-git -- env HOME=/ git -C /var/lib/ccs/proposals \
+       remote set-url origin https://git.disroot.org/<owner>/<repo>.git
+   ```
+
+   If the new repository was pushed from the GitLab one (same history), the next pull just
+   carries on. If not, clone it afresh as in step 2.
+
+What changes on the site: Ideas are the open pull requests there, and a proposal merged from
+now on links to its pull request. Proposals already known keep the GitLab link stored in
+`proposals.csv`; if the merge requests were imported with their numbers, rewrite them, e.g.
+`sed -i 's#https://repo.getmonero.org/monero-project/ccs-proposals/-/merge_requests/#https://git.disroot.org/<owner>/<repo>/pulls/#'`
+(stop the service first, keep a copy). Addresses, totals and the state are untouched.
+The front end's own words ("GitLab", the Submit Idea link, the how-to page) are
+ccs-front-hugo's.
+
+Going back: the old `REPOSITORY_URL` and `remote set-url` to the GitLab URL.
