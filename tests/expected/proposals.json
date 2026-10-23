@@ -6,13 +6,17 @@
                 "name": "Another idea",
                 "gitlab-url": "https://example.org/mr/13",
                 "author": "grace",
-                "date": "October 3, 2026"
+                "date": "October 3, 2026",
+                "upvotes": 1,
+                "downvotes": 0
             },
             {
                 "name": "New &lt;idea&gt;",
                 "gitlab-url": "https://example.org/mr/11",
                 "author": "erin",
-                "date": "October 1, 2026"
+                "date": "October 1, 2026",
+                "upvotes": 5,
+                "downvotes": 2
             }
         ]
     },
