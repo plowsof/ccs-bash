@@ -22,7 +22,7 @@ jobs:
       - name: install qrencode, and zbarimg to read its codes back (tests only)
         run: sudo apt-get update -q && sudo apt-get install -y -q qrencode zbar-tools
       - name: shellcheck
-        run: shellcheck -x ccs-back.sh notify-loop.sh lib/*.sh tests/*.sh container/*.sh contrib/ccs-receive
+        run: shellcheck -x ccs-back.sh notify-loop.sh lib/*.sh tests/*.sh container/*.sh contrib/ccs-receive contrib/ccs-watch
       - name: tests (Ubuntu's awk is mawk)
         run: tests/run.sh
       - name: tests with gawk
@@ -79,3 +79,5 @@ jobs:
         run: tests/rrsync.sh
       - name: the gate (contrib/ccs-receive)
         run: tests/gate.sh
+      - name: the watcher (contrib/ccs-watch)
+        run: tests/watch.sh
