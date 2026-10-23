@@ -8,7 +8,13 @@
 set -euo pipefail
 staging=/var/lib/ccs-staging live=/var/lib/ccs-data conf=/etc/ccs-gate
 
-say() { logger -t ccs-gate -- "$*" 2> /dev/null || true; printf 'ccs-gate: %s\n' "$*" >&2; }
+# The reason goes to the web server's journal (and /var/log/ccs-gate.log, if ccs-data may write
+# it), and to the backend: that last one only if ssh relays it before the rsync client exits.
+say() {
+    logger -t ccs-gate -- "$*" 2> /dev/null || true
+    printf '%s %s\n' "$(date -u '+%F %T')" "$*" >> /var/log/ccs-gate.log 2> /dev/null || true
+    printf 'ccs-gate: %s\n' "$*" >&2
+}
 
 # scan DIR: "file<TAB>address" for every address-shaped string (95 base58 characters, alone) in
 # DIR's pages and JSON. data: URIs (the QR codes' base64) are skipped: a run in them can look like one.
