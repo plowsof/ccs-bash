@@ -62,6 +62,7 @@ overwritten by the next push, but a changed template stays, so that is the machi
 4. **Record new proposals:** the merged MR that added each new file, and when funding started.
 5. **Assign addresses:** a new subaddress for each `fr` proposal without one, after every index used.
 6. **Fetch ideas:** open MRs adding one proposal file. GitLab down keeps the previous list.
+   GitLab or Forgejo/Gitea (e.g. git.disroot.org): `REPOSITORY_URL` says which (`ccs.conf.example`).
 7. **Write the JSON:** fresh QR codes, `lib/site.jq`, swapped in atomically.
 
 | File | Does |
