@@ -16,8 +16,7 @@ The proposed new ccs-front is a Node application served live. Compared with stat
 | Code reachable from the internet | the app and its npm dependency tree | nginx serving files |
 | Supply chain on live machines | npm (and for today's ccs-front, Ruby gems) | bash, awk, jq, qrencode |
 | Proposal Markdown rendered by | the framework, on the public server | a small awk renderer that escapes everything first, on the backend |
-| A compromised web server | can change any page until noticed | can too, but every page is pushed again each run |
-| JavaScript needed by visitors | usually | no; works over Tor with JS off |
+| A compromised web server | can change any page until noticed | can too, but every page is pushed again each run, and ccs-watch alerts IRC within minutes |
 
 The donation addresses are what an attacker wants, and the web server is where they are shown,
 so that is the machine to keep smallest.
