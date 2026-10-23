@@ -9,16 +9,17 @@
 #                                                         (CptHook's simple module, ntfy, ...)
 #   WATCH_PROXY=socks5h://127.0.0.1:9050                  optional: fetch through Tor
 #   SUBADDRESSES=/etc/ccs-front/subaddresses.txt          optional: name addresses not on it
+#   ALERT_PREFIX=[CCS Proposals] ccs-watch:              optional: how messages start (n1oc's style)
 # One alert per problem an hour; "unreachable" after 3 runs in a row. Logs to stderr.
 set -euo pipefail
 site_url=${1:?SITE_URL} local_site=${2:?LOCAL_SITE} conf=${3:-/etc/ccs/alert.conf}
 state=${CCS_WATCH_STATE:-/var/lib/ccs/state/watch}
-ALERT_URL='' WATCH_PROXY='' SUBADDRESSES=''
+ALERT_URL='' WATCH_PROXY='' SUBADDRESSES='' ALERT_PREFIX='[CCS Proposals] ccs-watch:'
 if [[ -f $conf ]]; then
     # only these keys, KEY=value lines; nothing in it is run
     while IFS='=' read -r k v; do
-        case $k in ALERT_URL|WATCH_PROXY|SUBADDRESSES) printf -v "$k" '%s' "$v" ;; esac
-    done < <(grep -E '^(ALERT_URL|WATCH_PROXY|SUBADDRESSES)=' "$conf")
+        case $k in ALERT_URL|WATCH_PROXY|SUBADDRESSES|ALERT_PREFIX) printf -v "$k" '%s' "$v" ;; esac
+    done < <(grep -E '^(ALERT_URL|WATCH_PROXY|SUBADDRESSES|ALERT_PREFIX)=' "$conf")
 fi
 mkdir -p "$state"
 log() { printf '%s ccs-watch: %s\n' "$(date -u '+%F %T')" "$*" >&2; }
@@ -30,7 +31,7 @@ alert() {
     [[ -f $stamp && $(($(date +%s) - $(stat -c %Y "$stamp"))) -lt 3600 ]] && return 0
     touch "$stamp"
     [[ $ALERT_URL ]] || return 0
-    curl -fsS --max-time 20 --data-binary "CCS: $2" -H 'Content-Type: text/plain' "$ALERT_URL" > /dev/null \
+    curl -fsS --max-time 20 --data-binary "$ALERT_PREFIX $2" -H 'Content-Type: text/plain' "$ALERT_URL" > /dev/null \
         || log "could not send the alert to ALERT_URL"
 }
 
@@ -54,13 +55,14 @@ for p in "${pages[@]}"; do
     sleep 5   # a push may be landing: look once more before calling it
     fetch "$url" "$tmp/page" && cmp -s "$tmp/page" "$local_site/$p" && continue
     bad=$((bad + 1))
-    why="differs from what was pushed"
+    # n1oc's style: "<what> @ <link>"; an address shortened to its first 6 and last 4
+    what="the page differs from what was pushed"
     if [[ $SUBADDRESSES && -f $SUBADDRESSES ]]; then
         foreign=$(grep -o 'monero:[0-9A-Za-z]\{95\}\|class="address">[0-9A-Za-z]\{95\}' "$tmp/page" | grep -o '[0-9A-Za-z]\{95\}$' \
             | awk 'NR == FNR { ok[$2] = 1; next } !($0 in ok)' "$SUBADDRESSES" - | sort -u | head -n 3 || true)
-        [[ $foreign ]] && why="$why: an address not in the signed list, $(echo "$foreign" | cut -c1-12 | sed 's/$/…/' | paste -sd ' ')"
+        [[ $foreign ]] && what="donation address $(sed -E 's/^(.{6}).*(.{4})$/\1…\2/' <<<"$foreign" | paste -sd ' ') does not match the CCS wallet"
     fi
-    alert "page-$p" "the web server's $url $why"
+    alert "page-$p" "$what @ $url"
 done
 if ((failed == ${#pages[@]})); then
     n=$(($(cat "$state/unreachable" 2> /dev/null || echo 0) + 1)); echo "$n" > "$state/unreachable"
