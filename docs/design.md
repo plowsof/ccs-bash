@@ -24,19 +24,20 @@ so that is the machine to keep smallest.
 
 ## The parts
 
-**Front-end build** (offline, never live): the only place Jekyll, Astro or npm run. The site's
-site is built here once per design change, with markers where content goes, and carried to
-the backend as `site-original/` in a signed git commit whose hash is checked there. Nothing here runs while the CCS does.
+**Front-end build** (offline, never live): ccs-front-hugo, the only place a framework (Hugo)
+runs. It builds the site once per design change, with markers where content goes; the built
+site is carried to the backend (a signed git commit, or a copy whose sha256 is checked there)
+and is "the original". Nothing here runs while the CCS does.
 
 **Backend** (no inbound connections; only outgoing to GitLab and monerod):
 
 - **monero-wallet-rpc**, view-only, its own user, on 127.0.0.1.
 - **ccs-bash**: data only, the JSON and the state file, every 2 minutes or on a new tx.
-- **ccs-front-bash**: every run, copies `site-original/` to a fresh `site/` and string-replaces
-  between the markers, from the proposals' `.md` files and ccs-bash's JSON:
-  - proposal pages: Markdown → HTML, re-rendered only when a `.md` file changes;
-  - every run: the Ideas, Funding Required, Work in Progress and Completed lists, and each
-    proposal's donation box (raised, goal, percentage, contributors, pending, address, QR code).
+- **ccs-front-bash**: every run, fills a fresh copy of the original from the proposals' `.md`
+  files and ccs-bash's JSON: every proposal page (its Markdown as HTML, its milestones and
+  payouts), the Ideas, Funding Required, Work in Progress and Completed lists, and each
+  donation box (raised, goal, percentage, contributors, pending, address, QR code). All of it,
+  every run: about 1.5 seconds for 316 proposals.
 - **Push:** the complete `site/` to the web server, as in [two machines](two-machines.md) but
   with HTML instead of JSON (`rsync --checksum --delay-updates`).
 
@@ -49,13 +50,14 @@ finished pages means a page changed on the web server is overwritten on the next
 
 ## ccs-front-bash
 
-**The original:** the framework's built site (Jekyll from ccs-front's layouts today, or
-Astro), with markers where content goes. It is never modified: each run starts again from it,
+**The original:** ccs-front-hugo's built site, with markers where content goes, and "parts"
+(the card, the donation box, a milestone…) whose `{{slots}}` ccs-front-bash fills: every piece
+of HTML comes from the original. It is never modified: each run starts again from it,
 so the output depends only on the original and today's data, a bad run can't build on a bad
 one, and a new proposal's page is a copy of the original's proposal page.
 
 ```html
-<!-- ccs:fr-list -->…<!-- /ccs:fr-list -->
+<!-- ccs:list fr -->…<!-- /ccs:list fr -->
 <!-- ccs:donate -->…<!-- /ccs:donate -->
 ```
 
@@ -70,7 +72,8 @@ ccs-back; once ccs-front-bash replaces ccs-front, ccs-bash stops.
 
 **Markdown:** a strict subset in awk, in the spirit of `lib/frontmatter.awk`. Safe by
 construction: all text is HTML-escaped first, and only tags the renderer writes itself ever
-appear. Raw HTML in a proposal is shown as text, link and image URLs must be `https:`, and
+appear. Raw HTML in a proposal is shown as text, link URLs must be `https:`, images become links
+(nothing on a page loads from another site), and
 anything not understood stays plain text. In the 268 proposals checked:
 
 | Used by | Feature |
@@ -85,15 +88,14 @@ development machine.
 
 ## Getting there
 
-1. **Today:** ccs-bash pushes JSON; the web server runs Jekyll ([two machines](two-machines.md)).
-2. **ccs-front-bash:** markers in the built site, the lists and donation boxes, QR codes, the Markdown
-   renderer; push the whole site. The web server becomes nginx only and Jekyll is gone.
-3. **ccs-bash data only:** drop `donate-qr-code` from its JSON.
+1. **Before:** ccs-bash makes JSON; Jekyll builds the site from it ([two machines](two-machines.md)).
+2. **ccs-front-hugo and ccs-front-bash:** done, and running the testnet CCS since 2026-10-23,
+   on two machines as in [two machines](two-machines.md): the ccs-bash machine makes the site
+   and pushes it to a separate web server (an Oracle VM, nginx only, HTTPS, the CSP above).
+3. **ccs-bash data only:** drop `donate-qr-code` from its JSON, once nothing reads it.
 
 ## Open questions
 
-- **Images:** 12 proposals embed images from other sites, which tells those sites who is
-  reading. Show them as links instead, or copy them in when a proposal is merged?
-- **The original:** which framework builds it, and who signs its commits.
+- **The original:** who signs its commits.
 - **Watching the site:** with every page coming from the backend, a checker can compare the
   live site with what was pushed, byte for byte (the README's to-do).
