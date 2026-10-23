@@ -328,6 +328,25 @@ else
     echo "skip real qrencode + zbarimg round trip (not installed)"
 fi
 
+# The same proposals and MRs on Forgejo (git.disroot.org, codeberg.org...): REPOSITORY_URL
+# .../api/v1/repos/<owner>/<repo>, the stubs answer as Forgejo does (pull requests, times with
+# an offset, a closed PR that was not merged). The JSON and the state must be the GitLab run's.
+fj=$TEST_TMP/forgejo
+mkdir -p "$fj/state" && cp "$FIXTURES/state.csv" "$fj/state/proposals.csv" && echo 1 > "$fj/wallet-count"
+sed "s|^REPOSITORY_URL=.*|REPOSITORY_URL=https://forgejo.invalid/api/v1/repos/monero/ccs-proposals|; s|$TEST_TMP/state|$fj/state|; s|$TEST_TMP/out|$fj/out|" \
+    "$TEST_TMP/ccs.conf" > "$fj/ccs.conf" && chmod 444 "$fj/ccs.conf"
+fj_ok=1
+for run in 1 2; do
+    # shellcheck disable=SC2016
+    TEST_TMP=$fj bash -c 'source "$1/../ccs-back.sh" && source "$1/stubs.sh" && main "$2"' _ "$here" "$fj/ccs.conf" 2> "$fj/log-$run" \
+        || { cat "$fj/log-$run"; fj_ok=0; }
+done
+cp "$fj/state/proposals.csv" "$fj/out/"
+for f in proposals.json completed-proposals.json projects.json proposals.csv; do
+    diff -u "$here/expected/$f" "$fj/out/$f" || fj_ok=0
+done
+if ((fj_ok)); then echo "ok   Forgejo: the same JSON and state as GitLab"; else echo "FAIL Forgejo"; status=1; fi
+
 for f in proposals.json completed-proposals.json projects.json proposals.csv log; do
     if diff -u "$here/expected/$f" "$TEST_TMP/out/$f"; then echo "ok   $f"; else echo "FAIL $f"; status=1; fi
 done
