@@ -30,8 +30,34 @@ from="<wallet machine IP>",command="rrsync -wo -no-del -munge /var/lib/ccs-data"
 | root-owned `.ssh` | loosening the key line |
 | own filesystem / quota | filling the disk |
 
-Use `/var/lib/ccs-data` as ccs-front's `_data` (setup steps 4–5; add `disable_symlinks on;` to
-the `/projects` block). ccs-front pulls its own proposals, cloned with
+Then either of two ways:
+
+**A) With ccs-front-bash** (the site is made on the ccs-bash machine, see [the design](design.md)):
+the web server only serves what arrives, nothing else is installed or run there. nginx:
+
+```
+server {
+    listen 80 default_server;
+    root /var/lib/ccs-data;
+    disable_symlinks on;
+    add_header Content-Security-Policy "default-src 'none'; style-src 'self'; img-src 'self' data:; font-src 'self'" always;
+    location = /projects {                          # the site carries projects.json
+        alias /var/lib/ccs-data/projects.json;
+        default_type application/json;
+        add_header Content-Security-Policy "default-src 'none'; style-src 'self'; img-src 'self' data:; font-src 'self'" always;
+    }
+}
+```
+
+(A `location` with its own `add_header` drops the server's, hence the CSP twice.)
+
+HTTPS: point a DNS A record at the web server, set `server_name` to that name, then
+`certbot --nginx -d <name> --redirect` (`apt install certbot python3-certbot-nginx`). It adds
+the 443 server with the certificate and a redirect from 80, keeps the headers above, and
+renews itself (`certbot.timer`).
+
+**B) With Jekyll:** use `/var/lib/ccs-data` as ccs-front's `_data` (setup steps 4–5; add
+`disable_symlinks on;` to the `/projects` block). ccs-front pulls its own proposals, cloned with
 `git clone -c core.symlinks=false`, from the crontab of a user that owns `/opt/ccs-front`, not
 root's (`crontab -u ccs-front -e`, see [setup](setup.md) step 6):
 
@@ -48,16 +74,36 @@ runuser -u ccs -- ssh-keygen -t ed25519 -N '' -f /var/lib/ccs/.ssh/id_ed25519
 echo "<web server> ssh-ed25519 AAAA..." > /var/lib/ccs/.ssh/known_hosts
 ```
 
-`ccs-bash-update` (step 6) pushes instead of building; `--delay-updates` swaps the files in
-only once all have arrived:
+`ccs-bash-update` (step 6) pushes; `--delay-updates` swaps the files in only once all have
+arrived. **A)** push the site ccs-front-bash made:
+
+```
+#!/bin/sh
+# /usr/local/bin/ccs-bash-update (chmod 755)
+timeout -k 5 40 runuser -u ccs-git -- env HOME=/ git -C /var/lib/ccs/proposals pull -q --ff-only
+ccs-bash-run >> /var/log/ccs-bash.log 2>&1
+runuser -u ccs-front -- /opt/ccs-front-bash/ccs-front-bash.sh \
+    /opt/ccs-front-hugo/public /var/lib/ccs/out /var/lib/ccs/proposals /var/lib/ccs/www/site \
+    >> /var/log/ccs-bash.log 2>&1 \
+&& timeout -k 5 120 runuser -u ccs -- rsync -a --delay-updates \
+    -e "ssh -p 22 -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15" \
+    /var/lib/ccs/www/site/ ccs-data@<web server>: >> /var/log/ccs-bash.log 2>&1
+```
+
+**B)** push the JSON for the web server's Jekyll:
 
 ```
 #!/bin/sh
 # /usr/local/bin/ccs-bash-update (chmod 755)
 timeout -k 5 40 runuser -u ccs-git -- env HOME=/ git -C /var/lib/ccs/proposals pull -q --ff-only
 { ccs-bash-run && runuser -u ccs -- rsync -a --delay-updates \
-    -e "ssh -o BatchMode=yes -o StrictHostKeyChecking=yes" /var/lib/ccs/out/ ccs-data@<web server>: ; } >> /var/log/ccs-bash.log 2>&1
+    -e "ssh -p 22 -o BatchMode=yes -o StrictHostKeyChecking=yes" /var/lib/ccs/out/ ccs-data@<web server>: ; } >> /var/log/ccs-bash.log 2>&1
 ```
+
+`-p 22`: the web server's ssh port, given in full, because the ccs-bash machine's own
+`ssh_config` may default to another (a hung push that times out is the sign). The web server
+needs 22 open to this machine, and 80/443 to everyone: in its own firewall *and*, on a cloud
+VM, in the provider's (an Oracle security list, an AWS security group).
 
 `tests/rrsync.sh` builds this in containers and tries all of the above from the wallet
 machine's key (commands, forwarding, reading back, `..`, `--temp-dir`, `--backup-dir`,
