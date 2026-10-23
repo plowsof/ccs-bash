@@ -54,6 +54,7 @@ overwritten by the next push, but a changed template stays, so that is the machi
 `ccs-back.sh`, top to bottom:
 
 1. **Read proposals:** the frontmatter of every `.md` (`lib/frontmatter.awk`); bad files are logged and skipped.
+   Optional `tags:` (a list, any text, e.g. `Abandoned`) go into the JSON as `tags`, escaped.
 2. **Check the wallet:** main address is `WALLET_ADDRESS`, every subaddress in the state file
    matches. A restored wallet gets them re-created; a wrong one stops the run.
 3. **Count donations** per subaddress: `amount-funded` at `MIN_CONFIRMATIONS`, newer (and pool)
