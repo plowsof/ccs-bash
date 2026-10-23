@@ -18,7 +18,8 @@
                 "amount-pending": 0,
                 "author": "lee",
                 "date": "May 2, 2023",
-                "funding-required-date": null
+                "funding-required-date": null,
+                "tags": []
             },
             {
                 "name": "Name with a quote",
@@ -36,7 +37,8 @@
                 "amount-pending": 0,
                 "author": "kim",
                 "date": "March 1, 2022",
-                "funding-required-date": null
+                "funding-required-date": null,
+                "tags": []
             },
             {
                 "name": "Finished thing",
@@ -54,7 +56,8 @@
                 "amount-pending": 0,
                 "author": "carol",
                 "date": "March 1, 2020",
-                "funding-required-date": null
+                "funding-required-date": null,
+                "tags": []
             }
         ]
     }

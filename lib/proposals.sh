@@ -36,7 +36,8 @@ read_proposals() {
             amount: .[5],
             gitlab_url: (if .[6] == "" then null else .[6] end),
             milestones: (.[7] | tonumber),
-            done: (.[8] | tonumber)
+            done: (.[8] | tonumber),
+            tags: (.[9] // "" | if . == "" then [] else split("\u001f") end)
         })'
 }
 
