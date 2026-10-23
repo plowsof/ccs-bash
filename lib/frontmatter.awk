@@ -1,6 +1,7 @@
 # Reads proposal .md files and prints one tab-separated line per valid file:
-#   file  layout  title  author  date  amount  gitlab_url  milestones  done
-# where date is "year month day" (or empty) and amount is a plain number.
+#   file  layout  title  author  date  amount  gitlab_url  milestones  done  tags
+# where date is "year month day" (or empty), amount is a plain number and tags are joined
+# with \037 (empty for none).
 # Invalid files are reported on stderr and skipped.
 #
 # This is not a YAML parser. It expects this shape and nothing fancier:
@@ -15,12 +16,16 @@
 #   milestones:
 #     - name: First milestone
 #       done: 10 August 2021        any value at all means done
+#   tags:                           optional, up to 5, any text up to 40 bytes each
+#     - Abandoned
+#     - Available to pick up
 #   ---                             (or ...)
 #
 # Top-level keys at column 0, once each; others (payouts, ...) are ignored. Jekyll reads the
 # same lines as YAML: anything the two could read differently (multi-line values, block
 # scalars, escapes, anchors, not "key: value") skips the file with the reason. A leading BOM
-# means no frontmatter, for Jekyll too. POSIX awk only (mawk, gawk).
+# means no frontmatter, for Jekyll too. Tags are only ours (ccs-front ignores them): a tags:
+# we can't read drops the tags, not the file. POSIX awk only (mawk, gawk).
 
 BEGIN {
     OFS = "\t"
@@ -86,6 +91,21 @@ function scalar(s,    i, c, out, rest) {
     return out
 }
 
+# A tag: like scalar(), but its problems only drop the tags (terr), not the file.
+function tag(s,    keep, t) {
+    keep = perr; perr = ""
+    t = scalar(s)
+    if (perr != "" && terr == "") terr = perr
+    perr = keep
+    gsub(/[\001-\037\177]/, "", t)
+    sub(/^ +/, "", t)
+    if (t == "") return
+    if (length(t) > 40) { if (terr == "") terr = "a tag longer than 40 bytes"; return }
+    if (index("\037" tags "\037", "\037" t "\037")) return   # given twice: once is enough
+    if (++ntags > 5) { if (terr == "") terr = "more than 5 tags"; return }
+    tags = (tags == "") ? t : tags "\037" t
+}
+
 function finish(    i, err, amount, name) {
     if (file == "") return
     name = file
@@ -108,9 +128,14 @@ function finish(    i, err, amount, name) {
         print "ignoring gitlab_url of " name ": not an https link" > "/dev/stderr"
         v["gitlab_url"] = ""
     }
+    if (!err && terr != "") {
+        gsub(/[\001-\037\177]/, "?", terr)
+        print "ignoring tags of " name ": " terr > "/dev/stderr"
+        tags = ""
+    }
     gsub(/[\001-\037\177]/, "?", err)   # it quotes the file: no terminal escapes in the log
     if (err) print "skipping " name ": " err > "/dev/stderr"
-    else print name, v["layout"], v["title"], v["author"], ymd(v["date"]), amount, v["gitlab_url"], milestones, done
+    else print name, v["layout"], v["title"], v["author"], ymd(v["date"]), amount, v["gitlab_url"], milestones, done, tags
     file = ""
 }
 
@@ -118,7 +143,7 @@ function finish(    i, err, amount, name) {
 FNR == 1 {
     finish()
     file = FILENAME
-    state = 0; key = ""; milestones = 0; done = 0; dup = ""; perr = ""
+    state = 0; key = ""; milestones = 0; done = 0; dup = ""; perr = ""; tags = ""; ntags = 0; terr = ""
     split("", v)
 }
 state >= 2 { next }
@@ -132,6 +157,8 @@ $0 == "---" || $0 == "..." { state = 2; next }
     val = substr($0, index($0, ":") + 1)
     sub(/^ +/, "", val)
     if (key ~ /^(layout|title|author|date|amount|gitlab_url)$/) val = scalar(val)
+    # tags: a list below, or one tag on the line ([] is none; other [a, b] lists aren't read)
+    else if (key == "tags" && val != "" && val !~ /^\[\]( +#.*)?$/) tag(val)
     # a key given twice is refused, not "last one wins" (YAML readers disagree on it)
     if (key in v && dup == "") dup = key
     v[key] = val
@@ -140,6 +167,8 @@ $0 == "---" || $0 == "..." { state = 2; next }
 /^ *$/ || /^ *#/ { next }
 key == "milestones" && /^ *-/ { milestones++ }
 key == "milestones" && /^ *(- )?done: *[^ ]/ { done++ }
+key == "tags" && /^ *- / { s = $0; sub(/^ *- +/, "", s); tag(s); next }
+key == "tags" && /^ / { if (terr == "") terr = "not a list of tags: " substr($0, 1, 40); next }
 # the value of a key we read, continued on the next line: YAML joins the lines
 /^ / && key ~ /^(layout|title|author|date|amount|gitlab_url)$/ { bad("the value of " key " goes on over several lines") }
 # list items at column 0 belong to the key above; anything else isn't "key: value"
