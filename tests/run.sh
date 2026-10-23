@@ -183,6 +183,28 @@ for c in "${yaml_cases[@]}"; do
 done
 [[ $(awk -f "$CCS_LIB/frontmatter.awk" "$yaml/zero.md" | cut -f8,9) == $'1\t1' ]] || { echo "FAIL a list at column 0"; yaml_ok=0; }
 [[ $(awk -f "$CCS_LIB/frontmatter.awk" "$yaml/bom.md" 2>&1) == *"no frontmatter"* ]] || { echo "FAIL a BOM file was read"; yaml_ok=0; }
+# tags: a list (or one on the line), at most 5 of up to 40 bytes; a tags: we can't read
+# drops the tags with a log line, never the proposal. Each case: tags wanted (| between) and
+# the lines after the milestones.
+tag_cases=(
+    "A|B|tags:|  - A|  - 'B' # note|  - A"
+    "A|tags: A"
+    "Col|tags:|- Col"
+    "|tags: []"
+    "|tags: [a, b]"
+    "|tags:|  - a: b"
+    "|tags:|  - 1|  - 2|  - 3|  - 4|  - 5|  - 6"
+    "|tags:|  - $(printf 'x%.0s' {1..41})"
+)
+i=0
+for c in "${tag_cases[@]}"; do
+    i=$((i + 1))
+    want=${c%%tags*}; want=${want%|}
+    { printf -- '---\nlayout: cp\ntitle: T\nauthor: a\ndate: 2021-06-25\namount: 1\nmilestones:\n  - name: m\n'
+      printf '%s\n' "tags${c#*|tags}" | tr '|' '\n'; printf -- '---\n'; } > "$yaml/tag$i.md"
+    got=$(awk -f "$CCS_LIB/frontmatter.awk" "$yaml/tag$i.md" 2> /dev/null | cut -f3,10 | tr '\037' '|')
+    [[ $got == "T"$'\t'"$want" ]] || { echo "FAIL tags case $i ($c): got '$got'"; yaml_ok=0; }
+done
 # a bad line is quoted in the log: without its terminal escapes
 printf -- '---\nlayout: cp\ntitle: T\n\033[2Jgone\a\nauthor: a\ndate: 2021-06-25\namount: 1\nmilestones:\n  - name: m\n---\n' > "$yaml/esc.md"
 esc=$(awk -f "$CCS_LIB/frontmatter.awk" "$yaml/esc.md" 2>&1; log $'x\x1b[2Jy' 2>&1)

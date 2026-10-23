@@ -12,4 +12,9 @@ milestones:
     done:
   - name: Three
     done:
+tags:
+  - Abandoned
+  - Available to pick up
+  - Abandoned
+  - "<b>x</b> & 'y'"
 ---
