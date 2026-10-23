@@ -1,0 +1,41 @@
+#!/bin/bash
+# ccs-receive: the web server's last check (docs/two-machines.md, "The gate"). The backend's push
+# key runs only this (command= in authorized_keys). It receives the push as rrsync always did,
+# but into a staging folder; then every Monero address in its pages and JSON must be one of the
+# wallet's (the signed list and its .pin, installed here by hand) or in the allowed file; only then is it
+# copied into the live site. Anything else, or a list that isn't the pinned one, leaves the live
+# site as it was. Needs bash, awk, grep, rsync (rrsync), coreutils. Root-owned, 755.
+set -euo pipefail
+staging=/var/lib/ccs-staging live=/var/lib/ccs-data conf=/etc/ccs-gate
+
+say() { logger -t ccs-gate -- "$*" 2> /dev/null || true; printf 'ccs-gate: %s\n' "$*" >&2; }
+
+# scan DIR: "file<TAB>address" for every address-shaped string (95 base58 characters, alone) in
+# DIR's pages and JSON. data: URIs (the QR codes' base64) are skipped: a run in them can look like one.
+scan() {
+    find "$1" -type f \( -name '*.html' -o -name '*.json' \) -print0 | xargs -0 -r awk '
+        { s = $0; gsub(/data:[^"'"'"' )]*/, "", s)
+          while (match(s, /[0-9A-Za-z]+/)) {
+              t = substr(s, RSTART, RLENGTH); s = substr(s, RSTART + RLENGTH)
+              if (length(t) == 95 && t !~ /[0OIl]/) print FILENAME "\t" t
+          } }'
+}
+
+# Staging starts as the live site each time: the push account can't delete, so whatever a
+# refused push left in it would otherwise stay there and refuse every push after it.
+rsync -a --delete "$live/" "$staging/"
+rrsync -wo -no-del -munge "$staging"
+
+# the list and its pin, as ccs-front-bash has them (tools/sign-subaddresses.sh: "sha256 <hex>")
+list=$conf/subaddresses.txt
+[[ -f $list && $(sha256sum < "$list" | cut -d' ' -f1) == "$(sed -n 's/^sha256 *//p' "$list.pin" 2> /dev/null)" ]] \
+    || { say "refused the push: $list is not the list $list.pin names"; exit 1; }
+# the list's addresses, then the allowed file's (first word of each line; # comments)
+bad=$(scan "$staging" | awk -F '\t' 'NR == FNR { if ($1 !~ /^#/ && NF) ok[$1] = 1; next } !($2 in ok)' \
+    <(cut -d' ' -f2 "$list"; awk '{ print $1 }' "$conf/allowed" 2> /dev/null) -)
+if [[ $bad ]]; then
+    say "refused the push: $(wc -l <<<"$bad") address(es) not the wallet's nor allowed; the live site is unchanged"
+    while IFS=$'\t' read -r file addr; do say "  ${file#"$staging"/}: $addr"; done < <(head -n 10 <<<"$bad")
+    exit 1
+fi
+rsync -a --delay-updates "$staging/" "$live/"
