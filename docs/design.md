@@ -133,8 +133,8 @@ Each repository documents its own part; this is the order, and where each step l
 | 6 | backend | the push, then ccs-watch, at the end of `ccs-bash-update` | [two machines](two-machines.md), way A and "Watching the web server" |
 
 The list is copied by hand to both machines that check it (4 and 5), never pushed by the backend:
-a taken-over backend can't swap it. Steps 1 and 3 need no network on the offline machine
-beyond carrying the files over.
+a taken-over backend can't swap it. Only step 1 needs the offline machine; the zip in step 3 is
+checked by its sha256, and anyone can rebuild it from the tag to the same sum.
 
 ## Getting there
 
