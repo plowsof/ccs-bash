@@ -58,7 +58,7 @@ cp "$tmp/page.good" "$page"
 sed -i "s/$(addr 1)/$(addr 7 B)/g" "$page"
 watch || true
 if [[ $(alerts) == 0 ]] && grep -q "alerting if it still does next run" "$tmp/log"; then ok "a page changed: no alert on the first run that sees it"; else cat "$tmp/log"; fail "first sight"; fi
-if ! watch && [[ $(alerts) == 1 ]] && grep -qF "/simple?channel=%23ccs [CCS Proposals] ccs-watch: donation address $(addr 7 B | sed -E 's/^(.{6}).*(.{4})$/\1…\2/') does not match the CCS wallet @ http://127.0.0.1:$web/proposals/a%20b.html" "$tmp/bot.txt" \
+if ! watch && [[ $(alerts) == 1 ]] && grep -qF "/simple?channel=%23ccs [CCS-watch] donation address $(addr 7 B | sed -E 's/^(.{6}).*(.{4})$/\1…\2/') does not match the CCS wallet @ http://127.0.0.1:$web/proposals/a%20b.html" "$tmp/bot.txt" \
     && ! grep -qF "$(addr 3 8 | cut -c1-6)" "$tmp/bot.txt"; then
     ok "still changed on the next run: one alert, naming the page and only the new address (not the General Fund)"
 else
@@ -86,7 +86,7 @@ if [[ $(alerts) == 1 ]]; then ok "changed, then the web server down: no alert fo
 
 # Down: an alert only after three checks in a row that reached nothing at all.
 for _ in 1 2; do watch || true; done
-if [[ $(alerts) == 2 ]] && tail -n 1 "$tmp/bot.txt" | grep -qF "[CCS Proposals] ccs-watch: http://127.0.0.1:$web could not be fetched (3 checks in a row)"; then
+if [[ $(alerts) == 2 ]] && tail -n 1 "$tmp/bot.txt" | grep -qF "[CCS-watch] http://127.0.0.1:$web could not be fetched (3 checks in a row)"; then
     ok "the site down three checks in a row: one alert"
 else
     cat "$tmp/bot.txt"; fail "unreachable"
@@ -98,7 +98,7 @@ printf 'ALERT_URL=http://127.0.0.1:%s/directedMessage\nALERT_TARGET=#monero-ccs-
 : > "$tmp/bot.txt"
 if "$here/../contrib/ccs-watch" --test "$tmp/wmb.conf" > /dev/null \
     && jq -e '.Target == "#monero-ccs-emojis" and .IncomingMessage.Password == "s3cr3t"
-              and (.IncomingMessage.Message | startswith("[\u000312CCS Proposals\u0003] ccs-watch: test, please ignore @ "))' \
+              and (.IncomingMessage.Message | startswith("[\u000312CCS-watch\u0003] test, please ignore @ "))' \
         <(cut -d' ' -f2- "$tmp/bot.txt") > /dev/null \
     && ! grep -q 's3cr3t' "$here/../contrib/ccs-watch"; then
     ok "wmb: the JSON it wants (IRC colours on: the tag light blue), and --test sends one message"
