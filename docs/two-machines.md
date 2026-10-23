@@ -123,8 +123,9 @@ a short bash script, run by the push key instead of rrsync. Each push, it
 2. finds every address-shaped string (95 base58 characters) in its pages and JSON (the QR codes'
    base64 skipped) and checks each against the wallet's signed list and an `allowed` file;
 3. only if all pass, copies staging into the live site. Otherwise the live site stays as it
-   was, and the backend's log (and the web server's, `journalctl -t ccs-gate`) says which
-   address, in which page.
+   was and the push fails (the backend's log shows that); which address, in which page, is in
+   the web server's journal (`journalctl -t ccs-gate`, and `/var/log/ccs-gate.log` if created
+   for ccs-data), and usually in the backend's log too.
 
 Nothing runs between pushes: no daemon, no timer. Set it up once, as root:
 
@@ -132,6 +133,7 @@ Nothing runs between pushes: no daemon, no timer. Set it up once, as root:
 install -m 755 contrib/ccs-receive /usr/local/bin/ccs-receive        # from this repository
 install -d -o ccs-data -m 755 /var/lib/ccs-staging
 install -d -m 755 /etc/ccs-gate
+install -o ccs-data -m 644 /dev/null /var/log/ccs-gate.log          # optional: the refusals, as a file
 install -m 644 subaddresses.txt subaddresses.txt.pin /etc/ccs-gate/  # the signed list and its pin (ccs-front-bash, setup step 5)
 cat > /etc/ccs-gate/allowed <<'LIST'                                # other addresses allowed on the site, one a line
 888tNkZrPN6JsEgekjMnABU4TBzc2Dt29EPAvkRxbANsAnjyPbb3iQ1YBRk1UXcdRsiKc9dhwMVgN5S9cQUiyoogDavup3H  # the General Fund

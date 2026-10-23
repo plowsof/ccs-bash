@@ -41,6 +41,7 @@ on web "
     useradd --system --create-home --shell /bin/sh ccs-data
     install -d -o ccs-data -m 755 /var/lib/ccs-data /var/lib/ccs-staging
     install -d -m 755 /etc/ccs-gate
+    install -o ccs-data -m 644 /dev/null /var/log/ccs-gate.log
     printf '%s\n' '$list' > /etc/ccs-gate/subaddresses.txt
     printf 'sha256 %s\nkey %040d\n' \"\$(sha256sum < /etc/ccs-gate/subaddresses.txt | cut -d' ' -f1)\" 0 > /etc/ccs-gate/subaddresses.txt.pin
     printf '%s  # the General Fund\n' '$fund' > /etc/ccs-gate/allowed
@@ -70,8 +71,10 @@ site 1 "$(addr 1)"
 if out=$(push) && [[ $(live) == v1 ]]; then ok "a push with the wallet's addresses goes live"; else echo "$out"; fail "a good push"; fi
 
 site 2 "$(addr 9 B)"
-if ! out=$(push) && [[ $(live) == v1 && $out == *"not the wallet's nor allowed"* && $out == *"proposals/p.html: $(addr 9 B)"* ]]; then
-    ok "an address that isn't the wallet's: refused, the live site unchanged, the backend told which and where"
+# The reason is written after rsync is done: the backend gets it only if ssh relays it before the
+# rsync client exits (a race). The push failing and the web server's log are what's certain.
+if ! out=$(push) && [[ $(live) == v1 ]] && on web "grep -q 'proposals/p.html: $(addr 9 B)' /var/log/ccs-gate.log"; then
+    ok "an address that isn't the wallet's: refused, the live site unchanged, which and where in the web server's log$([[ $out == *"not the wallet's"* ]] && echo ", and the backend's")"
 else
     echo "$out"; fail "a foreign address"
 fi
