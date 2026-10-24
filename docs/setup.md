@@ -170,7 +170,9 @@ server and step 6 pushes there ([two machines](two-machines.md)).
    ```
 
 6. **One update** (pull, run, build the site), from root's cron. Root only starts the steps:
-   git and Jekyll read merged proposals, so they run as their own users.
+   git and the site builder read merged proposals, so they run as their own users. With
+   ccs-front-bash (recommended), the script is the one in [deploying](deploy.md#the-update).
+   With Jekyll (the old ccs-front):
 
    ```
    #!/bin/sh
@@ -184,9 +186,6 @@ server and step 6 pushes there ([two machines](two-machines.md)).
    `ccs-front` owns the ccs-front checkout:
    `useradd --system --no-create-home --shell /usr/sbin/nologin ccs-front` and
    `chown -R ccs-front: /opt/ccs-front`. With Docker, run the Jekyll container as such a user.
-
-   Without Jekyll: ccs-front-bash makes the whole site from ccs-front-hugo's design, in bash,
-   and this line runs it instead (see [the design](design.md) and ccs-front-bash's docs/setup.md).
 
    ```
    */2 * * * * /usr/local/bin/ccs-bash-update
@@ -257,20 +256,8 @@ echo 'restrict,command="/usr/local/bin/ccs-backup-receive" ssh-ed25519 AAAA... c
 
 On the **backend**, a key for it (`ssh-keygen -t ed25519 -N '' -f /root/.ssh/ccs-backup_ed25519`,
 its `.pub` goes in the line above), the backup machine's host key in `known_hosts` (checked
-against the machine's own `/etc/ssh/ssh_host_ed25519_key.pub`), and in `ccs-bash-update`, after
-`ccs-bash-run`:
-
-```
-# the state to the backup machine when it changed (it keeps every version)
-sum=$(sha256sum /var/lib/ccs/state/proposals.csv | cut -c1-64)
-if [ "$sum" != "$(cat /var/lib/ccs/backup-sent 2>/dev/null)" ] \
-    && timeout -k 5 30 ssh -T -i /root/.ssh/ccs-backup_ed25519 -o BatchMode=yes -o IdentitiesOnly=yes \
-        -o ConnectTimeout=15 ccs-backup@<backup machine> < /var/lib/ccs/state/proposals.csv >> /var/log/ccs-bash.log 2>&1; then
-    echo "$sum" > /var/lib/ccs/backup-sent
-fi
-```
-
-The log then shows `ccs-backup: kept proposals-<time>.csv` when a version is added. To restore,
+against the machine's own `/etc/ssh/ssh_host_ed25519_key.pub`); `ccs-bash-update` then sends
+each new version ("the state" block in [deploying](deploy.md#the-update)). The log then shows `ccs-backup: kept proposals-<time>.csv` when a version is added. To restore,
 copy the newest `proposals-*.csv` back to `STATE_DIR/proposals.csv` (owner `ccs`).
 
 ## Proposals on Forgejo (disroot, Codeberg) instead of GitLab

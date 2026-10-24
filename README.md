@@ -19,10 +19,26 @@ Not a crustacean. A mollusc.
 A small replacement for [ccs-back](https://repo.getmonero.org/monero-project/ccs-back), the
 backend of the Monero Community Crowdfunding System: a bash script run from cron (or a loop
 that also runs it when a donation arrives), with a view-only `monero-wallet-rpc`. No web
-server, database or PHP. It writes the JSON [ccs-front](https://repo.getmonero.org/monero-project/ccs-front)
-reads (`proposals.json`, `completed-proposals.json`) and `projects.json` for `/projects`.
+server, database or PHP. It writes the JSON (`proposals.json`, `completed-proposals.json`, and
+`projects.json` for `/projects`) that the site is made from.
 
-To install: [Setup](docs/setup.md). To replace ccs-back: [Moving from ccs-back](docs/migrating.md).
+## The project
+
+The CCS website is made by three repositories, with no framework, database or JavaScript on
+any live machine:
+
+| Repository | What it is |
+|---|---|
+| **ccs-bash** (this one) | the backend: proposals, the wallet, totals, addresses, as JSON |
+| [ccs-front-bash](https://github.com/plowsof/ccs-front-bash) | the site builder: fills the design with ccs-bash's data, every page, in bash |
+| [ccs-front-hugo](https://github.com/plowsof/ccs-front-hugo) | the design: the site's HTML and CSS, built once with Hugo, released as a reproducible zip |
+
+<p align="center"><img src="docs/design.svg" width="760" alt="The recommended architecture: the backend makes the site and pushes it to a web server that only serves files"></p>
+
+**Start here: [deploying](docs/deploy.md)**, the setup order across the three and the one script
+that runs them. Why it's built this way: [the design](docs/design.md). From the old ccs-back and
+Jekyll ccs-front: [moving from ccs-back](docs/migrating.md); ccs-bash also still writes the JSON
+the old ccs-front reads.
 
 ## Security
 
@@ -44,10 +60,13 @@ not at risk.) So ccs-bash leaves as few ways in as possible:
 - **Untrusted text stays text.** Titles are HTML-escaped, no `eval`, every JSON value built by
   jq, filenames checked.
 - **Can run apart from the website** ([two machines](docs/two-machines.md)): the wallet
-  machine accepts no connections and pushes the JSON to a key that can only write one folder.
+  machine accepts no connections and pushes the site to a key that can only write one folder;
+  the web server checks every address against the wallet's signed list, and the backend checks
+  the live pages are what it pushed.
 
-What it can't fix: a shell on the **web server** can still change the site. A changed JSON is
-overwritten by the next push, but a changed template stays, so that is the machine to guard.
+What it can't fix: a shell on the **web server** can still change the site. ccs-watch then alerts
+within minutes (it fetches the live pages, through Tor, and compares them with what was pushed),
+and visitors can check any address against the signed list, but that is the machine to guard.
 
 ## What a run does
 
@@ -102,17 +121,13 @@ Docker on the host and gets Debian's security updates automatically.
 
 ## Documentation
 
+- [Deploying](docs/deploy.md): start here, the three repositories in order and the update script
 - [Recommended design](docs/design.md): bash renders the site on the backend, the web server only serves files
-- [Setup](docs/setup.md): dependencies, installing step by step
-- [ccs-front on another machine](docs/two-machines.md): the wallet machine pushes, the web server only receives
+- [Setup](docs/setup.md): dependencies, installing step by step, backing up the state
+- [Two machines](docs/two-machines.md): the backend pushes, the web server only receives; the gate, the alerts, the theme
 - [Moving from ccs-back](docs/migrating.md): exporting the state, switching over, what differs
 - [The pinned image](docs/image.md): how B is built and checked, changing the pin, releases
 - [When something is wrong](docs/troubleshooting.md): what the log lines mean
-
-## To do
-
-- **Watch the live site:** check that every address and QR code on the published pages
-  matches the state file.
 
 ## Tests
 
