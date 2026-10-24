@@ -269,7 +269,8 @@ them is a new design release.
 **Where the testnet differs** (don't copy these): `testnet=1`, monerod on `28081`, wallet-rpc on
 `18182`; `MIN_CONFIRMATIONS=1`; the proposals on Forgejo
 (`https://git.disroot.org/api/v1/repos/plowsof/ccs-proposals`); its own wallet and list; the IRC
-bot on the backend machine itself, on plain HTTP.
+bot on the backend machine itself (the backend's alerts reach it on 127.0.0.1, the web server's
+over HTTPS through that machine's proxy).
 
 ## Upgrading
 
