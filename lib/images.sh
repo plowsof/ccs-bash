@@ -96,7 +96,7 @@ proposal_images() {
             log "warning: $url is not a PNG, JPEG or GIF, left a link"; refused[$id]=1; continue
         fi
         file=$id.$type
-        mv -f "$WORK/image" "$dir/$file" && chmod 644 "$dir/$file" || continue
+        if ! mv -f "$WORK/image" "$dir/$file" || ! chmod 644 "$dir/$file"; then continue; fi
         keep[$a]=$file
         log "image $file from $url"
     done < <(((${#files[@]})) && image_addresses "${files[@]}" | awk '!seen[$0]++')
