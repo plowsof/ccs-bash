@@ -32,7 +32,8 @@ testnet CCS. A row is added with each release.
 
 | Set | ccs-bash | ccs-front-bash | ccs-front-hugo | Running on |
 |---|---|---|---|---|
-| 2026-10-24 | v0.2.8 | v0.1.11 | v0.1.9 | testnet ([ccs.monerodevs.org](https://ccs.monerodevs.org)) |
+| 2026-10-24 | v0.2.9 | v0.1.11 | v0.1.9 | testnet ([ccs.monerodevs.org](https://ccs.monerodevs.org)) |
+| 2026-10-24 | v0.2.8 | v0.1.11 | v0.1.9 | testnet, before |
 | 2026-10-24 | v0.2.7 | v0.1.10 | v0.1.9 | testnet, before |
 
 Each is reproducible: anyone who builds a tag gets the same image ID or zip sha256, and those who
