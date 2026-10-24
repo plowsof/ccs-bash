@@ -13,13 +13,15 @@ while read -r name ref; do
 done < <(grep -v '^#' "$here/images")
 "$here/fetch.sh" "$here/sources"
 
-# Only copies, so the host's BuildKit makes it; named by its ID, so new pins get a new builder.
+# Only copies, so the host's BuildKit makes it; named by its ID, so new pins get a new builder
+# and the same pins share one, across ccs-bash, ccs-front-bash and ccs-front-hugo (one copy of
+# the downloads and the cache, not three).
 docker buildx build -q --builder default --network none --pull=false "${contexts[@]}" \
-    --build-arg SOURCE_DATE_EPOCH=0 --output type=docker,name=ccs-bash-builder,rewrite-timestamp=true \
+    --build-arg SOURCE_DATE_EPOCH=0 --output type=docker,name=stagex-buildkit,rewrite-timestamp=true \
     -f "$here/builder.Dockerfile" "$here" > /dev/null
-builder_id=$(docker image inspect ccs-bash-builder --format '{{.Id}}')
-builder=ccs-bash-builder-${builder_id:7:12}
-docker tag ccs-bash-builder "$builder"
+builder_id=$(docker image inspect stagex-buildkit --format '{{.Id}}')
+builder=stagex-buildkit-${builder_id:7:12}
+docker tag stagex-buildkit "$builder"
 docker buildx inspect "$builder" > /dev/null 2>&1 \
     || docker buildx create --name "$builder" --driver docker-container --driver-opt image="$builder" > /dev/null
 

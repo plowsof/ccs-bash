@@ -28,6 +28,11 @@ on a machine with nothing cached (a fresh attester):
 | ccs-bash | about 4 minutes | 2.3 GB |
 | ccs-front-bash | about 4 minutes | 2.1 GB |
 | ccs-front-hugo | under half a minute | 0.2 GB |
+
+Releases from ccs-bash v0.2.7, ccs-front-bash v0.1.8 and ccs-front-hugo v0.1.7 on share one
+builder while their pins are the same, so the second and third reuse the first's downloads:
+measured the same way, about 5 minutes and 2.7 GB for the three (ccs-front-bash then takes about
+a minute and 0.2 GB).
 | a subaddress list (15,000) | about a minute | none (a few MB in a temporary folder) |
 
 About 8 minutes and 4.6 GB for the three; the outputs themselves are a few KB. Later builds reuse
@@ -37,8 +42,8 @@ whether its result is the one the release notes publish.
 To get the space back afterwards:
 
 ```
-docker buildx ls | grep -oE '^ccs-[a-z-]+-builder-[0-9a-f]+' | sort -u | xargs -r -n 1 docker buildx rm
-docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^stagex/|^ccs-[a-z-]+-builder' | xargs -r docker rmi
+docker buildx ls | grep -oE '^(stagex-buildkit|ccs-[a-z-]+-builder)-[0-9a-f]+' | sort -u | xargs -r -n 1 docker buildx rm
+docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^stagex/|^stagex-buildkit|^ccs-[a-z-]+-builder' | xargs -r docker rmi
 ```
 
 ## Attesting
