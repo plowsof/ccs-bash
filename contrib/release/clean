@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# clean: give back the disk contrib/release/build used, once you have attested (or given up).
+# Removes only what build made: the BuildKit builders it started (stagex-buildkit-<id>, or a
+# repository's own ccs-*-builder-<id>) with their caches, which hold the pinned StageX images; their
+# images; and OUTDIR (default ./output), what build wrote for attest. Nothing else in Docker.
+#
+#   contrib/release/clean
+export LC_ALL=C
+set -euo pipefail
+outdir=${OUTDIR:-output}
+
+[[ ${1:-} != -h && ${1:-} != --help ]] || { sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+
+used() { docker system df --format '{{.Type}} {{.Size}}' 2> /dev/null | paste -sd' ' || true; }
+echo "Docker's disk before: $(used)"
+
+mapfile -t builders < <(docker buildx ls 2> /dev/null | grep -oE '^(stagex-buildkit|ccs-[a-z-]+-builder)-[0-9a-f]+' | sort -u)
+for b in "${builders[@]}"; do
+    echo "removing the builder $b and its cache"
+    docker buildx rm "$b" > /dev/null
+done
+mapfile -t images < <(docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^stagex/|^stagex-buildkit|^ccs-[a-z-]+-builder' || true)
+for i in "${images[@]}"; do
+    echo "removing the image $i"
+    docker rmi "$i" > /dev/null
+done
+if [[ -d $outdir ]]; then
+    echo "removing $outdir (what build wrote for attest)"
+    rm -rf -- "$outdir"
+fi
+((${#builders[@]} + ${#images[@]})) || echo "no builders or images of build's left"
+echo "Docker's disk after:  $(used)"
