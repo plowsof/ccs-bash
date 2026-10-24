@@ -128,5 +128,5 @@ nears index 15,000, is made and signed the same way and its files copied to both
 
 ## Setting it all up
 
-From today's ccs-back and Jekyll to this, in stages, with the one script that runs it all: [the
+From today's ccs-back and Jekyll to this, step by step along the diagram above: [the
 handover](handover.md). The testnet CCS, https://ccs.monerodevs.org, runs it on two machines.
