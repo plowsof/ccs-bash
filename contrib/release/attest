@@ -151,8 +151,8 @@ Hint: You may wish to remove the existing attestations and their signatures by
 EOF
 }
 
-# Unlike Feather's one version per run, each fragment is its own release (a repository's tag,
-# or a subaddress list): one folder each, <name>/<signer>/all.SHA256SUMS, as feather-sigs has
+# Unlike Feather's one version per run, each fragment is its own release (a repository's tag):
+# one folder each, <name>/<signer>/all.SHA256SUMS, as feather-sigs has
 # <version>/<signer>/all.SHA256SUMS.
 for fragment in "${sha256sum_fragments[@]}"; do
     name=$(basename "$(dirname "$fragment")")
