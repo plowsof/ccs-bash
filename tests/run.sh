@@ -363,58 +363,54 @@ for f in proposals.json completed-proposals.json projects.json proposals.csv; do
     diff -u "$here/expected/$f" "$fj/out/$f" || fj_ok=0
 done
 if ((fj_ok)); then echo "ok   Forgejo: the same JSON and state as GitLab"; else echo "FAIL Forgejo"; status=1; fi
-# Images: an upload to the forge is fetched once and kept by its ID; any other image is left to
-# ccs-front-bash as a link; not a PNG/JPEG/GIF, or too big: left a link too.
+# Images: a proposal's images are files in images/<proposal>/ in the repository; the ones its .md
+# shows are copied (once, keeping their time) and listed; anything else stays a link.
 img=$(mktemp -d)
 (
     set -e
     # shellcheck source=lib/images.sh
     source "$here/../lib/images.sh"
-    u1=11111111-2222-3333-4444-555555555555 u2=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee u3=99999999-8888-7777-6666-555555555555 u4=12345678-1234-1234-1234-123456789012
-    mkdir -p "$img/props" "$img/out" "$img/bytes"
-    printf '\x89PNG\r\n\x1a\nrest of a png' > "$img/bytes/$u1"
-    printf 'GIF89a and a gif' > "$img/bytes/$u2"
-    printf '<html>not an image</html>' > "$img/bytes/$u3"
-    { printf '\xff\xd8\xff'; printf '%03000d' 0; } > "$img/bytes/$u4"   # a JPEG start, 3003 bytes
-    printf -- '---\nlayout: fr\n---\nA ![one](/attachments/%s "t") and ![two](https://forgejo.invalid/monero/ccs-proposals/attachments/%s).\n![elsewhere](https://elsewhere.example/x.png) ![html](/attachments/%s) ![big](/attachments/%s)\n' \
-        "$u1" "$u2" "$u3" "$u4" > "$img/props/a.md"
-    printf -- '---\nlayout: cp\n---\nThe same one again: ![one](/attachments/%s)\n' "$u1" > "$img/props/b.md"
-    image_get() { echo "$1" >> "$img/fetched"; cp "$img/bytes/${1##*/}" "$2"; }
-    REPOSITORY_URL=https://forgejo.invalid/api/v1/repos/monero/ccs-proposals PROPOSALS_DIR=$img/props OUTPUT_DIR=$img/out
-    WORK=$img IMAGE_MAX_BYTES=2000
-    echo '[{"file": "a.md"}, {"file": "b.md"}]' > "$WORK/props.json"
+    P=$img/props && mkdir -p "$P/images/my-proposal" "$P/images/other" "$img/out/images"
+    printf '\x89PNG\r\n\x1a\nrest of a png' > "$P/images/my-proposal/chart.png"
+    printf '<svg>not an image</svg>' > "$P/images/my-proposal/fake.png"
+    { printf 'GIF89a'; printf '%03000d' 0; } > "$P/images/my-proposal/big.gif"
+    printf '\x89PNG\r\n\x1a\nanother' > "$P/images/my-proposal/unused.png"
+    printf '\x89PNG\r\n\x1a\nother' > "$P/images/other/x.png"
+    printf -- '---\nlayout: fr\n---\n![a](images/my-proposal/chart.png "t") ![b](images/my-proposal/fake.png) ![c](images/my-proposal/big.gif)\n![d](images/other/x.png) ![e](https://elsewhere.example/e.png) ![f](images/my-proposal/missing.png)\n' > "$P/my-proposal.md"
+    printf -- '---\nlayout: fr\n---\n![g](images/spaced name/x.png)\n' > "$P/spaced name.md"
+    printf 'from v0.2.10' > "$img/out/images/0c1d2e3f-1111-2222-3333-444455556666.png"
+    PROPOSALS_DIR=$P OUTPUT_DIR=$img/out WORK=$img IMAGE_MAX_BYTES=2000
+    echo '[{"file": "my-proposal.md"}, {"file": "spaced name.md"}]' > "$WORK/props.json"
     proposal_images 2> "$img/log"
-    jq -S . "$img/out/images.json" > "$img/map1"
-    ls "$img/out/images" > "$img/files1"
-    proposal_images 2>> "$img/log"   # again: nothing new to fetch
-    printf -- '---\nlayout: fr\n---\nNo images now.\n' > "$img/props/a.md"
-    proposal_images 2>> "$img/log"   # u2 no longer shown: its file goes; u1 stays (b.md)
-    ls "$img/out/images" > "$img/files2"
-    # GitLab: /uploads/<32 hex>/<name> is relative to the project
-    rm -rf "$img/out" && mkdir "$img/out"
-    printf -- '---\nlayout: fr\n---\n![pic](/uploads/0123456789abcdef0123456789abcdef/pic.png) ![other host](https://evil.invalid/g/p/uploads/0123456789abcdef0123456789abcdef/x.png)\n' > "$img/props/a.md"
-    gitlab_project_url() { echo https://gitlab.invalid/monero-project/ccs-proposals; }
-    image_get() { echo "$1" >> "$img/fetched"; cp "$img/bytes/$u1" "$2"; }
-    REPOSITORY_URL=https://gitlab.invalid/api/v4/projects/54
+    jq -c . "$img/out/images.json" > "$img/map1"
+    (cd "$img/out/images" && echo */*) > "$img/files1"
+    [[ -e $img/out/images/0c1d2e3f-1111-2222-3333-444455556666.png ]] && echo leftover >> "$img/files1"
+    src=$P/images/my-proposal/chart.png dst=$img/out/images/my-proposal/chart.png
+    # the same time to the second (busybox cp -p keeps no more; rsync compares seconds)
+    [[ $(date -r "$src" +%s) == "$(date -r "$dst" +%s)" ]] && echo same-time > "$img/time"
+    proposal_images 2>> "$img/log"   # again: nothing to copy
+    printf -- '---\nlayout: fr\n---\nNo images now.\n' > "$P/my-proposal.md"
     proposal_images 2>> "$img/log"
-    jq -S . "$img/out/images.json" > "$img/map3"
+    (cd "$img/out/images" && echo */*) > "$img/files2"
+    # Ideas: one new .md and its images, inside images/<its name>/; anything else isn't an idea
+    gitlab_get() { jq -n --argjson f "$TEST_FILES" '{changes: ($f | map({new_file: true, new_path: .}))}'; }
+    for set in '["pics.md", "images/pics/a.png", "images/pics/b.jpeg"]' '["pics.md", "images/pics/notes.txt"]' \
+        '["pics.md", "images/other/a.png"]' '["pics.md", "a.png"]' '["pics.md", "more.md"]'; do
+        printf '[%s] ' "$(TEST_FILES=$set mr_proposal_file 1)"
+    done > "$img/ideas"
 )
-want1=$(jq -nS --arg a "/attachments/11111111-2222-3333-4444-555555555555" --arg b "https://forgejo.invalid/monero/ccs-proposals/attachments/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" \
-    '{($a): "11111111-2222-3333-4444-555555555555.png", ($b): "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.gif"}')
-if [[ $(cat "$img/map1" 2> /dev/null) == "$want1" && $(cat "$img/files1") == $'11111111-2222-3333-4444-555555555555.png\naaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.gif' ]] \
-    && grep -q "not a PNG, JPEG or GIF" "$img/log" && grep -q "over 2000 bytes" "$img/log" \
-    && ! grep -q elsewhere "$img/fetched" && [[ $(grep -c forgejo.invalid "$img/fetched") == 4 ]] \
-    && [[ $(cat "$img/files2") == 11111111-2222-3333-4444-555555555555.png ]]; then
-    echo "ok   images: forge uploads fetched once and kept by ID, others left links, junk and too big refused, unused ones removed"
+if [[ $(cat "$img/map1" 2> /dev/null) == '{"images/my-proposal/chart.png":"my-proposal/chart.png"}' \
+    && $(cat "$img/files1") == my-proposal/chart.png && $(cat "$img/time" 2> /dev/null) == same-time ]] \
+    && grep -q "fake.png is not a PNG, JPEG or GIF" "$img/log" && grep -q "big.gif is over 2000 bytes" "$img/log" \
+    && grep -q "missing.png, which isn't in the repository" "$img/log" && [[ $(cat "$img/files2") == '*/*' ]]; then
+    echo "ok   images: only images/<proposal>/ files its .md shows, real and small enough, copied once; the rest stay links"
 else
-    cat "$img/map1" "$img/files1" "$img/log" "$img/fetched" "$img/files2" 2> /dev/null; echo "FAIL images (Forgejo)"; status=1
+    cat "$img/map1" "$img/files1" "$img/time" "$img/log" "$img/files2" 2> /dev/null; echo "FAIL images"; status=1
 fi
-if [[ $(jq -c . "$img/map3" 2> /dev/null) == '{"/uploads/0123456789abcdef0123456789abcdef/pic.png":"0123456789abcdef0123456789abcdef.png"}' ]] \
-    && grep -qx "https://gitlab.invalid/monero-project/ccs-proposals/uploads/0123456789abcdef0123456789abcdef/pic.png" "$img/fetched" \
-    && ! grep -q evil.invalid "$img/fetched"; then
-    echo "ok   images (GitLab): /uploads/ relative to the project, only from its own host"
+if [[ $(cat "$img/ideas") == '[pics.md] [] [] [] [] ' ]]; then
+    echo "ok   ideas: one new .md and its images (images/<its name>/), nothing else"
 else
-    cat "$img/map3" "$img/fetched" 2> /dev/null; echo "FAIL images (GitLab)"; status=1
+    cat "$img/ideas"; echo; echo "FAIL ideas with images"; status=1
 fi
 rm -rf "$img"
 
