@@ -140,12 +140,13 @@ site 7 "$(addr 2)"
 push > /dev/null
 hb
 if [[ $(late) == 0 ]]; then ok "heartbeat: a recent push, no alert"; else bot; fail "heartbeat after a push"; fi
-on web "touch -d '-20 min' /var/lib/ccs-gate/last-push"
+# 1 minute, not 15: a CI machine may have been up less than 15 (then the heartbeat waits)
+on web "echo HEARTBEAT_MINUTES=1 >> /etc/ccs-gate/alert.conf && touch -d '-5 min' /var/lib/ccs-gate/last-push"
 hb
 if [[ $(late) == 0 ]]; then ok "heartbeat: the first late check waits for a second"; else fail "heartbeat alerted on one check"; fi
 hb
-if bot | grep -qE '^\[CCS-watch\] no push from the backend for 2[0-9] minutes: is it running\? .* @ https://ccs.test$'; then
-    ok "heartbeat: no push for 20 minutes, two checks in a row: the web server tells IRC"
+if bot | grep -qE '^\[CCS-watch\] no push from the backend for [5-9] minutes: is it running\? .* @ https://ccs.test$'; then
+    ok "heartbeat: no push for longer than HEARTBEAT_MINUTES, two checks in a row: the web server tells IRC"
 else bot; fail "heartbeat alert"; fi
 hb
 if [[ $(late) == 1 ]]; then ok "heartbeat: once an hour, not every check"; else bot; fail "a repeated heartbeat alert"; fi
