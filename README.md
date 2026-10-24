@@ -81,11 +81,16 @@ and visitors can check any address against the signed list, but that is the mach
    `amount-pending`. Donations at an unknown subaddress stop the run.
 4. **Record new proposals:** the merged MR that added each new file, and when funding started.
 5. **Assign addresses:** a new subaddress for each `fr` proposal without one, after every index used.
-6. **Fetch ideas:** open MRs that add exactly one new proposal file (editing files doesn't count), whose
-   text reads as a proposal (the same parser as step 1): a stray or junk `.md` is not an idea. GitLab
-   down keeps the previous list.
+6. **Fetch ideas:** open MRs that add exactly one new proposal file (editing files doesn't count), and
+   besides it only its images, inside an images folder (`images/<its name>/`), whose text reads as a
+   proposal (the same parser as step 1): a stray or junk `.md` is not an idea. GitLab down keeps the
+   previous list.
+7. **Copy images:** a proposal's images are files in the repository, inside an images folder named
+   after it (`images/my-proposal/chart.png` for `my-proposal.md`). Those its `.md` shows as
+   `![…](images/my-proposal/chart.png)`, real PNG, JPEG or GIF files up to 2 MB, are copied into the
+   output (`images/`, listed in `images.json`) for ccs-front-bash to show; any other image stays a link.
    GitLab or Forgejo/Gitea (e.g. git.disroot.org): `REPOSITORY_URL` says which (`ccs.conf.example`).
-7. **Write the JSON:** fresh QR codes, `lib/site.jq`, swapped in atomically.
+8. **Write the JSON:** fresh QR codes, `lib/site.jq`, swapped in atomically.
 
 | File | Does |
 |---|---|
