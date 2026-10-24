@@ -52,6 +52,61 @@ run is the attested one ([contrib/release](../contrib/release/README.md)).
 - **Where alerts go** (stage 5): an IRC bot that takes a POST, ntfy, or similar; and a machine
   to keep backups of the state file.
 
+## What you fill in
+
+Everything that is yours to set, by machine. Values for ccs.getmonero.org are given where they
+are known; `<…>` is yours to choose. Secrets (the wallet and RPC passwords, the alert URLs) live
+only in these files, root-owned, never in a repository or on a command line.
+
+**The backend**
+
+| File | Setting | For ccs.getmonero.org | Stage |
+|---|---|---|---|
+| `/etc/ccs-wallet/wallet-rpc.conf` | `wallet-file`, `password` | the CCS wallet, view-only, and its password | 1 |
+| | `daemon-address` | a monerod you trust (mainnet: `…:18081`) | 1 |
+| | `rpc-bind-port`, `rpc-login` | `18082`, `ccs:<rpc password>` | 1 |
+| `/etc/ccs/ccs.conf` | `RPC_URL`, `RPC_USER`, `RPC_PASSWORD` | `http://127.0.0.1:18082/json_rpc`, and `rpc-login`'s user and password | 1 |
+| | `WALLET_ADDRESS` | `41hzbgqgkrYijnRVBLzr1KHsYc1iUBBCJYeeT9d3eiYE2PhbohxxwJLZCNVbTzvAMkhtYGF3RQcr2Ea187AJn8af149UG1G` ([meta #935](https://github.com/monero-project/meta/issues/935#issuecomment-1867257410)) | 1 |
+| | `REPOSITORY_URL` | `https://repo.getmonero.org/api/v4/projects/54` (Forgejo: [setup](setup.md#proposals-on-forgejo-disroot-codeberg-instead-of-gitlab)) | 1 |
+| | `MIN_CONFIRMATIONS` | `10` | 1 |
+| the proposals checkout | its remote | `https://repo.getmonero.org/monero-project/ccs-proposals.git` | 1 |
+| `/opt/ccs-front-hugo/public` | the design | the release zip of the [current set](#current-releases-tested-together), its sha256 checked | 2 |
+| `/etc/ccs-front/` | `subaddresses.txt` and its `.asc`, `.key.asc`, `.pin` | made and signed by a Core Team member | 4 |
+| | `subaddresses.txt.viewkey` | as in stage 4 | 4 |
+| `/var/lib/ccs/.ssh/` | `id_ed25519` (the push key), `known_hosts` | the web server's host key, from its `/etc/ssh/ssh_host_ed25519_key.pub` | 3 |
+| `/root/.ssh/` | `ccs-backup_ed25519`, `known_hosts` | the backup machine's host key | 5 |
+| `/etc/ccs/alert.conf` | `ALERT_URL` | the IRC bot's URL (below) | 5 |
+| | `SUBADDRESSES`, `WATCH_PROXY` | `/etc/ccs-front/subaddresses.txt`, `socks5h://127.0.0.1:9050` (Tor) | 5 |
+| `/usr/local/bin/ccs-bash-update` | `<web server>`, `<the site>`, `<backup machine>` | `ccs-data@<web server>:`, `https://ccs.getmonero.org`, `ccs-backup@<backup machine>` | 3, 5 |
+
+**The web server**
+
+| File | Setting | For ccs.getmonero.org | Stage |
+|---|---|---|---|
+| `~ccs-data/.ssh/authorized_keys` | `from=`, the key | the backend's address and its push key, `command="/usr/local/bin/ccs-receive"` | 3 |
+| `/etc/ccs-gate/` | `subaddresses.txt`, `subaddresses.txt.pin` | the same two files as the backend's | 4 |
+| | `allowed` | the General Fund, `888tNkZrPN6JsEgekjMnABU4TBzc2Dt29EPAvkRxbANsAnjyPbb3iQ1YBRk1UXcdRsiKc9dhwMVgN5S9cQUiyoogDavup3H`, and any address a proposal's text quotes (the gate's refusal names it) | 3 |
+| | `alert.conf` | `ALERT_URL` (the bot), `SITE_URL=https://ccs.getmonero.org` | 5 |
+| nginx | `server_name`, the certificate | `ccs.getmonero.org`, from certbot | 3 |
+
+**The backup machine:** the `ccs-backup` account, with the backend's key in its
+`authorized_keys` ([setup](setup.md#backing-up-the-state)). Stage 5.
+
+**The alerts' IRC bot.** Both machines send one line of text by HTTP POST to `ALERT_URL`: an IRC
+bot that posts it to a channel (CptHook's `simple` module, `https://<host>/<endpoint>?channel=%23<channel>`;
+or wmb, with `ALERT_TARGET` and `ALERT_PASSWORD`), or ntfy (`https://ntfy.sh/<a long random topic>`).
+Put the bot on its own machine, behind HTTPS: the backend reaches out to it, and nothing has to
+reach the backend. `ccs-watch --test https://ccs.getmonero.org` sends one message to check it.
+
+**Built into the design**, already right for ccs.getmonero.org: its address, the General Fund,
+the proposals repository and its "Submit idea" link (ccs-front-hugo's `hugo.toml`). Changing any
+of them (moving the proposals to Forgejo, say) is a new design release.
+
+**Where the testnet differs** (don't copy these): `testnet=1` and monerod on `28081`, wallet-rpc on
+`18182`; `MIN_CONFIRMATIONS=1`; the proposals on Forgejo
+(`https://git.disroot.org/api/v1/repos/plowsof/ccs-proposals`); its own wallet and list; the
+IRC bot on the backend machine itself, on plain HTTP.
+
 ## Stage 1: ccs-back → ccs-bash (Jekyll stays)
 
 The JSON ccs-front reads comes from ccs-bash instead of ccs-back. Do [setup](setup.md) steps 1–7
