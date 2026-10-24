@@ -85,8 +85,9 @@ filename,gitlab_url,subaddr_index,address,funding_required_date
 "fund-me.md","https://repo.getmonero.org/.../merge_requests/697",43,"8...","2026-09-08T18:06:19Z"
 ```
 
-It maps proposals to subaddresses and can't be recreated, so **back it up**. If it is lost or
-wrong, runs stop rather than hand out new addresses ([troubleshooting](docs/troubleshooting.md)).
+It maps proposals to subaddresses and can't be recreated, so **back it up**: each new version
+to another machine, which only adds copies ([setup](docs/setup.md#backing-up-the-state)). If it is
+lost or wrong, runs stop rather than hand out new addresses ([troubleshooting](docs/troubleshooting.md)).
 
 ## Two ways to run it
 

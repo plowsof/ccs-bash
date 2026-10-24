@@ -235,6 +235,44 @@ server and step 6 pushes there ([two machines](two-machines.md)).
 
 The first run looks up the merged MR of every proposal, which takes a few minutes.
 
+## Backing up the state
+
+`STATE_DIR/proposals.csv` maps each proposal to its subaddress and can't be made again. Send it
+to another machine whenever it changes, to an account that can only add copies: the key runs
+only `contrib/ccs-backup-receive`, which keeps each new version as `proposals-<UTC time>.csv`
+and never overwrites or deletes one, so a taken-over backend can't destroy the backups either.
+
+On the **backup machine** (any one; the file is a few KB):
+
+```
+useradd --system --create-home --home-dir /home/ccs-backup --shell /bin/sh ccs-backup
+passwd -l ccs-backup
+install -d -o ccs-backup -g ccs-backup -m 700 /var/lib/ccs-backup
+install -m 755 ccs-backup-receive /usr/local/bin/              # from ccs-bash's contrib/
+install -d -m 755 /home/ccs-backup/.ssh
+# root-owned, so the account can't change it; the backend's key below
+echo 'restrict,command="/usr/local/bin/ccs-backup-receive" ssh-ed25519 AAAA... ccs-bash state backup' \
+    > /home/ccs-backup/.ssh/authorized_keys
+```
+
+On the **backend**, a key for it (`ssh-keygen -t ed25519 -N '' -f /root/.ssh/ccs-backup_ed25519`,
+its `.pub` goes in the line above), the backup machine's host key in `known_hosts` (checked
+against the machine's own `/etc/ssh/ssh_host_ed25519_key.pub`), and in `ccs-bash-update`, after
+`ccs-bash-run`:
+
+```
+# the state to the backup machine when it changed (it keeps every version)
+sum=$(sha256sum /var/lib/ccs/state/proposals.csv | cut -c1-64)
+if [ "$sum" != "$(cat /var/lib/ccs/backup-sent 2>/dev/null)" ] \
+    && timeout -k 5 30 ssh -T -i /root/.ssh/ccs-backup_ed25519 -o BatchMode=yes -o IdentitiesOnly=yes \
+        -o ConnectTimeout=15 ccs-backup@<backup machine> < /var/lib/ccs/state/proposals.csv >> /var/log/ccs-bash.log 2>&1; then
+    echo "$sum" > /var/lib/ccs/backup-sent
+fi
+```
+
+The log then shows `ccs-backup: kept proposals-<time>.csv` when a version is added. To restore,
+copy the newest `proposals-*.csv` back to `STATE_DIR/proposals.csv` (owner `ccs`).
+
 ## Proposals on Forgejo (disroot, Codeberg) instead of GitLab
 
 Two changes, both on this machine; nothing else in ccs-bash knows the difference:

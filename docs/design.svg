@@ -104,8 +104,20 @@
     <path d="M0,10 v40 a65,10 0 0 0 130,0 v-40" fill="#ffffff" stroke="#3b6fd8" stroke-width="1.5"/>
     <ellipse cx="65" cy="10" rx="65" ry="10" fill="#dbe7ff" stroke="#3b6fd8" stroke-width="1.5"/>
     <text x="65" y="38" text-anchor="middle" font-size="12.5" font-weight="700" fill="#0f172a">proposals.csv</text>
-    <text x="65" y="54" text-anchor="middle" font-size="11.5" fill="#475569">state · back it up</text>
+    <text x="65" y="54" text-anchor="middle" font-size="11.5" fill="#475569">state · backed up</text>
   </g>
+
+  <!-- the state's backup: another machine, an account that can only add copies -->
+  <rect x="30" y="535" width="165" height="78" rx="10" fill="#ffffff" stroke="#cbd5e1" filter="url(#sh)"/>
+  <rect x="30" y="535" width="6" height="78" rx="3" fill="#64748b"/>
+  <g text-anchor="middle">
+    <text x="115" y="557" font-size="14" font-weight="700" fill="#0f172a">Backup machine</text>
+    <text x="115" y="575" font-size="11.5" fill="#475569">every version kept;</text>
+    <text x="115" y="590" font-size="11.5" fill="#475569">it can only add copies,</text>
+    <text x="115" y="605" font-size="11.5" fill="#475569">never overwrite or delete</text>
+  </g>
+  <path d="M300,577 H202" fill="none" stroke="#64748b" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#s)"/>
+  <text x="266" y="569" text-anchor="middle" font-size="10.5" fill="#475569">on change</text>
 
   <!-- web cards -->
   <g filter="url(#sh)" fill="#ffffff" stroke="#cbd5e1">
