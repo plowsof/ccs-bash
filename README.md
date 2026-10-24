@@ -4,6 +4,8 @@
 
 # ccs-bash
 
+[![check](https://github.com/plowsof/ccs-bash/actions/workflows/check.yml/badge.svg)](https://github.com/plowsof/ccs-bash/actions/workflows/check.yml) [![release](https://github.com/plowsof/ccs-bash/actions/workflows/release.yml/badge.svg)](https://github.com/plowsof/ccs-bash/actions/workflows/release.yml)
+
 **A blazingly fast, memory-safe CCS backend. Written in shell.**
 
 - **Blazingly fast:** a full run takes about 3 seconds, once every 2 minutes.
