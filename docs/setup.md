@@ -96,7 +96,7 @@ server and step 6 pushes there ([two machines](two-machines.md)).
    `core.symlinks=false`: a merged symlink stays a plain file, so it can't point the web server
    at other files. (`HOME=/` because root's isn't readable to other users.)
 
-   Moving from ccs-back, `proposals.csv` comes from the [export](migrating.md) instead.
+   Moving from ccs-back, `proposals.csv` comes from the [export](handover.md#stage-1-ccs-back--ccs-bash-jekyll-stays) instead.
    ccs-bash never creates it: if it is missing or incomplete, runs stop; restore your backup.
 
    Take `WALLET_ADDRESS` from your own records (or `address` in `monero-wallet-cli`), not from
@@ -171,7 +171,7 @@ server and step 6 pushes there ([two machines](two-machines.md)).
 
 6. **One update** (pull, run, build the site), from root's cron. Root only starts the steps:
    git and the site builder read merged proposals, so they run as their own users. With
-   ccs-front-bash (recommended), the script is the one in [deploying](deploy.md#the-update).
+   ccs-front-bash (recommended), the script is the one in [the handover](handover.md#the-update).
    With Jekyll (the old ccs-front):
 
    ```
@@ -257,7 +257,7 @@ echo 'restrict,command="/usr/local/bin/ccs-backup-receive" ssh-ed25519 AAAA... c
 On the **backend**, a key for it (`ssh-keygen -t ed25519 -N '' -f /root/.ssh/ccs-backup_ed25519`,
 its `.pub` goes in the line above), the backup machine's host key in `known_hosts` (checked
 against the machine's own `/etc/ssh/ssh_host_ed25519_key.pub`); `ccs-bash-update` then sends
-each new version ("the state" block in [deploying](deploy.md#the-update)). The log then shows `ccs-backup: kept proposals-<time>.csv` when a version is added. To restore,
+each new version ("the state" block in [the handover](handover.md#the-update)). The log then shows `ccs-backup: kept proposals-<time>.csv` when a version is added. To restore,
 copy the newest `proposals-*.csv` back to `STATE_DIR/proposals.csv` (owner `ccs`).
 
 ## Proposals on Forgejo (disroot, Codeberg) instead of GitLab
