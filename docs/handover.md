@@ -32,7 +32,8 @@ testnet CCS. A row is added with each release.
 
 | Set | ccs-bash | ccs-front-bash | ccs-front-hugo | Running on |
 |---|---|---|---|---|
-| 2026-10-24 | v0.2.10 | v0.1.12 | v0.1.9 | testnet ([ccs.monerodevs.org](https://ccs.monerodevs.org)) |
+| 2026-10-24 | v0.2.11 | v0.1.13 | v0.1.10 | testnet ([ccs.monerodevs.org](https://ccs.monerodevs.org)) |
+| 2026-10-24 | v0.2.10 | v0.1.12 | v0.1.9 | testnet, before |
 | 2026-10-24 | v0.2.9 | v0.1.11 | v0.1.9 | testnet, before |
 | 2026-10-24 | v0.2.8 | v0.1.11 | v0.1.9 | testnet, before |
 | 2026-10-24 | v0.2.7 | v0.1.10 | v0.1.9 | testnet, before |
@@ -314,8 +315,26 @@ over HTTPS through that machine's proxy).
 
 ## Upgrading
 
-A new release: check its attestations in ccs-sigs (`contrib/release/verify <release>`), build it
-from its tag or pull it by the digest in its release notes, and compare the image ID; for the
-design, download the zip and check its sha256. Then install it ([the pinned image](image.md)) and
-add a row to [the releases](#the-releases). If anything else on the backend prunes Docker images,
-keep a stopped container on each image ([troubleshooting](troubleshooting.md)).
+The images are built on the backend itself, from the release's tag, not copied there: the same
+commit gives the same image ID, so what you build can be checked. Only the design comes as a file,
+the release's zip, checked by its sha256. For each new release, in this order:
+
+1. **Attested first.** Check its attestations in ccs-sigs (`master`; `testnet` for trials), from a
+   checkout kept on the backend:
+   ```
+   git clone -q https://github.com/plowsof/ccs-sigs /opt/ccs-sigs      # once; then: git -C /opt/ccs-sigs pull -q
+   cd /opt/ccs-bash && env CCS_SIGS_REPO=/opt/ccs-sigs contrib/release/verify ccs-bash-v0.2.11
+   ```
+   It prints the release's image ID (or zip sha256) and how many signers agree. No attestation
+   yet: wait for one, or attest it yourself ([contrib/release](../contrib/release/README.md)).
+2. **Built from its tag.** `git -C /opt/ccs-bash fetch --tags && git -C /opt/ccs-bash checkout
+   v0.2.11`, then `container/build.sh ccs-bash:v0.2.11` ([the pinned image](image.md)); the same for
+   ccs-front-bash. The design: download the zip from its release and `sha256sum` it.
+3. **Compared.** The built image ID (`docker image inspect … --format '{{.Id}}'`) and the zip's
+   sha256 must be the attested ones, and the release notes'. Anything different: stop, keep what runs.
+4. **Switched.** Tag the new image as the one the run scripts use (`ccs-bash`, `ccs-front-bash`);
+   unzip the design into a new folder and swap it with `/opt/ccs-front-hugo/public`, between runs.
+   Keep the previous images (a stopped container on each, so nothing prunes them) to go back to.
+5. **Watched and noted.** The next run fills the site and ccs-watch confirms the pages; then add a
+   row to [the releases](#the-releases). If anything else on the backend prunes Docker images, keep
+   a stopped container on each image ([troubleshooting](troubleshooting.md)).
