@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# build: make one release's outputs, as the release workflow does, for attesting (contrib/release/attest).
+# In place of Feather Wallet's contrib/guix/guix-build: each repository builds itself with its own
+# pinned StageX container/build.sh, so this only clones the tag and records what came out.
+#
+#   contrib/release/build ccs-bash v0.2.6
+#   contrib/release/build ccs-front-bash v0.1.7
+#   contrib/release/build ccs-front-hugo v0.1.6
+#   WALLET_RPC=/path/to/monero-wallet-rpc contrib/release/build subaddresses testnet 15000
+#
+# The last regenerates the wallet's signed subaddress list from its main address and private view
+# key (asked for, not echoed): the list's sha256 must be the one its .pin names.
+#
+# Writes OUTDIR/<name>/SHA256SUMS.part (OUTDIR default ./output), <name> being the folder in
+# ccs-sigs: ccs-bash-v0.2.6, ..., subaddresses-testnet-15000. Needs git, Docker with buildx, gpg
+# and jq (the repositories' build.sh), and for the list monero-wallet-rpc and curl.
+export LC_ALL=C
+set -euo pipefail
+here=$(dirname "$(readlink -f "$0")")
+outdir=$(readlink -f "${OUTDIR:-output}")
+base=${CCS_REPOS:-https://github.com/plowsof}
+
+usage() { sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+[[ $# -ge 2 ]] || usage
+what=$1
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+
+case $what in
+    ccs-bash | ccs-front-bash | ccs-front-hugo)
+        tag=$2
+        [[ $tag =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "ERR: a release tag, like v0.2.6: '$tag'" >&2; exit 1; }
+        name=$what-$tag
+        git clone -q --branch "$tag" --depth 1 "$base/$what" "$tmp/src"
+        commit=$(git -C "$tmp/src" rev-parse HEAD)
+        echo "Building $what $tag (commit $commit)"
+        if [[ $what == ccs-front-hugo ]]; then
+            "$tmp/src/container/build.sh" "$tmp/out" > /dev/null
+            sum=$(sha256sum < "$tmp/out/ccs-front-hugo.zip" | cut -d' ' -f1)
+            line="$sum  $name.zip"                             # the release's asset, as named there
+        else
+            NO_CACHE=1 "$tmp/src/container/build.sh" "$name-attest" > /dev/null 2>&1
+            id=$(docker image inspect "$name-attest" --format '{{.Id}}')
+            docker image rm "$name-attest" > /dev/null
+            line="${id#sha256:}  $name-${commit:0:12}.image-id"   # the image ID; the commit it came from
+        fi
+        ;;
+    subaddresses)
+        net=${2:?} count=${3:?}
+        [[ $net =~ ^(mainnet|testnet|stagenet)$ && $count =~ ^[1-9][0-9]*$ ]] || usage
+        [[ -x ${WALLET_RPC:-} ]] || { echo "ERR: WALLET_RPC=/path/to/monero-wallet-rpc" >&2; exit 1; }
+        name=subaddresses-$net-$count
+        flag=(); [[ $net == mainnet ]] || flag=(--"$net")
+        tools=$tmp/tools
+        git clone -q --depth 1 "$base/ccs-front-bash" "$tools"
+        echo "Regenerating the first $count subaddresses ($net)"
+        "$tools/tools/make-subaddresses.sh" "$WALLET_RPC" "$count" "$tmp/subaddresses.txt" "${flag[@]}"
+        line="$(sha256sum < "$tmp/subaddresses.txt" | cut -d' ' -f1)  $name.txt"
+        ;;
+    *) usage ;;
+esac
+
+mkdir -p "$outdir/$name"
+printf '%s\n' "$line" > "$outdir/$name/SHA256SUMS.part"
+echo "$line"
+echo "Wrote $outdir/$name/SHA256SUMS.part; now: env SIGNER=<fingerprint>=<username> $here/attest"

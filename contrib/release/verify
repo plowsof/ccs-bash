@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+# verify: check every attestation in a ccs-sigs checkout: each signature against its signer's
+# key in builder-keys/, and every signer's all.SHA256SUMS the same for a release.
+# Adapted from Feather Wallet's contrib/guix/guix-verify (tobtoht), itself from Bitcoin Core's
+# (MIT, see contrib/release/README.md). Unlike it, the keys come from builder-keys/ into a
+# keyring of their own, not from yours.
+export LC_ALL=C
+set -e -o pipefail
+
+check_tools() {
+    for cmd in "$@"; do
+        if ! command -v "$cmd" > /dev/null 2>&1; then
+            echo "ERR: This script requires that '$cmd' is installed and available in your \$PATH"
+            exit 1
+        fi
+    done
+}
+
+check_tools cat diff gpg
+
+cmd_usage() {
+cat <<EOF
+Synopsis:
+
+    env [ CCS_SIGS_REPO=<path/to/ccs-sigs> ] [ SIGNER=<signer> ] ./contrib/release/verify [ NAME... ]
+
+NAME is a release's folder (ccs-bash-v0.2.6, subaddresses-testnet-15000, ...); default all.
+
+Example overriding signer's manifest to use as base
+
+    env CCS_SIGS_REPO=../ccs-sigs SIGNER=plowsof ./contrib/release/verify ccs-bash-v0.2.6
+
+EOF
+}
+
+if [ "$1" = -h ] || [ "$1" = --help ]; then cmd_usage; exit 0; fi
+
+CCS_SIGS_REPO=${CCS_SIGS_REPO:-external/ccs-sigs}
+[ -d "$CCS_SIGS_REPO/builder-keys" ] || { echo "ERR: '$CCS_SIGS_REPO' isn't a ccs-sigs checkout"; exit 1; }
+
+# only the keys in builder-keys/, in a keyring of their own
+GNUPGHOME=$(mktemp -d)
+export GNUPGHOME
+trap 'gpgconf --kill all 2> /dev/null || true; rm -rf "$GNUPGHOME"' EXIT
+shopt -s nullglob
+keys=( "$CCS_SIGS_REPO"/builder-keys/*.asc )
+(( ${#keys[@]} )) && gpg --quiet --batch --import "${keys[@]}" 2> /dev/null
+
+# Usage: verify compare_manifest current_manifest
+verify() {
+    local compare_manifest="$1"
+    local current_manifest="$2"
+    local signer
+    signer=$(basename "$(dirname "$current_manifest")")
+    if ! gpg --quiet --batch --verify "$current_manifest".asc "$current_manifest" 1>&2; then
+        echo "ERR: Failed to verify GPG signature in '${current_manifest}'"
+        echo ""
+        echo "Hint: Either the signature is invalid or the public key is missing"
+        echo ""
+        failure=1
+    elif [ ! -e "$CCS_SIGS_REPO/builder-keys/$signer.asc" ]; then
+        echo "ERR: '${current_manifest}' is signed, but there is no builder-keys/$signer.asc"
+        failure=1
+    elif ! diff --report-identical "$compare_manifest" "$current_manifest" 1>&2; then
+        echo "ERR: The SHA256SUMS attestation in these two directories differ:"
+        echo "    '${compare_manifest}'"
+        echo "    '${current_manifest}'"
+        echo ""
+        failure=1
+    else
+        echo "Verified: '${current_manifest}'"
+        echo ""
+    fi
+}
+
+if (( $# )); then names=( "$@" ); else
+    names=()
+    for d in "$CCS_SIGS_REPO"/*/*/all.SHA256SUMS; do names+=( "$(basename "$(dirname "$(dirname "$d")")")" ); done
+    mapfile -t names < <(printf '%s\n' "${names[@]}" | sort -u)
+fi
+
+checked=0
+for name in "${names[@]}"; do
+    OUTSIGDIR_BASE="$CCS_SIGS_REPO/$name"
+    all_all=( "$OUTSIGDIR_BASE"/*/all.SHA256SUMS )
+    echo "--------------------  $name  (${#all_all[@]} signer(s))"
+    echo ""
+    if (( ${#all_all[@]} )); then
+        compare_all="${all_all[0]}"
+        if [[ -n "$SIGNER" && -f "$OUTSIGDIR_BASE/$SIGNER/all.SHA256SUMS" ]]; then
+            echo "Using $SIGNER's manifest as the base to compare against"
+            compare_all="$OUTSIGDIR_BASE/$SIGNER/all.SHA256SUMS"
+        fi
+        for current_manifest in "${all_all[@]}"; do
+            verify "$compare_all" "$current_manifest"
+        done
+        checked=1
+    else
+        echo "WARN: No signature directories with all.SHA256SUMS found for '$name'"
+        echo ""
+    fi
+done
+
+echo "===================="
+echo ""
+if [ "$checked" = 0 ]; then
+    echo "ERR: Unable to perform any verifications as no signature directories"
+    echo "     were found"
+    echo ""
+    exit 1
+fi
+
+if [ -n "$failure" ]; then
+    exit 1
+fi

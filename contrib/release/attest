@@ -1,0 +1,207 @@
+#!/usr/bin/env bash
+# attest: sign what contrib/release/build made, into a ccs-sigs checkout, for a pull request there.
+# Adapted from Feather Wallet's contrib/guix/guix-attest (tobtoht), itself from Bitcoin Core's
+# (MIT, see contrib/release/README.md): the same SIGNER, NO_SIGN and layout, so an attester who
+# knows feather-sigs knows this.
+export LC_ALL=C
+set -e -o pipefail
+
+check_tools() {
+    for cmd in "$@"; do
+        if ! command -v "$cmd" > /dev/null 2>&1; then
+            echo "ERR: This script requires that '$cmd' is installed and available in your \$PATH"
+            exit 1
+        fi
+    done
+}
+
+###################
+## Sanity Checks ##
+###################
+
+check_tools cat env basename mkdir diff sort
+
+if [ -z "$NO_SIGN" ]; then
+    # make it possible to override the gpg binary
+    GPG=${GPG:-gpg}
+
+    # $GPG can contain extra arguments passed to the binary
+    # so let's check only the existence of arg[0]
+    # shellcheck disable=SC2206
+    GPG_ARRAY=($GPG)
+    check_tools "${GPG_ARRAY[0]}"
+fi
+
+cmd_usage() {
+cat <<EOF
+Synopsis:
+
+    env SIGNER=GPG_KEY_NAME[=SIGNER_NAME] \\
+        [ CCS_SIGS_REPO=<path/to/ccs-sigs> ] \\
+        [ OUTDIR=<what contrib/release/build wrote, default ./output> ] \\
+        [ NO_SIGN=1 ]
+      ./contrib/release/attest
+
+Example overriding signing name:
+
+    env SIGNER=0xDC8BCF0C5083F2030782803E4E8A912D40ED052C=plowsof \\
+        CCS_SIGS_REPO=../ccs-sigs \\
+      ./contrib/release/attest
+
+Example w/o signing, just creating SHA256SUMS:
+
+    env SIGNER=plowsof NO_SIGN=1 ./contrib/release/attest
+
+EOF
+}
+
+if [ "$1" = -h ] || [ "$1" = --help ]; then cmd_usage; exit 0; fi
+
+if [ -z "${SIGNER}" ]; then
+    printf "Enter your GitHub username: "
+    read -r signer
+
+    if [ -z "$signer" ]; then
+        echo "ERR: signer name can't be empty"
+        exit 1
+    fi
+
+    echo ""
+    echo "[HINT] To find your GPG fingerprint use:"
+    echo "gpg --list-secret-keys --keyid-format=long"
+    echo "It should look like: E87BD921CDD885C9D78A38C5E45B10DD027D2472"
+    echo ""
+
+    printf "Enter fingerprint of your GPG key: "
+    read -r fingerprint
+
+    export SIGNER="${fingerprint}=${signer}"
+    wizard=1
+fi
+
+if [ -n "$wizard" ]; then
+    echo ""
+    echo "Next time, invoke this command as:"
+    echo "env SIGNER=${SIGNER} ./contrib/release/attest"
+    echo ""
+fi
+
+################
+# The key specified in SIGNER should be usable
+################
+
+IFS='=' read -r gpg_key_name signer_name <<< "$SIGNER"
+if [ -z "${signer_name}" ]; then
+    signer_name="$gpg_key_name"
+fi
+
+if [ -z "$NO_SIGN" ] && ! ${GPG} --dry-run --list-secret-keys "${gpg_key_name}" >/dev/null 2>&1; then
+    echo "ERR: GPG can't seem to find any key named '${gpg_key_name}'"
+    exit 1
+fi
+
+CCS_SIGS_REPO=${CCS_SIGS_REPO:-external/ccs-sigs}
+if [ ! -d "$CCS_SIGS_REPO/builder-keys" ]; then
+    echo "ERR: '$CCS_SIGS_REPO' isn't a ccs-sigs checkout (git clone https://github.com/plowsof/ccs-sigs)"
+    exit 1
+fi
+CCS_SIGS_REPO=$(cd "$CCS_SIGS_REPO" && pwd)
+
+################
+# We should be able to find at least one output
+################
+
+LOGDIR_BASE=${OUTDIR:-output}
+echo "Looking for build output SHA256SUMS fragments in ${LOGDIR_BASE}"
+
+shopt -s nullglob
+sha256sum_fragments=( "$LOGDIR_BASE"/*/SHA256SUMS.part )
+shopt -u nullglob
+
+if (( ${#sha256sum_fragments[@]} )); then
+    echo "Found build output SHA256SUMS fragments:"
+    for logdir in "${sha256sum_fragments[@]}"; do
+        echo "    '$logdir'"
+    done
+    echo
+else
+    echo "ERR: Could not find any build output SHA256SUMS fragments in ${LOGDIR_BASE} (run contrib/release/build first)"
+    exit 1
+fi
+
+##############
+##  Attest  ##
+##############
+
+shasum_already_exists() {
+cat <<EOF
+--
+
+ERR: An ${1} file already exists for '${2}' and attests differently.
+
+     See the diff above for more context.
+
+Hint: You may wish to remove the existing attestations and their signatures by
+      invoking:
+
+          rm '${PWD}/${1}'{,.asc}
+
+      Then try running this script again.
+
+EOF
+}
+
+# Unlike Feather's one version per run, each fragment is its own release (a repository's tag,
+# or a subaddress list): one folder each, <name>/<signer>/all.SHA256SUMS, as feather-sigs has
+# <version>/<signer>/all.SHA256SUMS.
+for fragment in "${sha256sum_fragments[@]}"; do
+    name=$(basename "$(dirname "$fragment")")
+    echo "Attesting to build outputs for: '${name}'"
+    outsigdir="$CCS_SIGS_REPO/$name/$signer_name"
+    mkdir -p "$outsigdir"
+    (
+        cd "$outsigdir"
+
+        temp_file="$(mktemp)"
+        trap 'rm -rf -- "$temp_file"' EXIT
+
+        sort -u "$(cd "$OLDPWD" && readlink -f "$fragment")" | sort -k2 > "$temp_file"
+        if [ -e all.SHA256SUMS ]; then
+            # The SHA256SUMS already exists, make sure it's exactly what we
+            # expect, error out if not
+            if diff -u all.SHA256SUMS "$temp_file"; then
+                echo "A SHA256SUMS file already exists for '${name}' and is up-to-date."
+            else
+                shasum_already_exists all.SHA256SUMS "$name"
+                exit 1
+            fi
+        else
+            mv "$temp_file" all.SHA256SUMS
+        fi
+
+        if [ -z "$NO_SIGN" ]; then
+            echo "Signing SHA256SUMS to produce SHA256SUMS.asc"
+            for i in *.SHA256SUMS; do
+                if [ ! -e "$i".asc ]; then
+                    ${GPG} --detach-sign \
+                           --digest-algo sha256 \
+                           --local-user "$gpg_key_name" \
+                           --armor \
+                           --output "$i".asc "$i"
+                else
+                    echo "Signature already there"
+                fi
+            done
+        else
+            echo "Not signing SHA256SUMS as \$NO_SIGN is not empty"
+        fi
+        echo ""
+    )
+done
+
+if [ -z "$NO_SIGN" ] && [ ! -e "$CCS_SIGS_REPO/builder-keys/$signer_name.asc" ]; then
+    echo "First attestation? Add your public key in the same pull request:"
+    echo "    ${GPG} --export --armor ${gpg_key_name} > $CCS_SIGS_REPO/builder-keys/$signer_name.asc"
+    echo ""
+fi
+echo "Then commit in $CCS_SIGS_REPO and open a pull request."
