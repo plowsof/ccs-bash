@@ -15,7 +15,7 @@ Why it is split this way, and what each machine may do: [the design](design.md).
 
 | # | Where | What | Instructions |
 |---|---|---|---|
-| 1 | offline machines | the signed subaddress list: a CCS maintainer and another contributor each make it, and it is signed only if their sha256 match | ccs-front-bash docs/setup.md, step 5 |
+| 1 | offline machine | the signed subaddress list: a Core Team member makes and signs it; contributors can regenerate it and confirm its sha256 | ccs-front-bash docs/setup.md, step 5 |
 | 2 | backend | the wallet, the `ccs` user, the proposals checkout (GitLab or Forgejo), `ccs-bash-run` | [setup](setup.md), steps 1–3 |
 | 3 | backend | the design: ccs-front-hugo's release zip, sha256 checked | ccs-front-bash docs/setup.md, step 1 |
 | 4 | backend | ccs-front-bash, `ccs-front-run`, with the list from step 1 | ccs-front-bash docs/setup.md, steps 2 and 5 |
