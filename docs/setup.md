@@ -96,7 +96,7 @@ server and step 6 pushes there ([two machines](two-machines.md)).
    `core.symlinks=false`: a merged symlink stays a plain file, so it can't point the web server
    at other files. (`HOME=/` because root's isn't readable to other users.)
 
-   Moving from ccs-back, `proposals.csv` comes from the [export](handover.md#stage-1-ccs-back--ccs-bash-jekyll-stays) instead.
+   Moving from ccs-back, `proposals.csv` comes from the [export](handover.md#2-ccs-bash-and-its-state-the-backend) instead.
    ccs-bash never creates it: if it is missing or incomplete, runs stop; restore your backup.
 
    Take `WALLET_ADDRESS` from your own records (or `address` in `monero-wallet-cli`), not from

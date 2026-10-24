@@ -36,7 +36,7 @@ any live machine:
 <p align="center"><img src="docs/design.svg" width="760" alt="The recommended architecture: the backend makes the site and pushes it to a web server that only serves files"></p>
 
 **Start here: [the handover](docs/handover.md)**, moving ccs.getmonero.org from ccs-back and
-Jekyll to this, in stages, with the one script that runs it all. Why it's built this way: [the
+Jekyll to this, step by step along the diagram above. Why it's built this way: [the
 design](docs/design.md). ccs-bash also still writes the JSON the old Jekyll ccs-front reads.
 
 ## Security
@@ -120,7 +120,7 @@ Docker on the host and gets Debian's security updates automatically.
 
 ## Documentation
 
-- [Handover](docs/handover.md): start here, from ccs-back and Jekyll to this, in stages; the update script
+- [Handover](docs/handover.md): start here, from ccs-back and Jekyll to this, step by step; what you fill in
 - [Recommended design](docs/design.md): bash renders the site on the backend, the web server only serves files
 - [Setup](docs/setup.md): dependencies, installing step by step, backing up the state
 - [Two machines](docs/two-machines.md): the backend pushes, the web server only receives; the gate, the alerts, the theme
