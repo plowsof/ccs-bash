@@ -133,7 +133,7 @@ steps 2 and 5. It makes `/var/lib/ccs/www/site`, every page, each run.
 [Two machines](two-machines.md), way A: the `ccs-data` account the backend pushes to (write-only,
 no deleting), nginx with HTTPS and the theme lines, and **the gate**, which checks every address
 in each push against the signed list (its two files from step 4, and the `allowed` file) and holds
-back any page with another.
+back any page with another; and the gate's heartbeat timer (step 8).
 
 ## 7. The backup machine
 
@@ -146,6 +146,9 @@ to an account on the backup machine that can only add copies: [setup](setup.md#b
   as a visitor, through Tor, and compares them with what was pushed. A page that differs, or a
   backend that stops running, is an alert.
 - **The web server alerts itself** when its gate holds a page back.
+- **The web server notices a silent backend:** each push is the backend's heartbeat, and no push
+  for 15 minutes is an alert, which the backend can't send when it is off or cut off
+  ([the heartbeat](two-machines.md#the-heartbeat-the-web-server-notices-a-silent-backend)).
 
 Both post one line to the IRC bot's URL (below). [Two
 machines](two-machines.md#watching-the-web-server-way-a-the-backend-raises-the-alarm) and "The
@@ -217,6 +220,40 @@ With steps 1–9 running, the new site is complete on the web server before anyo
 - **`/projects`** only lists proposals whose file still exists.
 - **GitLab** MR lists are paginated, so MRs past 50 are seen.
 - **Removed:** `/projects/<index>` pages, GitHub and Zcoin support.
+
+## Who can do what
+
+Each job runs as its own account, which can do that job and nothing more. Only you have root.
+
+**The backend:** no port open to the internet; it only connects out (monerod, GitLab, the web
+server, the backup machine, the IRC bot, Tor).
+
+| Account | Does | Can't |
+|---|---|---|
+| root | runs the update every 2 minutes, starting each step as the account below; holds the backup key | |
+| `ccs-wallet` | runs monero-wallet-rpc, on 127.0.0.1 only, with a login | spend: the wallet is view-only |
+| `ccs-git` | owns the proposals checkout and pulls it | anything else: no shell |
+| `ccs` | runs ccs-bash (its container read-only, no capabilities, no new privileges); owns the state and the JSON; holds the push key | write the proposals; log in |
+| `ccs-front` | makes the site (its container read-only, no network) | write anything but the site |
+
+**The web server:** 80 and 443 open to everyone; 22 to the backend and you.
+
+| Account | Does | Can't |
+|---|---|---|
+| `ccs-data` | receives the push: its key works only from the backend's address and only runs the gate; runs the heartbeat check | delete, write outside the site, get a shell |
+| nginx | serves the files | run code: they are static |
+
+**The backup machine:** 22 to the backend and you.
+
+| Account | Does | Can't |
+|---|---|---|
+| `ccs-backup` | adds a dated copy of the state: its key only runs `ccs-backup-receive` | read, change or delete a copy |
+
+**The IRC bot's machine:** HTTPS in from the backend and the web server; their alert URLs are its
+only password, so keep them in the root-owned files above.
+
+On every machine: SSH by key only (`PasswordAuthentication no` in `/etc/ssh/sshd_config`), and
+security updates installed automatically (`unattended-upgrades` on Debian).
 
 ## What you fill in
 

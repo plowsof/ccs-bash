@@ -46,10 +46,43 @@ scan() {
           } }'
 }
 
+# ccs-receive --heartbeat, from a timer every 5 minutes as ccs-data (the backend's key can't pass
+# arguments: its command= is fixed). Each push that arrives is the backend's heartbeat, every
+# 2 minutes. None for HEARTBEAT_MINUTES (alert.conf, default 15) is an alert: the backend is off, its
+# cron stopped, its key or network broken, which nothing on the backend can report itself. Not
+# without a first push (nothing known yet), not while this machine has been up less than that (no
+# push could arrive while it was down), and only on the second late check in a row, so pushes
+# resuming after this machine's own network outage come first. Then once an hour at most, and a
+# line when pushes arrive again.
+heartbeat() {
+    local d=/var/lib/ccs-gate minutes age up
+    minutes=$(sed -n 's/^HEARTBEAT_MINUTES=\([1-9][0-9]*\)$/\1/p' "$conf/alert.conf" 2> /dev/null | tail -n 1)
+    minutes=${minutes:-15}
+    [[ -f $d/last-push ]] || return 0
+    age=$((($(date +%s) - $(stat -c %Y "$d/last-push")) / 60))
+    if ((age < minutes)); then
+        rm -f "$d/heartbeat-late"
+        if [[ -f $d/heartbeat-alerted ]]; then
+            rm -f "$d/heartbeat-alerted"
+            say "pushes from the backend arrive again"
+            alert heartbeat-ok "pushes from the backend arrive again @ @SITE@"
+        fi
+        return 0
+    fi
+    up=$(($(cut -d. -f1 /proc/uptime) / 60))
+    ((up >= minutes)) || return 0
+    [[ -f $d/heartbeat-late ]] || { touch "$d/heartbeat-late"; return 0; }
+    say "no push from the backend for $age minutes"
+    alert heartbeat "no push from the backend for $age minutes: is it running? (its cron, its push key, its network) @ @SITE@"
+    touch "$d/heartbeat-alerted"
+}
+if [[ ${1:-} == --heartbeat ]]; then heartbeat; exit 0; fi
+
 # Staging starts as the live site each time: the push account can't delete, so whatever a
 # refused push left in it would otherwise stay there and refuse every push after it.
 rsync -a --delete "$live/" "$staging/"
 rrsync -wo -no-del -munge "$staging"
+touch /var/lib/ccs-gate/last-push 2> /dev/null || true   # the backend's heartbeat (--heartbeat)
 
 # the list and its pin, as ccs-front-bash has them (tools/sign-subaddresses.sh: "sha256 <hex>")
 list=$conf/subaddresses.txt
