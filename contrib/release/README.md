@@ -56,10 +56,15 @@ contrib/release/build                                                      # the
 env SIGNER=<fingerprint>=<github username> contrib/release/attest
 ```
 
-`build` alone takes each repository's newest release tag (the set at the top of the handover's
-[releases table](../../docs/handover.md#the-releases)) and says which before it starts. To attest
-something else, name it: `contrib/release/build ccs-bash` (its newest) or
-`contrib/release/build ccs-bash v0.2.8` (that release).
+By default `build` takes each repository's newest release tag (the set at the top of the handover's
+[releases table](../../docs/handover.md#the-releases)) and says which before it starts. Or name
+the releases yourself, any of the three:
+
+```
+contrib/release/build ccs-bash v0.2.8 ccs-front-bash v0.1.11 ccs-front-hugo v0.1.9
+contrib/release/build ccs-front-hugo v0.1.9                                # just one
+contrib/release/build ccs-bash                                             # the newest of one
+```
 
 Your first time, add your public key in the same pull request (the check refuses a key without
 an attestation):
