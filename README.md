@@ -82,7 +82,8 @@ and visitors can check any address against the signed list, but that is the mach
 4. **Record new proposals:** the merged MR that added each new file, and when funding started.
 5. **Assign addresses:** a new subaddress for each `fr` proposal without one, after every index used.
 6. **Fetch ideas:** open MRs that add exactly one new proposal file (editing files doesn't count), whose
-   text reads as a proposal (the same parser as step 1): a stray or junk `.md` is not an idea. GitLab
+   text reads as a proposal (the same parser as step 1) and ends with a new line, as the proposals CI
+   requires: a stray or junk `.md` is not an idea. GitLab
    down keeps the previous list.
    GitLab or Forgejo/Gitea (e.g. git.disroot.org): `REPOSITORY_URL` says which (`ccs.conf.example`).
 7. **Write the JSON:** fresh QR codes, `lib/site.jq`, swapped in atomically.

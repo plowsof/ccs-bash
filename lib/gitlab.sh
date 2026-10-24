@@ -96,7 +96,8 @@ forgejo_votes() {
 }
 
 # The proposal file $1 that an MR adds, at its commit $2, read as the site will read it once
-# merged (frontmatter.awk): 0 if it reads; 1 if not, printing why; 2 if it can't be fetched.
+# merged (frontmatter.awk), and ending with a new line: 0 if so; 1 if not, printing why; 2 if it
+# can't be fetched.
 idea_file_reads() {
     local dir=$WORK/idea path line
     rm -rf "$dir" && mkdir -p "$dir" || return 2
@@ -107,9 +108,14 @@ idea_file_reads() {
     else
         gitlab_get "repository/files/$path/raw?ref=$2" > "$dir/$1" || return 2
     fi
+    # as the proposals CI (ccs-proposal-pre-parser) requires of a new proposal; merged ones aren't held to it
+    if [[ ! -s $dir/$1 || $(tail -c 1 "$dir/$1" | od -An -c | tr -d ' ') != '\n' ]]; then
+        echo "it doesn't end with a new line"
+        return 1
+    fi
     line=$(awk -f "$CCS_LIB/frontmatter.awk" "$dir/$1" 2> "$dir/why") || true
     [[ -n $line ]] && return 0
-    sed -n '1s/^skipping [^:]*: //p' "$dir/why"
+    printf "it doesn't read as a proposal: %s\n" "$(sed -n '1s/^skipping [^:]*: //p' "$dir/why")"
     return 1
 }
 
@@ -133,7 +139,7 @@ ideas() {
                 log "warning: could not fetch $file of MR !$iid, leaving it out of the ideas this run"
                 continue
             elif ((rc)); then
-                log "not an idea: MR !$iid's $file doesn't read as a proposal: ${why:-no reason given}"
+                log "not an idea: MR !$iid's $file: ${why:-no reason given}"
                 continue
             fi
             keep+=("$iid")
