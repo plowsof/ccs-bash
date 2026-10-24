@@ -53,6 +53,10 @@ and is "the original". Nothing here runs while the CCS does.
   [StageX](https://stagex.tools) image ([the pinned image](image.md)): source-built parts
   signed by two or more StageX maintainers, the same image ID from the same commit anywhere.
   Read-only, no capabilities; ccs-front-bash also without network.
+- **Attested releases:** anyone can rebuild a release from its tag (the same image IDs and zip,
+  byte for byte) and sign what they got into [ccs-sigs](https://github.com/plowsof/ccs-sigs), as
+  Feather Wallet's releases are attested; a release is checked against those signatures
+  (`contrib/release/verify`) before it is installed ([contrib/release](../contrib/release/README.md)).
 - **Push:** the complete `site/` to the web server, as in [two machines](two-machines.md) but
   with HTML instead of JSON (`rsync --checksum --delay-updates`).
 

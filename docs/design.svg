@@ -6,6 +6,7 @@
     <marker id="g" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#16a34a"/></marker>
     <marker id="gb" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="12" markerHeight="12" markerUnits="userSpaceOnUse" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#16a34a"/></marker>
     <marker id="p" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#7c3aed"/></marker>
+    <marker id="t" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#0f766e"/></marker>
     <marker id="s" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#64748b"/></marker>
     <marker id="o" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#d97706"/></marker>
       <!-- the signed subaddress list: a small database with a padlock (its signature) -->
@@ -181,6 +182,17 @@
   </g>
 
   <!-- offline front-end build: outside, above the backend; drawn last so the arrow is on top -->
+  <!-- ccs-sigs: anyone rebuilds each release and signs what they get (as Feather's feather-sigs);
+       the backend's releases are checked against them before they are installed -->
+  <rect x="30" y="80" width="300" height="92" rx="12" fill="#ecfdf5" stroke="#0f766e" stroke-width="2" stroke-dasharray="6 4" filter="url(#sh)"/>
+  <g text-anchor="middle">
+    <text x="180" y="104" font-size="15" font-weight="700" fill="#0f172a">ccs-sigs (attestations)</text>
+    <text x="180" y="124" font-size="12" fill="#475569">builders rebuild each release from its tag</text>
+    <text x="180" y="140" font-size="12" fill="#475569">and sign what they get, as Feather's</text>
+    <text x="180" y="161" font-size="11.5" font-weight="600" fill="#0f766e">ANYONE · EVERY RELEASE</text>
+  </g>
+  <path d="M300,172 V196" fill="none" stroke="#0f766e" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#t)"/>
+  <text x="292" y="189" text-anchor="end" font-size="11" fill="#0f766e">verify before installing a release</text>
   <rect x="455" y="80" width="340" height="92" rx="12" fill="#f5f0ff" stroke="#7c3aed" stroke-width="2" stroke-dasharray="6 4" filter="url(#sh)"/>
   <text x="625" y="104" text-anchor="middle" font-size="15" font-weight="700" fill="#0f172a">ccs-front-hugo (offline)</text>
   <text x="625" y="123" text-anchor="middle" font-size="12.5" fill="#475569">the only place a framework (Hugo) runs: it builds</text>
