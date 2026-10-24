@@ -386,7 +386,8 @@ img=$(mktemp -d)
     (cd "$img/out/images" && echo */*) > "$img/files1"
     [[ -e $img/out/images/0c1d2e3f-1111-2222-3333-444455556666.png ]] && echo leftover >> "$img/files1"
     src=$P/images/my-proposal/chart.png dst=$img/out/images/my-proposal/chart.png
-    [[ ! $dst -nt $src && ! $src -nt $dst ]] && echo same-time > "$img/time"
+    # the same time to the second (busybox cp -p keeps no more; rsync compares seconds)
+    [[ $(date -r "$src" +%s) == "$(date -r "$dst" +%s)" ]] && echo same-time > "$img/time"
     proposal_images 2>> "$img/log"   # again: nothing to copy
     printf -- '---\nlayout: fr\n---\nNo images now.\n' > "$P/my-proposal.md"
     proposal_images 2>> "$img/log"
