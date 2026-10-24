@@ -11,6 +11,15 @@ and the one script that runs them; each step's details are in the repository it 
 
 Why it is split this way, and what each machine may do: [the design](design.md).
 
+## Current releases, tested together
+
+The three are released separately; these are the versions known to work together, running on
+the testnet CCS. Install these tags (and attest this set, in one file). One line per release.
+
+| Set | ccs-bash | ccs-front-bash | ccs-front-hugo | Running on |
+|---|---|---|---|---|
+| 2026-10-24 | v0.2.7 | v0.1.10 | v0.1.9 | testnet ([ccs.monerodevs.org](https://ccs.monerodevs.org)) |
+
 ## In order
 
 | # | Where | What | Instructions |
