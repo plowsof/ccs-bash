@@ -61,4 +61,6 @@ Push a tag `vX.Y.Z` on `master` (or make the release on GitHub, which makes the 
 `release` workflow builds, tests, runs `check-pinned.sh`, pushes `ghcr.io/plowsof/ccs-bash:vX.Y.Z`
 and adds the pull-by-digest line and image ID to the release notes. If it fails the release has
 no notes: rerun it, or delete tag and release and redo them. A release proves nothing by
-itself; anyone can rebuild the tag and compare IDs ([setup](setup.md) step 3).
+itself; anyone can rebuild the tag and compare IDs ([setup](setup.md) step 3), and sign what they
+got into [ccs-sigs](https://github.com/plowsof/ccs-sigs) with `contrib/release/build` and
+`attest`, as Feather Wallet's releases are attested ([contrib/release](../contrib/release/README.md)).
