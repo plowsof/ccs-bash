@@ -1,0 +1,3 @@
+[submodule "external/ccs-sigs"]
+	path = external/ccs-sigs
+	url = https://github.com/plowsof/ccs-sigs
