@@ -81,11 +81,15 @@ in pairs, and builder keys, and checks each signature against its signer's key.
 
 ## What is attested
 
-| Folder in ccs-sigs | The line in `all.SHA256SUMS` |
+Everything you built in one run goes into **one** file, signed once (as Feather's one
+`all.SHA256SUMS` per version), in a folder named after the set:
+`ccs-bash-v0.2.7+ccs-front-bash-v0.1.9+ccs-front-hugo-v0.1.8/<you>/all.SHA256SUMS`. One line per
+release:
+
+| Release | Its line |
 |---|---|
-| `ccs-bash-v0.2.7` | the image ID, named `ccs-bash-v0.2.7-<commit>.image-id` |
-| `ccs-front-bash-v0.1.8` | the image ID, the same way |
-| `ccs-front-hugo-v0.1.7` | the zip's sha256, named as the release's asset (`sha256sum -c` checks a download) |
+| ccs-bash, ccs-front-bash | the image ID, named `<release>-<commit>.image-id` |
+| ccs-front-hugo | the zip's sha256, named as the release's asset (`sha256sum -c` checks a download) |
 
 ## Checking a release before using it
 
@@ -97,7 +101,8 @@ git submodule update --remote external/ccs-sigs
 contrib/release/verify
 ```
 
-Or one release:
+Or one release: it counts every set it is in, so signers who built different sets still add up,
+and its line must be the same for all of them:
 
 ```
 env CCS_SIGS_REPO=external/ccs-sigs contrib/release/verify ccs-bash-v0.2.7

@@ -24,7 +24,10 @@ Synopsis:
 
     env [ CCS_SIGS_REPO=<path/to/ccs-sigs> ] [ SIGNER=<signer> ] ./contrib/release/verify [ NAME... ]
 
-NAME is a release's folder (ccs-bash-v0.2.7, ccs-front-hugo-v0.1.7, ...); default all.
+NAME is a folder in ccs-sigs (a set of releases attested together, e.g.
+ccs-bash-v0.2.7+ccs-front-bash-v0.1.9+ccs-front-hugo-v0.1.8), or one release (ccs-bash-v0.2.7):
+then every set it is in counts, and its line must be the same for every signer. Default: every
+folder.
 
 Example overriding signer's manifest to use as base
 
@@ -79,9 +82,43 @@ if (( $# )); then names=( "$@" ); else
     (( ${#names[@]} )) && mapfile -t names < <(printf '%s\n' "${names[@]}" | sort -u)
 fi
 
+# release NAME: one release, in every set (folder) that has it: each signature checked, and its
+# line the same for every signer, whichever set they attested
+release() {
+    local name=$1 set m line first='' firstfrom='' n=0
+    for set in "$CCS_SIGS_REPO"/*/; do
+        set=$(basename "$set")
+        [[ +$set+ == *"+$name+"* ]] || continue
+        for m in "$CCS_SIGS_REPO/$set"/*/all.SHA256SUMS; do
+            if ! gpg --quiet --batch --verify "$m".asc "$m" 2> /dev/null \
+                    || [ ! -e "$CCS_SIGS_REPO/builder-keys/$(basename "$(dirname "$m")").asc" ]; then
+                echo "ERR: Failed to verify GPG signature in '$m'"; failure=1; continue
+            fi
+            line=$(grep -E "^[0-9a-f]{64}  $name([-.]|\$)" "$m" | head -n 1 || true)
+            [ -n "$line" ] || { echo "ERR: '$m' has no line for $name"; failure=1; continue; }
+            if [ -z "$first" ]; then first=$line firstfrom=$m
+            elif [ "${line%% *}" != "${first%% *}" ]; then
+                echo "ERR: $name differs: '$firstfrom' has ${first%% *}, '$m' has ${line%% *}"; failure=1; continue
+            fi
+            n=$((n + 1))
+            echo "Verified: $name in '$m'"
+        done
+    done
+    (( n )) && checked=1
+    echo ""
+    (( n )) && echo "$name: ${first%% *} (${n} signer(s) agree)" || echo "WARN: no attestation of $name"
+    echo ""
+}
+
 checked=0
 for name in "${names[@]}"; do
     OUTSIGDIR_BASE="$CCS_SIGS_REPO/$name"
+    if [[ $name != *+* ]]; then   # one release: in every set that has it
+        echo "--------------------  $name"
+        echo ""
+        release "$name"
+        continue
+    fi
     all_all=( "$OUTSIGDIR_BASE"/*/all.SHA256SUMS )
     echo "--------------------  $name  (${#all_all[@]} signer(s))"
     echo ""
