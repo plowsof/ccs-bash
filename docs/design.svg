@@ -141,8 +141,12 @@
     <text x="1120" y="442" font-size="12.5" fill="#475569">Tor welcome</text>
     <text x="1120" y="459" font-size="12.5" fill="#475569">no JS needed</text>
   </g>
-  <text x="905" y="510" text-anchor="middle" font-size="12" fill="#9a3412">no Node, npm, Jekyll, Astro,</text>
-  <text x="905" y="527" text-anchor="middle" font-size="12" fill="#9a3412">Ruby or PHP here</text>
+  <!-- the heartbeat: no push from the backend for 15 minutes is an alert (a silent backend) -->
+  <rect x="815" y="490" width="180" height="50" rx="10" fill="#ffffff" stroke="#cbd5e1" filter="url(#sh)"/>
+  <rect x="815" y="490" width="6" height="50" rx="3" fill="#c2410c"/>
+  <text x="908" y="510" text-anchor="middle" font-size="13" font-weight="700" fill="#0f172a">heartbeat</text>
+  <text x="908" y="528" text-anchor="middle" font-size="11.5" fill="#475569">no push for 15 min? to IRC</text>
+  <path d="M995,515 H1028" fill="none" stroke="#c2410c" stroke-width="2" stroke-dasharray="5 4"/>
   <!-- globe icon -->
   <g transform="translate(1158,404)" fill="none" stroke="#64748b" stroke-width="1.4">
     <circle cx="8" cy="8" r="8"/><ellipse cx="8" cy="8" rx="3.5" ry="8"/><path d="M0,8 h16"/>
@@ -210,7 +214,7 @@
   <g text-anchor="middle">
     <text x="577" y="662" font-size="14" font-weight="700" fill="#0f172a">ccs-watch</text>
     <text x="577" y="680" font-size="12" fill="#475569">the live pages = what was pushed?</text>
-    <text x="577" y="696" font-size="12" fill="#475569">if not, an alert to IRC:</text>
+    <text x="577" y="696" font-size="12" fill="#475569">if not, or unreachable, to IRC:</text>
     <text x="577" y="712" font-size="11.5" font-weight="600" fill="#c2410c">#irc-room</text>
   </g>
   <path d="M680,665 H788 V568 H811" fill="none" stroke="#c2410c" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#o)"/>
@@ -223,8 +227,8 @@
   <g text-anchor="middle">
     <text x="1117" y="682" font-size="14" font-weight="700" fill="#0f172a">IRC alerts</text>
     <text x="1117" y="700" font-size="11.5" font-weight="600" fill="#c2410c">#irc-room</text>
-    <text x="1117" y="716" font-size="11" fill="#475569">from the gate and</text>
-    <text x="1117" y="730" font-size="11" fill="#475569">from ccs-watch</text>
+    <text x="1117" y="716" font-size="11" fill="#475569">the gate, the heartbeat</text>
+    <text x="1117" y="730" font-size="11" fill="#475569">and ccs-watch</text>
   </g>
   <path d="M995,395 H1028 V690 H1036" fill="none" stroke="#c2410c" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#o)"/>
   <text x="1000" y="388" font-size="11" fill="#c2410c">pushed file: address not in the list</text>

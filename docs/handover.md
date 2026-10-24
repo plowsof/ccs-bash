@@ -4,7 +4,7 @@ For the maintainer of ccs.getmonero.org, which runs today on ccs-back (PHP and M
 Jekyll ccs-front. This is how to move it to the setup below: the steps build it box by box, in
 order, then the old site is switched off.
 
-<p align="center"><img src="design.svg" width="900" alt="The setup: the backend (monero-wallet-rpc, ccs-bash, ccs-front-bash) makes the whole site from the design and pushes it to a web server whose gate checks every address against the signed list; ccs-watch checks the live pages and alerts IRC; the state is backed up; releases are attested in ccs-sigs"></p>
+<p align="center"><img src="design.svg" width="900" alt="The setup: the backend (monero-wallet-rpc, ccs-bash, ccs-front-bash) makes the whole site from the design and pushes it to a web server whose gate checks every address against the signed list; ccs-watch checks the live pages and alerts IRC, and the web server alerts when pushes stop; the state is backed up; releases are attested in ccs-sigs"></p>
 
 **What stays the same:** the proposals repository, the CCS wallet and every proposal's
 subaddress, the site's address and `/projects`.
