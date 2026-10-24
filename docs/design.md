@@ -46,6 +46,9 @@ and is "the original". Nothing here runs while the CCS does.
   agreeing, so a slow or down web server is never mistaken for it), an alert goes to IRC
   (`#irc-room`). It catches what the gate can't: the web server itself taken over
   ([two machines](two-machines.md#watching-the-web-server-way-a-the-backend-raises-the-alarm)).
+- **The state's backup**: `proposals.csv`, the one file that can't be made again, goes to another
+  machine whenever it changes, to an account that can only add copies (every version kept, none
+  overwritten or deleted, even by a taken-over backend): [setup](setup.md#backing-up-the-state).
 - **Both from pinned images:** ccs-bash and ccs-front-bash each run in their own
   [StageX](https://stagex.tools) image ([the pinned image](image.md)): source-built parts
   signed by two or more StageX maintainers, the same image ID from the same commit anywhere.
