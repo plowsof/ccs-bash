@@ -3,8 +3,8 @@
 Anyone can rebuild a CCS release and say, with their own GPG key, what came out: the same
 image ID or sha256 from the same tag, on their machine as on everyone else's. The signatures are
 collected in [ccs-sigs](https://github.com/plowsof/ccs-sigs), one folder per release and signer.
-(The signed subaddress list isn't attested here: two people make it together when it is created,
-see ccs-front-bash's docs/setup.md, step 5.)
+(The signed subaddress list isn't attested here: a Core Team member makes and signs it, and
+contributors can regenerate it and confirm its hash; see ccs-front-bash's docs/setup.md, step 5.)
 A release is trustworthy when several people who don't share a machine have attested the same.
 
 This is [Feather Wallet](https://featherwallet.org)'s way of doing it, taken over as closely as
