@@ -140,8 +140,10 @@ site 7 "$(addr 2)"
 push > /dev/null
 hb
 if [[ $(late) == 0 ]]; then ok "heartbeat: a recent push, no alert"; else bot; fail "heartbeat after a push"; fi
-# 1 minute, not 15: a CI machine may have been up less than 15 (then the heartbeat waits)
+# 1 minute, not 15: a CI machine may have been up less than 15 (then the heartbeat waits), and
+# not before it has been up that long either
 on web "echo HEARTBEAT_MINUTES=1 >> /etc/ccs-gate/alert.conf && touch -d '-5 min' /var/lib/ccs-gate/last-push"
+on web 'until (($(cut -d. -f1 /proc/uptime) >= 70)); do sleep 5; done'
 hb
 if [[ $(late) == 0 ]]; then ok "heartbeat: the first late check waits for a second"; else fail "heartbeat alerted on one check"; fi
 hb
