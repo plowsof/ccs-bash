@@ -14,6 +14,10 @@ web server only serves files.
 A working example of the end result: the testnet CCS, https://ccs.monerodevs.org, set up
 exactly as below.
 
+Where it ends up (stage 5), and what each part does:
+
+<p align="center"><img src="design.svg" width="900" alt="The recommended architecture: the backend (wallet, ccs-bash, ccs-front-bash) makes the whole site from the design and pushes it to a web server whose gate checks every address against the signed list; ccs-watch checks the live pages and alerts IRC; releases are attested in ccs-sigs"></p>
+
 ## The parts
 
 | Repository | What it is | Runs on |
