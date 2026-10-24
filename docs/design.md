@@ -128,21 +128,5 @@ nears index 15,000, is made and signed the same way and its files copied to both
 
 ## Setting it all up
 
-The order across the three repositories, and the one script that runs them: [deploying](deploy.md).
-
-## Getting there
-
-1. **Before:** ccs-bash makes JSON; Jekyll builds the site from it ([two machines](two-machines.md)).
-2. **ccs-front-hugo and ccs-front-bash:** done, and running the testnet CCS since 2026-10-23,
-   on two machines as in [two machines](two-machines.md): the ccs-bash machine makes the site
-   and pushes it to a separate web server (an Oracle VM, nginx only, HTTPS, the CSP above).
-   Both steps run from their pinned StageX images there, built on the machine to the same
-   image IDs as CI and the releases.
-3. **The signed subaddress list:** made, signed and pinned on the testnet (ccs-front-bash's
-   docs/setup.md, step 5), and the web server's gate in front of it (two machines).
-
-## Open questions
-
-- **The original:** who signs its commits.
-- **Watching the site:** with every page coming from the backend, a checker can compare the
-  live site with what was pushed, byte for byte (the README's to-do).
+From today's ccs-back and Jekyll to this, in stages, with the one script that runs it all: [the
+handover](handover.md). The testnet CCS, https://ccs.monerodevs.org, runs it on two machines.
