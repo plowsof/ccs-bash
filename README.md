@@ -127,6 +127,7 @@ Docker on the host and gets Debian's security updates automatically.
 - [Two machines](docs/two-machines.md): the backend pushes, the web server only receives; the gate, the alerts, the theme
 - [Moving from ccs-back](docs/migrating.md): exporting the state, switching over, what differs
 - [The pinned image](docs/image.md): how B is built and checked, changing the pin, releases
+- [Attesting a release](contrib/release/README.md): rebuild a release, sign what came out into ccs-sigs, as Feather Wallet does
 - [When something is wrong](docs/troubleshooting.md): what the log lines mean
 
 ## Tests

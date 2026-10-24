@@ -24,6 +24,11 @@ Why it is split this way, and what each machine may do: [the design](design.md).
 | 7 | backend | the alerts (`/etc/ccs/alert.conf`) | [two machines](two-machines.md#watching-the-web-server-way-a-the-backend-raises-the-alarm) |
 | 8 | backend | `ccs-bash-update` (below), every 2 minutes and on each new donation | [setup](setup.md), steps 6–7 |
 
+Before installing a release, check its attestations: `contrib/release/verify <release>` against a
+[ccs-sigs](https://github.com/plowsof/ccs-sigs) checkout, then that the attested ID or sha256 is
+what you are about to run ([contrib/release](../contrib/release/README.md)). The subaddress list
+is attested there too (`subaddresses-<network>-<count>`), by people with the wallet's view key.
+
 The list is copied by hand to both machines that check it (4 and 5), never pushed by the backend:
 a taken-over backend can't swap it. Only step 1 needs the offline machine; the zip in step 3 is
 checked by its sha256, and anyone can rebuild it from the tag to the same sum.
