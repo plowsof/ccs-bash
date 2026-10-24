@@ -49,17 +49,21 @@ forgejo_prs() {
     printf '%s\n' "$all"
 }
 
-# Print the proposal file MR $1 adds: exactly one new .md in the repo root, else nothing.
+# Print the proposal file MR $1 adds: exactly one new .md in the repo root, and besides it only
+# its images, inside an images folder: images/<its name>/<file>.png|jpg|jpeg|gif. Else nothing.
 mr_proposal_file() {
-    local files
+    local files md f
     if forgejo; then
         files=$(gitlab_get "pulls/$1/files?limit=50" | jq -r '.[] | select(.status == "added") | .filename') || return 1
     else
         files=$(gitlab_get "merge_requests/$1/changes" | jq -r '.changes[] | select(.new_file) | .new_path') || return 1
     fi
-    if [[ $files != *$'\n'* ]] && safe_filename "$files"; then
-        printf '%s\n' "$files"
-    fi
+    md=$(grep -E '\.md$' <<<"$files" || true)
+    if [[ -z $md || $md == *$'\n'* ]] || ! safe_filename "$md"; then return 0; fi
+    while IFS= read -r f; do
+        [[ -z $f || $f == "$md" || $f =~ ^images/${md%.md}/[A-Za-z0-9._-]+\.(png|jpg|jpeg|gif)$ ]] || return 0
+    done <<<"$files"
+    printf '%s\n' "$md"
 }
 
 # Print the URL of the merged MR that added file $1, or nothing. Fetched once per run.

@@ -95,7 +95,8 @@ ccs-back; once ccs-front-bash replaces ccs-front, ccs-bash stops.
 **Markdown:** a strict subset in awk, in the spirit of `lib/frontmatter.awk`. Safe by
 construction: all text is HTML-escaped first, and only tags the renderer writes itself ever
 appear. Raw HTML in a proposal is shown as text, link URLs must be `https:`, images become links
-(nothing on a page loads from another site), and
+(nothing on a page loads from another site), except a proposal's own images in the repository's
+`images/<proposal>/`, which the site shows from its own copy, and
 anything not understood stays plain text. In the 268 proposals checked:
 
 | Used by | Feature |
