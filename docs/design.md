@@ -120,7 +120,7 @@ on purpose; each copy has its own job, and they are all the same file:
 So a wrong address has to get past the backend's check, then the web server's, then the
 backend's watcher (ccs-watch, which raises the alarm on IRC), then anyone who looks. Nothing about the list is in the design (ccs-front-hugo only has the Verify page's words,
 and the fingerprint in its README for people to check against): a new list, when the wallet
-nears index 100,000, is made and signed the same way and its files copied to both machines.
+nears index 15,000, is made and signed the same way and its files copied to both machines.
 
 ## Setting it all up
 
