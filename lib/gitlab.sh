@@ -37,7 +37,7 @@ forgejo_prs() {
     while :; do
         batch=$(gitlab_get "pulls?state=$state&sort=recentupdate&limit=50&page=$page") || return 1
         all=$(jq -s --arg want "$1" '.[0] + (.[1] | map(select($want == "opened" or .merged == true) | {
-            iid: .number, web_url: .html_url, title, author: {username: .user.login},
+            iid: .number, web_url: .html_url, title, author: {username: .user.login}, sha: .head.sha,
             # 2026-10-16T15:20:32+02:00 -> 2026-10-16T13:20:32Z (jq reads only Z times)
             created_at: (.created_at | if . == null then null else capture("^(?<t>[0-9-]{10}T[0-9:]{8})(\\.[0-9]+)?(?<z>Z|(?<s>[+-])(?<h>[0-9]{2}):(?<m>[0-9]{2}))$")
                 | (.t + "Z" | fromdate) - (if .z == "Z" then 0 else (.s + "1" | tonumber) * ((.h | tonumber) * 3600 + (.m | tonumber) * 60) end)
@@ -95,10 +95,29 @@ forgejo_votes() {
     jq -c '{upvotes: map(select(.content == "+1")) | length, downvotes: map(select(.content == "-1")) | length}' <<<"$all"
 }
 
-# Print the "Ideas" list for ccs-front: open MRs adding a proposal that is not merged yet,
-# with their 👍/👎 counts (null if they couldn't be read: the idea still shows).
+# The proposal file $1 that an MR adds, at its commit $2, read as the site will read it once
+# merged (frontmatter.awk): 0 if it reads; 1 if not, printing why; 2 if it can't be fetched.
+idea_file_reads() {
+    local dir=$WORK/idea path line
+    rm -rf "$dir" && mkdir -p "$dir" || return 2
+    [[ -n $2 && $2 != null ]] || return 2
+    path=$(jq -rn --arg f "$1" '$f | @uri')
+    if forgejo; then
+        gitlab_get "raw/$path?ref=$2" > "$dir/$1" || return 2
+    else
+        gitlab_get "repository/files/$path/raw?ref=$2" > "$dir/$1" || return 2
+    fi
+    line=$(awk -f "$CCS_LIB/frontmatter.awk" "$dir/$1" 2> "$dir/why") || true
+    [[ -n $line ]] && return 0
+    sed -n '1s/^skipping [^:]*: //p' "$dir/why"
+    return 1
+}
+
+# Print the "Ideas" list for ccs-front: open MRs adding a proposal that is not merged yet, and
+# whose file reads as a proposal, with their 👍/👎 counts (null if they couldn't be read: the
+# idea still shows).
 ideas() {
-    local mrs iid file keep=() votes='{}' v
+    local mrs iid file sha why rc keep=() votes='{}' v
     mrs=$(gitlab_mrs opened) || return 1
     while read -r iid; do
         # an unreadable MR is left out, not the whole list
@@ -107,6 +126,16 @@ ideas() {
             continue
         fi
         if [[ -n $file && ! -e $PROPOSALS_DIR/$file ]]; then
+            # its file must read as a proposal, as the site would read it: not just any .md
+            sha=$(jq -r --argjson i "$iid" '.[] | select(.iid == $i) | .sha // empty' <<<"$mrs")
+            rc=0; why=$(idea_file_reads "$file" "$sha") || rc=$?
+            if ((rc == 2)); then
+                log "warning: could not fetch $file of MR !$iid, leaving it out of the ideas this run"
+                continue
+            elif ((rc)); then
+                log "not an idea: MR !$iid's $file doesn't read as a proposal: ${why:-no reason given}"
+                continue
+            fi
             keep+=("$iid")
             if forgejo; then
                 v=$(forgejo_votes "$iid") || { log "warning: could not read the reactions on PR #$iid"; v=null; }
