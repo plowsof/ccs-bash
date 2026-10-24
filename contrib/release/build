@@ -3,16 +3,16 @@
 # In place of Feather Wallet's contrib/guix/guix-build: each repository builds itself with its own
 # pinned StageX container/build.sh, so this only clones the tag and records what came out.
 #
-#   contrib/release/build ccs-bash v0.2.6
-#   contrib/release/build ccs-front-bash v0.1.7
-#   contrib/release/build ccs-front-hugo v0.1.6
+#   contrib/release/build ccs-bash v0.2.7
+#   contrib/release/build ccs-front-bash v0.1.8
+#   contrib/release/build ccs-front-hugo v0.1.7
 #   WALLET_RPC=/path/to/monero-wallet-rpc contrib/release/build subaddresses testnet 15000
 #
 # The last regenerates the wallet's signed subaddress list from its main address and private view
 # key (asked for, not echoed): the list's sha256 must be the one its .pin names.
 #
 # Writes OUTDIR/<name>/SHA256SUMS.part (OUTDIR default ./output), <name> being the folder in
-# ccs-sigs: ccs-bash-v0.2.6, ..., subaddresses-testnet-15000. Needs git, Docker with buildx, gpg,
+# ccs-sigs: ccs-bash-v0.2.7, ..., subaddresses-testnet-15000. Needs git, Docker with buildx, gpg,
 # curl and jq, and for the list monero-wallet-rpc. Every step is shown as it happens.
 export LC_ALL=C
 set -euo pipefail
@@ -51,10 +51,11 @@ case $what in
         echo "release is what its source says, so that nobody has to take it on trust."
         echo
         echo "This clones the tag and builds it with the repository's own pinned StageX build, the same"
-        echo "way as the release, showing its output as it goes. The first time on a machine takes about"
-        echo "4 minutes and 2.5 GB of Docker's disk for ccs-bash or ccs-front-bash (the pinned StageX"
-        echo "images and a BuildKit builder), under half a minute and 0.2 GB for ccs-front-hugo; later"
-        echo "builds reuse them. Nothing is installed outside Docker, and the build steps get no network."
+        echo "way as the release, showing its output as it goes. On a machine with nothing cached, the"
+        echo "first of ccs-bash and ccs-front-bash takes about 3 minutes and 2.3 GB of Docker's disk (the"
+        echo "pinned StageX images and a BuildKit builder), the other about a minute and 0.2 GB, and"
+        echo "ccs-front-hugo under half a minute and 0.2 GB; later builds reuse it all. Nothing is"
+        echo "installed outside Docker, and the build steps get no network."
         step "Fetching $what at $tag"
         git -c advice.detachedHead=false clone -q --branch "$tag" --depth 1 "$base/$what" "$tmp/src"
         commit=$(git -C "$tmp/src" rev-parse HEAD)
