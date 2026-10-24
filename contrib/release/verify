@@ -24,7 +24,7 @@ Synopsis:
 
     env [ CCS_SIGS_REPO=<path/to/ccs-sigs> ] [ SIGNER=<signer> ] ./contrib/release/verify [ NAME... ]
 
-NAME is a release's folder (ccs-bash-v0.2.6, subaddresses-testnet-15000, ...); default all.
+NAME is a release's folder (ccs-bash-v0.2.7, ccs-front-hugo-v0.1.7, ...); default all.
 
 Example overriding signer's manifest to use as base
 
