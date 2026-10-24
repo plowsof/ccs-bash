@@ -13,6 +13,8 @@ source "$CCS_LIB/proposals.sh"
 source "$CCS_LIB/gitlab.sh"
 # shellcheck source=lib/wallet.sh
 source "$CCS_LIB/wallet.sh"
+# shellcheck source=lib/images.sh
+source "$CCS_LIB/images.sh"
 
 # New proposals: remember their merged MR, and when funding started if already fr.
 # GitLab down: tried again next run.
@@ -66,6 +68,7 @@ main() {
         log "warning: could not fetch ideas from GitLab, keeping the previous list"
         previous_ideas > "$WORK/ideas.json"
     fi
+    proposal_images || log "warning: could not update the proposals' images, keeping the ones there"
     build_site
 }
 
