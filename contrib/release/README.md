@@ -51,12 +51,15 @@ docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^stagex/|^stagex-bu
 git clone --recursive https://github.com/plowsof/ccs-bash && cd ccs-bash   # ccs-sigs comes along, at external/ccs-sigs
 git submodule update --remote external/ccs-sigs                            # the newest attestations
 
-contrib/release/build ccs-bash v0.2.7
-contrib/release/build ccs-front-bash v0.1.8
-contrib/release/build ccs-front-hugo v0.1.7
+contrib/release/build                                                      # the newest release of all three
 
 env SIGNER=<fingerprint>=<github username> contrib/release/attest
 ```
+
+`build` alone takes each repository's newest release tag (the set at the top of the handover's
+[releases table](../../docs/handover.md#the-releases)) and says which before it starts. To attest
+something else, name it: `contrib/release/build ccs-bash` (its newest) or
+`contrib/release/build ccs-bash v0.2.8` (that release).
 
 Your first time, add your public key in the same pull request (the check refuses a key without
 an attestation):
