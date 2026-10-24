@@ -236,10 +236,9 @@ got=$(
     WORK=$(mktemp -d) PROPOSALS_DIR=$FIXTURES/proposals TEST_FAIL_MR=13 ideas 2> /dev/null | jq -r '[.[]."gitlab-url"] | join(" ")'
 )
 if [[ $got == https://example.org/mr/11 ]]; then echo "ok   one unreadable MR leaves only that one out of the ideas"; else echo "FAIL one unreadable MR: ideas were '$got'"; status=1; fi
-# Ideas are open MRs adding exactly one new .md that reads as a proposal and ends with a new line:
-# not one that only edits a file (16), adds two (14), adds a proposal already merged (12), adds
-# junk (15), or a file without a final new line (17). A file that can't be fetched leaves out only
-# that idea, this run (13 here).
+# Ideas are open MRs adding exactly one new .md whose text reads as a proposal: not one that only
+# edits a file (16), adds two (14), adds a proposal already merged (12), or adds junk (15). A file
+# that can't be fetched leaves out only that idea, this run (13 here).
 for fail in "" 13; do
     got=$(
         # shellcheck source=tests/stubs.sh

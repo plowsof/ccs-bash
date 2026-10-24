@@ -1,6 +1,19 @@
 # shellcheck shell=bash
 # Proposal files -> JSON array of proposals, plus the address mapping state.
 
+# ccs_back_splits FILE: true if ccs-back could find its front matter: preg_split on
+# \r?\n?---\r?\n must find two "---" + new line. A file whose closing --- is its last line, with
+# no new line after it, it never read (shown under Ideas, it never reached Funding Required):
+# here, the same. Plain bash, no od or the like (the image has busybox only).
+ccs_back_splits() {
+    local s rest
+    s=$(cat -- "$1"; echo x) || return 1
+    s=${s%x}
+    s=${s//$'\r\n'/$'\n'}
+    rest=${s#*$'---\n'}
+    [[ $rest != "$s" && $rest == *$'---\n'* ]]
+}
+
 # Print a JSON array with one object per valid proposal file in directory $1.
 read_proposals() {
     local file i files=() names=() utf8
@@ -9,6 +22,8 @@ read_proposals() {
         # a directory, fifo or symlink named like a proposal would stop or hang the run
         [[ -f $file && ! -L $file ]] || { log "skipping ${file##*/}: not a plain file"; continue; }
         safe_filename "${file##*/}" || { log "skipping ${file##*/}: bad filename"; continue; }
+        ccs_back_splits "$file" \
+            || { log "skipping ${file##*/}: no front matter closed by a line --- with a new line after it"; continue; }
         files+=("$file") names+=("${file##*/}")
     done
     # Not UTF-8: jq would turn bad bytes into U+FFFD, so two names could become one (and

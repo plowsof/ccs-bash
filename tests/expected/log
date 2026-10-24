@@ -1,3 +1,4 @@
+skipping closing-no-newline.md: no front matter closed by a line --- with a new line after it
 skipping broken.md: missing title
 skipping dup-key.md: key title appears twice
 ignoring gitlab_url of o'quote.md: not an https link
@@ -7,10 +8,9 @@ new proposal new-fund.md https://example.org/mr/8
 new proposal o'quote.md (no merged MR found)
  leading-space.md: subaddress 4 80000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004
 new-fund.md: subaddress 5 80000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005
-not an idea: MR !15's junk.md: it doesn't read as a proposal: no frontmatter between --- lines
-not an idea: MR !17's no-newline.md: it doesn't end with a new line
+not an idea: MR !15's junk.md doesn't read as a proposal: no frontmatter between --- lines
+skipping closing-no-newline.md: no front matter closed by a line --- with a new line after it
 skipping broken.md: missing title
 skipping dup-key.md: key title appears twice
 ignoring gitlab_url of o'quote.md: not an https link
-not an idea: MR !15's junk.md: it doesn't read as a proposal: no frontmatter between --- lines
-not an idea: MR !17's no-newline.md: it doesn't end with a new line
+not an idea: MR !15's junk.md doesn't read as a proposal: no frontmatter between --- lines

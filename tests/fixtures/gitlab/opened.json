@@ -70,17 +70,5 @@
     "upvotes": 0,
     "downvotes": 0,
     "sha": "sha-16"
-  },
-  {
-    "iid": 17,
-    "title": "No final newline",
-    "web_url": "https://example.org/mr/17",
-    "created_at": "2026-10-07T12:00:00.000Z",
-    "author": {
-      "username": "judy"
-    },
-    "upvotes": 0,
-    "downvotes": 0,
-    "sha": "sha-17"
   }
 ]
