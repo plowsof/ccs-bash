@@ -1,0 +1,20 @@
+#!/bin/bash
+# ccs-backup-receive: the backup node's side of ccs-bash's state backup. The backend's key runs
+# only this (command= in authorized_keys). It reads proposals.csv on stdin and keeps it as
+# proposals-<UTC time>.csv, unless it is the same as the newest copy. It never overwrites or
+# deletes, so even a taken-over backend can only add copies, not destroy the old ones.
+# Root-owned, 755. Copies in /var/lib/ccs-backup (the ccs-backup user's, 700).
+set -euo pipefail
+dir=/var/lib/ccs-backup
+tmp=$(mktemp "$dir/.incoming.XXXXXX")
+trap 'rm -f "$tmp"' EXIT
+head -c 10485760 > "$tmp"                      # a few KB in practice; 10 MB at most
+# proposals.csv's rows: "file","link",index,"address","date" (the index a number, or "")
+[[ -s $tmp ]] && awk '!/^"[^"]*","[^"]*",("[^"]*"|[0-9]+),"[^"]*","[^"]*"$/ { bad = 1 } END { exit bad }' "$tmp" \
+    || { echo "ccs-backup: not a proposals.csv, not kept" >&2; exit 1; }
+last=$(find "$dir" -maxdepth 1 -name 'proposals-*.csv' | sort | tail -n 1)
+if [[ $last ]] && cmp -s "$tmp" "$last"; then echo "ccs-backup: unchanged"; exit 0; fi
+dest=$dir/proposals-$(date -u +%Y%m%dT%H%M%SZ).csv
+[[ -e $dest ]] && { echo "ccs-backup: $dest exists" >&2; exit 1; }
+chmod 440 "$tmp" && mv -n "$tmp" "$dest"
+echo "ccs-backup: kept $(basename "$dest") ($(wc -l < "$dest") lines)"
