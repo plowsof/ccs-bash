@@ -149,14 +149,14 @@ that still sounds when the backend is the one lying.
 [CCS-watch] the web server refuses every push: its signed list isn't the one its .pin names
 ```
 
-Nothing runs between pushes: no daemon, no timer. Set it up once, as root:
+Between pushes only the heartbeat's timer runs (below). Set it up once, as root:
 
 ```
 install -m 755 contrib/ccs-receive /usr/local/bin/ccs-receive        # from this repository
 install -d -o ccs-data -m 755 /var/lib/ccs-staging
 install -d -m 755 /etc/ccs-gate
 install -o ccs-data -m 644 /dev/null /var/log/ccs-gate.log          # optional: the refusals, as a file
-install -d -o ccs-data -m 755 /var/lib/ccs-gate                      # optional, with alert.conf: when it last alerted
+install -d -o ccs-data -m 755 /var/lib/ccs-gate                      # the last push (the heartbeat) and when it last alerted
 install -m 640 -g ccs-data /dev/null /etc/ccs-gate/alert.conf        # optional: the bot (as ccs-watch's, plain text POST)
 printf 'ALERT_URL=http://<bot>:8086/<path>\nSITE_URL=https://<site>\n' > /etc/ccs-gate/alert.conf
 install -m 644 subaddresses.txt subaddresses.txt.pin /etc/ccs-gate/  # the signed list and its pin (ccs-front-bash, setup step 5)
@@ -180,6 +180,56 @@ nothing outside the folder, as with rrsync alone.
 
 It can't help if the web server itself is taken over (whoever has it can turn the gate off):
 there, visitors checking an address against the signed list is the defence.
+
+### The heartbeat: the web server notices a silent backend
+
+Every alert the backend sends runs on the backend, so a backend that is off, whose cron stopped,
+or whose key or network broke, says nothing. Its pushes, one every run (2 minutes), are its
+heartbeat: the gate notes each one that arrives, and a timer on the web server, every 5 minutes,
+alerts when none has for 15 minutes (`HEARTBEAT_MINUTES` in `alert.conf` to change it). To keep
+false alarms out, it stays quiet
+
+- before the first push (nothing is known yet);
+- while the web server itself has been up less than that (no push could arrive while it was down);
+- on the first late check: only the second in a row alerts, so pushes resuming after the web
+  server's own network outage come first.
+
+Then once an hour at most, and one line when pushes arrive again:
+
+```
+[CCS-watch] no push from the backend for 17 minutes: is it running? (its cron, its push key, its network) @ https://<site>
+[CCS-watch] pushes from the backend arrive again @ https://<site>
+```
+
+It is `ccs-receive --heartbeat`, run as ccs-data (the backend's key can't pass it arguments:
+its `command=` is fixed). As root:
+
+```
+cat > /etc/systemd/system/ccs-heartbeat.service <<'UNIT'
+[Unit]
+Description=ccs-gate: alert when no push has come from the backend
+
+[Service]
+Type=oneshot
+User=ccs-data
+ExecStart=/usr/local/bin/ccs-receive --heartbeat
+UNIT
+cat > /etc/systemd/system/ccs-heartbeat.timer <<'UNIT'
+[Unit]
+Description=ccs-gate heartbeat, every 5 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target
+UNIT
+systemctl daemon-reload && systemctl enable --now ccs-heartbeat.timer
+```
+
+`tests/gate.sh` checks it: no alert after a recent push, none on the first late check, one on the
+second, not again within the hour, a line when pushes return, and none before any push.
 
 ## Watching the web server (way A): the backend raises the alarm
 
