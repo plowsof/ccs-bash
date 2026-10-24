@@ -39,8 +39,12 @@ Synopsis:
     env SIGNER=GPG_KEY_NAME[=SIGNER_NAME] \\
         [ CCS_SIGS_REPO=<path/to/ccs-sigs> ] \\
         [ OUTDIR=<what contrib/release/build wrote, default ./output> ] \\
-        [ NO_SIGN=1 ]
+        [ NO_SIGN=1 ] [ NO_COMMIT=1 ]
       ./contrib/release/attest
+
+SIGNER_NAME is your GitHub username (default: gh's login, if gh is signed in). Then it adds
+your public key the first time, and commits in ccs-sigs on a branch of its own, titled
+"Add <signer> <set>"; pushing and the pull request are yours (it says how).
 
 Example overriding signing name:
 
@@ -91,6 +95,9 @@ fi
 ################
 
 IFS='=' read -r gpg_key_name signer_name <<< "$SIGNER"
+if [ -z "${signer_name}" ] && command -v gh > /dev/null 2>&1; then
+    signer_name=$(gh api user --jq .login 2> /dev/null || true)
+fi
 if [ -z "${signer_name}" ]; then
     signer_name="$gpg_key_name"
 fi
@@ -204,9 +211,48 @@ mkdir -p "$outsigdir"
     echo ""
 )
 
-if [ -z "$NO_SIGN" ] && [ ! -e "$CCS_SIGS_REPO/builder-keys/$signer_name.asc" ]; then
-    echo "First attestation? Add your public key in the same pull request:"
-    echo "    ${GPG} --export --armor ${gpg_key_name} > $CCS_SIGS_REPO/builder-keys/$signer_name.asc"
-    echo ""
+if [ -n "$NO_SIGN" ]; then
+    echo "Not signed, so not committed."
+    exit 0
 fi
-echo "Then commit in $CCS_SIGS_REPO, push to your fork and open a pull request. Thank you!"
+
+# Your first attestation: your public key goes in the same pull request
+if [ ! -e "$CCS_SIGS_REPO/builder-keys/$signer_name.asc" ]; then
+    ${GPG} --export --armor "$gpg_key_name" > "$CCS_SIGS_REPO/builder-keys/$signer_name.asc"
+    echo "Added your public key: builder-keys/$signer_name.asc"
+fi
+
+title="Add $signer_name $name"   # as feather-sigs' ("Add <signer> <version>")
+if [ -n "$NO_COMMIT" ]; then
+    echo "Not committed (NO_COMMIT): commit in $CCS_SIGS_REPO yourself, titled \"$title\"."
+    exit 0
+fi
+
+cd "$CCS_SIGS_REPO"
+# master or testnet: the one this checkout started from (the newer, if it has both)
+contains() { git rev-parse -q --verify "$1" > /dev/null && git merge-base --is-ancestor "$1" HEAD; }
+base=master
+if contains origin/testnet; then
+    if ! contains origin/master || git merge-base --is-ancestor origin/master origin/testnet; then base=testnet; fi
+fi
+# a branch of its own, unless you are already on one
+branch=$(git symbolic-ref -q --short HEAD || true)
+if [ -z "$branch" ] || [ "$branch" = master ] || [ "$branch" = testnet ]; then
+    branch="$signer_name-$name"
+    git checkout -q -b "$branch"
+fi
+git add -- "$name/$signer_name" "builder-keys/$signer_name.asc"
+if git diff --cached --quiet; then
+    echo "Nothing new to commit: already committed?"
+else
+    git commit -q -m "$title"
+    echo "Committed \"$title\" on the branch $branch, in $CCS_SIGS_REPO."
+fi
+echo ""
+echo "Now push it and open a pull request against $base, from your fork of ccs-sigs"
+echo "(ccs-sigs' owner: push to origin instead):"
+echo ""
+echo "    git -C '$CCS_SIGS_REPO' push <your fork's remote> '$branch'"
+echo "    gh pr create -R plowsof/ccs-sigs --base $base --head '$signer_name:$branch' --fill"
+echo ""
+echo "Thank you!"
