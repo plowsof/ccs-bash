@@ -63,39 +63,29 @@ contrib/release/build ccs-front-hugo v0.1.9                                # jus
 contrib/release/build ccs-bash                                             # the newest of one
 ```
 
-Your first time, add your public key in the same pull request (the check refuses a key without
-an attestation):
+`attest` signs, adds your public key the first time (the check refuses a key without an
+attestation), and commits in `external/ccs-sigs` on a branch of its own, titled as feather-sigs'
+are: `Add <github username> <set>`, the set being the folder it signed, e.g.
+`Add plowsof ccs-bash-v0.2.8+ccs-front-bash-v0.1.11+ccs-front-hugo-v0.1.9`. `<github username>` may
+be left out if `gh` is signed in; `NO_COMMIT=1` leaves the commit to you.
+
+Then push the branch and open the pull request: `attest` prints both commands, with the branch.
+From a fork of ccs-sigs (its Fork button, or `gh repo fork plowsof/ccs-sigs --clone=false`):
 
 ```
-gpg --export --armor <fingerprint> > external/ccs-sigs/builder-keys/<github username>.asc
+git -C external/ccs-sigs remote add fork https://github.com/<github username>/ccs-sigs
+git -C external/ccs-sigs push fork <the branch>
+gh pr create -R plowsof/ccs-sigs --base master --head <github username>:<the branch> --fill
 ```
 
-Then send it to ccs-sigs as a pull request. First fork https://github.com/plowsof/ccs-sigs on
-GitHub (its Fork button, or `gh repo fork plowsof/ccs-sigs --clone=false`). The commit and the pull
-request are titled as feather-sigs' are, `Add <github username> <set>`, the set being the folder
-`attest` named (`Attesting to build outputs for: '...'`):
-
-```
-cd external/ccs-sigs
-git checkout -b <github username>-attest
-git add -A && git commit -m "Add <github username> ccs-bash-v0.2.8+ccs-front-bash-v0.1.11+ccs-front-hugo-v0.1.9"
-git remote add fork https://github.com/<github username>/ccs-sigs && git push fork HEAD
-```
-
-GitHub prints a link to open the pull request: open it against `master` with the commit's title.
-Or, with `gh`:
-
-```
-gh pr create -R plowsof/ccs-sigs --base master --head <github username>:<github username>-attest --fill
-```
-
-ccs-sigs' owner pushes the branch to ccs-sigs itself (`git push origin HEAD`) instead of a fork.
-To try the process out with a throwaway key, use the `testnet` branch instead of `master`:
-`git checkout -b <name> origin/testnet` before `attest`, and `--base testnet`.
+Without `gh`, open the link `git push` prints, against `master`. ccs-sigs' owner pushes to
+`origin` instead of a fork. To try the process out with a throwaway key, start from the `testnet`
+branch (`git -C external/ccs-sigs checkout -b <name> origin/testnet` before `attest`): `attest`
+then says `--base testnet`.
 
 Then, back in `ccs-bash`, give the disk back: `contrib/release/clean` (about 2.7 GB).
 
-Its `lint` check
+The pull request's `lint` check
 (feather-sigs', from Bitcoin Core's guix.sigs) lets a pull request only add attestation files,
 in pairs, and builder keys, and checks each signature against its signer's key.
 
