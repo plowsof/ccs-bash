@@ -38,12 +38,9 @@ same (from ccs-bash v0.2.7, ccs-front-bash v0.1.8 and ccs-front-hugo v0.1.7; old
 make their own, about 2 GB more). Later builds reuse it all. Every step is shown as it happens,
 and `build` says whether its result is the one the release notes publish.
 
-To get the space back afterwards:
-
-```
-docker buildx ls | grep -oE '^(stagex-buildkit|ccs-[a-z-]+-builder)-[0-9a-f]+' | sort -u | xargs -r -n 1 docker buildx rm
-docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^stagex/|^stagex-buildkit|^ccs-[a-z-]+-builder' | xargs -r docker rmi
-```
+To get the space back once you have attested, `contrib/release/clean`: it removes only what
+`build` made (its builders and their caches, their images, and `output/`), and shows Docker's
+disk before and after.
 
 ## Attesting
 
@@ -51,11 +48,19 @@ docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^stagex/|^stagex-bu
 git clone --recursive https://github.com/plowsof/ccs-bash && cd ccs-bash   # ccs-sigs comes along, at external/ccs-sigs
 git submodule update --remote external/ccs-sigs                            # the newest attestations
 
-contrib/release/build ccs-bash v0.2.7
-contrib/release/build ccs-front-bash v0.1.8
-contrib/release/build ccs-front-hugo v0.1.7
+contrib/release/build                                                      # the newest release of all three
 
 env SIGNER=<fingerprint>=<github username> contrib/release/attest
+```
+
+By default `build` takes each repository's newest release tag (the set at the top of the handover's
+[releases table](../../docs/handover.md#the-releases)) and says which before it starts. Or name
+the releases yourself, any of the three:
+
+```
+contrib/release/build ccs-bash v0.2.8 ccs-front-bash v0.1.11 ccs-front-hugo v0.1.9
+contrib/release/build ccs-front-hugo v0.1.9                                # just one
+contrib/release/build ccs-bash                                             # the newest of one
 ```
 
 Your first time, add your public key in the same pull request (the check refuses a key without
@@ -74,6 +79,8 @@ git checkout -b <github username>-attestations
 git add -A && git commit -m "<github username>: attestations"
 git remote add fork https://github.com/<github username>/ccs-sigs && git push fork HEAD
 ```
+
+Then, back in `ccs-bash`, give the disk back: `contrib/release/clean` (about 2.7 GB).
 
 Its `lint` check
 (feather-sigs', from Bitcoin Core's guix.sigs) lets a pull request only add attestation files,

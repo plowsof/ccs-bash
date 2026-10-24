@@ -1,22 +1,47 @@
 #!/usr/bin/env bash
-# build: make one release's outputs, as the release workflow does, for attesting (contrib/release/attest).
+# build: make releases' outputs, as the release workflow does, for attesting (contrib/release/attest).
 # In place of Feather Wallet's contrib/guix/guix-build: each repository builds itself with its own
 # pinned StageX container/build.sh, so this only clones the tag and records what came out.
 #
-#   contrib/release/build ccs-bash v0.2.7
-#   contrib/release/build ccs-front-bash v0.1.8
-#   contrib/release/build ccs-front-hugo v0.1.7
+#   contrib/release/build                     by default: the newest release of all three
+#   contrib/release/build ccs-bash v0.2.8 ccs-front-bash v0.1.11 ccs-front-hugo v0.1.9
+#                                             or the releases you name (any of the three)
+#   contrib/release/build ccs-bash            or the newest release of one
 #
-# Writes OUTDIR/<name>/SHA256SUMS.part (OUTDIR default ./output), <name> being the folder in
-# ccs-sigs: ccs-bash-v0.2.7, ccs-front-bash-v0.1.8, ccs-front-hugo-v0.1.7. Needs git, Docker with
-# buildx, gpg, curl and jq. Every step is shown as it happens.
+# The newest is the highest vX.Y.Z tag in its repository. Writes OUTDIR/<name>/SHA256SUMS.part
+# (OUTDIR default ./output), <name> being the release's folder in ccs-sigs, like ccs-bash-v0.2.8.
+# Needs git, Docker with buildx, gpg, curl and jq. Every step is shown as it happens.
 export LC_ALL=C
 set -euo pipefail
 here=$(dirname "$(readlink -f "$0")")
 outdir=$(readlink -f "${OUTDIR:-output}")
 base=${CCS_REPOS:-https://github.com/plowsof}
 
-usage() { sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+# newest NAME: its highest release tag
+newest() {
+    GIT_TERMINAL_PROMPT=0 git ls-remote --tags --refs "$base/$1" 'v*' 2> /dev/null | sed 's|.*refs/tags/||' \
+        | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1
+}
+if [[ $# == 0 ]]; then
+    repos=(ccs-bash ccs-front-bash ccs-front-hugo) tags=()
+    for r in "${repos[@]}"; do
+        t=$(newest "$r") && [[ $t ]] || { echo "ERR: no release tag found for $r" >&2; exit 1; }
+        tags+=("$t")
+    done
+    echo "The newest release of each: ccs-bash ${tags[0]}, ccs-front-bash ${tags[1]}, ccs-front-hugo ${tags[2]}"
+    for i in 0 1 2; do "$0" "${repos[i]}" "${tags[i]}"; done
+    exit 0
+fi
+(($# <= 2 || $# % 2 == 0)) || { echo "ERR: name each release with its tag: NAME TAG NAME TAG ..." >&2; exit 2; }
+if (($# > 2)); then   # NAME TAG NAME TAG ...: each, in turn
+    while (($#)); do "$0" "$1" "$2"; shift 2; done
+    exit 0
+fi
+if [[ $# == 1 && $1 != -* ]]; then
+    t=$(newest "$1") && [[ $t ]] || { echo "ERR: no release tag found for '$1'" >&2; exit 1; }
+    exec "$0" "$1" "$t"
+fi
 [[ $# -ge 2 ]] || usage
 what=$1
 
