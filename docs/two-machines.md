@@ -100,7 +100,7 @@ echo "<web server> ssh-ed25519 AAAA..." > /var/lib/ccs/.ssh/known_hosts
 ```
 
 `ccs-bash-update` pushes; `--delay-updates` swaps the files in only once all have arrived.
-**A)** push the site ccs-front-bash made: the `rsync` in [the handover](handover.md#the-update).
+**A)** push the site ccs-front-bash made: the `rsync` in [the handover](handover.md#9-the-update).
 
 **B)** push the JSON for the web server's Jekyll:
 
@@ -206,7 +206,7 @@ CONF
 ```
 
 and `ccs-bash-update` runs it after the push, then tells it how the whole run went
-(`ccs-watch --run`, the last line in [the handover](handover.md#the-update)), so that a backend which
+(`ccs-watch --run`, the last line in [the handover](handover.md#9-the-update)), so that a backend which
 has stopped (an image gone, the wallet down, the push refused) is an alarm too: the page check
 only runs after a good push, and a stale site still matches what was last pushed.
 
