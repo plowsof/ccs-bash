@@ -70,15 +70,28 @@ an attestation):
 gpg --export --armor <fingerprint> > external/ccs-sigs/builder-keys/<github username>.asc
 ```
 
-Then, in `external/ccs-sigs`, commit on a branch, push it to your fork (ccs-sigs' owner: to
-ccs-sigs itself) and open a pull request:
+Then send it to ccs-sigs as a pull request. First fork https://github.com/plowsof/ccs-sigs on
+GitHub (its Fork button, or `gh repo fork plowsof/ccs-sigs --clone=false`). The commit and the pull
+request are titled as feather-sigs' are, `Add <github username> <set>`, the set being the folder
+`attest` named (`Attesting to build outputs for: '...'`):
 
 ```
 cd external/ccs-sigs
-git checkout -b <github username>-attestations
-git add -A && git commit -m "<github username>: attestations"
+git checkout -b <github username>-attest
+git add -A && git commit -m "Add <github username> ccs-bash-v0.2.8+ccs-front-bash-v0.1.11+ccs-front-hugo-v0.1.9"
 git remote add fork https://github.com/<github username>/ccs-sigs && git push fork HEAD
 ```
+
+GitHub prints a link to open the pull request: open it against `master` with the commit's title.
+Or, with `gh`:
+
+```
+gh pr create -R plowsof/ccs-sigs --base master --head <github username>:<github username>-attest --fill
+```
+
+ccs-sigs' owner pushes the branch to ccs-sigs itself (`git push origin HEAD`) instead of a fork.
+To try the process out with a throwaway key, use the `testnet` branch instead of `master`:
+`git checkout -b <name> origin/testnet` before `attest`, and `--base testnet`.
 
 Then, back in `ccs-bash`, give the disk back: `contrib/release/clean` (about 2.7 GB).
 
