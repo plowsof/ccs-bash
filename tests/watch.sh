@@ -92,6 +92,25 @@ else
     cat "$tmp/bot.txt"; fail "unreachable"
 fi
 
+# The backend stopping: ccs-bash-update reports each run (--run). Nothing for one or two failed
+# runs; the third alerts, once; the first good run after it says so; a good run before that, nothing.
+run() { CCS_WATCH_STATE=$tmp/runstate "$here/../contrib/ccs-watch" --run "$1" "$tmp/alert.conf" 2>> "$tmp/log"; }
+before=$(alerts)
+run ccs-bash; run ccs-bash
+if [[ $(alerts) == "$before" ]]; then ok "the backend failing twice in a row: no alert"; else fail "two failed runs"; fi
+run "ccs-bash, the push"
+if [[ $(alerts) == $((before + 1)) ]] && tail -n 1 "$tmp/bot.txt" | grep -qE "\[CCS-watch\] the backend has failed 3 runs in a row since [0-9-]+ [0-9:]+ UTC: ccs-bash, the push \(see /var/log/ccs-bash.log\)"; then
+    ok "the third failed run in a row: one alert, with what failed"
+else
+    tail -n 2 "$tmp/bot.txt" 2> /dev/null; fail "three failed runs"
+fi
+run ccs-bash; run ccs-bash
+if [[ $(alerts) == $((before + 1)) ]]; then ok "still failing within the hour: no second alert"; else fail "a repeated alert"; fi
+run ok
+if [[ $(alerts) == $((before + 2)) ]] && tail -n 1 "$tmp/bot.txt" | grep -qF "[CCS-watch] the backend runs again, after 5 failed runs"; then ok "the first good run after the alert: says so"; else tail -n 1 "$tmp/bot.txt"; fail "recovery"; fi
+run ccs-front-bash; run ok; run ok
+if [[ $(alerts) == $((before + 2)) ]]; then ok "one failed run, then good ones: nothing"; else fail "a blip"; fi
+
 # wmb's /directedMessage: JSON with the target, the message and the password (on stdin, so not
 # in any command line ps shows), and --test sends one message to check the setup
 printf 'ALERT_URL=http://127.0.0.1:%s/directedMessage\nALERT_TARGET=#irc-room\nALERT_PASSWORD=s3cr3t\n' "$bot" > "$tmp/wmb.conf"

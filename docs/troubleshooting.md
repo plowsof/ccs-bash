@@ -9,6 +9,8 @@ Logs: `/var/log/ccs-bash.log`, and with [setup](setup.md) step 7
 | `main address is not WALLET_ADDRESS` | Another wallet on that port. Nothing written. |
 | `donations at subaddress ..., which proposals.csv doesn't have` | The state file lacks entries, see [Moving from ccs-back](migrating.md) step 3. Nothing written. |
 | `could not fetch ideas from GitLab` | GitLab is down; the old Ideas list stays. |
+| `Unable to find image 'ccs-bash:latest'` (or `ccs-front-bash`) | The image's tag is gone: something on the machine pruned unused images (Coolify's nightly Docker cleanup does: a `docker run --rm` image is unused between runs). Tag it again (`docker tag <its ID> ccs-bash`, the ID from the release or your build), and keep one stopped container on it so no cleanup can remove it: `docker create --name ccs-bash-keep ccs-bash`. Better, keep such tools off the backend. |
+| `ccs-watch: this run failed (...), N in a row` | That run's steps failed (named in brackets, details above it in the log); the third in a row alerts. |
 | `skipping <file>: ...` | That proposal's frontmatter can't be read (reason follows); it's left off. |
 | `ignoring tags of <file>: ...` | Its `tags:` can't be read (reason follows): the proposal shows, without tags. A list of up to 5, each up to 40 bytes. |
 | `error: <name>: 1 of 2 maintainer signatures` (build) | A StageX pin lacks two trusted signatures. Don't work around it: refresh the [keys](image.md#signatures) if StageX added a maintainer, else ask StageX. |
