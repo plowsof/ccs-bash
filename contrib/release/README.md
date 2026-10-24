@@ -49,8 +49,8 @@ docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^stagex/|^stagex-bu
 ## Attesting
 
 ```
-git clone https://github.com/plowsof/ccs-bash && cd ccs-bash
-git clone https://github.com/<you>/ccs-sigs external/ccs-sigs       # your fork (ccs-sigs' owner: a branch)
+git clone --recursive https://github.com/plowsof/ccs-bash && cd ccs-bash   # ccs-sigs comes along, at external/ccs-sigs
+git submodule update --remote external/ccs-sigs                            # the newest attestations
 
 contrib/release/build ccs-bash v0.2.6
 contrib/release/build ccs-front-bash v0.1.7
@@ -67,7 +67,17 @@ an attestation):
 gpg --export --armor <fingerprint> > external/ccs-sigs/builder-keys/<github username>.asc
 ```
 
-Then commit in `external/ccs-sigs`, push to your fork and open a pull request. Its `lint` check
+Then, in `external/ccs-sigs`, commit on a branch, push it to your fork (ccs-sigs' owner: to
+ccs-sigs itself) and open a pull request:
+
+```
+cd external/ccs-sigs
+git checkout -b <github username>-attestations
+git add -A && git commit -m "<github username>: attestations"
+git remote add fork https://github.com/<github username>/ccs-sigs && git push fork HEAD
+```
+
+Its `lint` check
 (feather-sigs', from Bitcoin Core's guix.sigs) lets a pull request only add attestation files,
 in pairs, and builder keys, and checks each signature against its signer's key.
 
@@ -81,6 +91,16 @@ in pairs, and builder keys, and checks each signature against its signer's key.
 | `subaddresses-testnet-15000` | the regenerated list's sha256: the one its `.pin` must name |
 
 ## Checking a release before using it
+
+As Feather does: after at least one other signer's attestation is in ccs-sigs, fetch the newest
+and check them all (CCS_SIGS_REPO defaults to the submodule):
+
+```
+git submodule update --remote external/ccs-sigs
+contrib/release/verify
+```
+
+Or one release:
 
 ```
 env CCS_SIGS_REPO=external/ccs-sigs contrib/release/verify ccs-bash-v0.2.6
