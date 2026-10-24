@@ -3,6 +3,8 @@
 Anyone can rebuild a CCS release and say, with their own GPG key, what came out: the same
 image ID or sha256 from the same tag, on their machine as on everyone else's. The signatures are
 collected in [ccs-sigs](https://github.com/plowsof/ccs-sigs), one folder per release and signer.
+(The signed subaddress list isn't attested here: a Core Team member makes and signs it, and
+contributors can regenerate it and confirm its hash; see ccs-front-bash's docs/setup.md, step 5.)
 A release is trustworthy when several people who don't share a machine have attested the same.
 
 This is [Feather Wallet](https://featherwallet.org)'s way of doing it, taken over as closely as
@@ -14,13 +16,13 @@ result.
 
 | Script | From | Does |
 |---|---|---|
-| `build` | Feather's `guix-build`, in spirit | builds one release (a tag of ccs-bash, ccs-front-bash or ccs-front-hugo, or a subaddress list) into `output/<name>/SHA256SUMS.part` |
+| `build` | Feather's `guix-build`, in spirit | builds one release (a tag of ccs-bash, ccs-front-bash or ccs-front-hugo) into `output/<name>/SHA256SUMS.part` |
 | `attest` | Feather's `guix-attest` | writes `<name>/<signer>/all.SHA256SUMS` into your ccs-sigs checkout and signs it (`.asc`) |
 | `verify` | Feather's `guix-verify` | checks every signature against `builder-keys/` and that all signers agree |
 
 ## What it takes
 
-Git, Docker with buildx, gpg, curl and jq; for a subaddress list also monero-wallet-rpc. Measured
+Git, Docker with buildx, gpg, curl and jq. Measured
 on a machine with nothing cached (a fresh attester), building the three in this order:
 
 | Build | Time | Docker disk |
@@ -29,7 +31,6 @@ on a machine with nothing cached (a fresh attester), building the three in this 
 | ccs-front-bash | about a minute | 0.2 GB (it shares ccs-bash's builder and downloads) |
 | ccs-front-hugo | under half a minute | 0.2 GB |
 | **all three** | **about 5 minutes** | **2.7 GB** |
-| a subaddress list (15,000) | about a minute | none (a few MB in a temporary folder) |
 
 Whichever of ccs-bash and ccs-front-bash comes first does the big download; the outputs
 themselves are a few KB. The three share one builder while their pinned StageX images are the
@@ -53,7 +54,6 @@ git submodule update --remote external/ccs-sigs                            # the
 contrib/release/build ccs-bash v0.2.7
 contrib/release/build ccs-front-bash v0.1.8
 contrib/release/build ccs-front-hugo v0.1.7
-WALLET_RPC=/path/to/monero-wallet-rpc contrib/release/build subaddresses testnet 15000   # asks for the address and view key
 
 env SIGNER=<fingerprint>=<github username> contrib/release/attest
 ```
@@ -86,7 +86,6 @@ in pairs, and builder keys, and checks each signature against its signer's key.
 | `ccs-bash-v0.2.7` | the image ID, named `ccs-bash-v0.2.7-<commit>.image-id` |
 | `ccs-front-bash-v0.1.8` | the image ID, the same way |
 | `ccs-front-hugo-v0.1.7` | the zip's sha256, named as the release's asset (`sha256sum -c` checks a download) |
-| `subaddresses-testnet-15000` | the regenerated list's sha256: the one its `.pin` must name |
 
 ## Checking a release before using it
 
