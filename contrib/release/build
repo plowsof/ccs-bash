@@ -6,21 +6,17 @@
 #   contrib/release/build ccs-bash v0.2.7
 #   contrib/release/build ccs-front-bash v0.1.8
 #   contrib/release/build ccs-front-hugo v0.1.7
-#   WALLET_RPC=/path/to/monero-wallet-rpc contrib/release/build subaddresses testnet 15000
-#
-# The last regenerates the wallet's signed subaddress list from its main address and private view
-# key (asked for, not echoed): the list's sha256 must be the one its .pin names.
 #
 # Writes OUTDIR/<name>/SHA256SUMS.part (OUTDIR default ./output), <name> being the folder in
-# ccs-sigs: ccs-bash-v0.2.7, ..., subaddresses-testnet-15000. Needs git, Docker with buildx, gpg,
-# curl and jq, and for the list monero-wallet-rpc. Every step is shown as it happens.
+# ccs-sigs: ccs-bash-v0.2.7, ccs-front-bash-v0.1.8, ccs-front-hugo-v0.1.7. Needs git, Docker with
+# buildx, gpg, curl and jq. Every step is shown as it happens.
 export LC_ALL=C
 set -euo pipefail
 here=$(dirname "$(readlink -f "$0")")
 outdir=$(readlink -f "${OUTDIR:-output}")
 base=${CCS_REPOS:-https://github.com/plowsof}
 
-usage() { sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 [[ $# -ge 2 ]] || usage
 what=$1
 
@@ -82,21 +78,6 @@ case $what in
             echo "!! DIFFERENT from the release notes: they publish $pub."
             echo "!! Please attest what you got all the same (that is the point), and say so in your pull request."
         fi
-        ;;
-    subaddresses)
-        net=${2:?} count=${3:?}
-        [[ $net =~ ^(mainnet|testnet|stagenet)$ && $count =~ ^[1-9][0-9]*$ ]] || usage
-        [[ -x ${WALLET_RPC:-} ]] || { echo "ERR: WALLET_RPC=/path/to/monero-wallet-rpc" >&2; exit 1; }
-        name=subaddresses-$net-$count
-        flag=(); [[ $net == mainnet ]] || flag=(--"$net")
-        echo "Thank you for attesting the $net wallet's list of $count subaddresses. This regenerates it"
-        echo "from the wallet's main address and private view key, offline: about a minute for 15,000."
-        step "Fetching ccs-front-bash's tools/make-subaddresses.sh"
-        git clone -q --depth 1 "$base/ccs-front-bash" "$tmp/tools"
-        step "Regenerating the first $count subaddresses ($net)"
-        "$tmp/tools/tools/make-subaddresses.sh" "$WALLET_RPC" "$count" "$tmp/subaddresses.txt" "${flag[@]}"
-        line="$(sha256sum < "$tmp/subaddresses.txt" | cut -d' ' -f1)  $name.txt"
-        echo "Compare it with the sha256 of the list the site publishes (https://<site>/subaddresses.txt)."
         ;;
     *) usage ;;
 esac
