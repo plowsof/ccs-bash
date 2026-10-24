@@ -51,9 +51,9 @@ server {
 
 (A `location` with its own `add_header` drops the server's, hence the CSP twice.)
 
-**The theme** (Light, Dark or System, in the site's footer) is kept in the address, without
-cookies or JavaScript: `/dark/…` and `/light/…` are the same files, except that there
-`assets/theme.css` is `theme-dark.css` or `theme-light.css`. The footer's links are
+**The theme** (Light, Dark or System, the button in the site's header) is kept in the address,
+without cookies or JavaScript: `/dark/…` and `/light/…` are the same files, except that there
+`assets/theme.css` is `theme-dark.css` or `theme-light.css`. The button's links are
 `?theme=light|dark|system`, which nginx turns into the same page under that prefix. Every link
 in the site is relative, so the prefix stays while browsing. In the `server`, beside the
 `location`s above (and the `map` outside it, in the `http` context, e.g. at the top of the file):
@@ -99,21 +99,8 @@ runuser -u ccs -- ssh-keygen -t ed25519 -N '' -f /var/lib/ccs/.ssh/id_ed25519
 echo "<web server> ssh-ed25519 AAAA..." > /var/lib/ccs/.ssh/known_hosts
 ```
 
-`ccs-bash-update` (step 6) pushes; `--delay-updates` swaps the files in only once all have
-arrived. **A)** push the site ccs-front-bash made:
-
-```
-#!/bin/sh
-# /usr/local/bin/ccs-bash-update (chmod 755)
-timeout -k 5 40 runuser -u ccs-git -- env HOME=/ git -C /var/lib/ccs/proposals pull -q --ff-only
-ccs-bash-run >> /var/log/ccs-bash.log 2>&1
-runuser -u ccs-front -- /opt/ccs-front-bash/ccs-front-bash.sh \
-    /opt/ccs-front-hugo/public /var/lib/ccs/out /var/lib/ccs/proposals /var/lib/ccs/www/site \
-    >> /var/log/ccs-bash.log 2>&1 \
-&& timeout -k 5 120 runuser -u ccs -- rsync -a --delay-updates \
-    -e "ssh -p 22 -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15" \
-    /var/lib/ccs/www/site/ ccs-data@<web server>: >> /var/log/ccs-bash.log 2>&1
-```
+`ccs-bash-update` pushes; `--delay-updates` swaps the files in only once all have arrived.
+**A)** push the site ccs-front-bash made: the `rsync` in [deploying](deploy.md#the-update).
 
 **B)** push the JSON for the web server's Jekyll:
 
@@ -218,24 +205,10 @@ WATCH_PROXY=socks5h://127.0.0.1:9050               # recommended: through Tor (a
 CONF
 ```
 
-and `ccs-bash-update` runs it after the push, then tells it how the whole run went, so that a
-backend which has stopped (an image gone, the wallet down, the push refused) is an alarm too: the
-page check only runs after a good push, and a stale site still matches what was last pushed.
-
-```
-#!/bin/sh
-# /usr/local/bin/ccs-bash-update (chmod 755): as above, each step noted if it fails
-L=/var/log/ccs-bash.log W=/opt/ccs-bash/contrib/ccs-watch failed=''
-timeout -k 5 40 runuser -u ccs-git -- env HOME=/ git -C /var/lib/ccs/proposals pull -q --ff-only   # GitLab down: give up
-ccs-bash-run >> $L 2>&1 || failed="ccs-bash"
-if ccs-front-run >> $L 2>&1; then
-    if timeout -k 5 120 runuser -u ccs -- rsync -a --delay-updates -e "ssh -o BatchMode=yes" \
-            /var/lib/ccs/www/site/ ccs-data@<web server>: >> $L 2>&1; then
-        runuser -u ccs -- $W https://<the site> /var/lib/ccs/www/site >> $L 2>&1
-    else failed="${failed:+$failed, }the push"; fi
-else failed="${failed:+$failed, }ccs-front-bash"; fi
-runuser -u ccs -- $W --run "${failed:-ok}" >> $L 2>&1
-```
+and `ccs-bash-update` runs it after the push, then tells it how the whole run went
+(`ccs-watch --run`, the last line in [deploying](deploy.md#the-update)), so that a backend which
+has stopped (an image gone, the wallet down, the push refused) is an alarm too: the page check
+only runs after a good push, and a stale site still matches what was last pushed.
 
 One alert per problem an hour while it lasts; "could not be fetched" after three checks in a row;
 "the backend has failed N runs in a row since …: <steps>" after three failed runs (about six

@@ -122,22 +122,9 @@ backend's watcher (ccs-watch, which raises the alarm on IRC), then anyone who lo
 and the fingerprint in its README for people to check against): a new list, when the wallet
 nears index 100,000, is made and signed the same way and its files copied to both machines.
 
-## Setting it all up, in order
+## Setting it all up
 
-Each repository documents its own part; this is the order, and where each step lives.
-
-| # | Where | What | Instructions |
-|---|---|---|---|
-| 1 | offline machine | the signed subaddress list (wallet's view key, never online) | ccs-front-bash docs/setup.md, step 5 |
-| 2 | backend | the wallet, the `ccs` user, the proposals checkout (GitLab or Forgejo), `ccs-bash-run`, the update every 2 minutes | ccs-bash [setup](setup.md), steps 1–3, 6, 7 |
-| 3 | backend | the original: ccs-front-hugo's release zip, sha256 checked | ccs-front-bash docs/setup.md, step 1 |
-| 4 | backend | ccs-front-bash after ccs-bash in `ccs-bash-update`, with the list from step 1 | ccs-front-bash docs/setup.md, steps 2–3, 5 |
-| 5 | web server | the push account, the gate (the list and its `.pin` again, by hand), nginx; optionally its IRC alert | [two machines](two-machines.md), way A and "The gate" |
-| 6 | backend | the push, then ccs-watch, at the end of `ccs-bash-update` | [two machines](two-machines.md), way A and "Watching the web server" |
-
-The list is copied by hand to both machines that check it (4 and 5), never pushed by the backend:
-a taken-over backend can't swap it. Only step 1 needs the offline machine; the zip in step 3 is
-checked by its sha256, and anyone can rebuild it from the tag to the same sum.
+The order across the three repositories, and the one script that runs them: [deploying](deploy.md).
 
 ## Getting there
 
