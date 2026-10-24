@@ -45,6 +45,10 @@ gitlab_get() {
             [[ $iid != "${TEST_FAIL_VOTES:-}" ]] || return 1   # TEST_FAIL_VOTES=N: its reactions fail
             jq --argjson i "$iid" '.[] | select(.iid == $i) | [range(.upvotes) | {content: "+1"}] + [range(.downvotes) | {content: "-1"}]
                 | if length == 0 then null else . + [{content: "heart"}] end' "$FIXTURES/gitlab/opened.json" ;;
+        # an MR's file at its commit (sha-N: MR N's); TEST_FAIL_RAW=N: that one fails
+        repository/files/*/raw\?ref=* | raw/*\?ref=*)
+            [[ ${1##*ref=} != "sha-${TEST_FAIL_RAW:-}" ]] || return 1
+            cat "$FIXTURES/gitlab/raw/${1##*ref=}" ;;
         pulls/*/files*)
             iid=${1#pulls/}; iid=${iid%%/*}
             [[ $iid != "${TEST_FAIL_MR:-}" ]] || return 1
@@ -57,7 +61,7 @@ gitlab_get() {
 # GitLab MRs -> Forgejo pull requests; Z times become the same moment at +14:00 (the next
 # day in that zone: a wrong conversion shows the wrong date)
 gitlab_forgejo() {
-    jq 'map({number: .iid, html_url: .web_url, title, user: {login: .author.username}, merged: false,
+    jq 'map({number: .iid, html_url: .web_url, title, user: {login: .author.username}, merged: false, head: {sha: .sha},
         created_at: (.created_at | if . == null then null else sub("\\.[0-9]+Z$"; "Z") | fromdate + 50400 | todate | sub("Z$"; "+14:00") end)})'
 }
 

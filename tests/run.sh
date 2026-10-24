@@ -233,9 +233,26 @@ source "$here/../lib/gitlab.sh"
 got=$(
     # shellcheck source=tests/stubs.sh
     source "$here/stubs.sh"
-    PROPOSALS_DIR=$FIXTURES/proposals TEST_FAIL_MR=13 ideas 2> /dev/null | jq -r '[.[]."gitlab-url"] | join(" ")'
+    WORK=$(mktemp -d) PROPOSALS_DIR=$FIXTURES/proposals TEST_FAIL_MR=13 ideas 2> /dev/null | jq -r '[.[]."gitlab-url"] | join(" ")'
 )
 if [[ $got == https://example.org/mr/11 ]]; then echo "ok   one unreadable MR leaves only that one out of the ideas"; else echo "FAIL one unreadable MR: ideas were '$got'"; status=1; fi
+# Ideas are open MRs adding exactly one new .md whose text reads as a proposal: not one that only
+# edits a file (16), adds two (14), adds a proposal already merged (12), or adds junk (15). A file
+# that can't be fetched leaves out only that idea, this run (13 here).
+for fail in "" 13; do
+    got=$(
+        # shellcheck source=tests/stubs.sh
+        source "$here/stubs.sh"
+        WORK=$(mktemp -d) PROPOSALS_DIR=$FIXTURES/proposals TEST_FAIL_RAW=$fail ideas 2> /dev/null | jq -r '[.[]."gitlab-url" | sub(".*/"; "")] | sort | join(" ")'
+    )
+    want="11 13" what=""
+    [[ -z $fail ]] || { want=11 what=" (MR $fail: its file can not be fetched)"; }
+    if [[ $got == "$want" ]]; then
+        echo "ok   ideas$what: only MRs adding one new proposal that reads ($got)"
+    else
+        echo "FAIL ideas$what: got '$got', want '$want'"; status=1
+    fi
+done
 
 # atomic_write: a failed or silent command leaves the old file alone.
 aw=$(mktemp -d)
@@ -350,7 +367,7 @@ if ((fj_ok)); then echo "ok   Forgejo: the same JSON and state as GitLab"; else 
 got=$(
     # shellcheck source=tests/stubs.sh
     source "$here/stubs.sh"
-    REPOSITORY_URL=https://forgejo.invalid/api/v1/repos/monero/ccs-proposals PROPOSALS_DIR=$FIXTURES/proposals TEST_FAIL_VOTES=11 \
+    WORK=$(mktemp -d) REPOSITORY_URL=https://forgejo.invalid/api/v1/repos/monero/ccs-proposals PROPOSALS_DIR=$FIXTURES/proposals TEST_FAIL_VOTES=11 \
         ideas 2> /dev/null | jq -c 'map([.upvotes, .downvotes])'
 )
 if [[ $got == '[[1,0],[null,null]]' ]]; then echo "ok   unreadable reactions leave the idea, without counts"; else echo "FAIL unreadable reactions: $got"; status=1; fi
