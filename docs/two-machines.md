@@ -193,13 +193,28 @@ WATCH_PROXY=socks5h://127.0.0.1:9050               # recommended: through Tor (a
 CONF
 ```
 
-and, at the end of `ccs-bash-update`, after the push:
+and `ccs-bash-update` runs it after the push, then tells it how the whole run went, so that a
+backend which has stopped (an image gone, the wallet down, the push refused) is an alarm too: the
+page check only runs after a good push, and a stale site still matches what was last pushed.
 
 ```
-&& runuser -u ccs -- /opt/ccs-bash/contrib/ccs-watch https://<the site> /var/lib/ccs/www/site >> /var/log/ccs-bash.log 2>&1
+#!/bin/sh
+# /usr/local/bin/ccs-bash-update (chmod 755): as above, each step noted if it fails
+L=/var/log/ccs-bash.log W=/opt/ccs-bash/contrib/ccs-watch failed=''
+timeout -k 5 40 runuser -u ccs-git -- env HOME=/ git -C /var/lib/ccs/proposals pull -q --ff-only   # GitLab down: give up
+ccs-bash-run >> $L 2>&1 || failed="ccs-bash"
+if ccs-front-run >> $L 2>&1; then
+    if timeout -k 5 120 runuser -u ccs -- rsync -a --delay-updates -e "ssh -o BatchMode=yes" \
+            /var/lib/ccs/www/site/ ccs-data@<web server>: >> $L 2>&1; then
+        runuser -u ccs -- $W https://<the site> /var/lib/ccs/www/site >> $L 2>&1
+    else failed="${failed:+$failed, }the push"; fi
+else failed="${failed:+$failed, }ccs-front-bash"; fi
+runuser -u ccs -- $W --run "${failed:-ok}" >> $L 2>&1
 ```
 
-One alert per problem an hour while it lasts; "could not be fetched" after three checks in a row.
+One alert per problem an hour while it lasts; "could not be fetched" after three checks in a row;
+"the backend has failed N runs in a row since …: <steps>" after three failed runs (about six
+minutes), and "the backend runs again" on the first good run after that.
 A careful attacker on the web server could serve the backend's IP the right pages: `WATCH_PROXY`
 (Tor) or a second watcher elsewhere (a laptop, another machine) makes that much harder.
 `tests/watch.sh` runs it against a local web server and a fake bot.
