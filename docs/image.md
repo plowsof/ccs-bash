@@ -16,7 +16,8 @@ Option B's image holds only pinned, source-built parts (about 28 MB):
 1. **Checks the signatures** of every pin ([below](#signatures)).
 2. **Downloads** the pinned images and the sources; `fetch.sh` keeps only files whose sha256 matches.
 3. **Makes the builder:** `builder.Dockerfile` copies StageX's BuildKit into an image, run as a
-   buildx builder `ccs-bash-builder-<id>` (privileged, like any buildx builder).
+   buildx builder `stagex-buildkit-<id>` (privileged, like any buildx builder), the same one
+   ccs-front-bash's and ccs-front-hugo's builds use while their pins are the same.
 4. **Builds** with `--network none`: BuildKit fetches the pins by digest, the steps get no
    network. It rechecks the sources, compiles busybox and qrencode with StageX's toolchain, and
    sets every file time to the commit's.
@@ -51,7 +52,7 @@ This proves StageX's maintainers reproduced and signed what we pin, not that we 
 
 `container/update-images.sh` pins every image to StageX's current release, stores its
 signatures in `container/sigs/` and checks them; review the diff, commit, rebuild. A new builder pin makes a new builder; remove old
-ones with `docker buildx rm ccs-bash-builder-<id>`. For a newer busybox or qrencode, change its
+ones with `docker buildx rm stagex-buildkit-<id>`. For a newer busybox or qrencode, change its
 line in `container/sources.lock` and the version in the Dockerfile. More applets go in
 `container/busybox-applets`.
 
