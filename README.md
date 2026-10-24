@@ -35,10 +35,9 @@ any live machine:
 
 <p align="center"><img src="docs/design.svg" width="760" alt="The recommended architecture: the backend makes the site and pushes it to a web server that only serves files"></p>
 
-**Start here: [deploying](docs/deploy.md)**, the setup order across the three and the one script
-that runs them. Why it's built this way: [the design](docs/design.md). From the old ccs-back and
-Jekyll ccs-front: [moving from ccs-back](docs/migrating.md); ccs-bash also still writes the JSON
-the old ccs-front reads.
+**Start here: [the handover](docs/handover.md)**, moving ccs.getmonero.org from ccs-back and
+Jekyll to this, step by step along the diagram above. Why it's built this way: [the
+design](docs/design.md). ccs-bash also still writes the JSON the old Jekyll ccs-front reads.
 
 ## Security
 
@@ -121,11 +120,10 @@ Docker on the host and gets Debian's security updates automatically.
 
 ## Documentation
 
-- [Deploying](docs/deploy.md): start here, the three repositories in order and the update script
+- [Handover](docs/handover.md): start here, from ccs-back and Jekyll to this, step by step; what you fill in
 - [Recommended design](docs/design.md): bash renders the site on the backend, the web server only serves files
 - [Setup](docs/setup.md): dependencies, installing step by step, backing up the state
 - [Two machines](docs/two-machines.md): the backend pushes, the web server only receives; the gate, the alerts, the theme
-- [Moving from ccs-back](docs/migrating.md): exporting the state, switching over, what differs
 - [The pinned image](docs/image.md): how B is built and checked, changing the pin, releases
 - [Attesting a release](contrib/release/README.md): rebuild a release, sign what came out into ccs-sigs, as Feather Wallet does
 - [When something is wrong](docs/troubleshooting.md): what the log lines mean
