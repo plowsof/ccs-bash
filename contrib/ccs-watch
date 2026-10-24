@@ -14,12 +14,23 @@
 #   ALERT_PREFIX=[CCS-watch]                              optional: how messages start
 #   ALERT_PLAIN=1                                         optional: no IRC colours (for ntfy and the like)
 # One alert per problem an hour; "unreachable" after 3 runs in a row. Logs to stderr.
+#
+# ccs-watch --run RESULT [CONF]: ccs-bash-update tells it how the whole run went, "ok" or the
+# steps that failed ("ccs-bash", "the push", ...). The page check above only runs after a good
+# push, so it can't see a backend that has stopped: this does. Three failed runs in a row (about
+# six minutes; one or two are a blip) alert, once an hour while it lasts; the first good run
+# after that says so. A GitLab or Forgejo outage isn't a failed run (ccs-bash keeps the old data).
 set -euo pipefail
 # ccs-watch --test SITE_URL [CONF]: send one test message, to check ALERT_URL works
 test_only=''
 if [[ ${1:-} == --test ]]; then
     [[ ${2:-} == http* ]] || { echo "usage: ccs-watch --test SITE_URL [CONF]" >&2; exit 2; }
     test_only=1; set -- "$2" /nonexistent "${3:-/etc/ccs/alert.conf}"
+fi
+run_result=''
+if [[ ${1:-} == --run ]]; then
+    [[ ${2:-} ]] || { echo "usage: ccs-watch --run ok|STEPS [CONF]" >&2; exit 2; }
+    run_result=$2; set -- - /nonexistent "${3:-/etc/ccs/alert.conf}"
 fi
 site_url=${1:?SITE_URL} local_site=${2:?LOCAL_SITE} conf=${3:-/etc/ccs/alert.conf}
 state=${CCS_WATCH_STATE:-/var/lib/ccs/state/watch}
@@ -77,6 +88,20 @@ differs() {
     done
     return 0
 }
+
+if [[ $run_result ]]; then
+    n=$(cat "$state/failed-runs" 2> /dev/null || echo 0)
+    if [[ $run_result == ok ]]; then
+        ((n < 3)) || alert backend-ok "the backend runs again, after $n failed runs"
+        rm -f "$state/failed-runs" "$state/failed-since"
+        exit 0
+    fi
+    n=$((n + 1)); echo "$n" > "$state/failed-runs"
+    [[ -f $state/failed-since ]] || date -u '+%F %H:%M UTC' > "$state/failed-since"
+    log "this run failed ($run_result), $n in a row"
+    ((n < 3)) || alert backend "the backend has failed $n runs in a row since $(cat "$state/failed-since"): $run_result (see /var/log/ccs-bash.log)"
+    exit 0
+fi
 
 if [[ $test_only ]]; then
     [[ $ALERT_URL ]] || { echo "no ALERT_URL in $conf" >&2; exit 1; }
