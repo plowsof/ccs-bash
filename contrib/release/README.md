@@ -18,13 +18,34 @@ result.
 | `attest` | Feather's `guix-attest` | writes `<name>/<signer>/all.SHA256SUMS` into your ccs-sigs checkout and signs it (`.asc`) |
 | `verify` | Feather's `guix-verify` | checks every signature against `builder-keys/` and that all signers agree |
 
-## Attesting
+## What it takes
 
-Needs git, Docker with buildx, gpg and jq; for a subaddress list also monero-wallet-rpc.
+Git, Docker with buildx, gpg, curl and jq; for a subaddress list also monero-wallet-rpc. Measured
+on a machine with nothing cached (a fresh attester):
+
+| Build | Time | Docker disk |
+|---|---|---|
+| ccs-bash | about 4 minutes | 2.3 GB |
+| ccs-front-bash | about 4 minutes | 2.1 GB |
+| ccs-front-hugo | under half a minute | 0.2 GB |
+| a subaddress list (15,000) | about a minute | none (a few MB in a temporary folder) |
+
+About 8 minutes and 4.6 GB for the three; the outputs themselves are a few KB. Later builds reuse
+the pinned StageX images and the builders. Every step is shown as it happens, and `build` says
+whether its result is the one the release notes publish.
+
+To get the space back afterwards:
+
+```
+docker buildx ls | grep -oE '^ccs-[a-z-]+-builder-[0-9a-f]+' | sort -u | xargs -r -n 1 docker buildx rm
+docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^stagex/|^ccs-[a-z-]+-builder' | xargs -r docker rmi
+```
+
+## Attesting
 
 ```
 git clone https://github.com/plowsof/ccs-bash && cd ccs-bash
-git clone https://github.com/<you>/ccs-sigs external/ccs-sigs       # your fork of ccs-sigs
+git clone https://github.com/<you>/ccs-sigs external/ccs-sigs       # your fork (ccs-sigs' owner: a branch)
 
 contrib/release/build ccs-bash v0.2.6
 contrib/release/build ccs-front-bash v0.1.7

@@ -179,6 +179,9 @@ for fragment in "${sha256sum_fragments[@]}"; do
             mv "$temp_file" all.SHA256SUMS
         fi
 
+        echo "What you attest ($outsigdir/all.SHA256SUMS):"
+        sed 's/^/    /' all.SHA256SUMS
+
         if [ -z "$NO_SIGN" ]; then
             echo "Signing SHA256SUMS to produce SHA256SUMS.asc"
             for i in *.SHA256SUMS; do
@@ -204,4 +207,4 @@ if [ -z "$NO_SIGN" ] && [ ! -e "$CCS_SIGS_REPO/builder-keys/$signer_name.asc" ];
     echo "    ${GPG} --export --armor ${gpg_key_name} > $CCS_SIGS_REPO/builder-keys/$signer_name.asc"
     echo ""
 fi
-echo "Then commit in $CCS_SIGS_REPO and open a pull request."
+echo "Then commit in $CCS_SIGS_REPO, push to your fork and open a pull request. Thank you!"
