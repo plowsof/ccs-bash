@@ -21,23 +21,21 @@ result.
 ## What it takes
 
 Git, Docker with buildx, gpg, curl and jq; for a subaddress list also monero-wallet-rpc. Measured
-on a machine with nothing cached (a fresh attester):
+on a machine with nothing cached (a fresh attester), building the three in this order:
 
 | Build | Time | Docker disk |
 |---|---|---|
-| ccs-bash | about 4 minutes | 2.3 GB |
-| ccs-front-bash | about 4 minutes | 2.1 GB |
+| ccs-bash | about 3 minutes | 2.3 GB (the pinned StageX images and the builder) |
+| ccs-front-bash | about a minute | 0.2 GB (it shares ccs-bash's builder and downloads) |
 | ccs-front-hugo | under half a minute | 0.2 GB |
-
-Releases from ccs-bash v0.2.7, ccs-front-bash v0.1.8 and ccs-front-hugo v0.1.7 on share one
-builder while their pins are the same, so the second and third reuse the first's downloads:
-measured the same way, about 5 minutes and 2.7 GB for the three (ccs-front-bash then takes about
-a minute and 0.2 GB).
+| **all three** | **about 5 minutes** | **2.7 GB** |
 | a subaddress list (15,000) | about a minute | none (a few MB in a temporary folder) |
 
-About 8 minutes and 4.6 GB for the three; the outputs themselves are a few KB. Later builds reuse
-the pinned StageX images and the builders. Every step is shown as it happens, and `build` says
-whether its result is the one the release notes publish.
+Whichever of ccs-bash and ccs-front-bash comes first does the big download; the outputs
+themselves are a few KB. The three share one builder while their pinned StageX images are the
+same (from ccs-bash v0.2.7, ccs-front-bash v0.1.8 and ccs-front-hugo v0.1.7; older releases each
+make their own, about 2 GB more). Later builds reuse it all. Every step is shown as it happens,
+and `build` says whether its result is the one the release notes publish.
 
 To get the space back afterwards:
 
@@ -52,9 +50,9 @@ docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^stagex/|^stagex-bu
 git clone https://github.com/plowsof/ccs-bash && cd ccs-bash
 git clone https://github.com/<you>/ccs-sigs external/ccs-sigs       # your fork (ccs-sigs' owner: a branch)
 
-contrib/release/build ccs-bash v0.2.6
-contrib/release/build ccs-front-bash v0.1.7
-contrib/release/build ccs-front-hugo v0.1.6
+contrib/release/build ccs-bash v0.2.7
+contrib/release/build ccs-front-bash v0.1.8
+contrib/release/build ccs-front-hugo v0.1.7
 WALLET_RPC=/path/to/monero-wallet-rpc contrib/release/build subaddresses testnet 15000   # asks for the address and view key
 
 env SIGNER=<fingerprint>=<github username> contrib/release/attest
@@ -75,15 +73,15 @@ in pairs, and builder keys, and checks each signature against its signer's key.
 
 | Folder in ccs-sigs | The line in `all.SHA256SUMS` |
 |---|---|
-| `ccs-bash-v0.2.6` | the image ID, named `ccs-bash-v0.2.6-<commit>.image-id` |
-| `ccs-front-bash-v0.1.7` | the image ID, the same way |
-| `ccs-front-hugo-v0.1.6` | the zip's sha256, named as the release's asset (`sha256sum -c` checks a download) |
+| `ccs-bash-v0.2.7` | the image ID, named `ccs-bash-v0.2.7-<commit>.image-id` |
+| `ccs-front-bash-v0.1.8` | the image ID, the same way |
+| `ccs-front-hugo-v0.1.7` | the zip's sha256, named as the release's asset (`sha256sum -c` checks a download) |
 | `subaddresses-testnet-15000` | the regenerated list's sha256: the one its `.pin` must name |
 
 ## Checking a release before using it
 
 ```
-env CCS_SIGS_REPO=external/ccs-sigs contrib/release/verify ccs-bash-v0.2.6
+env CCS_SIGS_REPO=external/ccs-sigs contrib/release/verify ccs-bash-v0.2.7
 ```
 
 Then compare the attested ID or sha256 with the release notes and with what you are about to
