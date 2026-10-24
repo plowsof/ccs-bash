@@ -1,233 +1,119 @@
 # Handover: running the CCS on ccs-bash
 
-For the people who run ccs.getmonero.org today (ccs-back, PHP and MySQL, and the Jekyll
-ccs-front): how to move it to ccs-bash and the static site made from it, in stages. Each stage
-works on its own, can be stopped at, and says how to go back. Why it is built this way, and what
-each machine may do: [the design](design.md).
+For the maintainer of ccs.getmonero.org, which runs today on ccs-back (PHP and MySQL) and the
+Jekyll ccs-front. This is how to move it to the setup below: the steps build it box by box, in
+order, then the old site is switched off.
 
-**What stays the same:** the proposals repository (GitLab, or Forgejo later), the CCS wallet and
-every proposal's subaddress, the site's addresses and `/projects`.
+<p align="center"><img src="design.svg" width="900" alt="The setup: the backend (monero-wallet-rpc, ccs-bash, ccs-front-bash) makes the whole site from the design and pushes it to a web server whose gate checks every address against the signed list; ccs-watch checks the live pages and alerts IRC; the state is backed up; releases are attested in ccs-sigs"></p>
 
-**What goes:** PHP, MySQL, Jekyll and Ruby. Nothing that serves the site runs code; the public
-web server only serves files.
+**What stays the same:** the proposals repository, the CCS wallet and every proposal's
+subaddress, the site's address and `/projects`.
 
-A working example of the end result: the testnet CCS, https://ccs.monerodevs.org, set up
-exactly as below.
+**What goes:** PHP, MySQL, Jekyll, Ruby. The public web server runs no code: it receives the
+finished site and serves it. Why it is built this way: [the design](design.md). The testnet CCS,
+https://ccs.monerodevs.org, is this exact setup, running.
 
-Where it ends up (stage 5), and what each part does:
+## Before you start
 
-<p align="center"><img src="design.svg" width="900" alt="The recommended architecture: the backend (wallet, ccs-bash, ccs-front-bash) makes the whole site from the design and pushes it to a web server whose gate checks every address against the signed list; ccs-watch checks the live pages and alerts IRC; releases are attested in ccs-sigs"></p>
+- **Machines:** the **backend** (private, takes no connections: the wallet, ccs-bash,
+  ccs-front-bash), the **web server** (public: nginx and the gate), a **backup machine** (any,
+  for one small file), and an **offline machine** for making the signed list once.
+- **The wallet:** the CCS wallet, view-only. Its address and view key are public: luigi1111
+  published them in
+  [monero-project/meta #935](https://github.com/monero-project/meta/issues/935#issuecomment-1867257410).
+- **A Core Team member** to make and sign the subaddress list (step 4).
+- **An IRC bot** for the alerts (step 8).
+- **The releases** to install, below.
 
-## The parts
+## The releases
 
-| Repository | What it is | Runs on |
-|---|---|---|
-| [ccs-bash](https://github.com/plowsof/ccs-bash) (this one) | the backend: proposals, the wallet, totals, addresses, as JSON | the backend |
-| [ccs-front-bash](https://github.com/plowsof/ccs-front-bash) | the site builder: fills the design with ccs-bash's data, every page, in bash | the backend |
-| [ccs-front-hugo](https://github.com/plowsof/ccs-front-hugo) | the design: the site's HTML and CSS, built once with Hugo, released as a reproducible zip | nowhere live (downloaded, sha256 checked) |
-| [ccs-sigs](https://github.com/plowsof/ccs-sigs) | attestations: people who rebuilt a release and signed what they got | nowhere (checked before installing a release) |
-
-### Current releases, tested together
-
-The three are released separately; these versions work together and run the testnet CCS.
-Install these tags. A row is added with each release.
+The three repositories are released separately; these versions work together and run the
+testnet CCS. A row is added with each release.
 
 | Set | ccs-bash | ccs-front-bash | ccs-front-hugo | Running on |
 |---|---|---|---|---|
 | 2026-10-24 | v0.2.7 | v0.1.10 | v0.1.9 | testnet ([ccs.monerodevs.org](https://ccs.monerodevs.org)) |
 
-Before installing a release, check its attestations: `contrib/release/verify <release>` (as
-Feather Wallet's releases are checked), then that the image ID or zip sha256 you are about to
-run is the attested one ([contrib/release](../contrib/release/README.md)).
+Each is reproducible: anyone who builds a tag gets the same image ID or zip sha256, and those who
+did sign what they got in [ccs-sigs](https://github.com/plowsof/ccs-sigs) (the box at the top left
+of the picture). Before installing, check them: `contrib/release/verify <release>`, then that the
+ID or sha256 you install is the attested one ([contrib/release](../contrib/release/README.md)).
 
-## Decide first
+## 1. monerod and monero-wallet-rpc (the backend)
 
-- **Machines.** The recommended end: a **backend** that accepts no connections (the wallet,
-  ccs-bash, ccs-front-bash) and a **web server** that only receives the finished site and serves
-  it. Stages 1 and 2 work on today's one machine; stage 3 splits it.
-- **The wallet.** The CCS wallet, view-only. Its address and view key are public: luigi1111
-  published them in
-  [monero-project/meta #935](https://github.com/monero-project/meta/issues/935#issuecomment-1867257410).
-- **Who makes and signs the subaddress list** (stage 4): a Core Team member.
-- **Where alerts go** (stage 5): an IRC bot that takes a POST, ntfy, or similar; and a machine
-  to keep backups of the state file.
+monerod, local or one you trust, and monero-wallet-rpc with the CCS wallet, view-only, as its own
+user, on 127.0.0.1: [setup](setup.md) step 1.
 
-## What you fill in
+The wallet from ccs-back: stop its wallet-rpc (it saves on exit), copy `<name>` and `<name>.keys`
+into `/var/lib/ccs/wallet` (owner `ccs-wallet`, mode 600), set `wallet-file`, start the service.
+`wallet_info` in `monero-wallet-cli` must say `Watch only`; if it can spend, make a view-only one
+instead (`--generate-from-view-key`, with the address, the view key and a restore height from
+before the first donation). Amounts come from the wallet's history, so it needs all of it.
 
-Everything that is yours to set, by machine. Values for ccs.getmonero.org are given where they
-are known; `<…>` is yours to choose. Secrets (the wallet and RPC passwords, the alert URLs) live
-only in these files, root-owned, never in a repository or on a command line.
+## 2. ccs-bash and its state (the backend)
 
-**The backend**
+The users, folders, config and proposals checkout, and `ccs-bash-run`, from its pinned image (check
+its ID against the releases): [setup](setup.md) steps 2 and 3.
 
-| File | Setting | For ccs.getmonero.org | Stage |
-|---|---|---|---|
-| `/etc/ccs-wallet/wallet-rpc.conf` | `wallet-file`, `password` | the CCS wallet, view-only, and its password | 1 |
-| | `daemon-address` | a monerod you trust (mainnet: `…:18081`) | 1 |
-| | `rpc-bind-port`, `rpc-login` | `18082`, `ccs:<rpc password>` | 1 |
-| `/etc/ccs/ccs.conf` | `RPC_URL`, `RPC_USER`, `RPC_PASSWORD` | `http://127.0.0.1:18082/json_rpc`, and `rpc-login`'s user and password | 1 |
-| | `WALLET_ADDRESS` | `41hzbgqgkrYijnRVBLzr1KHsYc1iUBBCJYeeT9d3eiYE2PhbohxxwJLZCNVbTzvAMkhtYGF3RQcr2Ea187AJn8af149UG1G` ([meta #935](https://github.com/monero-project/meta/issues/935#issuecomment-1867257410)) | 1 |
-| | `REPOSITORY_URL` | `https://repo.getmonero.org/api/v4/projects/54` (Forgejo: [setup](setup.md#proposals-on-forgejo-disroot-codeberg-instead-of-gitlab)) | 1 |
-| | `MIN_CONFIRMATIONS` | `10` | 1 |
-| the proposals checkout | its remote | `https://repo.getmonero.org/monero-project/ccs-proposals.git` | 1 |
-| `/opt/ccs-front-hugo/public` | the design | the release zip of the [current set](#current-releases-tested-together), its sha256 checked | 2 |
-| `/etc/ccs-front/` | `subaddresses.txt` and its `.asc`, `.key.asc`, `.pin` | made and signed by a Core Team member | 4 |
-| | `subaddresses.txt.viewkey` | as in stage 4 | 4 |
-| `/var/lib/ccs/.ssh/` | `id_ed25519` (the push key), `known_hosts` | the web server's host key, from its `/etc/ssh/ssh_host_ed25519_key.pub` | 3 |
-| `/root/.ssh/` | `ccs-backup_ed25519`, `known_hosts` | the backup machine's host key | 5 |
-| `/etc/ccs/alert.conf` | `ALERT_URL` | the IRC bot's URL (below) | 5 |
-| | `SUBADDRESSES`, `WATCH_PROXY` | `/etc/ccs-front/subaddresses.txt`, `socks5h://127.0.0.1:9050` (Tor) | 5 |
-| `/usr/local/bin/ccs-bash-update` | `<web server>`, `<the site>`, `<backup machine>` | `ccs-data@<web server>:`, `https://ccs.getmonero.org`, `ccs-backup@<backup machine>` | 3, 5 |
+**The state from ccs-back**, so every proposal keeps its subaddress. Back up ccs-back's database
+(`mysqldump`) first. `<ccs_db>` is the database (add `-u`/`-p`, or `docker exec <db> mysql ...`);
+`ORDER BY id` keeps the `/projects` order. Upstream ccs-back (no funding-required date; proposals
+funded after the switch get one):
 
-**The web server**
+```
+mysql -B -N -e "SELECT filename, IFNULL(gitlab_url, ''), IFNULL(subaddr_index, ''), IFNULL(address, ''), '' FROM projects ORDER BY id" <ccs_db> | jq -rR 'split("\t") | @csv' > /var/lib/ccs/state/proposals.csv
+chown ccs:ccs /var/lib/ccs/state/proposals.csv
+```
 
-| File | Setting | For ccs.getmonero.org | Stage |
-|---|---|---|---|
-| `~ccs-data/.ssh/authorized_keys` | `from=`, the key | the backend's address and its push key, `command="/usr/local/bin/ccs-receive"` | 3 |
-| `/etc/ccs-gate/` | `subaddresses.txt`, `subaddresses.txt.pin` | the same two files as the backend's | 4 |
-| | `allowed` | the General Fund, `888tNkZrPN6JsEgekjMnABU4TBzc2Dt29EPAvkRxbANsAnjyPbb3iQ1YBRk1UXcdRsiKc9dhwMVgN5S9cQUiyoogDavup3H`, and any address a proposal's text quotes (the gate's refusal names it) | 3 |
-| | `alert.conf` | `ALERT_URL` (the bot), `SITE_URL=https://ccs.getmonero.org` | 5 |
-| nginx | `server_name`, the certificate | `ccs.getmonero.org`, from certbot | 3 |
+With the `funding_required_date` column (plowsof's fork; stored as UTC):
 
-**The backup machine:** the `ccs-backup` account, with the backend's key in its
-`authorized_keys` ([setup](setup.md#backing-up-the-state)). Stage 5.
+```
+mysql -B -N -e "SELECT filename, IFNULL(gitlab_url, ''), IFNULL(subaddr_index, ''), IFNULL(address, ''), IFNULL(DATE_FORMAT(funding_required_date, '%Y-%m-%dT%H:%i:%sZ'), '') FROM projects ORDER BY id" <ccs_db> | jq -rR 'split("\t") | @csv' > /var/lib/ccs/state/proposals.csv
+chown ccs:ccs /var/lib/ccs/state/proposals.csv
+```
 
-**The alerts' IRC bot.** Both machines send one line of text by HTTP POST to `ALERT_URL`: an IRC
-bot that posts it to a channel (CptHook's `simple` module, `https://<host>/<endpoint>?channel=%23<channel>`;
-or wmb, with `ALERT_TARGET` and `ALERT_PASSWORD`), or ntfy (`https://ntfy.sh/<a long random topic>`).
-Put the bot on its own machine, behind HTTPS: the backend reaches out to it, and nothing has to
-reach the backend. `ccs-watch --test https://ccs.getmonero.org` sends one message to check it.
+No jq on the host? The image's: `docker run --rm -i --network none --entrypoint jq ccs-bash -rR 'split("\t") | @csv'`.
 
-**Built into the design**, already right for ccs.getmonero.org: its address, the General Fund,
-the proposals repository and its "Submit idea" link (ccs-front-hugo's `hugo.toml`). Changing any
-of them (moving the proposals to Forgejo, say) is a new design release.
+Run `ccs-bash-run` once. `donations at subaddress ..., which proposals.csv doesn't have` means the
+wallet has donations at indices the export lacks: find out why. Old indices that belong to nothing
+(say from before a database reset) can be recorded as retired, never shown or handed out (here 8
+and 9):
 
-**Where the testnet differs** (don't copy these): `testnet=1` and monerod on `28081`, wallet-rpc on
-`18182`; `MIN_CONFIRMATIONS=1`; the proposals on Forgejo
-(`https://git.disroot.org/api/v1/repos/plowsof/ccs-proposals`); its own wallet and list; the
-IRC bot on the backend machine itself, on plain HTTP.
+```
+curl -s --digest -u 'ccs:<rpc password>' http://127.0.0.1:18082/json_rpc \
+    -d '{"jsonrpc":"2.0","id":0,"method":"get_address","params":{"account_index":0,"address_index":[8,9]}}' \
+  | jq -r '.result.addresses[] | ["retired-subaddress-\(.address_index)", "", .address_index, .address, ""] | @csv' \
+  >> /var/lib/ccs/state/proposals.csv
+```
 
-## Stage 1: ccs-back → ccs-bash (Jekyll stays)
-
-The JSON ccs-front reads comes from ccs-bash instead of ccs-back. Do [setup](setup.md) steps 1–7
-(with the image, check its ID). What replaces what:
-
-| ccs-back | ccs-bash |
-|---|---|
-| proposals in `ccs-back/storage/app/proposals` | `/var/lib/ccs/proposals` ([setup](setup.md) step 2) |
-| `ccs-front/_data/*.json` symlinked to single files | `_data` is the directory `/var/lib/ccs/out` (step 4) |
-| `.env`: `RPC_URL`, `RPC_USER`, `RPC_PASSWORD`, `REPOSITORY_URL` | the same in `/etc/ccs/ccs.conf`, plus `WALLET_ADDRESS` |
-| cron: `git pull; php artisan schedule:run; jekyll build` | `ccs-bash-update` (step 6 or 7) |
-| nginx: `/index.php` fallback, `location ~ \.php$` | gone; `/projects` is a static file (step 5) |
-| wallet-rpc, however it ran | its own user and service (step 1) |
-
-1. **Back up** the database (`mysqldump`), the cron line and the old JSON.
-
-2. **Export the state** so every proposal keeps its subaddress, and keep the same wallet.
-   `<ccs_db>` is the database (add `-u`/`-p`, or `docker exec <db> mysql ...`); `ORDER BY id`
-   keeps the old `/projects` order.
-
-   Upstream ccs-back (no funding-required date; proposals funded after the switch get one):
-
-   ```
-   mysql -B -N -e "SELECT filename, IFNULL(gitlab_url, ''), IFNULL(subaddr_index, ''), IFNULL(address, ''), '' FROM projects ORDER BY id" <ccs_db> | jq -rR 'split("\t") | @csv' > /var/lib/ccs/state/proposals.csv
-   chown ccs:ccs /var/lib/ccs/state/proposals.csv
-   ```
-
-   With the `funding_required_date` column (plowsof's fork; stored as UTC):
-
-   ```
-   mysql -B -N -e "SELECT filename, IFNULL(gitlab_url, ''), IFNULL(subaddr_index, ''), IFNULL(address, ''), IFNULL(DATE_FORMAT(funding_required_date, '%Y-%m-%dT%H:%i:%sZ'), '') FROM projects ORDER BY id" <ccs_db> | jq -rR 'split("\t") | @csv' > /var/lib/ccs/state/proposals.csv
-   chown ccs:ccs /var/lib/ccs/state/proposals.csv
-   ```
-
-   No jq on the host (with the image)? Use the image's:
-   `docker run --rm -i --network none --entrypoint jq ccs-bash -rR 'split("\t") | @csv'`.
-
-   Amounts aren't exported; they come from the wallet's history, so the wallet needs all of
-   it (the same wallet, or restored from before the first donation).
-
-   **The wallet** moves to step 1's service: stop the old wallet-rpc (it saves on exit), copy
-   `<name>` and `<name>.keys` into `/var/lib/ccs/wallet` (owner `ccs-wallet`, mode 600), set
-   `wallet-file`, start it. `wallet_info` in `monero-wallet-cli` must say `Watch only`; if it
-   can spend, use a view-only one instead (`--generate-from-view-key`, with the main address,
-   secret view key and a restore height from before the first donation).
-
-3. **Run ccs-bash once next to ccs-back** (`ccs-bash-run`) and compare (below). Stop ccs-back's
-   cron first if any funding-required proposal has no address yet, or both would assign one.
-
-   `donations at subaddress ..., which proposals.csv doesn't have` means the wallet has
-   donations at indices the export lacks. On the real CCS, the export is incomplete: find out
-   why. Old indices that belong to nothing (say from before a database reset) can be recorded
-   as retired, never shown or handed out (here 8 and 9):
-
-   ```
-   curl -s --digest -u 'ccs:<rpc password>' http://127.0.0.1:18082/json_rpc \
-       -d '{"jsonrpc":"2.0","id":0,"method":"get_address","params":{"account_index":0,"address_index":[8,9]}}' \
-     | jq -r '.result.addresses[] | ["retired-subaddress-\(.address_index)", "", .address_index, .address, ""] | @csv' \
-     >> /var/lib/ccs/state/proposals.csv
-   ```
-
-4. **Switch over:** replace the cron line (step 6), drop ccs-back's `--tx-notify` script (step 7
-   replaces it without root), point ccs-front at the new output (steps 4–5), and stop ccs-back
-   and its database (php-fpm, mysql).
-
-**Going back:** keep ccs-back and its database for a while; going back is restoring the cron line
-and starting them.
-
-**Comparing:** the JSON should match except `donate-qr-code` (another encoder) and the
-differences below:
+Then compare its JSON with ccs-back's: it should match, except the QR codes (another encoder) and
+the differences listed under [step 10](#10-the-cutover):
 
 ```
 norm() { jq -S '[.[] | {stage, proposals: [.proposals[] | del(.["donate-qr-code"])] | sort_by(.name)}]' "$1"; }
 diff <(norm ccs-back/storage/app/proposals.json) <(norm /var/lib/ccs/out/proposals.json)
 ```
 
-**Differences from ccs-back:**
+While ccs-back still runs, don't let both hand out addresses: if a funding-required proposal has
+none yet, stop ccs-back's cron first.
 
-- **Totals** are recomputed from the wallet each run, so a dropped or reorged tx stops counting.
-- **Funded** at `MIN_CONFIRMATIONS`, not at unlock; pending before. Time-locked txes don't count.
-- **Amounts:** `1,500` is 1500 (ccs-back: 1.5). Shown as strings with 4 decimals, cut off, not
-  rounded; percentages round down (99.99996 of 100 shows `99.9999`, 99%). Sums are exact.
-- **Authors:** `0xfffc` stays text (ccs-back made it 65532).
-- **Dates:** written-out months (`June 25th, 2021`, `10 August 2021`) and `2021-06-25`; the year
-  is kept (ccs-back read `10 August, 2021` as 20:21 today). `02/14/2017` shows no date.
-- **Frontmatter** is read as YAML (and Jekyll) reads it: `title: Talks #2` is `Talks`, `'quotes'`
-  work. Anything ambiguous (multi-line values, `>`/`|`, escapes, anchors, duplicate keys) skips
-  the file with the reason logged. No current proposal does this.
-- **`/projects`** only lists proposals whose file still exists.
-- **GitLab** MR lists are paginated, so MRs past 50 are seen.
-- **Removed:** `/projects/<index>` pages, GitHub and Zcoin support.
+## 3. The design (the original)
 
-## Stage 2: Jekyll → ccs-front-bash and the design
+ccs-front-hugo's release zip, sha256 checked, unpacked on the backend: ccs-front-bash's
+[docs/setup.md](https://github.com/plowsof/ccs-front-bash/blob/master/docs/setup.md), step 1.
 
-The site is made by ccs-front-bash from ccs-front-hugo's design, on the same machine, instead
-of Jekyll: no Ruby, no JavaScript on the site. ccs-front-bash's
-[docs/setup.md](https://github.com/plowsof/ccs-front-bash/blob/master/docs/setup.md), steps 1–4:
-the design's release zip (sha256 checked), ccs-front-bash and `ccs-front-run`, and nginx with its
-root on the site. Then [the update](#the-update) with ccs-front-bash in it; on one machine, without
-the push and the page check.
-
-**Going back:** point nginx back at the Jekyll site and restore the stage 1 update.
-
-## Stage 3: a separate web server
-
-The backend stops taking connections: after each run it pushes the finished site to a web server
-that can only receive it and serve it, and that checks every address in it. [Two
-machines](two-machines.md), way A (the push account, nginx, HTTPS), and "The gate". The push is
-part of [the update](#the-update).
-
-**Going back:** point the DNS back at the backend's nginx.
-
-## Stage 4: the signed subaddress list
+## 4. The signed subaddress list
 
 Every donation address shown must be one of the wallet's: a list of its first 15,000
-subaddresses, made once and signed, checked by the backend each run, by the web server's gate on
-each push, and on the site's Verify page by anyone. A **Core Team member** makes and signs it;
+subaddresses, checked by the backend each run, by the web server's gate on each push, and on the
+site's Verify page by anyone. A **Core Team member** makes it on the offline machine and signs it;
 contributors can make it from the same public address and view key and confirm its sha256.
 ccs-front-bash's [docs/setup.md](https://github.com/plowsof/ccs-front-bash/blob/master/docs/setup.md),
-step 5. For the CCS wallet, its view key file (shown on the Verify page, with the commands to ask
-a copy of the wallet about an address):
+step 5. Its files go to the backend's `/etc/ccs-front/` here, and to the web server in step 6, by
+hand: never pushed, so a taken-over backend can't swap it.
+
+The view key file beside it, `/etc/ccs-front/subaddresses.txt.viewkey` (the Verify page shows it,
+with the commands to ask a copy of the wallet about an address):
 
 ```
 62ad19781466882d8df0ae85743abcc5c8ef81e52e051e7cc56fe3c610d18001
@@ -235,34 +121,46 @@ source https://github.com/monero-project/meta/issues/935#issuecomment-1867257410
 source-text shared by luigi1111 here
 ```
 
-The list goes to both machines by hand, never pushed by the backend, so a taken-over backend
-can't swap it. A new list (more subaddresses, a new wallet) is made, signed and installed the
-same way.
+## 5. ccs-front-bash and the site (the backend)
 
-**Going back:** run ccs-front-bash without the list (no fifth argument); the gate needs it, so
-only with one machine, or with the gate's push key back on plain rrsync.
+ccs-front-bash and `ccs-front-run`, from its pinned image, with the list as its fifth argument:
+ccs-front-bash's [docs/setup.md](https://github.com/plowsof/ccs-front-bash/blob/master/docs/setup.md),
+steps 2 and 5. It makes `/var/lib/ccs/www/site`, every page, each run.
 
-## Stage 5: alerts and backup
+## 6. The web server: the push, the gate, nginx
+
+[Two machines](two-machines.md), way A: the `ccs-data` account the backend pushes to (write-only,
+no deleting), nginx with HTTPS and the theme lines, and **the gate**, which checks every address
+in each push against the signed list (its two files from step 4, and the `allowed` file) and holds
+back any page with another.
+
+## 7. The backup machine
+
+The state file, `proposals.csv`, is the one thing that can't be made again. Each new version goes
+to an account on the backup machine that can only add copies: [setup](setup.md#backing-up-the-state).
+
+## 8. The alerts (ccs-watch and IRC)
 
 - **The backend watches the web server:** after each push, `ccs-watch` fetches the donation pages
-  as a visitor (through Tor) and compares them with what was pushed; a page that differs, or a
-  backend that stops running, is an alert to IRC. [Two
-  machines](two-machines.md#watching-the-web-server-way-a-the-backend-raises-the-alarm).
-- **The web server tells IRC itself** when its gate holds a page back ("The gate").
-- **The state is backed up:** `proposals.csv`, the one file that can't be made again, goes to
-  another machine on each change, to an account that can only add copies. [Setup](setup.md#backing-up-the-state).
+  as a visitor, through Tor, and compares them with what was pushed. A page that differs, or a
+  backend that stops running, is an alert.
+- **The web server alerts itself** when its gate holds a page back.
 
-## The update
+Both post one line to the IRC bot's URL (below). [Two
+machines](two-machines.md#watching-the-web-server-way-a-the-backend-raises-the-alarm) and "The
+gate". `ccs-watch --test https://ccs.getmonero.org` sends one message to check it.
 
-One run of everything, every 2 minutes and on each new donation ([setup](setup.md) steps 6–7), as
-root (it only starts each step as that step's own user). This is the only full copy of it.
+## 9. The update
+
+One run of everything, every 2 minutes and on each new donation ([setup](setup.md) step 7, with
+its log rotation from step 6), as root (it only starts each step as that step's own user):
 
 ```
 #!/bin/sh
 # /usr/local/bin/ccs-bash-update (chmod 755)
 L=/var/log/ccs-bash.log W=/opt/ccs-bash/contrib/ccs-watch failed=''
 
-# the proposals; GitLab or Forgejo down: give up, not a failed run (the last checkout stays)
+# the proposals; GitLab down: give up, not a failed run (the last checkout stays)
 timeout -k 5 40 runuser -u ccs-git -- env HOME=/ git -C /var/lib/ccs/proposals pull -q --ff-only
 
 # ccs-bash: totals, addresses, the JSON
@@ -281,7 +179,7 @@ if ccs-front-run >> $L 2>&1; then
     if timeout -k 5 120 runuser -u ccs -- rsync -a --delay-updates \
             -e "ssh -p 22 -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15" \
             /var/lib/ccs/www/site/ ccs-data@<web server>: >> $L 2>&1; then
-        runuser -u ccs -- $W https://<the site> /var/lib/ccs/www/site >> $L 2>&1
+        runuser -u ccs -- $W https://ccs.getmonero.org /var/lib/ccs/www/site >> $L 2>&1
     else failed="${failed:+$failed, }the push"; fi
 else failed="${failed:+$failed, }ccs-front-bash"; fi
 
@@ -289,21 +187,94 @@ else failed="${failed:+$failed, }ccs-front-bash"; fi
 runuser -u ccs -- $W --run "${failed:-ok}" >> $L 2>&1
 ```
 
-| Part | Stage | Without it |
-|---|---|---|
-| the pull, `ccs-bash-run` | 1 | |
-| the backup | 5 | drop the block; back up `proposals.csv` some other way |
-| `ccs-front-run` | 2 | (stage 1: Jekyll instead, [setup](setup.md) step 6) |
-| the push, `ccs-watch` | 3, 5 | one machine: drop both; nginx serves `/var/lib/ccs/www/site` |
-| `ccs-watch --run` | 5 | without `/etc/ccs/alert.conf` it only logs |
+`-p 22` is the web server's ssh port, given in full in case the backend's `ssh_config` defaults to
+another.
 
-`-p 22` is the web server's ssh port, given in full in case this machine's `ssh_config` defaults
-to another.
+## 10. The cutover
+
+With steps 1–9 running, the new site is complete on the web server before anyone sees it.
+
+1. Check it: every page, the Verify page, a donation address against the list, and the log
+   (`/var/log/ccs-bash.log`: each run ends with `ccs-watch: the N pages ... are what was pushed`).
+2. Stop ccs-back's cron and its `--tx-notify` script.
+3. Point `ccs.getmonero.org`'s DNS at the web server (and get its certificate, step 6).
+4. Stop ccs-back, its database and Jekyll. Keep the old machine as it is for a while: going back
+   is pointing the DNS at it again and starting its cron.
+
+**Differences from ccs-back** (what may look different, and why):
+
+- **Totals** are recomputed from the wallet each run, so a dropped or reorged tx stops counting.
+- **Funded** at `MIN_CONFIRMATIONS`, not at unlock; pending before. Time-locked txes don't count.
+- **Amounts:** `1,500` is 1500 (ccs-back: 1.5). Shown as strings with 4 decimals, cut off, not
+  rounded; percentages round down (99.99996 of 100 shows `99.9999`, 99%). Sums are exact.
+- **Authors:** `0xfffc` stays text (ccs-back made it 65532).
+- **Dates:** written-out months (`June 25th, 2021`, `10 August 2021`) and `2021-06-25`; the year
+  is kept (ccs-back read `10 August, 2021` as 20:21 today). `02/14/2017` shows no date.
+- **Frontmatter** is read as YAML (and Jekyll) reads it: `title: Talks #2` is `Talks`, `'quotes'`
+  work. Anything ambiguous (multi-line values, `>`/`|`, escapes, anchors, duplicate keys) skips
+  the file with the reason logged. No current proposal does this.
+- **`/projects`** only lists proposals whose file still exists.
+- **GitLab** MR lists are paginated, so MRs past 50 are seen.
+- **Removed:** `/projects/<index>` pages, GitHub and Zcoin support.
+
+## What you fill in
+
+Everything that is yours to set, by machine. Values for ccs.getmonero.org are given where they are
+known; `<…>` is yours to choose. Secrets (the wallet and RPC passwords, the alert URLs) live only
+in these files, root-owned, never in a repository or on a command line.
+
+**The backend**
+
+| File | Setting | For ccs.getmonero.org | Step |
+|---|---|---|---|
+| `/etc/ccs-wallet/wallet-rpc.conf` | `wallet-file`, `password` | the CCS wallet, view-only, and its password | 1 |
+| | `daemon-address` | a monerod you trust (mainnet: `…:18081`) | 1 |
+| | `rpc-bind-port`, `rpc-login` | `18082`, `ccs:<rpc password>` | 1 |
+| `/etc/ccs/ccs.conf` | `RPC_URL`, `RPC_USER`, `RPC_PASSWORD` | `http://127.0.0.1:18082/json_rpc`, and `rpc-login`'s user and password | 2 |
+| | `WALLET_ADDRESS` | `41hzbgqgkrYijnRVBLzr1KHsYc1iUBBCJYeeT9d3eiYE2PhbohxxwJLZCNVbTzvAMkhtYGF3RQcr2Ea187AJn8af149UG1G` ([meta #935](https://github.com/monero-project/meta/issues/935#issuecomment-1867257410)) | 2 |
+| | `REPOSITORY_URL` | `https://repo.getmonero.org/api/v4/projects/54` | 2 |
+| | `MIN_CONFIRMATIONS` | `10` | 2 |
+| the proposals checkout | its remote | `https://repo.getmonero.org/monero-project/ccs-proposals.git` | 2 |
+| `/opt/ccs-front-hugo/public` | the design | the release zip of [the releases](#the-releases), its sha256 checked | 3 |
+| `/etc/ccs-front/` | `subaddresses.txt` and its `.asc`, `.key.asc`, `.pin` | made and signed by a Core Team member | 4 |
+| | `subaddresses.txt.viewkey` | as in step 4 | 4 |
+| `/var/lib/ccs/.ssh/` | `id_ed25519` (the push key), `known_hosts` | the web server's host key, from its `/etc/ssh/ssh_host_ed25519_key.pub` | 6 |
+| `/root/.ssh/` | `ccs-backup_ed25519`, `known_hosts` | the backup machine's host key | 7 |
+| `/etc/ccs/alert.conf` | `ALERT_URL` | the IRC bot's URL (below) | 8 |
+| | `SUBADDRESSES`, `WATCH_PROXY` | `/etc/ccs-front/subaddresses.txt`, `socks5h://127.0.0.1:9050` (Tor) | 8 |
+| `/usr/local/bin/ccs-bash-update` | `<web server>`, `<backup machine>` | their addresses | 9 |
+
+**The web server**
+
+| File | Setting | For ccs.getmonero.org | Step |
+|---|---|---|---|
+| `~ccs-data/.ssh/authorized_keys` | `from=`, the key | the backend's address and its push key, `command="/usr/local/bin/ccs-receive"` | 6 |
+| `/etc/ccs-gate/` | `subaddresses.txt`, `subaddresses.txt.pin` | the same two files as the backend's | 6 |
+| | `allowed` | the General Fund, `888tNkZrPN6JsEgekjMnABU4TBzc2Dt29EPAvkRxbANsAnjyPbb3iQ1YBRk1UXcdRsiKc9dhwMVgN5S9cQUiyoogDavup3H`, and any address a proposal's text quotes (the gate's refusal names it) | 6 |
+| | `alert.conf` | `ALERT_URL` (the bot), `SITE_URL=https://ccs.getmonero.org` | 8 |
+| nginx | `server_name`, the certificate | `ccs.getmonero.org`, from certbot | 6 |
+
+**The backup machine:** the `ccs-backup` account, with the backend's key in its `authorized_keys`
+(step 7).
+
+**The IRC bot.** Both machines send one line of text by HTTP POST to `ALERT_URL`: an IRC bot that
+posts it to the channel (CptHook's `simple` module, `https://<host>/<endpoint>?channel=%23<channel>`;
+or wmb, with `ALERT_TARGET` and `ALERT_PASSWORD`). Run it on its own machine, behind HTTPS: the
+backend and the web server reach out to it, and nothing reaches the backend.
+
+**Built into the design**, already right for ccs.getmonero.org: its address, the General Fund, the
+proposals repository and its "Submit idea" link (ccs-front-hugo's `hugo.toml`). Changing any of
+them is a new design release.
+
+**Where the testnet differs** (don't copy these): `testnet=1`, monerod on `28081`, wallet-rpc on
+`18182`; `MIN_CONFIRMATIONS=1`; the proposals on Forgejo
+(`https://git.disroot.org/api/v1/repos/plowsof/ccs-proposals`); its own wallet and list; the IRC
+bot on the backend machine itself, on plain HTTP.
 
 ## Upgrading
 
-A new release: check its attestations (above), build it from its tag, or pull it by the digest in
-its release notes, and compare the image ID; for the design, download the zip and check its
-sha256. Then install it ([the pinned image](image.md)), and add a row to the table above when it
-runs. If anything else on the backend prunes Docker images, keep a stopped container on each
-image ([troubleshooting](troubleshooting.md)).
+A new release: check its attestations in ccs-sigs (`contrib/release/verify <release>`), build it
+from its tag or pull it by the digest in its release notes, and compare the image ID; for the
+design, download the zip and check its sha256. Then install it ([the pinned image](image.md)) and
+add a row to [the releases](#the-releases). If anything else on the backend prunes Docker images,
+keep a stopped container on each image ([troubleshooting](troubleshooting.md)).
