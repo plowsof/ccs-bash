@@ -131,4 +131,30 @@ fi
 
 # the key still runs nothing but the gate
 if ! on backend "ssh -o BatchMode=yes ccs-data@$web 'cat /etc/passwd' 2>&1" | grep -q root; then ok "the key runs nothing else"; else fail "the key ran a command"; fi
+# the heartbeat: pushes are the backend's; the web server's timer alerts when none arrive
+hb() { on web 'su -s /bin/bash ccs-data -c "/usr/local/bin/ccs-receive --heartbeat"'; }
+late() { bot | grep -c 'no push from the backend' || true; }
+on web "printf 'sha256 %s\nkey %040d\n' \"\$(sha256sum < /etc/ccs-gate/subaddresses.txt | cut -d' ' -f1)\" 0 > /etc/ccs-gate/subaddresses.txt.pin"   # the list above, pinned again
+on web 'rm -f /var/lib/ccs-data/keep.txt'   # root's, from the test above: ccs-data can't copy it
+site 7 "$(addr 2)"
+push > /dev/null
+hb
+if [[ $(late) == 0 ]]; then ok "heartbeat: a recent push, no alert"; else bot; fail "heartbeat after a push"; fi
+on web "touch -d '-20 min' /var/lib/ccs-gate/last-push"
+hb
+if [[ $(late) == 0 ]]; then ok "heartbeat: the first late check waits for a second"; else fail "heartbeat alerted on one check"; fi
+hb
+if bot | grep -qE '^\[CCS-watch\] no push from the backend for 2[0-9] minutes: is it running\? .* @ https://ccs.test$'; then
+    ok "heartbeat: no push for 20 minutes, two checks in a row: the web server tells IRC"
+else bot; fail "heartbeat alert"; fi
+hb
+if [[ $(late) == 1 ]]; then ok "heartbeat: once an hour, not every check"; else bot; fail "a repeated heartbeat alert"; fi
+site 8 "$(addr 2)"
+push > /dev/null
+hb
+if bot | grep -qF '[CCS-watch] pushes from the backend arrive again @ https://ccs.test'; then ok "heartbeat: pushes arrive again, IRC is told"; else bot; fail "heartbeat recovery"; fi
+on web 'rm -f /var/lib/ccs-gate/last-push /var/lib/ccs-gate/alert-heartbeat'
+hb
+if [[ $(late) == 1 ]]; then ok "heartbeat: before any push, nothing is known: no alert"; else fail "heartbeat without a push"; fi
+
 exit "$status"
