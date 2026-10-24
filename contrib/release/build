@@ -12,38 +12,74 @@
 # key (asked for, not echoed): the list's sha256 must be the one its .pin names.
 #
 # Writes OUTDIR/<name>/SHA256SUMS.part (OUTDIR default ./output), <name> being the folder in
-# ccs-sigs: ccs-bash-v0.2.6, ..., subaddresses-testnet-15000. Needs git, Docker with buildx, gpg
-# and jq (the repositories' build.sh), and for the list monero-wallet-rpc and curl.
+# ccs-sigs: ccs-bash-v0.2.6, ..., subaddresses-testnet-15000. Needs git, Docker with buildx, gpg,
+# curl and jq, and for the list monero-wallet-rpc. Every step is shown as it happens.
 export LC_ALL=C
 set -euo pipefail
 here=$(dirname "$(readlink -f "$0")")
 outdir=$(readlink -f "${OUTDIR:-output}")
 base=${CCS_REPOS:-https://github.com/plowsof}
 
-usage() { sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 [[ $# -ge 2 ]] || usage
 what=$1
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
+start=$(date +%s)
+# step TEXT: what is happening now, and how long since the start
+step() { printf '\n==> [%s] %s\n' "$(date -u -d "@$(($(date +%s) - start))" +%M:%S)" "$*"; }
+
+# published: the value the release notes publish for this release (empty if unreadable)
+published() {
+    local body
+    body=$(curl -fsS --max-time 20 "https://api.github.com/repos/plowsof/$what/releases/tags/$tag" 2> /dev/null \
+        | jq -r '.body // empty' 2> /dev/null) || return 0
+    if [[ $what == ccs-front-hugo ]]; then
+        grep -oE '[0-9a-f]{64}' <<<"$body" | head -n 1 || true
+    else
+        grep -oE 'Image ID: `sha256:[0-9a-f]{64}' <<<"$body" | grep -oE '[0-9a-f]{64}' | head -n 1 || true
+    fi
+}
 
 case $what in
     ccs-bash | ccs-front-bash | ccs-front-hugo)
         tag=$2
         [[ $tag =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "ERR: a release tag, like v0.2.6: '$tag'" >&2; exit 1; }
         name=$what-$tag
-        git clone -q --branch "$tag" --depth 1 "$base/$what" "$tmp/src"
+        echo "Thank you for attesting $what $tag: you are checking, on your own machine, that this"
+        echo "release is what its source says, so that nobody has to take it on trust."
+        echo
+        echo "This clones the tag and builds it with the repository's own pinned StageX build, the same"
+        echo "way as the release, showing its output as it goes. The first time on a machine takes about"
+        echo "4 minutes and 2.5 GB of Docker's disk for ccs-bash or ccs-front-bash (the pinned StageX"
+        echo "images and a BuildKit builder), under half a minute and 0.2 GB for ccs-front-hugo; later"
+        echo "builds reuse them. Nothing is installed outside Docker, and the build steps get no network."
+        step "Fetching $what at $tag"
+        git -c advice.detachedHead=false clone -q --branch "$tag" --depth 1 "$base/$what" "$tmp/src"
         commit=$(git -C "$tmp/src" rev-parse HEAD)
-        echo "Building $what $tag (commit $commit)"
+        echo "commit $commit"
+        step "Building $what $tag (the build's own output: signature checks, downloads, build steps)"
         if [[ $what == ccs-front-hugo ]]; then
-            "$tmp/src/container/build.sh" "$tmp/out" > /dev/null
-            sum=$(sha256sum < "$tmp/out/ccs-front-hugo.zip" | cut -d' ' -f1)
-            line="$sum  $name.zip"                             # the release's asset, as named there
+            "$tmp/src/container/build.sh" "$tmp/out"
+            result=$(sha256sum < "$tmp/out/ccs-front-hugo.zip" | cut -d' ' -f1)
+            line="$result  $name.zip"                             # the release's asset, as named there
         else
-            NO_CACHE=1 "$tmp/src/container/build.sh" "$name-attest" > /dev/null 2>&1
+            NO_CACHE=1 "$tmp/src/container/build.sh" "$name-attest"
             id=$(docker image inspect "$name-attest" --format '{{.Id}}')
             docker image rm "$name-attest" > /dev/null
-            line="${id#sha256:}  $name-${commit:0:12}.image-id"   # the image ID; the commit it came from
+            result=${id#sha256:}
+            line="$result  $name-${commit:0:12}.image-id"         # the image ID; the commit it came from
+        fi
+        step "Comparing with the release notes"
+        pub=$(published)
+        if [[ -z $pub ]]; then
+            echo "Couldn't read the release notes: compare it yourself with https://github.com/plowsof/$what/releases/tag/$tag"
+        elif [[ $pub == "$result" ]]; then
+            echo "The same as the release notes publish."
+        else
+            echo "!! DIFFERENT from the release notes: they publish $pub."
+            echo "!! Please attest what you got all the same (that is the point), and say so in your pull request."
         fi
         ;;
     subaddresses)
@@ -52,16 +88,22 @@ case $what in
         [[ -x ${WALLET_RPC:-} ]] || { echo "ERR: WALLET_RPC=/path/to/monero-wallet-rpc" >&2; exit 1; }
         name=subaddresses-$net-$count
         flag=(); [[ $net == mainnet ]] || flag=(--"$net")
-        tools=$tmp/tools
-        git clone -q --depth 1 "$base/ccs-front-bash" "$tools"
-        echo "Regenerating the first $count subaddresses ($net)"
-        "$tools/tools/make-subaddresses.sh" "$WALLET_RPC" "$count" "$tmp/subaddresses.txt" "${flag[@]}"
+        echo "Thank you for attesting the $net wallet's list of $count subaddresses. This regenerates it"
+        echo "from the wallet's main address and private view key, offline: about a minute for 15,000."
+        step "Fetching ccs-front-bash's tools/make-subaddresses.sh"
+        git clone -q --depth 1 "$base/ccs-front-bash" "$tmp/tools"
+        step "Regenerating the first $count subaddresses ($net)"
+        "$tmp/tools/tools/make-subaddresses.sh" "$WALLET_RPC" "$count" "$tmp/subaddresses.txt" "${flag[@]}"
         line="$(sha256sum < "$tmp/subaddresses.txt" | cut -d' ' -f1)  $name.txt"
+        echo "Compare it with the sha256 of the list the site publishes (https://<site>/subaddresses.txt)."
         ;;
     *) usage ;;
 esac
 
 mkdir -p "$outdir/$name"
 printf '%s\n' "$line" > "$outdir/$name/SHA256SUMS.part"
+step "Done: $name"
 echo "$line"
-echo "Wrote $outdir/$name/SHA256SUMS.part; now: env SIGNER=<fingerprint>=<username> $here/attest"
+echo
+echo "Saved in $outdir/$name/SHA256SUMS.part. Build any others you want to attest, then sign them all:"
+echo "    env SIGNER=<fingerprint>=<github username> $here/attest"
