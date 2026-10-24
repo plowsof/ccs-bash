@@ -76,7 +76,7 @@ verify() {
 if (( $# )); then names=( "$@" ); else
     names=()
     for d in "$CCS_SIGS_REPO"/*/*/all.SHA256SUMS; do names+=( "$(basename "$(dirname "$(dirname "$d")")")" ); done
-    mapfile -t names < <(printf '%s\n' "${names[@]}" | sort -u)
+    (( ${#names[@]} )) && mapfile -t names < <(printf '%s\n' "${names[@]}" | sort -u)
 fi
 
 checked=0
