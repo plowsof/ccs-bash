@@ -2,13 +2,16 @@
 # ccs-backup-receive: the backup node's side of ccs-bash's state backup. The backend's key runs
 # only this (command= in authorized_keys). It reads proposals.csv on stdin and keeps it as
 # proposals-<UTC time>.csv, unless it is the same as the newest copy. It never overwrites or
-# deletes, so even a taken-over backend can only add copies, not destroy the old ones.
+# deletes, so even a taken-over backend can only add copies, not destroy the old ones; and 1 MB
+# each, 256 MB in all, so it can't fill the disk either (the newest copy kept stays the last good).
 # Root-owned, 755. Copies in /var/lib/ccs-backup (the ccs-backup user's, 700).
 set -euo pipefail
 dir=/var/lib/ccs-backup
+(($(du -sm "$dir" | cut -f1) < 256)) || { echo "ccs-backup: $dir holds 256 MB already, not kept (look at what is in it)" >&2; exit 1; }
 tmp=$(mktemp "$dir/.incoming.XXXXXX")
 trap 'rm -f "$tmp"' EXIT
-head -c 10485760 > "$tmp"                      # a few KB in practice; 10 MB at most
+head -c 1048577 > "$tmp"                       # a few hundred KB at most in practice
+(($(wc -c < "$tmp") <= 1048576)) || { echo "ccs-backup: over 1 MB, not kept" >&2; exit 1; }
 # proposals.csv's rows: "file","link",index,"address","date" (the index a number, or "")
 [[ -s $tmp ]] && awk '!/^"[^"]*","[^"]*",("[^"]*"|[0-9]+),"[^"]*","[^"]*"$/ { bad = 1 } END { exit bad }' "$tmp" \
     || { echo "ccs-backup: not a proposals.csv, not kept" >&2; exit 1; }
