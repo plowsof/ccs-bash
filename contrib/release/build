@@ -91,7 +91,7 @@ case $what in
             id=$(docker image inspect "$name-attest" --format '{{.Id}}')
             docker image rm "$name-attest" > /dev/null
             result=${id#sha256:}
-            line="$result  $name-${commit:0:12}.image-id"         # the image ID; the commit it came from
+            line="$result  $name-$commit.image-id"                # the image ID; the commit it came from
         fi
         step "Comparing with the release notes"
         pub=$(published)

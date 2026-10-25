@@ -106,12 +106,12 @@ release:
 
 | Release | Its line |
 |---|---|
-| ccs-bash, ccs-front-bash | the image ID, named `<release>-<commit>.image-id` |
+| ccs-bash, ccs-front-bash | the image ID, named `<release>-<commit>.image-id` (the full commit; 12 characters before v0.2.13) |
 | ccs-front-hugo | the zip's sha256, named as the release's asset (`sha256sum -c` checks a download) |
 
 ## Checking a release before using it
 
-As Feather does: after at least one other signer's attestation is in ccs-sigs, fetch the newest
+As Feather does: after other signers' attestations are in ccs-sigs, fetch the newest
 and check them all (CCS_SIGS_REPO defaults to the submodule):
 
 ```
@@ -126,6 +126,25 @@ and its line must be the same for all of them:
 env CCS_SIGS_REPO=external/ccs-sigs contrib/release/verify ccs-bash-v0.2.7
 ```
 
+A release needs **two signers who agree** by default, so that one stolen or careless key isn't
+enough; `--min-signers 1` relaxes it (for a release only one person has attested yet):
+
+```
+contrib/release/verify --min-signers 1 ccs-bash-v0.2.7
+```
+
+Each signature must be by the key of the signer whose folder it is in
+(`builder-keys/<signer>.asc`, one key), and a key counts once however many folders it signed: one
+person can't add up to two. Anyone can open a pull request with a new key, so count only the
+people you trust: their keys' fingerprints in a file of your own, one a line (the others are
+shown, not counted):
+
+```
+env TRUSTED_KEYS=/etc/ccs/trusted-signers contrib/release/verify ccs-bash-v0.2.7
+```
+
+It prints the commit the release was built from. Before building a tag yourself, check
+`git rev-parse HEAD` is that commit: a tag can be moved, and `container/build.sh` runs as you.
 Then compare the attested ID or sha256 with the release notes and with what you are about to
 run (`docker image inspect ccs-bash --format '{{.Id}}'`, `sha256sum` of the zip, the `.pin`).
 

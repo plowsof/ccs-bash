@@ -43,8 +43,9 @@ testnet CCS. A row is added with each release.
 
 Each is reproducible: anyone who builds a tag gets the same image ID or zip sha256, and those who
 did sign what they got in [ccs-sigs](https://github.com/plowsof/ccs-sigs) (the box at the top left
-of the picture). Before installing, check them: `contrib/release/verify <release>`, then that the
-ID or sha256 you install is the attested one ([contrib/release](../contrib/release/README.md)).
+of the picture). Before installing, check them: `contrib/release/verify <release>` (two signers who
+agree, by default), then that the ID or sha256 you install is the attested one
+([contrib/release](../contrib/release/README.md)).
 
 ## 1. monerod and monero-wallet-rpc (the backend)
 
@@ -138,8 +139,9 @@ steps 2 and 5. It makes `/var/lib/ccs/www/site`, every page, each run.
 
 [Two machines](two-machines.md), way A: the `ccs-data` account the backend pushes to (write-only,
 no deleting), nginx with HTTPS, the cache rule and the theme lines, and **the gate**, which checks every address
-in each push against the signed list (its two files from step 4, and the `allowed` file) and holds
-back any page with another; and the gate's heartbeat timer (step 8).
+in each push, its QR codes included, against the signed list (its files from step 4, and the
+`allowed` file), and every other file against the design release's (`design.sha256`), and holds
+back any that fails; and the gate's heartbeat timer (step 8).
 
 ## 7. The backup machine
 
@@ -149,8 +151,9 @@ to an account on the backup machine that can only add copies: [setup](setup.md#b
 ## 8. The alerts (ccs-watch and IRC)
 
 - **The backend watches the web server:** after each push, `ccs-watch` fetches the donation pages
-  as a visitor, through Tor, and compares them with what was pushed. A page that differs, or a
-  backend that stops running, is an alert.
+  and every file they use as a visitor's browser would, through Tor and a clearnet proxy, and
+  compares them with what was pushed. A page or file that differs, or a backend that stops
+  running, is an alert.
 - **The web server alerts itself** when its gate holds a page back.
 - **The web server notices a silent backend:** each push is the backend's heartbeat, and no push
   for 15 minutes is an alert, which the backend can't send when it is off or cut off
@@ -176,11 +179,13 @@ timeout -k 5 40 runuser -u ccs-git -- env HOME=/ git -C /var/lib/ccs/proposals p
 # ccs-bash: totals, addresses, the JSON
 ccs-bash-run >> $L 2>&1 || failed="ccs-bash"
 
-# the state, to the backup machine when it changed (it keeps every version)
-sum=$(sha256sum /var/lib/ccs/state/proposals.csv | cut -c1-64)
+# the state, to the backup machine when it changed (it keeps every version); read as ccs, whose
+# file it is: root never opens a file another account controls (it could be a link to any file)
+S=/var/lib/ccs/state/proposals.csv
+sum=$(runuser -u ccs -- sha256sum "$S" | cut -c1-64)
 if [ "$sum" != "$(cat /var/lib/ccs/backup-sent 2>/dev/null)" ] \
-    && timeout -k 5 30 ssh -T -i /root/.ssh/ccs-backup_ed25519 -o BatchMode=yes -o IdentitiesOnly=yes \
-        -o ConnectTimeout=15 ccs-backup@<backup machine> < /var/lib/ccs/state/proposals.csv >> $L 2>&1; then
+    && runuser -u ccs -- cat "$S" | timeout -k 5 30 ssh -T -i /root/.ssh/ccs-backup_ed25519 -o BatchMode=yes \
+        -o IdentitiesOnly=yes -o ConnectTimeout=15 ccs-backup@<backup machine> >> $L 2>&1; then
     echo "$sum" > /var/lib/ccs/backup-sent
 fi
 
@@ -246,7 +251,7 @@ server, the backup machine, the IRC bot, Tor).
 
 | Account | Does | Can't |
 |---|---|---|
-| `ccs-data` | receives the push: its key works only from the backend's address and only runs the gate; runs the heartbeat check | delete, write outside the site, get a shell |
+| `ccs-data` | receives the push: its key (root's file, outside its home) works only from the backend's address and only runs the gate; runs the heartbeat check | delete, write outside the site, get a shell, change its key |
 | nginx | serves the files | run code: they are static |
 
 **The backup machine:** 22 to the backend and you.
@@ -285,21 +290,23 @@ in these files, root-owned, never in a repository or on a command line.
 | `/var/lib/ccs/.ssh/` | `id_ed25519` (the push key), `known_hosts` | the web server's host key, from its `/etc/ssh/ssh_host_ed25519_key.pub` | 6 |
 | `/root/.ssh/` | `ccs-backup_ed25519`, `known_hosts` | the backup machine's host key | 7 |
 | `/etc/ccs/alert.conf` | `ALERT_URL` | the IRC bot's URL (below) | 8 |
-| | `SUBADDRESSES`, `WATCH_PROXY` | `/etc/ccs-front/subaddresses.txt`, `socks5h://127.0.0.1:9050` (Tor) | 8 |
+| | `SUBADDRESSES`, `WATCH_PROXY`, `WATCH_THEMES` | `/etc/ccs-front/subaddresses.txt`; `socks5h://127.0.0.1:9050` (Tor) and a clearnet proxy elsewhere; `1` | 8 |
+| `/etc/ccs/trusted-signers` | the attesters you trust | their keys' fingerprints, one a line | upgrading |
 | `/usr/local/bin/ccs-bash-update` | `<web server>`, `<backup machine>` | their addresses | 9 |
 
 **The web server**
 
 | File | Setting | For ccs.getmonero.org | Step |
 |---|---|---|---|
-| `~ccs-data/.ssh/authorized_keys` | `from=`, the key | the backend's address and its push key, `command="/usr/local/bin/ccs-receive"` | 6 |
-| `/etc/ccs-gate/` | `subaddresses.txt`, `subaddresses.txt.pin` | the same two files as the backend's | 6 |
+| `/etc/ssh/authorized_keys/ccs-data` | `from=`, the key | the backend's address and its push key, `command="/usr/local/bin/ccs-receive"`; `sshd_config`'s `Match User ccs-data` reads only it | 6 |
+| `/etc/ccs-gate/` | `subaddresses.txt` and its `.pin`, `.asc`, `.key.asc` | the same files as the backend's | 6 |
+| | `design.sha256` | the design release's files, from its zip (two-machines, "The gate"); `apt install zbar-tools` | 6 |
 | | `allowed` | the General Fund, `888tNkZrPN6JsEgekjMnABU4TBzc2Dt29EPAvkRxbANsAnjyPbb3iQ1YBRk1UXcdRsiKc9dhwMVgN5S9cQUiyoogDavup3H`, and any address a proposal's text quotes (the gate's refusal names it) | 6 |
 | | `alert.conf` | `ALERT_URL` (the bot), `SITE_URL=https://ccs.getmonero.org` | 8 |
 | nginx | `server_name`, the certificate | `ccs.getmonero.org`, from certbot | 6 |
 
-**The backup machine:** the `ccs-backup` account, with the backend's key in its `authorized_keys`
-(step 7).
+**The backup machine:** the `ccs-backup` account, with the backend's key in
+`/etc/ssh/authorized_keys/ccs-backup` (step 7).
 
 **The IRC bot.** Both machines send one line of text by HTTP POST to `ALERT_URL`: an IRC bot that
 posts it to the channel (CptHook's `simple` module, `https://<host>/<endpoint>?channel=%23<channel>`;
@@ -323,16 +330,25 @@ commit gives the same image ID, so what you build can be checked. Only the desig
 the release's zip, checked by its sha256. For each new release, in this order:
 
 1. **Attested first.** Check its attestations in ccs-sigs (`master`; `testnet` for trials), from a
-   checkout kept on the backend:
+   checkout kept on the backend, counting only the signers you trust (their keys' fingerprints in
+   a file of your own, not in ccs-sigs, which anyone can send keys to):
    ```
    git clone -q https://github.com/plowsof/ccs-sigs /opt/ccs-sigs      # once; then: git -C /opt/ccs-sigs pull -q
-   cd /opt/ccs-bash && env CCS_SIGS_REPO=/opt/ccs-sigs contrib/release/verify ccs-bash-v0.2.11
+   cd /opt/ccs-bash && env CCS_SIGS_REPO=/opt/ccs-sigs TRUSTED_KEYS=/etc/ccs/trusted-signers \
+       contrib/release/verify ccs-bash-v0.2.11
    ```
-   It prints the release's image ID (or zip sha256) and how many signers agree. No attestation
-   yet: wait for one, or attest it yourself ([contrib/release](../contrib/release/README.md)).
-2. **Built from its tag.** `git -C /opt/ccs-bash fetch --tags && git -C /opt/ccs-bash checkout
-   v0.2.11`, then `container/build.sh ccs-bash:v0.2.11` ([the pinned image](image.md)); the same for
-   ccs-front-bash. The design: download the zip from its release and `sha256sum` it.
+   It prints the release's image ID (or zip sha256), how many signers agree, and the commit it was
+   built from. It needs two, each signature by the key of the signer whose folder it is in;
+   `--min-signers 1` (before the release name) relaxes that, for a release only you or one other
+   person have attested. Too few: wait for more, or attest it yourself
+   ([contrib/release](../contrib/release/README.md)).
+2. **Built from its tag, once the tag is the attested commit.** `git -C /opt/ccs-bash fetch --tags
+   && git -C /opt/ccs-bash checkout v0.2.11`, then `git -C /opt/ccs-bash rev-parse HEAD` must be the
+   commit `verify` printed (a tag can be moved; build.sh runs as root, and starts a privileged
+   BuildKit builder, before any ID can be compared); then `container/build.sh ccs-bash:v0.2.11`
+   ([the pinned image](image.md)); the same for ccs-front-bash. Or build on another machine and
+   `docker save … | ssh <backend> docker load`: loading runs nothing, and step 3 checks the ID.
+   The design: download the zip from its release and `sha256sum` it.
 3. **Compared.** The built image ID (`docker image inspect … --format '{{.Id}}'`) and the zip's
    sha256 must be the attested ones, and the release notes'. Anything different: stop, keep what runs.
 4. **Switched.** Tag the new image as the one the run scripts use (`ccs-bash`, `ccs-front-bash`);

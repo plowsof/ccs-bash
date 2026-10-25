@@ -15,10 +15,20 @@ to the web server, which can only receive those files into one folder.
 ```
 useradd --system --create-home --shell /bin/sh ccs-data   # no password; only the forced command runs
 install -d -o ccs-data -m 755 /var/lib/ccs-data           # ideally its own small filesystem or a quota
-install -d -m 755 ~ccs-data/.ssh                          # root-owned: the account can't change its key
-# ~ccs-data/.ssh/authorized_keys (root, 644):
+install -d -m 755 /etc/ssh/authorized_keys                # root-owned, outside the account's home
+# /etc/ssh/authorized_keys/ccs-data (root, 644):
 from="<wallet machine IP>",command="rrsync -wo -no-del -munge /var/lib/ccs-data",restrict ssh-ed25519 AAAA... ccs-bash
 ```
+
+and in `/etc/ssh/sshd_config` (at the end: a `Match` lasts to the next one), then `systemctl reload ssh`:
+
+```
+Match User ccs-data
+    AuthorizedKeysFile /etc/ssh/authorized_keys/%u
+```
+
+The account owns its home, so a key file there (even in a root-owned `.ssh`, which it could rename)
+is one it could replace; this one it can't, and sshd reads no other for it.
 
 | If the key is stolen, this stops | |
 |---|---|
@@ -27,7 +37,7 @@ from="<wallet machine IP>",command="rrsync -wo -no-del -munge /var/lib/ccs-data"
 | `-no-del` | deleting |
 | `-munge` | symlinks (a `projects.json` link to any file would get nginx to publish it) |
 | `from=` | use from another machine |
-| root-owned `.ssh` | loosening the key line |
+| key file root-owned, outside its home | loosening the key line, adding a key |
 | own filesystem / quota | filling the disk |
 
 Then either of two ways:
@@ -44,18 +54,25 @@ server {
     listen 80 default_server;
     root /var/lib/ccs-data;
     disable_symlinks on;
-    add_header Content-Security-Policy "default-src 'none'; style-src 'self'; img-src 'self' data:; font-src 'self'" always;
+    add_header Content-Security-Policy "default-src 'none'; style-src 'self'; img-src 'self' data:; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'none'" always;
+    add_header Strict-Transport-Security "max-age=31536000" always;
     add_header Cache-Control $ccs_cache always;
     location = /projects {                          # the site carries projects.json
         alias /var/lib/ccs-data/projects.json;
         default_type application/json;
         add_header Cache-Control "no-cache, must-revalidate";
-        add_header Content-Security-Policy "default-src 'none'; style-src 'self'; img-src 'self' data:; font-src 'self'" always;
+        add_header Content-Security-Policy "default-src 'none'; style-src 'self'; img-src 'self' data:; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'none'" always;
+        add_header Strict-Transport-Security "max-age=31536000" always;
     }
 }
 ```
 
-(A `location` with its own `add_header` drops the server's, hence the CSP twice.)
+(A `location` with its own `add_header` drops the server's, hence the headers twice.) The CSP:
+nothing loads from another site, no script runs; `frame-ancestors 'none'`: no other site can show a
+page in a frame and draw its own address over the donation box (`default-src` doesn't cover it);
+`base-uri 'self'` for the 404 page's `<base href="/">`. HSTS: once a browser has seen the site over
+HTTPS it never uses plain HTTP for it again, so nobody on the way can strip HTTPS and change the
+pages (browsers ignore the header over HTTP, so it can stay in the port 80 server too).
 
 **Caching:** the stylesheet, the icons and the fonts are named by their content hash
 (`style.<sha256>.css`), so browsers may keep them for good: a new design release gives them new
@@ -74,8 +91,9 @@ in the site is relative, so the prefix stays while browsing. In the `server`, be
 
 ```
 map $request_uri $ccs_page {                       # the page, without a theme prefix or query
-    ~^/(?:dark|light)(/[^?]*) $1;
-    ~^([^?]*)                 $1;
+    ~^/(?:dark|light)(/(?:[^/?\x5c][^?]*)?)(?:\?|$) $1;
+    ~^(/(?:[^/?\x5c][^?]*)?)(?:\?|$)               $1;
+    default                                      /;
 }
 
     if ($arg_theme = light)  { return 302 /light$ccs_page; }
@@ -88,6 +106,9 @@ map $request_uri $ccs_page {                       # the page, without a theme p
 ```
 
 The pages are the very files the gate checked and ccs-watch compares, under another address.
+The map never yields an address starting `//` or `/\` (`\x5c`, a backslash, written so because nginx reads `\\` itself): a browser reads either as another site's
+(`?theme=system` on `//evil.example/` would send it there), which nginx's default
+`absolute_redirect on` stops today, but `absolute_redirect off` (common behind a proxy) wouldn't.
 Without these lines the toggle just reloads the page in the browser's own setting.
 
 HTTPS: point a DNS A record at the web server, set `server_name` to that name, then
@@ -142,38 +163,56 @@ server refuse any with an address that isn't the wallet's ([Security](../README.
 ## The gate (way A, recommended): the web server checks every address
 
 The web server's last check, so a bad address has to get past two machines: `contrib/ccs-receive`,
-a short bash script, run by the push key instead of rrsync. Each push, it
+a bash script, run by the push key instead of rrsync. Each push, one at a time, it
 
 1. makes a staging folder a copy of the live site, and receives the push into it (rrsync, with
    the same `-wo -no-del -munge`);
-2. finds every address-shaped string (95 base58 characters) in its pages and JSON (the QR codes'
-   base64 skipped) and checks each against the wallet's signed list and an `allowed` file;
-3. copies staging into the live site, except a page with any other address: that one keeps its
-   last good copy (a new one stays out), so one bad page doesn't stop the site updating, and the
-   gate never rewrites a page. The push then fails (the backend's log shows it); which address,
-   in which page, is in the web server's journal (`journalctl -t ccs-gate`, and
-   `/var/log/ccs-gate.log` if created for ccs-data), and goes to IRC (below);
-4. refuses the whole push if its own list isn't the one its `.pin` names (it can't check then).
+2. checks every address (95 base58 characters, or 106 for an integrated one) in its pages and
+   JSON against the wallet's signed list and an `allowed` file, read four ways, so that it can't
+   be slipped past by how it is written:
+   - **as written**, attributes included (`monero:` links, `alt`, `title`), with entities and
+     %-escapes read as a browser or wallet reads them (`&#56;`, `&#x38;` and `%38` are all `8`);
+   - **as shown**: tags removed, so an address split by `<span></span>` or `<wbr>`, or by a
+     zero-width space or soft hyphen, is one again;
+   - **every QR code**: each `data:` image must be a PNG that `zbarimg` reads as a QR code, of
+     such an address (the box's text right and its QR code another's is held back);
+   - **its places**: a `monero:` link has an address straight after it and nothing else, an
+     address box (`class="address"`) one address and no markup;
+3. checks every other file the push changes: it must be the design's, byte for byte
+   (`design.sha256`, from the design release: a stylesheet can hide the address and show
+   another, an image can be another QR code), a proposal's image (`images/<proposal>/<file>`,
+   any QR code in it of such an address), `projects.json`, or the signed list, its signature and
+   key, the same files as installed here;
+4. copies staging into the live site, except a file that fails: that one keeps its last good
+   copy (a new one stays out), so one bad page doesn't stop the site updating, and the gate never
+   rewrites a file. The push then fails (the backend's log shows it); which file, and why, is in
+   the web server's journal (`journalctl -t ccs-gate`, and `/var/log/ccs-gate.log` if created
+   for ccs-data), and goes to IRC (below);
+5. refuses the whole push if its own list isn't the one its `.pin` names, or it has no
+   `design.sha256` or no `zbarimg` (it can't check then).
 
-With `/etc/ccs-gate/alert.conf` it also tells IRC itself, once an hour per address: the one alarm
-that still sounds when the backend is the one lying.
+With `/etc/ccs-gate/alert.conf` it also tells IRC itself, once an hour per address or file: the
+one alarm that still sounds when the backend is the one lying.
 
 ```
 [CCS-watch] the web server held back a page: donation address 9yQXrj…4Kd2 is not in the signed list (its last good copy stays) @ https://<site>/proposals/<page>
+[CCS-watch] the web server held back a file: not the design's (design.sha256) (its last good copy stays) @ https://<site>/assets/theme.css
 [CCS-watch] the web server refuses every push: its signed list isn't the one its .pin names
 ```
 
 Between pushes only the heartbeat's timer runs (below). Set it up once, as root:
 
 ```
+apt install zbar-tools                                               # zbarimg, for the QR codes
 install -m 755 contrib/ccs-receive /usr/local/bin/ccs-receive        # from this repository
 install -d -o ccs-data -m 755 /var/lib/ccs-staging
 install -d -m 755 /etc/ccs-gate
 install -o ccs-data -m 644 /dev/null /var/log/ccs-gate.log          # optional: the refusals, as a file
-install -d -o ccs-data -m 755 /var/lib/ccs-gate                      # the last push (the heartbeat) and when it last alerted
+install -d -o ccs-data -m 755 /var/lib/ccs-gate                      # one push at a time, the last push (the heartbeat), when it last alerted
 install -m 640 -g ccs-data /dev/null /etc/ccs-gate/alert.conf        # optional: the bot (as ccs-watch's, plain text POST)
 printf 'ALERT_URL=http://<bot>:8086/<path>\nSITE_URL=https://<site>\n' > /etc/ccs-gate/alert.conf
-install -m 644 subaddresses.txt subaddresses.txt.pin /etc/ccs-gate/  # the signed list and its pin (ccs-front-bash, setup step 5)
+# the signed list, its pin, signature and key (ccs-front-bash, setup step 5)
+install -m 644 subaddresses.txt subaddresses.txt.pin subaddresses.txt.asc subaddresses.txt.key.asc /etc/ccs-gate/
 cat > /etc/ccs-gate/allowed <<'LIST'                                # other addresses allowed on the site, one a line
 888tNkZrPN6JsEgekjMnABU4TBzc2Dt29EPAvkRxbANsAnjyPbb3iQ1YBRk1UXcdRsiKc9dhwMVgN5S9cQUiyoogDavup3H  # the General Fund
 LIST
@@ -181,19 +220,41 @@ LIST
 
 They are the same files as on the backend (`/etc/ccs-front/`); `gpg --verify` the list there
 first, with the key whose fingerprint ccs-front-hugo's README publishes. `ccs-receive` refuses
-every push while the list isn't the one its `.pin` names. Then the push key's
+every push while the list isn't the one its `.pin` names.
+
+**The design's files**, from the release zip the backend runs (its sha256 checked, as on the
+backend: ccs-front-bash's setup step 1), every file but the pages:
+
+```
+v=v0.1.13
+sha256sum ccs-front-hugo-$v.zip                                      # the attested one
+unzip -q ccs-front-hugo-$v.zip -d /tmp/design-$v
+(cd /tmp/design-$v && find . -type f ! -name '*.html' -exec sha256sum {} +) > /etc/ccs-gate/design.sha256
+```
+
+A new design release: **add** its lines (`>>`) before the backend switches to it, so both are
+allowed while it does; old lines can go once the new design is live. Then the push key's
 `command="rrsync -wo -no-del -munge /var/lib/ccs-data"` becomes `command="/usr/local/bin/ccs-receive"`.
 
-A proposal whose text quotes some other address stops the site updating until you add that
+A proposal whose text quotes some other address stops its page updating until you add that
 address to `allowed` (the refusal names it): the safe way to fail. On the testnet that was two
-(`utxobr-monero-k8s-operator`, `el00ruobuob-oct-dec-2018`). A new list: install it and its
-`.pin` the same way. `tests/gate.sh` builds this in containers: a good push goes live; a foreign
-address, in the donation box or anywhere in a page, is refused and the live site kept; the next
-good push goes through; a list that isn't the pinned one refuses everything; no deleting and
-nothing outside the folder, as with rrsync alone.
+(`utxobr-monero-k8s-operator`, `el00ruobuob-oct-dec-2018`). A new list: install its four files
+the same way. `tests/gate.sh` builds this in containers: a good push goes live; a foreign
+address, in the donation box or anywhere in a page, split by markup, a zero-width space or an
+entity, %-escaped in a `monero:` link, integrated, behind `data:`, or only in the QR code, is
+held back and the live file kept; so is a data: image that isn't a QR code, a stylesheet or
+design file that isn't the design's, a swapped list, a proposal image that is another QR code;
+two pushes at once go one after the other; the next good push goes through; a list that isn't the
+pinned one refuses everything; no deleting and nothing outside the folder, as with rrsync alone.
+
+**What it can't see:** an address drawn in the pixels of an image (not a QR code) the backend
+pushes as a proposal's image. The images come from the proposals repository, which the web
+server doesn't have; ccs-watch (below) and visitors comparing what their wallet shows are what
+catch it. zbarimg reads images the backend sends, as ccs-data: keep zbar-tools (and the
+ImageMagick it uses) updated (`unattended-upgrades`).
 
 It can't help if the web server itself is taken over (whoever has it can turn the gate off):
-there, visitors checking an address against the signed list is the defence.
+there, ccs-watch and visitors checking an address against the signed list are the defence.
 
 ### The heartbeat: the web server notices a silent backend
 
@@ -249,10 +310,21 @@ second, not again within the hour, a line when pushes return, and none before an
 
 The gate can't help if the web server itself is taken over. `contrib/ccs-watch`, run on the
 backend right after each push, fetches the pages where donations are asked for (home, Funding
-Required, Donate, Verify, every funding-required proposal) from the site as a visitor would, and
-compares each, byte for byte, with what was just pushed. A difference is an alert, naming the page
-and any address on it that isn't on the signed list. (A push doesn't fix such a page by itself:
-rsync skips a file whose size and time were kept.) Nine pages took about a second on the testnet.
+Required, Donate, Verify, every funding-required proposal) from the site as a visitor's browser
+would, and every file they use (the stylesheets with `theme.css`, the fonts, the icons, the General
+Fund's QR code, the proposals' images: a changed stylesheet can hide an address and show another
+while the page stays the same), and compares each, byte for byte, with what was just pushed. A
+difference is an alert, naming the page or file and any address on the page that isn't on the
+signed list. (A push doesn't fix such a file by itself: rsync skips a file whose size and time
+were kept.)
+
+So that the web server can't serve it the right pages and visitors others, it asks as Tor Browser
+asks (its user agent, headers, compression), in no fixed order, each page under `/`, `/dark/` or
+`/light/` at random (`WATCH_THEMES=1`, with the theme lines above), through a proxy picked at
+random for each fetch. Tor alone isn't enough: its exits are a public list a web server can check.
+Give it Tor and a clearnet one on another network (`ssh -D 1080 <a machine elsewhere>`, kept up by
+a service, then `socks5h://127.0.0.1:1080`), and if you can, run a second ccs-watch on another
+machine with a copy of the site.
 
 The alert goes to one URL, POSTed as plain text: an IRC bot (CptHook's `simple` module:
 `https://<host>/<endpoint>?channel=%23<channel>`), ntfy (`https://ntfy.sh/<a long random topic>`),
@@ -265,7 +337,8 @@ install -m 640 -g ccs /dev/null /etc/ccs/alert.conf
 cat > /etc/ccs/alert.conf <<'CONF'
 ALERT_URL=https://<the bot>/simple?channel=%23<channel>
 SUBADDRESSES=/etc/ccs-front/subaddresses.txt        # to name addresses not on the list
-WATCH_PROXY=socks5h://127.0.0.1:9050               # recommended: through Tor (apt install tor), as any visitor
+WATCH_PROXY=socks5h://127.0.0.1:9050 socks5h://127.0.0.1:1080   # one at random a fetch: Tor (apt install tor), and a clearnet one elsewhere
+WATCH_THEMES=1                                      # also /dark/ and /light/ (the theme lines above)
 CONF
 ```
 
@@ -277,6 +350,7 @@ only runs after a good push, and a stale site still matches what was last pushed
 One alert per problem an hour while it lasts; "could not be fetched" after three checks in a row;
 "the backend has failed N runs in a row since …: <steps>" after three failed runs (about six
 minutes), and "the backend runs again" on the first good run after that.
-A careful attacker on the web server could serve the backend's IP the right pages: `WATCH_PROXY`
-(Tor) or a second watcher elsewhere (a laptop, another machine) makes that much harder.
+A careful attacker on the web server can still try to tell the watcher from visitors (its timing,
+every two minutes after a push): the proxies and a second watcher elsewhere make that harder, not
+impossible, which is why the Verify page asks visitors to check the address their wallet shows.
 `tests/watch.sh` runs it against a local web server and a fake bot.
