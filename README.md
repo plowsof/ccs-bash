@@ -64,12 +64,14 @@ not at risk.) So ccs-bash leaves as few ways in as possible:
   jq, filenames checked.
 - **Can run apart from the website** ([two machines](docs/two-machines.md)): the wallet
   machine accepts no connections and pushes the site to a key that can only write one folder;
-  the web server checks every address against the wallet's signed list, and the backend checks
-  the live pages are what it pushed.
+  the web server checks every address, written, shown and in every QR code, against the wallet's
+  signed list, and every other file against the design release's, and the backend checks the
+  live pages, and the files they use, are what it pushed.
 
 What it can't fix: a shell on the **web server** can still change the site. ccs-watch then alerts
-within minutes (it fetches the live pages, through Tor, and compares them with what was pushed),
-and visitors can check any address against the signed list, but that is the machine to guard.
+within minutes (it fetches the live pages and their files as a browser would, through Tor and a
+clearnet proxy, and compares them with what was pushed), and visitors can check the address their
+wallet shows against the signed list, but that is the machine to guard.
 
 ## What a run does
 
