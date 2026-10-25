@@ -436,6 +436,24 @@ else
 fi
 rm -rf "$img"
 
+# Security review 2026-10-25 (fails until fixed): anyone can send a little to a subaddress no
+# proposal has (the signed list publishes 15,000 of them); the wallet then knows it, and a run that
+# stops on it stops the site updating for as long as that donation is there, which is for good.
+d=$TEST_TMP/stranger
+mkdir -p "$d/state" "$d/out"
+cp -r "$FIXTURES" "$d/fx" && cp "$TEST_TMP/state/proposals.csv" "$d/state/"
+jq '.in += [{txid: "dust", amount: 1, confirmations: 50, unlock_time: 0, subaddr_index: {major: 0, minor: 14999}}]' \
+    "$FIXTURES/rpc/get_transfers.json" > "$d/fx/rpc/get_transfers.json"
+sed "s|$TEST_TMP/state|$d/state|; s|$TEST_TMP/out|$d/out|" "$TEST_TMP/ccs.conf" > "$d/ccs.conf" && chmod 444 "$d/ccs.conf"
+had=$(cat "$TEST_TMP/wallet-count"); echo 15000 > "$TEST_TMP/wallet-count"
+# shellcheck disable=SC2016
+if FIXTURES=$d/fx bash -c 'source "$1/../ccs-back.sh" && source "$1/stubs.sh" && main "$2"' _ "$here" "$d/ccs.conf" 2> "$d/log"; then
+    echo "ok   a stranger's donation to a subaddress no proposal has: the run goes on"
+else
+    echo "FAIL a stranger's donation to a subaddress no proposal has stops every run: $(grep -o 'error: .*' "$d/log" | cut -c8-80)"; status=1
+fi
+echo "$had" > "$TEST_TMP/wallet-count"
+
 # reactions that can't be read: the idea stays, without counts
 got=$(
     # shellcheck source=tests/stubs.sh
