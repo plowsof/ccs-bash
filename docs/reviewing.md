@@ -110,24 +110,28 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
 - [`contrib/ccs-receive`](../contrib/ccs-receive), the push key's forced command, as `ccs-data`:
   one push at a time (`flock`); staging starts as a copy of the live site; rrsync
   (`-wo -no-del -munge`) receives into it. The whole push is refused if the list isn't its `.pin`'s,
-  or there is no `zbarimg`, `qrencode`, `python3`, `git` or `design.sha256`, or a file name has a control character. `scan`
-  (awk) reads every page and JSON four ways: as written (entities decoded; %-escapes in `monero:` links only), as
-  shown (comments and tags removed as HTML reads them, a block tag a space, `strip`), every `monero:` link and address box
-  (one address, nothing else), and every `data:` image (`qrdata`: zbarimg reads one listed
-  address, and its pixels, read by `pixels_py`, Python's standard library only, are those of
-  `qrencode -s 10` of it). A page or JSON must start with `<`, `[` or `{`. Every non-ASCII or control character is dropped first, so
-  none can split an address; `hidden`, `dir`, `style` and `popover` attributes and `<svg>`,
-  `<template>`, `<bdo>`... (`hides`), which the design never uses, are refused, and so are block,
-  square and braille characters (`drawing`), which can draw a QR code as text. `changes`: any other
+  or there is no `zbarimg`, `qrencode`, `python3`, `git`, `design.sha256`, design release,
+  `markdown.awk` or `proposals.conf`, or a file name has a control character. `fetch`: the
+  proposals repository's last two commits, each push (the last fetch if it can't be).
+  `pages` (`pages_py`, Python's standard library only): every page must be one of the design's
+  (`design/<release>/`, its zip unpacked), byte for byte outside its regions; each region a
+  sequence of the design's parts and each `{{slot}}` a value of its kind, one regex per page
+  built from the parts (`Design.fill`, `region`, `slots`); a proposal's text what `markdown.awk`
+  makes of its file at one of those commits (`bodies`, kept by commit). `scan` (awk) reads every
+  page and JSON as written (entities decoded, a non-ASCII or control character both dropped and a
+  space) for addresses, the JSON as JSON too (`json_py`), and every `data:` image (`qrdata`:
+  zbarimg reads one listed address, and its pixels, read by `pixels_py`, are those of
+  `qrencode -s 10` of it). A page or JSON must start with `<`, `[` or `{`. `changes`: any other
   file the push changes must be the design's (`design.sha256`), a proposal image the proposals
-  repository has at that path (`repo_images`: a shallow fetch each push, `git hash-object`
-  compared with `ls-tree`; its QR codes checked too), `projects.json`, or the list's files as installed in `/etc/ccs-gate`. A failing file is
-  deleted from staging, so it keeps its last good copy; the rest goes live, the push fails, IRC is
-  told. `--heartbeat` (a timer): alerts when no push has come for 15 minutes.
+  repository has at that path (`repo_images`: `git hash-object` compared with `ls-tree`; its QR
+  codes checked too), `projects.json`, or the list's files as installed in `/etc/ccs-gate`. A
+  failing file is deleted from staging, so it keeps its last good copy; the rest goes live, the
+  push fails, IRC is told. `--heartbeat` (a timer): alerts when no push has come for 15 minutes.
 - nginx: static files, the security headers, the theme map ([two machines](two-machines.md)).
 
 ## The dense parts
 
-Where to slow down: `markdown.awk`'s `hold`/`unhold`; `ccs-receive`'s `decode`, `strip` and `tokens` (entity
-decoding by hand, no interval expressions for old mawk); `load_state`'s CSV regex
+Where to slow down: `markdown.awk`'s `hold`/`unhold`; `ccs-receive`'s `pages_py` (the slot
+rules: `TEXT`'s lookahead is what keeps an address out of a name) and `decode` (entity decoding by
+hand, no interval expressions for old mawk); `load_state`'s CSV regex
 (`proposals.sh`); `forgejo_prs`' time-zone conversion (`gitlab.sh`).
