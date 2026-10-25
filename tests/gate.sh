@@ -49,6 +49,7 @@ on web "
     printf '%s  # the General Fund\n' '$fund' > /etc/ccs-gate/allowed
     echo sig > /etc/ccs-gate/subaddresses.txt.asc && echo key > /etc/ccs-gate/subaddresses.txt.key.asc
     printf '%s  ./assets/style.css\n' \$(printf 'body {}\n' | sha256sum | cut -d' ' -f1) > /etc/ccs-gate/design.sha256
+    printf '%s\n' count tag visually-hidden when-closed when-open > /etc/ccs-gate/hidden-classes   # the design's, as its release zip has them
     # the proposals repository, with the images that may go live (the same qrencode makes them
     # byte for byte on the backend)
     git init -q -b master /srv/proposals && mkdir -p /srv/proposals/images/p && cd /srv/proposals
@@ -166,6 +167,10 @@ for attack in \
     "quoted|<p>${fake:0:40}<i title=\">-\"></i>${fake:40}</p>|an address split by a tag with a quoted >" \
     "comment|<p>${fake:0:40}<!-- > -->${fake:40}</p>|an address split by a comment with a > in it" \
     "hidden|<p>${fake:0:40}<span hidden>-</span>${fake:40}</p>|an address split by hidden text" \
+    "hiddenclass|<p>${fake:0:40}<span class=\"x Visually-Hidden\">-</span>${fake:40}</p>|an address split by text a design class hides" \
+    "turns|<p>${fake:0:40}<span class=\"when-closed\">${fake:40:20}</span><span class=\"when-open\">- -</span>${fake:60}</p>|an address whole only with one of two classes that take turns hidden" \
+    "cutshort|<p>$fake<span class=\"tag\">x</span></p>|an address cut short by a design class hiding the rest of the word" \
+    "adopted|<p><a href=\"x\">${fake:0:40}<span class=\"tag\">- -<a href=\"y\">${fake:40}</a></span></a></p>|an address whole once an <a> in an <a> ends a hidden element early" \
     "dir|<p><span dir=\"rtl\">x</span></p>|a dir attribute" \
     "svgtext|<p><svg><text>x</text></svg></p>|an <svg>" \
     "block|<pre>"$'\xe2\x96\x88\xe2\x96\x80'"</pre>|block characters, which can draw a QR code" \
@@ -200,7 +205,8 @@ passes() {
 for page in \
     "pcttext|<p>%$(printf '%X' "'${fake:0:1}")${fake:1}</p>|a %-escape in a page's text, which a browser shows as it is (only a monero: link's are read)" \
     "paragraphs|<p>${fake:0:40}</p><p>${fake:40}</p>|halves in two paragraphs, two lines on the page (block tags are a space)" \
-    "cells|<table><tr><td>${fake:0:40}</td><td>${fake:40}</td></tr></table><div>${fake:0:40}<br>${fake:40}</div>|halves in two table cells, or either side of a <br>"; do
+    "cells|<table><tr><td>${fake:0:40}</td><td>${fake:40}</td></tr></table><div>${fake:0:40}<br>${fake:40}</div>|halves in two table cells, or either side of a <br>" \
+    "designclasses|<p>Repurposed<span class=\"count\">4</span> <span class=\"when-closed\">Menu</span><span class=\"when-open\">Close</span></p><p class=\"tag\"></p><p>${fake:0:40} <span class=\"tag\">- -</span> ${fake:40}</p>|the design's classes on words, and halves apart either side of one"; do
     IFS='|' read -r file html what <<<"$page"
     v=$((v + 1)); site "$v" "$good"
     put "proposals/$file.html" <<<"$html"
@@ -275,6 +281,15 @@ if [[ $(on backend 'tail -n 1 /tmp/a; tail -n 1 /tmp/b') == $'0\n0' && $(live) =
 
 site 4 "$(addr 2)"
 if push > /dev/null && [[ $(live) == v4 ]]; then ok "the next good push goes live again"; else fail "recovery"; fi
+
+on web 'mv /etc/ccs-gate/hidden-classes /tmp/hidden-classes'
+v=$((v + 1)); site "$v" "$(addr 2)"
+if ! push > /dev/null && [[ $(live) == v4 ]] && on web "grep -q 'refused the push: it has no /etc/ccs-gate/hidden-classes' /var/log/ccs-gate.log"; then
+    ok "no hidden-classes (the design's): every push refused"
+else
+    fail "no hidden-classes"
+fi
+on web 'mv /tmp/hidden-classes /etc/ccs-gate/hidden-classes'
 
 on web "echo '3 $(addr 3)' >> /etc/ccs-gate/subaddresses.txt"
 site 5 "$(addr 3)"
