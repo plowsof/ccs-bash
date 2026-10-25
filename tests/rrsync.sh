@@ -38,15 +38,19 @@ line="from=\"$wallet\",command=\"rrsync -wo -no-del -munge /var/lib/ccs-data\",r
 on web "
     useradd --system --create-home --shell /bin/sh ccs-data
     install -d -o ccs-data -m 755 /var/lib/ccs-data
-    install -d -m 755 ~ccs-data/.ssh
-    echo '$line' > ~ccs-data/.ssh/authorized_keys
-    chmod 644 ~ccs-data/.ssh/authorized_keys
+    install -d -m 755 /etc/ssh/authorized_keys
+    echo '$line' > /etc/ssh/authorized_keys/ccs-data
+    chmod 644 /etc/ssh/authorized_keys/ccs-data
+    printf 'Match User ccs-data\n    AuthorizedKeysFile /etc/ssh/authorized_keys/%%u\n' >> /etc/ssh/sshd_config
+    # a key the account itself could add to its own home: sshd must not read it
+    install -d -o ccs-data -m 700 ~ccs-data/.ssh
+    echo '$key' > ~ccs-data/.ssh/authorized_keys && chown ccs-data ~ccs-data/.ssh/authorized_keys
     mkdir -p /run/sshd && ssh-keygen -A && /usr/sbin/sshd
     echo secret > /root/secret
 "
 hostkey=$(on web 'cat /etc/ssh/ssh_host_ed25519_key.pub')
 for h in wallet other; do on "$h" "echo '$web $hostkey' > ~/.ssh/known_hosts"; done
-keyline=$(on web 'sha256sum ~ccs-data/.ssh/authorized_keys')
+keyline=$(on web 'sha256sum /etc/ssh/authorized_keys/ccs-data')
 
 status=0
 ok() { echo "ok   $1"; }
@@ -60,7 +64,7 @@ push "-a --delay-updates /out/ ccs-data@$web:" > /dev/null
 if [[ $(on web 'cat /var/lib/ccs-data/proposals.json') == '[1]' ]]; then ok "the documented push works"; else fail "the documented push"; fi
 
 out=$(on wallet "$ssh_opts -tt ccs-data@$web id 2>&1" || true)
-if [[ $out != *uid=* ]]; then ok "no commands, no shell"; else fail "ran a command: $out"; fi
+if [[ $out != *uid=* ]]; then ok "no commands, no shell (and a key in its own home is ignored)"; else fail "ran a command: $out"; fi
 
 out=$(on wallet "$ssh_opts -W 127.0.0.1:22 ccs-data@$web < /dev/null 2>&1" || true)
 if [[ $out != *SSH-2.0* ]]; then ok "no port forwarding"; else fail "port forwarding works"; fi
@@ -68,11 +72,11 @@ if [[ $out != *SSH-2.0* ]]; then ok "no port forwarding"; else fail "port forwar
 push "ccs-data@$web:proposals.json /tmp/back" > /dev/null || true
 if on wallet '[[ ! -e /tmp/back ]]'; then ok "nothing can be read back"; else fail "read a file back"; fi
 
-for dest in ../escaped /tmp/escaped /home/ccs-data/.ssh/authorized_keys ../../../home/ccs-data/.ssh/escaped; do
+for dest in ../escaped /tmp/escaped /etc/ssh/authorized_keys/ccs-data ../../../home/ccs-data/.ssh/escaped; do
     push "proposals.json ccs-data@$web:$dest" > /dev/null || true
 done
 if on web '! find / -xdev -path /var/lib/ccs-data -prune -o -name escaped -print | grep -q .' \
-    && [[ $(on web 'sha256sum ~ccs-data/.ssh/authorized_keys') == "$keyline" ]]; then
+    && [[ $(on web 'sha256sum /etc/ssh/authorized_keys/ccs-data') == "$keyline" ]]; then
     ok "nothing written outside the folder (.., absolute paths, its own key)"
 else
     fail "wrote outside the folder"
