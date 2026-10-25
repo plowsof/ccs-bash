@@ -7,8 +7,9 @@
 # requests are turned into GitLab's shape as they arrive (iid, web_url, author.username,
 # created_at in UTC), so everything after this file is the same for both.
 
+# gitlab_get PATH [CURL OPTION...]
 gitlab_get() {
-    curl -fsS --max-time 30 "$REPOSITORY_URL/$1"
+    curl -fsS --max-time 30 "${@:2}" "$REPOSITORY_URL/$1"
 }
 
 forgejo() { [[ ${REPOSITORY_URL:-} =~ /api/v1/repos/[^/]+/[^/]+/?$ ]]; }
@@ -101,16 +102,24 @@ forgejo_votes() {
 
 # The proposal file $1 that an MR adds, at its commit $2, read as the site will read it once
 # merged (frontmatter.awk): 0 if it reads; 1 if not, printing why; 2 if it can't be fetched.
+# Anyone can open an MR, and its file lands on this disk: 1 MB at most (a proposal is a few KB).
+# curl 8.4+ stops there even without a Content-Length (exit 63); an older one is caught after.
 idea_file_reads() {
-    local dir=$WORK/idea path line
+    local dir=$WORK/idea path line max=1048576 rc=0
     rm -rf "$dir" && mkdir -p "$dir" || return 2
     [[ -n $2 && $2 != null ]] || return 2
     path=$(jq -rn --arg f "$1" '$f | @uri')
     if forgejo; then
-        gitlab_get "raw/$path?ref=$2" > "$dir/$1" || return 2
+        gitlab_get "raw/$path?ref=$2" --max-filesize "$max" > "$dir/$1" || rc=$?
     else
-        gitlab_get "repository/files/$path/raw?ref=$2" > "$dir/$1" || return 2
+        gitlab_get "repository/files/$path/raw?ref=$2" --max-filesize "$max" > "$dir/$1" || rc=$?
     fi
+    if ((rc == 63)) || (($(wc -c < "$dir/$1") > max)); then
+        rm -f "$dir/$1"
+        echo "the file is over $max bytes"
+        return 1
+    fi
+    ((rc == 0)) || return 2
     line=$(awk -f "$CCS_LIB/frontmatter.awk" "$dir/$1" 2> "$dir/why") || true
     [[ -n $line ]] && return 0
     sed -n '1s/^skipping [^:]*: //p' "$dir/why"
@@ -150,9 +159,11 @@ ideas() {
 
     # Anyone can open one, so a title or name can't hold a whole address (the web server's gate
     # would hold back every page listing it): a run of 90 or more base58 characters is shortened,
-    # as alerts show addresses, to its first 6 and last 4.
+    # as alerts show addresses, to its first 6 and last 4. Characters that aren't printable ASCII
+    # don't break a run (a left-to-right mark shows nothing, and the gate reads it as a space).
     jq --argjson keep "$(printf '%s\n' "${keep[@]}" | jq -s .)" --argjson votes "$votes" '
-        def noaddress: gsub("(?<a>[1-9A-HJ-NP-Za-km-z]{6})[1-9A-HJ-NP-Za-km-z]{80,}(?<b>[1-9A-HJ-NP-Za-km-z]{4})"; "\(.a)…\(.b)");
+        def noaddress: gsub("(?<r>[1-9A-HJ-NP-Za-km-z](?:[^\\x20-\\x7E]*[1-9A-HJ-NP-Za-km-z]){89,})";
+            .r | gsub("[^\\x20-\\x7E]"; "") | "\(.[0:6])…\(.[-4:])");
         map(select(.iid | IN($keep[])) | ($votes[.iid | tostring] // {upvotes, downvotes}) as $v | {
             name: (.title | sub("^\\s+"; "") | sub("\\s+$"; "") | noaddress | @html),
             "gitlab-url": (.web_url | if type == "string" and test("^https://[^\\s\"\\x27<>\\\\]+$") then @html else null end),

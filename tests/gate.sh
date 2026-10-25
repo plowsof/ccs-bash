@@ -19,7 +19,7 @@ cleanup
 # Debian 12, as in the docs (the same pinned image as tests/rrsync.sh)
 docker buildx build -q --load -t "$name" - > /dev/null <<IMG
 FROM debian@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
-RUN apt-get update -q && apt-get install -y -q --no-install-recommends openssh-server openssh-client rsync python3 curl qrencode zbar-tools \
+RUN apt-get update -q && apt-get install -y -q --no-install-recommends openssh-server openssh-client rsync python3 curl qrencode zbar-tools git \
     && rm -rf /var/lib/apt/lists/*
 IMG
 docker network create --subnet "$net.0/24" "$name" > /dev/null
@@ -49,6 +49,15 @@ on web "
     printf '%s  # the General Fund\n' '$fund' > /etc/ccs-gate/allowed
     echo sig > /etc/ccs-gate/subaddresses.txt.asc && echo key > /etc/ccs-gate/subaddresses.txt.key.asc
     printf '%s  ./assets/style.css\n' \$(printf 'body {}\n' | sha256sum | cut -d' ' -f1) > /etc/ccs-gate/design.sha256
+    # the proposals repository, with the images that may go live (the same qrencode makes them
+    # byte for byte on the backend)
+    git init -q -b master /srv/proposals && mkdir -p /srv/proposals/images/p && cd /srv/proposals
+    qrencode -s 4 -o images/p/qr.png 'monero:$(addr 9 B)'
+    qrencode -s 4 --foreground=FFFFFF --background=000000 -o images/p/inv.png 'monero:$(addr 9 B)'
+    qrencode -s 4 -o images/p/ok.png 'monero:$(addr 2)'
+    git add -A && git -c user.name=t -c user.email=t@t commit -q -m images && cd /
+    chown -R ccs-data /srv/proposals   # git reads a local repository only as its owner
+    echo PROPOSALS_GIT=file:///srv/proposals > /etc/ccs-gate/proposals.conf
     chmod 644 /etc/ccs-gate/*
     install -d -m 755 /etc/ssh/authorized_keys
     echo 'from=\"$backend\",command=\"/usr/local/bin/ccs-receive\",restrict $key' > /etc/ssh/authorized_keys/ccs-data
@@ -76,12 +85,12 @@ fail() { echo "FAIL $1"; status=1; }
 # QR (default ADDRESS), the General Fund in the footer, the design's stylesheet, the signed list's
 # files and some text that mentions Monero. Each version gets its own file times: two made in the
 # same second, the same size, rsync would skip as unchanged.
-qr64() { on backend "qrencode -s 4 -o - 'monero:$1' | base64 -w0"; }
+qr64() { on backend "qrencode -s ${2:-10} -o - 'monero:$1' | base64 -w0"; }
 site() {
     local qr
     qr=$(qr64 "${3:-$2}")
     on backend "rm -rf /out && mkdir -p /out/proposals /out/assets && echo '<p>v$1</p>' > /out/version.html
-        printf '<a class=\"qr\" href=\"monero:%s\"><img src=\"data:image/png;base64,%s\"></a><div class=\"address\">%s</div>\n<p>Monero: a guide, in 2 parts.</p><p class=\"address\">%s</p>\n' \
+        printf '<meta http-equiv=\"refresh\" content=\"30\"><img src=\"logo.png\" width=\"28\" height=\"28\" alt=\"\"><a class=\"qr\" href=\"monero:%s\"><img src=\"data:image/png;base64,%s\"></a><div class=\"address\">%s</div>\n<p>Monero: a guide, in 2 parts.</p><p class=\"address\">%s</p>\n' \
             '$2' '$qr' '$2' '$fund' > /out/proposals/p.html
         echo '[{\"address\": \"$2\"}]' > /out/projects.json
         printf 'body {}\n' > /out/assets/style.css
@@ -137,6 +146,7 @@ v=20
 for attack in \
     "split|<p>${fake:0:40}<span></span>${fake:40}</p>|an address split by markup (<span></span>)" \
     "wbr|<p>${fake:0:40}<wbr>${fake:40}</p>|an address split by <wbr>" \
+    "inline|<p>${fake:0:30}<em></em>${fake:30:30}<a href=\"x\"><code>${fake:60}</code></a></p>|an address split by inline tags (<em>, <a>, <code>)" \
     "zwsp|<p>${fake:0:40}"$'\xe2\x80\x8b'"${fake:40}</p>|an address split by a zero-width space" \
     "entity|<p>&#$(printf '%d' "'${fake:0:1}");${fake:1}</p>|an address with an HTML entity in it" \
     "hexentity|<a href=\"monero:&#x$(printf '%x' "'${fake:0:1}");${fake:1}\">pay</a>|a monero: link with a hex entity in its address" \
@@ -146,12 +156,65 @@ for attack in \
     "qr|<a href=\"monero:$good\"><img src=\"data:image/png;base64,$(qr64 "$fake")\"></a><div class=\"address\">$good</div>|the right address, the QR code of another" \
     "notqr|<img src=\"data:image/png;base64,iVBORw0KGgo=\">|a data: image that is no QR code" \
     "svg|<img src=\"data:image/svg+xml,&lt;svg/&gt;\">|a data: image that isn't a PNG" \
+    "datatab|<img src=\"da&#9;ta:image/svg+xml,&lt;svg/&gt;\">|a data: URI with a tab in its scheme, which a browser takes out" \
+    "datanewline|<img src=\"d&#10;ata:image/png;base64,$(qr64 "$good")\">|the wallet's QR code, but a newline in data: (not exactly data:image/png;base64,)" \
     "junklink|<a href=\"monero:${good}x\">pay</a>|a monero: link with more than an address" \
-    "box|<div class=\"address\">${good:0:50}<b></b>${good:50}</div>|an address box with markup in it"; do
+    "box|<div class=\"address\">${good:0:50}<b></b>${good:50}</div>|an address box with markup in it" \
+    "lrm|<p>${fake:0:40}"$'\xe2\x80\x8e'"${fake:40}</p>|an address split by a left-to-right mark" \
+    "lrmentity|<p>${fake:0:40}&#8206;${fake:40}</p>|an address split by a left-to-right mark's entity" \
+    "namedentity|<p>${fake:0:40}&ZeroWidthSpace;${fake:40}</p>|an address split by a named entity" \
+    "quoted|<p>${fake:0:40}<i title=\">-\"></i>${fake:40}</p>|an address split by a tag with a quoted >" \
+    "comment|<p>${fake:0:40}<!-- > -->${fake:40}</p>|an address split by a comment with a > in it" \
+    "hidden|<p>${fake:0:40}<span hidden>-</span>${fake:40}</p>|an address split by hidden text" \
+    "dir|<p><span dir=\"rtl\">x</span></p>|a dir attribute" \
+    "svgtext|<p><svg><text>x</text></svg></p>|an <svg>" \
+    "block|<pre>"$'\xe2\x96\x88\xe2\x96\x80'"</pre>|block characters, which can draw a QR code" \
+    "blockentity|<pre>&#x2588;&#9600;</pre>|block characters as entities" \
+    "squarename|<p>&blacksquare;&squ;</p>|squares as named entities" \
+    "braille|<p>"$'\xe2\xa3\xbf'"</p>|a braille character" \
+    "emoji|<p>"$'\xf0\x9f\x9f\xa5'"</p>|a coloured square emoji" \
+    "mosaic|<p>&#x1FB0E;</p>|a legacy computing block mosaic" \
+    "digitname|<pre>&blk14;&blk34;</pre>|a block character as an entity named with digits" \
+    "shy|<p>${fake:0:40}&shy${fake:40}</p>|an address split by &shy without its ;" \
+    "tablink|<a href=\"mon&#9;ero:${fake:0:40}&#9;${fake:40}\">pay</a>|a monero: link split by tabs, which a browser takes out" \
+    "formlink|<form action=\"monero:${fake:0:40}&#10;${fake:40}\"><button>pay</button></form>|a monero: URL in a form, split by a newline" \
+    "alt|<p><img src=\"x\" title=\" alt=q\" alt=\"${fake:0:40}\">${fake:40}</p>|an address split by a broken image's alt text" \
+    "charset|<meta charset=\"iso-2022-jp\"><p>x</p>|a charset that isn't UTF-8" \
+    "refresh|<meta http-equiv=\"refresh\" content=\"0;url=https://example.com/\">|a refresh to another site" \
+    "font|<p>${fake:0:40}<font color=\"#fff\">x</font>${fake:40}</p>|an address split by white text in a <font>" \
+    "bgcolor|<table><tr><td bgcolor=\"#000\" width=\"9\"></td></tr></table>|table cells coloured with bgcolor" \
+    "manyimgs|$(printf '<img src="logo.png" width="9" height="9" alt="">%.0s' $(seq 65))|65 small images, enough to draw a QR code" \
+    "small|<img src=\"data:image/png;base64,$(qr64 "$good" 4)\">|the wallet's QR code, but not as qrencode -s 10 makes it" \
+    "extra|<img src=\"data:image/png;base64,$(on backend "python3 -c 'import sys,struct,zlib;d=sys.stdin.buffer.read();t=b\"tEXt\";c=b\"k\\x00v\";sys.stdout.buffer.write(d[:33]+struct.pack(\">I\",len(c))+t+c+struct.pack(\">I\",zlib.crc32(t+c))+d[33:])' < <(qrencode -s 10 -o - 'monero:$good') | base64 -w0")\">|the wallet's QR code with a chunk qrencode doesn't write"; do
     IFS='|' read -r file html what <<<"$attack"
     v=$((v + 1)); site "$v" "$good"
     put "proposals/$file.html" <<<"$html"
     held "$v" "proposals/$file.html" "$what"
+done
+# what reads like an address only to a gate that reads too much: these go live
+passes() {
+    local rc=0
+    push > /dev/null || rc=$?
+    if ((!rc)) && [[ $(live) == "v$1" && -n $(livefile "$2") ]]; then ok "goes live: $3"; else echo "push exit $rc, live $(live)"; on web 'tail -n 3 /var/log/ccs-gate.log'; fail "$3"; fi
+}
+for page in \
+    "pcttext|<p>%$(printf '%X' "'${fake:0:1}")${fake:1}</p>|a %-escape in a page's text, which a browser shows as it is (only a monero: link's are read)" \
+    "paragraphs|<p>${fake:0:40}</p><p>${fake:40}</p>|halves in two paragraphs, two lines on the page (block tags are a space)" \
+    "cells|<table><tr><td>${fake:0:40}</td><td>${fake:40}</td></tr></table><div>${fake:0:40}<br>${fake:40}</div>|halves in two table cells, or either side of a <br>"; do
+    IFS='|' read -r file html what <<<"$page"
+    v=$((v + 1)); site "$v" "$good"
+    put "proposals/$file.html" <<<"$html"
+    passes "$v" "proposals/$file.html" "$what"
+done
+v=$((v + 1)); site "$v" "$good"
+put projects.json <<<"[{\"address\": \"$good\", \"title\": \"R&D notes\", \"url\": \"data:text/plain,x\"}]"
+passes "$v" projects.json "JSON with & and data: in its text (entities and data: URIs are a page's)"
+[[ $(livefile projects.json) == *'R&D'* ]] || fail "the JSON with & and data: isn't the one live"
+# names an rsync exclude pattern can't hold exactly: a backslash with no wildcard, a wildcard, both
+for file in 'back\slash' 'star*' 'both\[x]'; do
+    v=$((v + 1)); site "$v" "$good"
+    put "proposals/$file.html" <<<"<p>$fake</p>"
+    held "$v" "proposals/$file.html" "a page named $file.html"
 done
 v=$((v + 1)); site "$v" "$good"; put assets/evil.css <<<'.address::after { content: "x" }'
 held "$v" assets/evil.css "a stylesheet that isn't the design's"
@@ -163,9 +226,48 @@ rc=0; push > /dev/null || rc=$?
 if ((rc)) && [[ $(livefile subaddresses.txt) != *"$fake"* ]]; then ok "held back: a subaddress list that isn't the one installed here"; else fail "a swapped list"; fi
 v=$((v + 1)); site "$v" "$good"; on backend "qrencode -s 4 -o /tmp/q.png 'monero:$fake'"; docker exec "$name-backend" sh -c 'mkdir -p /out/images/p && cp /tmp/q.png /out/images/p/qr.png'
 held "$v" images/p/qr.png "a proposal image that is a QR code of another address"
+v=$((v + 1)); site "$v" "$good"; docker exec "$name-backend" sh -c "mkdir -p /out/images/p && qrencode -s 4 --foreground=FFFFFF --background=000000 -o /out/images/p/inv.png 'monero:$fake'"
+held "$v" images/p/inv.png "a proposal image that is an inverted QR code of another address"
 v=$((v + 1)); site "$v" "$good"; docker exec "$name-backend" sh -c "mkdir -p /out/images/p && qrencode -s 4 -o /out/images/p/ok.png 'monero:$good'"
 if push > /dev/null && [[ $(live) == "v$v" ]] && on web 'test -s /var/lib/ccs-data/images/p/ok.png'; then ok "a proposal image with the wallet's QR code goes live"; else fail "a good proposal image"; fi
+# an image the proposals repository doesn't have, at that path or at all: half a QR code, say
+v=$((v + 1)); site "$v" "$good"; docker exec "$name-backend" sh -c "mkdir -p /out/images/p && qrencode -s 4 -o /out/images/p/half.png 'monero:$good'"
+held "$v" images/p/half.png "a proposal image the proposals repository doesn't have"
+v=$((v + 1)); site "$v" "$good"; docker exec "$name-backend" sh -c "mkdir -p /out/images/q && qrencode -s 4 -o /out/images/q/ok.png 'monero:$good'"
+held "$v" images/q/ok.png "a proposal image the repository has, but at another path"
+on backend 'rm -rf /out/images/q'
+v=$((v + 1)); site "$v" "$good"; docker exec "$name-backend" sh -c "mkdir -p /out/images/p && qrencode -s 5 -o /out/images/p/ok.png 'monero:$good'"
+rc=0; push > /dev/null || rc=$?
+if ((rc)) && [[ $(live) == "v$v" ]] && on web 'cmp -s /var/lib/ccs-data/images/p/ok.png /srv/proposals/images/p/ok.png'; then ok "held back: a proposal image changed from the repository's (its last good copy stays)"; else fail "a changed proposal image"; fi
+on web "sed -i 's#=.*#=file:///nowhere#' /etc/ccs-gate/proposals.conf"
+v=$((v + 1)); site "$v" "$good"; docker exec "$name-backend" sh -c "mkdir -p /out/images/p && qrencode -s 4 -o /out/images/p/ok.png 'monero:$good' && cp /out/images/p/ok.png /out/images/p/new.png"
+held "$v" images/p/new.png "a new proposal image while the repository can't be read"
+on web "sed -i 's#=.*#=file:///srv/proposals#' /etc/ccs-gate/proposals.conf"
 on backend 'rm -rf /out/images'
+# a NUL byte, which HTML drops from the text
+v=$((v + 1)); site "$v" "$good"; on backend "printf '<p>%s\\000%s</p>\\n' '${fake:0:40}' '${fake:40}' > /out/proposals/nul.html"
+held "$v" proposals/nul.html "an address split by a NUL byte"
+# an image named as a page: a browser shows <img src="x.html"> by its bytes
+v=$((v + 1)); site "$v" "$good"; on backend "qrencode -s 10 -o /out/proposals/img.html 'monero:$fake'"
+held "$v" proposals/img.html "a PNG named .html"
+v=$((v + 1)); site "$v" "$good"; on backend "qrencode -s 10 -o /out/projects.json 'monero:$fake'"
+rc=0; push > /dev/null || rc=$?
+if ((rc)) && [[ $(live) == "v$v" && $(livefile projects.json) == '[{'* ]]; then ok "held back: a PNG as projects.json (its last good copy stays)"; else fail "a PNG as projects.json"; fi
+# a good QR code with more beside it: zbarimg reads the good one, the rest is another's
+v=$((v + 1)); site "$v" "$good"
+docker exec -i "$name-backend" sh -c "python3 - '$good' > /tmp/two.b64" <<'PY'
+import base64, subprocess, sys, zlib, struct
+def png(w, h, rows):
+    raw = b"".join(b"\x00" + bytes(r) for r in rows)
+    ch = lambda t, c: struct.pack(">I", len(c)) + t + c + struct.pack(">I", zlib.crc32(t + c))
+    return b"\x89PNG\r\n\x1a\n" + ch(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 0, 0, 0, 0)) + ch(b"IDAT", zlib.compress(raw)) + ch(b"IEND", b"")
+m = [l for l in subprocess.run(["qrencode", "-t", "ASCII", "-m", "4", "monero:" + sys.argv[1]], capture_output=True, text=True).stdout.splitlines()]
+q = [[0 if l[2 * x] == "#" else 255 for x in range(len(l) // 2) for _ in range(10)] for l in m for _ in range(10)]
+rows = [r + [255] * 200 + [0 if (x // 10) % 2 else 255 for x in range(200)] for r in q]
+print(base64.b64encode(png(len(rows[0]), len(rows), rows)).decode())
+PY
+put proposals/two.html <<<"<img src=\"data:image/png;base64,$(on backend 'cat /tmp/two.b64')\">"
+if on backend 'base64 -d /tmp/two.b64 > /tmp/two.png && zbarimg -q --raw /tmp/two.png' | grep -qx "monero:$good"; then held "$v" proposals/two.html "a good QR code with more drawn beside it"; else fail "the two-part test image doesn't read"; fi
 # two pushes at once: the second waits for the first (one staging folder, one at a time)
 v=$((v + 1)); site "$v" "$good"
 on backend "(rsync -a -e 'ssh -o BatchMode=yes' /out/ ccs-data@$web: > /tmp/a 2>&1; echo \$? >> /tmp/a) & (rsync -a -e 'ssh -o BatchMode=yes' /out/ ccs-data@$web: > /tmp/b 2>&1; echo \$? >> /tmp/b) & wait"

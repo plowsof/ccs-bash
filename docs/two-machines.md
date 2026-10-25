@@ -191,26 +191,55 @@ a bash script, run by the push key instead of rrsync. Each push, one at a time, 
 2. checks every address (95 base58 characters, or 106 for an integrated one) in its pages and
    JSON against the wallet's signed list and an `allowed` file, read four ways, so that it can't
    be slipped past by how it is written:
-   - **as written**, attributes included (`monero:` links, `alt`, `title`), with entities and
-     %-escapes read as a browser or wallet reads them (`&#56;`, `&#x38;` and `%38` are all `8`);
-   - **as shown**: tags removed, so an address split by `<span></span>` or `<wbr>`, or by a
-     zero-width space or soft hyphen, is one again;
-   - **every QR code**: each `data:` image must be a PNG that `zbarimg` reads as a QR code, of
-     such an address (the box's text right and its QR code another's is held back);
-   - **its places**: a `monero:` link has an address straight after it and nothing else, an
-     address box (`class="address"`) one address and no markup;
+   - **as written**, attributes included (`monero:` links, `alt`, `title`), with entities read
+     as a browser reads them (`&#56;` and `&#x38;` are `8`), and %-escapes in a `monero:` link as
+     a wallet reads them (`%38` is `8`; in a page's text a browser shows them as they are);
+   - **as shown**: comments and tags removed as a browser reads them (a `>` quoted in a tag, a
+     comment up to its `-->`), so an address split by `<span></span>`, `<wbr>` or a comment is
+     one again, while a block tag (`<p>`, `<div>`, `<br>`, `<td>`...) is a space, its text on a
+     line or in a cell of its own; an image's alt text where it stands (a broken image shows it
+     inline);
+   - with every character that isn't ASCII dropped first (zero-width spaces, bidi marks, soft
+     hyphens: invisible, so they mustn't split an address), as text or as an entity;
+   - **every QR code**: each `data:` URI in a page must be written exactly
+     `data:image/png;base64,` (no tab or space in its scheme, which a browser would take out),
+     and be, pixel for pixel, the QR code `qrencode -s 10`
+     makes of such an address, as ccs-front-bash makes it (the box's text right and its QR code
+     another's is held back; so is a good QR code with something drawn beside it, which zbarimg
+     would read past);
+   - pages and JSON must start as text does (`<`, `[` or `{`): a browser shows an
+     `<img src="x.html">` by its bytes, so an image named as a page would otherwise go unread;
+   - **its places**: a `monero:` URL, in any attribute, has one address straight after it and
+     nothing else, read with tabs and spaces taken out (a browser takes tabs and newlines out of
+     a URL), an address box (`class="address"`) one address and no markup;
+   - an entity without its `;` (a browser reads `&shy` as a soft hyphen), a NUL byte (dropped
+     from the text) and a charset other than UTF-8 are refused;
+   - and no markup that hides, moves or colours without a stylesheet, which the design never
+     uses: `hidden`, `dir`, `style` or `popover` attributes, `<svg>`, `<template>`, `<bdo>`,
+     `<ruby>`..., `<font>`, `<mark>`, the colour, border and size attributes (`bgcolor`,
+     `border`, `width` but on an `<img>`...), and no `http-equiv` but the design's
+     `refresh` of the page itself (no URL); at most 64 images, bars and boxes a page (a QR code
+     drawn with one a module takes hundreds; the most any page has is 13);
+   - and no characters that can draw a QR code as text, as characters or entities: block
+     elements and geometric shapes (`█▀▄■□▪`, U+2580–25FF), braille (U+2800–28FF), the big
+     squares and circles (`⬛⬜⚫⚪🔲🔳`), the coloured ones (`🟥🟩`..., U+1F7E0–1F7EB) and the
+     block mosaics of U+1FB00–1FBFF. No proposal uses them;
 3. checks every other file the push changes: it must be the design's, byte for byte
    (`design.sha256`, from the design release: a stylesheet can hide the address and show
-   another, an image can be another QR code), a proposal's image (`images/<proposal>/<file>`,
-   any QR code in it of such an address), `projects.json`, or the signed list, its signature and
-   key, the same files as installed here;
+   another, an image can be another QR code), a proposal's image (`images/<proposal>/<file>`)
+   that the proposals repository has, byte for byte at that path (fetched each push, below: a
+   proposal is reviewed and merged before it is funded, so the backend can't add an image of its
+   own, such as a QR code cut into pieces shown side by side, none of which zbarimg reads; any QR
+   code in it of such an address; inverted codes too), `projects.json`, or the signed list, its signature and key,
+   the same files as installed here. While the repository can't be fetched, a new image waits
+   (its page goes live without it);
 4. copies staging into the live site, except a file that fails: that one keeps its last good
    copy (a new one stays out), so one bad page doesn't stop the site updating, and the gate never
    rewrites a file. The push then fails (the backend's log shows it); which file, and why, is in
    the web server's journal (`journalctl -t ccs-gate`, and `/var/log/ccs-gate.log` if created
    for ccs-data), and goes to IRC (below);
 5. refuses the whole push if its own list isn't the one its `.pin` names, or it has no
-   `design.sha256` or no `zbarimg` (it can't check then).
+   `design.sha256`, or no `zbarimg`, `qrencode`, `python3` or `git` (it can't check then).
 
 With `/etc/ccs-gate/alert.conf` it also tells IRC itself, once an hour per address or file: the
 one alarm that still sounds when the backend is the one lying.
@@ -224,7 +253,7 @@ one alarm that still sounds when the backend is the one lying.
 Between pushes only the heartbeat's timer runs (below). Set it up once, as root:
 
 ```
-apt install zbar-tools                                               # zbarimg, for the QR codes
+apt install zbar-tools qrencode git                                  # the QR codes, read and remade; git, for the proposals' images
 install -m 755 contrib/ccs-receive /usr/local/bin/ccs-receive        # from this repository
 install -d -o ccs-data -m 755 /var/lib/ccs-staging
 install -d -m 755 /etc/ccs-gate
@@ -237,6 +266,8 @@ install -m 644 subaddresses.txt subaddresses.txt.pin subaddresses.txt.asc subadd
 cat > /etc/ccs-gate/allowed <<'LIST'                                # other addresses allowed on the site, one a line
 888tNkZrPN6JsEgekjMnABU4TBzc2Dt29EPAvkRxbANsAnjyPbb3iQ1YBRk1UXcdRsiKc9dhwMVgN5S9cQUiyoogDavup3H  # the General Fund
 LIST
+# the proposals repository the backend reads (its checkout's origin), and its branch
+printf 'PROPOSALS_GIT=https://repo.getmonero.org/monero-project/ccs-proposals.git\nPROPOSALS_BRANCH=master\n' > /etc/ccs-gate/proposals.conf
 ```
 
 They are the same files as on the backend (`/etc/ccs-front/`); `gpg --verify` the list there
@@ -261,17 +292,28 @@ A proposal whose text quotes some other address stops its page updating until yo
 address to `allowed` (the refusal names it): the safe way to fail. On the testnet that was two
 (`utxobr-monero-k8s-operator`, `el00ruobuob-oct-dec-2018`). A new list: install its four files
 the same way. `tests/gate.sh` builds this in containers: a good push goes live; a foreign
-address, in the donation box or anywhere in a page, split by markup, a zero-width space or an
-entity, %-escaped in a `monero:` link, integrated, behind `data:`, or only in the QR code, is
-held back and the live file kept; so is a data: image that isn't a QR code, a stylesheet or
-design file that isn't the design's, a swapped list, a proposal image that is another QR code;
-two pushes at once go one after the other; the next good push goes through; a list that isn't the
-pinned one refuses everything; no deleting and nothing outside the folder, as with rrsync alone.
+address, in the donation box or anywhere in a page, split by markup, a comment, hidden text, a
+zero-width space, a bidi mark or an entity, %-escaped in a `monero:` link, integrated, behind
+`data:`, or only in the QR code, is held back and the live file kept; so is a page with a
+backslash or wildcard in its name, a `dir` attribute or an `<svg>`, a data: image that isn't a QR
+code, a stylesheet or design file that isn't the design's, a swapped list, a proposal image that
+is another QR code, inverted or not, a `data:` image that isn't exactly qrencode's QR code (another
+size, an extra chunk, a good one with more drawn beside it), a PNG named `.html` or
+`projects.json`, block, square, braille or mosaic characters, a NUL byte, `&shy` without its
+`;`, a `monero:` URL split by tabs or newlines, alt text beside the rest of an address, a
+charset that isn't UTF-8, a refresh to another site, `<font color>`, `bgcolor`, 65 images, a proposal image the
+repository doesn't have (or has at another path, or other bytes), and a new one while the
+repository can't be fetched; two pushes at once go one after the other; the next good
+push goes through; a list that isn't the pinned one refuses everything; no deleting and nothing
+outside the folder, as with rrsync alone.
 
-**What it can't see:** an address drawn in the pixels of an image (not a QR code) the backend
-pushes as a proposal's image. The images come from the proposals repository, which the web
-server doesn't have; ccs-watch (below) and visitors comparing what their wallet shows are what
-catch it. zbarimg reads images the backend sends, as ccs-data: keep zbar-tools (and the
+**What it can't see:** what the design's own stylesheet does with its own classes and elements:
+text it hides (`visually-hidden`, `brand-short`, ...) put in to split an address, or a QR code
+drawn with elements it colours (inline `<code>`, tag pills); a QR code drawn as text with
+characters it doesn't refuse (ASCII art, other emoji), which phones read badly at a page's line
+spacing; and a link to another site. Checking pages against the design's own pages, outside
+the regions it fills, would close the first.
+ccs-watch (below) and visitors comparing what their wallet shows are what catch those. zbarimg reads images the backend sends, as ccs-data: keep zbar-tools (and the
 ImageMagick it uses) updated (`unattended-upgrades`).
 
 It can't help if the web server itself is taken over (whoever has it can turn the gate off):
