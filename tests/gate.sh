@@ -55,7 +55,7 @@ on web "
     qrencode -s 4 -o images/p/qr.png 'monero:$(addr 9 B)'
     qrencode -s 4 --foreground=FFFFFF --background=000000 -o images/p/inv.png 'monero:$(addr 9 B)'
     qrencode -s 4 -o images/p/ok.png 'monero:$(addr 2)'
-    git add -A && git -c user.name=t -c user.email=t@t commit -q -m images && git config uploadpack.allowFilter true && cd /
+    git add -A && git -c user.name=t -c user.email=t@t commit -q -m images && cd /
     chown -R ccs-data /srv/proposals   # git reads a local repository only as its owner
     echo PROPOSALS_GIT=file:///srv/proposals > /etc/ccs-gate/proposals.conf
     chmod 644 /etc/ccs-gate/*

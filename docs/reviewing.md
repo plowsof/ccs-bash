@@ -115,7 +115,7 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
   `<template>`, `<bdo>`... (`hides`), which the design never uses, are refused, and so are block,
   square and braille characters (`drawing`), which can draw a QR code as text. `changes`: any other
   file the push changes must be the design's (`design.sha256`), a proposal image the proposals
-  repository has at that path (`repo_images`: a blobless fetch each push, `git hash-object`
+  repository has at that path (`repo_images`: a shallow fetch each push, `git hash-object`
   compared with `ls-tree`; its QR codes checked too), `projects.json`, or the list's files as installed in `/etc/ccs-gate`. A failing file is
   deleted from staging, so it keeps its last good copy; the rest goes live, the push fails, IRC is
   told. `--heartbeat` (a timer): alerts when no push has come for 15 minutes.
