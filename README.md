@@ -22,7 +22,8 @@ A small replacement for [ccs-back](https://repo.getmonero.org/monero-project/ccs
 backend of the Monero Community Crowdfunding System: a bash script run from cron (or a loop
 that also runs it when a donation arrives), with a view-only `monero-wallet-rpc`. No web
 server, database or PHP. It writes the JSON (`proposals.json`, `completed-proposals.json`, and
-`projects.json` for `/projects`) that the site is made from.
+`projects.json` for `/projects`, where each proposal also has its `filename` and `gitlab_url`, the
+link to its merge request wherever the proposals are) that the site is made from.
 
 ## The project
 
