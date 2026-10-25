@@ -191,14 +191,19 @@ a bash script, run by the push key instead of rrsync. Each push, one at a time, 
 2. checks every address (95 base58 characters, or 106 for an integrated one) in its pages and
    JSON against the wallet's signed list and an `allowed` file, read four ways, so that it can't
    be slipped past by how it is written:
-   - **as written**, attributes included (`monero:` links, `alt`, `title`), with entities and
-     %-escapes read as a browser or wallet reads them (`&#56;`, `&#x38;` and `%38` are all `8`);
+   - **as written**, attributes included (`monero:` links, `alt`, `title`), with entities read
+     as a browser reads them (`&#56;` and `&#x38;` are `8`), and %-escapes in a `monero:` link as
+     a wallet reads them (`%38` is `8`; in a page's text a browser shows them as they are);
    - **as shown**: comments and tags removed as a browser reads them (a `>` quoted in a tag, a
      comment up to its `-->`), so an address split by `<span></span>`, `<wbr>` or a comment is
-     one again; an image's alt text where it stands (a broken image shows it inline);
+     one again, while a block tag (`<p>`, `<div>`, `<br>`, `<td>`...) is a space, its text on a
+     line or in a cell of its own; an image's alt text where it stands (a broken image shows it
+     inline);
    - with every character that isn't ASCII dropped first (zero-width spaces, bidi marks, soft
      hyphens: invisible, so they mustn't split an address), as text or as an entity;
-   - **every QR code**: each `data:` image must be, pixel for pixel, the QR code `qrencode -s 10`
+   - **every QR code**: each `data:` URI in a page must be written exactly
+     `data:image/png;base64,` (no tab or space in its scheme, which a browser would take out),
+     and be, pixel for pixel, the QR code `qrencode -s 10`
      makes of such an address, as ccs-front-bash makes it (the box's text right and its QR code
      another's is held back; so is a good QR code with something drawn beside it, which zbarimg
      would read past);
