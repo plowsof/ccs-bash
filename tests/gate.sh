@@ -19,7 +19,7 @@ cleanup
 # Debian 12, as in the docs (the same pinned image as tests/rrsync.sh)
 docker buildx build -q --load -t "$name" - > /dev/null <<IMG
 FROM debian@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
-RUN apt-get update -q && apt-get install -y -q --no-install-recommends openssh-server openssh-client rsync python3 curl \
+RUN apt-get update -q && apt-get install -y -q --no-install-recommends openssh-server openssh-client rsync python3 curl qrencode zbar-tools \
     && rm -rf /var/lib/apt/lists/*
 IMG
 docker network create --subnet "$net.0/24" "$name" > /dev/null
@@ -47,10 +47,13 @@ on web "
     printf '%s\n' '$list' > /etc/ccs-gate/subaddresses.txt
     printf 'sha256 %s\nkey %040d\n' \"\$(sha256sum < /etc/ccs-gate/subaddresses.txt | cut -d' ' -f1)\" 0 > /etc/ccs-gate/subaddresses.txt.pin
     printf '%s  # the General Fund\n' '$fund' > /etc/ccs-gate/allowed
+    echo sig > /etc/ccs-gate/subaddresses.txt.asc && echo key > /etc/ccs-gate/subaddresses.txt.key.asc
+    printf '%s  ./assets/style.css\n' \$(printf 'body {}\n' | sha256sum | cut -d' ' -f1) > /etc/ccs-gate/design.sha256
     chmod 644 /etc/ccs-gate/*
-    install -d -m 755 ~ccs-data/.ssh
-    echo 'from=\"$backend\",command=\"/usr/local/bin/ccs-receive\",restrict $key' > ~ccs-data/.ssh/authorized_keys
-    chmod 644 ~ccs-data/.ssh/authorized_keys
+    install -d -m 755 /etc/ssh/authorized_keys
+    echo 'from=\"$backend\",command=\"/usr/local/bin/ccs-receive\",restrict $key' > /etc/ssh/authorized_keys/ccs-data
+    chmod 644 /etc/ssh/authorized_keys/ccs-data
+    printf 'Match User ccs-data\n    AuthorizedKeysFile /etc/ssh/authorized_keys/%%u\n' >> /etc/ssh/sshd_config
     mkdir -p /run/sshd && ssh-keygen -A && /usr/sbin/sshd
 "
 on backend "echo '$web $(on web 'cat /etc/ssh/ssh_host_ed25519_key.pub')' > ~/.ssh/known_hosts"
@@ -69,18 +72,29 @@ bot() { on web 'cat /tmp/bot.txt 2> /dev/null || true' | tr -d '\003' | sed 's/1
 status=0
 ok() { echo "ok   $1"; }
 fail() { echo "FAIL $1"; status=1; }
-# site N ADDRESS: the backend's site, version N, a donation box with ADDRESS and the General Fund
-# in the footer, plus a QR code whose base64 has an address-shaped run in it. Each version gets
-# its own file times: two made in the same second, the same size, rsync would skip as unchanged.
+# site N ADDRESS [QR]: the backend's site, version N, a donation box with ADDRESS and a QR code of
+# QR (default ADDRESS), the General Fund in the footer, the design's stylesheet, the signed list's
+# files and some text that mentions Monero. Each version gets its own file times: two made in the
+# same second, the same size, rsync would skip as unchanged.
+qr64() { on backend "qrencode -s 4 -o - 'monero:$1' | base64 -w0"; }
 site() {
-    on backend "rm -rf /out && mkdir -p /out/proposals && echo 'v$1' > /out/version.txt
-        printf '<a href=\"monero:%s\">QR</a><div class=\"address\">%s</div><img src=\"data:image/png;base64,ab+%s/cd\">\n<p class=\"address\">%s</p>\n' \
-            '$2' '$2' '$(addr 5 Z)' '$fund' > /out/proposals/p.html
+    local qr
+    qr=$(qr64 "${3:-$2}")
+    on backend "rm -rf /out && mkdir -p /out/proposals /out/assets && echo '<p>v$1</p>' > /out/version.html
+        printf '<a class=\"qr\" href=\"monero:%s\"><img src=\"data:image/png;base64,%s\"></a><div class=\"address\">%s</div>\n<p>Monero: a guide, in 2 parts.</p><p class=\"address\">%s</p>\n' \
+            '$2' '$qr' '$2' '$fund' > /out/proposals/p.html
         echo '[{\"address\": \"$2\"}]' > /out/projects.json
+        printf 'body {}\n' > /out/assets/style.css
         find /out -exec touch -d @\$((1700000000 + $1 * 100)) {} +"
+    put subaddresses.txt < <(on web 'cat /etc/ccs-gate/subaddresses.txt')
+    put subaddresses.txt.asc <<<sig
+    put subaddresses.txt.key.asc <<<key
 }
+# put FILE: stdin as the backend's /out/FILE
+put() { docker exec -i "$name-backend" sh -c "mkdir -p \"\$(dirname '/out/$1')\" && cat > '/out/$1'"; }
 push() { on backend "rsync -a --delay-updates -e 'ssh -o BatchMode=yes -o StrictHostKeyChecking=yes' /out/ ccs-data@$web: 2>&1"; }
-live() { on web 'cat /var/lib/ccs-data/version.txt 2> /dev/null'; }
+live() { on web 'cat /var/lib/ccs-data/version.html 2> /dev/null' | sed 's/<[^>]*>//g'; }
+livefile() { on web "cat '/var/lib/ccs-data/$1' 2> /dev/null || true"; }
 livepage() { on web "cat /var/lib/ccs-data/proposals/${1:-p.html} 2> /dev/null || true"; }
 
 site 1 "$(addr 1)"
@@ -109,6 +123,53 @@ if [[ $(bot | grep -c .) == 1 ]]; then ok "the same address refused again within
 site 3 "$(addr 2)"
 on backend "printf 'pay %s here\n' '$(addr 8 A)' > /out/proposals/sneaky.html"
 if ! push > /dev/null && [[ $(live) == v3 && -z $(livepage sneaky.html) ]]; then ok "an address anywhere in a page is checked, not only the donation box (a new page with one stays out)"; else fail "a hidden address"; fi
+
+# The ways around a plain address search, each in a new file: that file stays out, the rest of
+# the push goes live, the push fails.
+held() {
+    local rc=0
+    push > /dev/null || rc=$?
+    if ((rc)) && [[ $(live) == "v$1" && -z $(livefile "$2") ]]; then ok "held back: $3"; else echo "push exit $rc, live $(live)"; on web 'tail -n 3 /var/log/ccs-gate.log'; fail "$3"; fi
+}
+good=$(addr 2) fake=$(addr 9 B)
+integrated=$(printf '4%0105d' 7 | tr 0 1)
+v=20
+for attack in \
+    "split|<p>${fake:0:40}<span></span>${fake:40}</p>|an address split by markup (<span></span>)" \
+    "wbr|<p>${fake:0:40}<wbr>${fake:40}</p>|an address split by <wbr>" \
+    "zwsp|<p>${fake:0:40}"$'\xe2\x80\x8b'"${fake:40}</p>|an address split by a zero-width space" \
+    "entity|<p>&#$(printf '%d' "'${fake:0:1}");${fake:1}</p>|an address with an HTML entity in it" \
+    "hexentity|<a href=\"monero:&#x$(printf '%x' "'${fake:0:1}");${fake:1}\">pay</a>|a monero: link with a hex entity in its address" \
+    "percent|<a href=\"monero:%$(printf '%X' "'${fake:0:1}")${fake:1}\">pay</a>|a monero: link with a %-escape in its address" \
+    "integrated|<p>$integrated</p>|an integrated address (106 characters)" \
+    "datahidden|<p>data:,$fake</p>|an address hidden behind data:" \
+    "qr|<a href=\"monero:$good\"><img src=\"data:image/png;base64,$(qr64 "$fake")\"></a><div class=\"address\">$good</div>|the right address, the QR code of another" \
+    "notqr|<img src=\"data:image/png;base64,iVBORw0KGgo=\">|a data: image that is no QR code" \
+    "svg|<img src=\"data:image/svg+xml,&lt;svg/&gt;\">|a data: image that isn't a PNG" \
+    "junklink|<a href=\"monero:${good}x\">pay</a>|a monero: link with more than an address" \
+    "box|<div class=\"address\">${good:0:50}<b></b>${good:50}</div>|an address box with markup in it"; do
+    IFS='|' read -r file html what <<<"$attack"
+    v=$((v + 1)); site "$v" "$good"
+    put "proposals/$file.html" <<<"$html"
+    held "$v" "proposals/$file.html" "$what"
+done
+v=$((v + 1)); site "$v" "$good"; put assets/evil.css <<<'.address::after { content: "x" }'
+held "$v" assets/evil.css "a stylesheet that isn't the design's"
+v=$((v + 1)); site "$v" "$good"; put assets/style.css <<<'.address { display: none }'
+rc=0; push > /dev/null || rc=$?
+if ((rc)) && [[ $(live) == "v$v" && $(livefile assets/style.css) == 'body {}' ]]; then ok "held back: a design file changed (its last good copy stays)"; else fail "a changed design file"; fi
+v=$((v + 1)); site "$v" "$good"; printf '0 %s\n' "$fake" | put subaddresses.txt
+rc=0; push > /dev/null || rc=$?
+if ((rc)) && [[ $(livefile subaddresses.txt) != *"$fake"* ]]; then ok "held back: a subaddress list that isn't the one installed here"; else fail "a swapped list"; fi
+v=$((v + 1)); site "$v" "$good"; on backend "qrencode -s 4 -o /tmp/q.png 'monero:$fake'"; docker exec "$name-backend" sh -c 'mkdir -p /out/images/p && cp /tmp/q.png /out/images/p/qr.png'
+held "$v" images/p/qr.png "a proposal image that is a QR code of another address"
+v=$((v + 1)); site "$v" "$good"; docker exec "$name-backend" sh -c "mkdir -p /out/images/p && qrencode -s 4 -o /out/images/p/ok.png 'monero:$good'"
+if push > /dev/null && [[ $(live) == "v$v" ]] && on web 'test -s /var/lib/ccs-data/images/p/ok.png'; then ok "a proposal image with the wallet's QR code goes live"; else fail "a good proposal image"; fi
+on backend 'rm -rf /out/images'
+# two pushes at once: the second waits for the first (one staging folder, one at a time)
+v=$((v + 1)); site "$v" "$good"
+on backend "(rsync -a -e 'ssh -o BatchMode=yes' /out/ ccs-data@$web: > /tmp/a 2>&1; echo \$? >> /tmp/a) & (rsync -a -e 'ssh -o BatchMode=yes' /out/ ccs-data@$web: > /tmp/b 2>&1; echo \$? >> /tmp/b) & wait"
+if [[ $(on backend 'tail -n 1 /tmp/a; tail -n 1 /tmp/b') == $'0\n0' && $(live) == "v$v" ]]; then ok "two pushes at once both go through, one after the other"; else on backend 'cat /tmp/a /tmp/b'; fail "two pushes at once"; fi
 
 site 4 "$(addr 2)"
 if push > /dev/null && [[ $(live) == v4 ]]; then ok "the next good push goes live again"; else fail "recovery"; fi
