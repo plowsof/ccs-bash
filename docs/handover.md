@@ -32,7 +32,8 @@ testnet CCS. A row is added with each release.
 
 | Set | ccs-bash | ccs-front-bash | ccs-front-hugo | Running on |
 |---|---|---|---|---|
-| 2026-10-25 | v0.2.14 | v0.1.16 | v0.1.15 | testnet ([ccs.monerodevs.org](https://ccs.monerodevs.org)) |
+| 2026-10-25 | v0.2.15 | v0.1.16 | v0.1.16 | testnet ([ccs.monerodevs.org](https://ccs.monerodevs.org)) |
+| 2026-10-25 | v0.2.14 | v0.1.16 | v0.1.15 | testnet, before |
 | 2026-10-25 | v0.2.13 | v0.1.16 | v0.1.15 | testnet, before |
 | 2026-10-25 | v0.2.13 | v0.1.16 | v0.1.14 | testnet, before |
 | 2026-10-25 | v0.2.13 | v0.1.15 | v0.1.13 | testnet, before |
@@ -353,6 +354,7 @@ in these files, root-owned, never in a repository or on a command line.
 | `/etc/ssh/authorized_keys/ccs-data` | `from=`, the key | the backend's address and its push key, `command="/usr/local/bin/ccs-receive"`; `sshd_config`'s `Match User ccs-data` reads only it | 6 |
 | `/etc/ccs-gate/` | `subaddresses.txt` and its `.pin`, `.asc`, `.key.asc` | the same files as the backend's | 6 |
 | | `design.sha256` | the design release's files, from its zip (two-machines, "The gate"); `apt install zbar-tools` | 6 |
+| | `hidden-classes` | the classes the design hides text with, its zip's `assets/hidden-classes.txt` (from ccs-front-hugo v0.1.16) | 6 |
 | | `allowed` | the General Fund, `888tNkZrPN6JsEgekjMnABU4TBzc2Dt29EPAvkRxbANsAnjyPbb3iQ1YBRk1UXcdRsiKc9dhwMVgN5S9cQUiyoogDavup3H`, and any address a proposal's text quotes (the gate's refusal names it) | 6 |
 | | `alert.conf` | `ALERT_URL` (the bot), `SITE_URL=https://ccs.getmonero.org` | 8 |
 | nginx | `server_name`, the certificate | `ccs.getmonero.org`, from certbot | 6 |
