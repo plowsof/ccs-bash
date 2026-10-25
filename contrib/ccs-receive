@@ -1,13 +1,21 @@
 #!/bin/bash
 # ccs-receive: the web server's last check (docs/two-machines.md, "The gate"). The backend's push
 # key runs only this (command= in authorized_keys). It receives the push as rrsync always did, but
-# into a staging folder; then every Monero address in its pages and JSON must be one of the
-# wallet's (the signed list and its .pin, installed here by hand) or in the allowed file. The push
-# goes live, except a page with any other address: that one keeps its last good copy, and IRC is
-# told (alert.conf). A list that isn't the pinned one refuses the whole push. Needs bash, awk,
-# grep, rsync (rrsync), coreutils, curl. Root-owned, 755.
+# into a staging folder, one push at a time; then
+#   - every Monero address in its pages and JSON must be one of the wallet's (the signed list and
+#     its .pin, installed here by hand) or in the allowed file: as written, as shown (tags removed,
+#     entities read), in every monero: link, in every address box, and in every QR code (each
+#     data: image must be a QR code zbarimg reads, holding such an address);
+#   - every other file it changes must be the design's (design.sha256, from the release zip), a
+#     proposal's image (any QR code in it holding only such addresses), projects.json, or the
+#     signed list's own files, the same as the ones installed here.
+# The push goes live, except a file that fails: that one keeps its last good copy (a new one stays
+# out), and IRC is told (alert.conf). A list that isn't the pinned one, or no design.sha256 or
+# zbarimg, refuses the whole push. Needs bash, awk, grep, rsync (rrsync), coreutils, curl,
+# zbarimg (zbar-tools). Root-owned, 755.
 set -euo pipefail
-staging=/var/lib/ccs-staging live=/var/lib/ccs-data conf=/etc/ccs-gate
+export LC_ALL=C
+staging=/var/lib/ccs-staging live=/var/lib/ccs-data conf=/etc/ccs-gate state=/var/lib/ccs-gate
 
 # The reason goes to the web server's journal (and /var/log/ccs-gate.log, if ccs-data may write
 # it), and to the backend: that last one only if ssh relays it before the rsync client exits.
@@ -15,7 +23,7 @@ staging=/var/lib/ccs-staging live=/var/lib/ccs-data conf=/etc/ccs-gate
 # hour per KEY: a taken-over backend retrying every two minutes mustn't flood the channel. Here
 # is where a bad push is seen even when the backend is the one lying.
 alert() {
-    local url='' site='' k v stamp=/var/lib/ccs-gate/alert-${1//[^A-Za-z0-9._-]/_}
+    local url='' site='' k v stamp=$state/alert-${1//[^A-Za-z0-9._-]/_}
     [[ -r $conf/alert.conf ]] || return 0
     while IFS='=' read -r k v; do
         case $k in ALERT_URL) url=$v ;; SITE_URL) site=$v ;; esac
@@ -35,15 +43,129 @@ say() {
     printf 'ccs-gate: %s\n' "$*" >&2
 }
 
-# scan DIR: "file<TAB>address" for every address-shaped string (95 base58 characters, alone) in
-# DIR's pages and JSON. data: URIs (the QR codes' base64) are skipped: a run in them can look like one.
+# refuse WHY KEY [WHY_FOR_IRC]: the whole push stays out
+refuse() {
+    say "refused the push: $1"
+    alert "$2" "the web server refuses every push: ${3:-$1}"
+    exit 1
+}
+
+# The pages' and JSON's addresses, as "file<TAB>address" lines; "file<TAB>!reason" for what the
+# gate can't accept; "file<TAB>?qr<TAB>base64" for each data: image, for zbarimg (below). An
+# address is a run of 95 (standard) or 106 (integrated) base58 characters. Each file is read
+#   1. as written, tags and attributes included (monero: links, alt and title text), with
+#      entities and %-escapes read as a browser or a wallet would (&#56; and %38 are both 8);
+#   2. as shown: tags removed, so an address split by <span></span> or <wbr> is one again;
+# with invisible characters (zero-width spaces, soft hyphens) dropped first. A monero: link must
+# have an address straight after it, an address box (class="address") one address and nothing
+# else, and a data: URI must be a PNG image, which must be a QR code (checked after this).
+# No interval expressions ({95}): mawk 1.3.3 has none.
+scan_awk='
+function hexval(h,    i, v) { v = 0; h = tolower(h); for (i = 1; i <= length(h); i++) v = v * 16 + index("0123456789abcdef", substr(h, i, 1)) - 1; return v }
+function chr(n) {
+    if (n == 173 || (n >= 8203 && n <= 8205) || (n >= 8288 && n <= 8292) || n == 65279) return ""
+    return (n > 32 && n < 127) ? sprintf("%c", n) : " "
+}
+function decode(s,    out, e, n) {
+    out = ""
+    while (match(s, /&#[0-9]+;?|&#[xX][0-9A-Fa-f]+;?|&[A-Za-z]+;|%[0-7][0-9A-Fa-f]/)) {
+        e = substr(s, RSTART, RLENGTH); out = out substr(s, 1, RSTART - 1); s = substr(s, RSTART + RLENGTH)
+        sub(/;$/, "", e)
+        if (e ~ /^%/) n = hexval(substr(e, 2))
+        else if (e ~ /^&#[xX]/) n = hexval(substr(e, 4))
+        else if (e ~ /^&#/) n = substr(e, 3) + 0
+        else { e = substr(e, 2); n = (e == "amp") ? 38 : (e == "lt") ? 60 : (e == "gt") ? 62 : (e == "quot") ? 34 : (e == "apos") ? 39 : 32 }
+        out = out chr(n)
+    }
+    return out s
+}
+function tokens(f, s,    t) {
+    while (match(s, /[0-9A-Za-z]+/)) {
+        t = substr(s, RSTART, RLENGTH); s = substr(s, RSTART + RLENGTH)
+        if ((length(t) == 95 || length(t) == 106) && t !~ /[0OIl]/) print f "\t" t
+    }
+}
+function base58run(s) { return match(s, /^[1-9A-HJ-NP-Za-km-z]+/) && (RLENGTH == 95 || RLENGTH == 106) }
+function check(f, d,    a, l, m, i, box) {
+    gsub(zw, "", d)
+    a = decode(d)
+    # data: URIs (a scheme starts after a non-scheme character: not "metadata:"): PNG images
+    # only; each one goes to zbarimg, and its base64 is not text
+    m = " " a
+    while (match(tolower(m), /[^a-z0-9+.-]data:/)) {
+        m = substr(m, RSTART + 1)
+        if (match(m, /^data:image\/png;base64,[A-Za-z0-9+\/]+=*/)) print f "\t?qr\t" substr(m, 23, RLENGTH - 22)
+        else print f "\t!a data: URI that is not a PNG image"
+        m = substr(m, 6)
+    }
+    gsub(/data:image\/png;base64,[A-Za-z0-9+\/]+=*/, " ", a)
+    tokens(f, a)
+    m = d; gsub(/<[^>]*>/, "", m); tokens(f, decode(m))
+    # monero: links (href, any case, spaces around =): an address right after, nothing else
+    m = a; l = tolower(a)
+    while (match(l, /href[ \t\n]*=[ \t\n]*["\047]?[ \t\n]*monero:/)) {
+        i = RSTART + RLENGTH; m = substr(m, i); l = substr(l, i)
+        if (!base58run(m)) print f "\t!a monero: link without one address right after it"
+    }
+    # address boxes: one address, no markup in them
+    m = a; l = tolower(a)
+    while (match(l, /class[ \t\n]*=[ \t\n]*["\047]?[^"\047>]*address/)) {
+        i = RSTART + RLENGTH; m = substr(m, i); l = substr(l, i)
+        if (!match(m, /^[^>]*>/)) { print f "\t!an address box that never ends"; continue }
+        box = substr(m, RLENGTH + 1)
+        if (!base58run(box) || substr(box, RLENGTH + 1, 2) != "</") print f "\t!an address box that holds more than one address"
+    }
+}
+BEGIN { zw = "\342\200[\213-\215]|\342\201[\240-\244]|\357\273\277|\302\255" }
+FNR == 1 && NR > 1 { check(prev, doc); doc = "" }
+{ doc = doc $0 "\n"; prev = FILENAME }
+END { if (NR) check(prev, doc) }'
+
+# qr FILE IMAGE: the addresses in every QR code in IMAGE as "FILE<TAB>address" lines (none if it
+# has no QR code). zbarimg reads it, as ccs-data, with a time limit.
+qr() {
+    local out
+    out=$(timeout 20 zbarimg -q --raw -- "$2" 2> /dev/null) || return 1
+    grep -oE '[0-9A-Za-z]+' <<<"$out" | awk -v f="$1" '(length($0) == 95 || length($0) == 106) && !/[0OIl]/ { print f "\t" $0; n++ } END { exit !n }'
+}
+
+# scan FILE...: the addresses (and reasons) of the pages and JSON among FILEs; every data:
+# image a QR code with an address
 scan() {
-    find "$1" -type f \( -name '*.html' -o -name '*.json' \) -print0 | xargs -0 -r awk '
-        { s = $0; gsub(/data:[^"'"'"' )]*/, "", s)
-          while (match(s, /[0-9A-Za-z]+/)) {
-              t = substr(s, RSTART, RLENGTH); s = substr(s, RSTART + RLENGTH)
-              if (length(t) == 95 && t !~ /[0OIl]/) print FILENAME "\t" t
-          } }'
+    local file tag payload png
+    png=$(mktemp)
+    printf '%s\0' "$@" | grep -zE '\.(html|json)$' | xargs -0 -r awk "$scan_awk" \
+        | while IFS=$'\t' read -r file tag payload; do
+            if [[ $tag != '?qr' ]]; then printf '%s\t%s\n' "$file" "$tag"; continue; fi
+            if ! base64 -d <<<"$payload" > "$png" 2> /dev/null || ! qr "$file" "$png"; then
+                printf '%s\t%s\n' "$file" "!an image that is not a QR code of an address"
+            fi
+        done
+    rm -f "$png"
+}
+
+# changes: every file the push brings that isn't already live, byte for byte, as "file<TAB>!reason"
+# for any that isn't allowed, and "file<TAB>address" for the addresses in a proposal image's QR codes
+changes() {
+    local f rel sum
+    while IFS= read -r -d '' f; do
+        rel=${f#"$staging"/}
+        cmp -s "$f" "$live/$rel" 2> /dev/null && continue
+        case $rel in
+            *.html | projects.json) ;;   # the pages and the /projects JSON: scanned, all of them
+            subaddresses.txt | subaddresses.txt.asc | subaddresses.txt.key.asc)
+                cmp -s "$f" "$conf/$rel" || printf '%s\t%s\n' "$f" "!not the $rel installed in $conf" ;;
+            images/*/*)
+                if [[ ! $rel =~ ^images/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+\.(png|jpg|jpeg|gif)$ ]]; then
+                    printf '%s\t%s\n' "$f" "!not a proposal image (images/<proposal>/<file>.png|jpg|jpeg|gif)"
+                else
+                    qr "$f" "$f" || true
+                fi ;;
+            *)
+                sum=$(sha256sum < "$f" | cut -d' ' -f1)
+                grep -qxF "$sum $rel" "$design" || printf '%s\t%s\n' "$f" "!not the design's (design.sha256)" ;;
+        esac
+    done < <(find "$staging" -type f -print0)
 }
 
 # ccs-receive --heartbeat, from a timer every 5 minutes as ccs-data (the backend's key can't pass
@@ -55,7 +177,7 @@ scan() {
 # resuming after this machine's own network outage come first. Then once an hour at most, and a
 # line when pushes arrive again.
 heartbeat() {
-    local d=/var/lib/ccs-gate minutes age up
+    local d=$state minutes age up
     minutes=$(sed -n 's/^HEARTBEAT_MINUTES=\([1-9][0-9]*\)$/\1/p' "$conf/alert.conf" 2> /dev/null | tail -n 1)
     minutes=${minutes:-15}
     [[ -f $d/last-push ]] || return 0
@@ -78,37 +200,55 @@ heartbeat() {
 }
 if [[ ${1:-} == --heartbeat ]]; then heartbeat; exit 0; fi
 
+# One push at a time: two at once would share the staging folder, and one could change it after
+# the other's checks, before its copy into the live site.
+exec 8> "$state/lock"
+flock -w 600 8 || { say "refused the push: another one is still going after 10 minutes"; exit 1; }
+
 # Staging starts as the live site each time: the push account can't delete, so whatever a
 # refused push left in it would otherwise stay there and refuse every push after it.
 rsync -a --delete "$live/" "$staging/"
 rrsync -wo -no-del -munge "$staging"
-touch /var/lib/ccs-gate/last-push 2> /dev/null || true   # the backend's heartbeat (--heartbeat)
+touch "$state/last-push" 2> /dev/null || true   # the backend's heartbeat (--heartbeat)
 
 # the list and its pin, as ccs-front-bash has them (tools/sign-subaddresses.sh: "sha256 <hex>")
 list=$conf/subaddresses.txt
 [[ -f $list && $(sha256sum < "$list" | cut -d' ' -f1) == "$(sed -n 's/^sha256 *//p' "$list.pin" 2> /dev/null)" ]] \
-    || { say "refused the push: $list is not the list $list.pin names"
-         alert list "the web server refuses every push: its signed list isn't the one its .pin names"; exit 1; }
-# the list's addresses, then the allowed file's (first word of each line; # comments)
-bad=$(scan "$staging" | awk -F '\t' 'NR == FNR { if ($1 !~ /^#/ && NF) ok[$1] = 1; next } !($2 in ok)' \
-    <(cut -d' ' -f2 "$list"; awk '{ print $1 }' "$conf/allowed" 2> /dev/null) -)
-# The rest of the push goes live; a page with an address that isn't the wallet's keeps its last
-# good copy (a new one stays out): one bad page doesn't stop the site updating, and nothing here
-# rewrites a page. The push still fails, so the backend's log shows it.
+    || refuse "$list is not the list $list.pin names" list "its signed list isn't the one its .pin names"
+command -v zbarimg > /dev/null || refuse "it has no zbarimg to read the QR codes with (apt install zbar-tools)" zbarimg
+# the design's files, "sha256  path" as sha256sum writes them (./ and binary-mode * dropped);
+# several releases' may be in it
+[[ -s $conf/design.sha256 ]] || refuse "it has no $conf/design.sha256 (the design release's files)" design
+design=$(mktemp)
 held=$(mktemp)
-trap 'rm -f "$held"' EXIT
+trap 'rm -f "$held" "$design"' EXIT
+sed -nE 's#^([0-9a-f]{64}) [ *](\./)?(.+)$#\1 \3#p' "$conf/design.sha256" > "$design"
+# a file name rsync's exclude patterns can't hold exactly (a newline) can't be held back either
+if find "$staging" -name '*[[:cntrl:]]*' | grep -q .; then refuse "a file name with a control character in it" names; fi
+
+# the list's addresses, then the allowed file's (first word of each line; # comments)
+mapfile -d '' pages < <(find "$staging" -type f \( -name '*.html' -o -name '*.json' \) -print0)
+bad=$( { scan "${pages[@]}"; changes; } | awk -F '\t' 'NR == FNR { if ($1 !~ /^#/ && NF) ok[$1] = 1; next } !($2 in ok)' \
+    <(cut -d' ' -f2 "$list"; awk '{ print $1 }' "$conf/allowed" 2> /dev/null) - | sort -u)
+# The rest of the push goes live; a file that fails keeps its last good copy (a new one stays
+# out): one bad page doesn't stop the site updating, and nothing here rewrites a file. The push
+# still fails, so the backend's log shows it.
 if [[ $bad ]]; then
     # rsync patterns, anchored, wildcards escaped: exactly these files
     cut -f1 <<<"$bad" | sort -u | while IFS= read -r file; do
         f=${file#"$staging"/}; printf '/%s\n' "${f//[][*?\\]/\\&}"
     done > "$held"
-    say "held back $(wc -l < "$held") page(s), address(es) not the wallet's nor allowed; the rest goes live"
+    say "held back $(wc -l < "$held") file(s), with an address that isn't the wallet's nor allowed, or not allowed here; the rest goes live"
     while IFS=$'\t' read -r file addr; do say "  ${file#"$staging"/}: $addr"; done < <(head -n 10 <<<"$bad")
     n=0
     while IFS=$'\t' read -r file addr; do
         ((n++ < 3)) || break
-        alert "addr-$addr" "the web server held back a page: donation address $red${addr:0:6}…${addr: -4}$off is not in the signed list (its last good copy stays) @ @SITE@/${file#"$staging"/}"
-    done < <(awk -F '\t' '$1 ~ /\.html$/' <<<"$bad"; awk -F '\t' '$1 !~ /\.html$/' <<<"$bad")   # a page before the JSON
+        if [[ $addr == '!'* ]]; then
+            alert "file-${file#"$staging"/}" "the web server held back a file: ${addr#!} (its last good copy stays) @ @SITE@/${file#"$staging"/}"
+        else
+            alert "addr-$addr" "the web server held back a page: donation address $red${addr:0:6}…${addr: -4}$off is not in the signed list (its last good copy stays) @ @SITE@/${file#"$staging"/}"
+        fi
+    done < <(awk -F '\t' '$1 ~ /\.html$/' <<<"$bad"; awk -F '\t' '$1 !~ /\.html$/' <<<"$bad")   # a page before the rest
 fi
 rsync -a --delay-updates --exclude-from="$held" "$staging/" "$live/"
 [[ ! -s $held ]]

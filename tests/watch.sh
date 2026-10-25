@@ -15,12 +15,24 @@ port() { python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)
 addr() { printf '%s%094d' "${2:-9}" "$1" | tr 0 1; }
 mkdir -p "$tmp/local/proposals" "$tmp/local/funding-required" "$tmp/local/donate" "$tmp/local/verify"
 for i in 0 1 2; do echo "$i $(addr "$i")"; done > "$tmp/list.txt"
-echo home > "$tmp/local/index.html"
+# the files the pages use: stylesheets (theme.css and its dark and light ones), the General Fund's
+# QR code, an icon in a srcset
+mkdir -p "$tmp/local/assets"
+for t in theme theme-dark theme-light; do echo ".$t {}" > "$tmp/local/assets/$t.css"; done
+echo qr > "$tmp/local/assets/general-fund-qr.png"; echo icon > "$tmp/local/assets/logo-2x.png"
+echo '<link rel="stylesheet" href="assets/theme.css"><img src="assets/general-fund-qr.png" srcset="assets/logo-2x.png 2x">home' > "$tmp/local/index.html"
 for d in funding-required donate verify; do echo "$d" > "$tmp/local/$d/index.html"; done
 # a donation box, and the General Fund in the footer (on every page, not the wallet's)
-echo "<details class=\"contribute\"><a class=\"qr\" href=\"monero:$(addr 1)\"></a><div class=\"address\">$(addr 1)</div></details><p class=\"address\">$(addr 3 8)</p>" > "$tmp/local/proposals/a b.html"
+echo "<link rel=\"stylesheet\" href=\"../assets/theme.css\"><a href=\"../index.html\">home</a><details class=\"contribute\"><a class=\"qr\" href=\"monero:$(addr 1)\"></a><div class=\"address\">$(addr 1)</div></details><p class=\"address\">$(addr 3 8)</p>" > "$tmp/local/proposals/a b.html"
 echo "<a class=\"qr\" href=\"monero:$(addr 0)\"></a> the General Fund in the footer, no Contribute box" > "$tmp/local/proposals/done.html"
 cp -r "$tmp/local" "$tmp/remote"
+# /dark/ and /light/: the same files, but their own theme.css (the web server's theme lines)
+for t in dark light; do
+    mkdir -p "$tmp/remote/$t/assets"
+    for f in index.html funding-required donate verify proposals; do ln -s "../$f" "$tmp/remote/$t/$f"; done
+    for f in "$tmp/local/assets"/*; do ln -s "../../assets/${f##*/}" "$tmp/remote/$t/assets/${f##*/}"; done
+    rm "$tmp/remote/$t/assets/theme.css" && cp "$tmp/local/assets/theme-$t.css" "$tmp/remote/$t/assets/theme.css"
+done
 
 web=$(port) bot=$(port)
 python3 -m http.server "$web" --bind 127.0.0.1 -d "$tmp/remote" > /dev/null 2>&1 & pids+=($!)
@@ -34,13 +46,13 @@ class H(http.server.BaseHTTPRequestHandler):
     def log_message(self, *a): pass
 http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()' "$bot" "$tmp/bot.txt" & pids+=($!)
 sleep 1
-printf 'ALERT_URL=http://127.0.0.1:%s/simple?channel=%%23ccs\nSUBADDRESSES=%s\nALERT_PLAIN=1\n' "$bot" "$tmp/list.txt" > "$tmp/alert.conf"
+printf 'ALERT_URL=http://127.0.0.1:%s/simple?channel=%%23ccs\nSUBADDRESSES=%s\nALERT_PLAIN=1\nWATCH_THEMES=1\n' "$bot" "$tmp/list.txt" > "$tmp/alert.conf"
 watch() { CCS_WATCH_STATE=$tmp/state "$here/../contrib/ccs-watch" "http://127.0.0.1:$web" "$tmp/local" "$tmp/alert.conf" 2> "$tmp/log"; }
 alerts() { [[ -f $tmp/bot.txt ]] && wc -l < "$tmp/bot.txt" || echo 0; }
 
 export CCS_WATCH_WAITS="0.2 0.2"
 page=$tmp/remote/proposals/a\ b.html
-if watch && [[ $(alerts) == 0 ]] && grep -q "the 5 pages" "$tmp/log"; then ok "nothing changed: no alert (5 pages: 4 fixed, 1 with a donation box)"; else cat "$tmp/log"; fail "unchanged site"; fi
+if watch && [[ $(alerts) == 0 ]] && grep -q "the 5 pages on .*, and the 5 files they use, are what was pushed" "$tmp/log"; then ok "nothing changed: no alert (5 pages: 4 fixed, 1 with a donation box; 5 files: theme.css and its dark and light ones, the QR code, the icon)"; else cat "$tmp/log"; fail "unchanged site"; fi
 
 # Never an alert for the web server being slow, down or answering nothing: those are failed
 # fetches, not "differs".
@@ -53,12 +65,13 @@ for _ in 1 2; do watch || true; done
 if [[ $(alerts) == 0 ]]; then ok "a page answering 404, twice: no alert"; else fail "a 404"; fi
 cp "$tmp/page.good" "$page"
 
+# (Each run fetches a page under /, /dark/ or /light/ at random: the alerts are read without it.)
 # A changed page alerts only when it stays changed: on three fetches over the waits, and on the
 # next run too.
 sed -i "s/$(addr 1)/$(addr 7 B)/g" "$page"
 watch || true
 if [[ $(alerts) == 0 ]] && grep -q "alerting if it still does next run" "$tmp/log"; then ok "a page changed: no alert on the first run that sees it"; else cat "$tmp/log"; fail "first sight"; fi
-if ! watch && [[ $(alerts) == 1 ]] && grep -qF "/simple?channel=%23ccs [CCS-watch] donation address $(addr 7 B | sed -E 's/^(.{6}).*(.{4})$/\1…\2/') does not match the CCS wallet @ http://127.0.0.1:$web/proposals/a%20b.html" "$tmp/bot.txt" \
+if ! watch && [[ $(alerts) == 1 ]] && grep -qF "/simple?channel=%23ccs [CCS-watch] donation address $(addr 7 B | sed -E 's/^(.{6}).*(.{4})$/\1…\2/') does not match the CCS wallet @ http://127.0.0.1:$web/proposals/a%20b.html" <(sed -E 's#/(dark|light)/#/#' "$tmp/bot.txt") \
     && ! grep -qF "$(addr 3 8 | cut -c1-6)" "$tmp/bot.txt"; then
     ok "still changed on the next run: one alert, naming the page and only the new address (not the General Fund)"
 else
@@ -67,6 +80,25 @@ fi
 if ! watch && [[ $(alerts) == 1 ]]; then ok "still changed an hour later or less: no second alert"; else fail "a repeated alert"; fi
 cp "$tmp/page.good" "$page"
 if watch && [[ ! -e $tmp/state/differs-proposals_a_b.html ]]; then ok "put back: the page is clean again"; else fail "recovery"; fi
+
+# The files a page uses are watched too: a stylesheet can hide an address and show another, an
+# image can be another QR code. Each alerts as a page does (the second run that sees it).
+cp "$tmp/bot.txt" "$tmp/bot.before" 2> /dev/null || : > "$tmp/bot.before"
+for f in assets/theme.css dark/assets/theme.css assets/general-fund-qr.png assets/logo-2x.png; do
+    : > "$tmp/bot.txt"; rm -f "$tmp/state"/alert-* "$tmp/state"/differs-*
+    cp --remove-destination "$tmp/remote/$f" "$tmp/changed" && echo '.address { display: none }' >> "$tmp/changed"
+    cp "$tmp/remote/$f" "$tmp/good" && cp --remove-destination "$tmp/changed" "$tmp/remote/$f"
+    watch || true; watch || true
+    if [[ $(alerts) == 1 ]] && grep -qF "the file differs from what was pushed (a page's stylesheet, font or image) @ http://127.0.0.1:$web/$f" "$tmp/bot.txt"; then
+        ok "a file a page uses changed: $f"
+    else
+        cat "$tmp/log" "$tmp/bot.txt"; fail "a changed $f"
+    fi
+    cp "$tmp/good" "$tmp/remote/$f"
+done
+rm -f "$tmp/state"/differs-*
+watch || { cat "$tmp/log"; fail "put back"; }
+cp "$tmp/bot.before" "$tmp/bot.txt"
 
 # Changed for a moment only (a push landing): put back before the recheck, never alerts.
 rm -f "$tmp/state"/alert-*
