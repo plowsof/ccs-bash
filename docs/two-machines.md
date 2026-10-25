@@ -193,12 +193,18 @@ a bash script, run by the push key instead of rrsync. Each push, one at a time, 
    be slipped past by how it is written:
    - **as written**, attributes included (`monero:` links, `alt`, `title`), with entities and
      %-escapes read as a browser or wallet reads them (`&#56;`, `&#x38;` and `%38` are all `8`);
-   - **as shown**: tags removed, so an address split by `<span></span>` or `<wbr>`, or by a
-     zero-width space or soft hyphen, is one again;
+   - **as shown**: comments and tags removed as a browser reads them (a `>` quoted in a tag, a
+     comment up to its `-->`), so an address split by `<span></span>`, `<wbr>` or a comment is
+     one again;
+   - with every character that isn't ASCII dropped first (zero-width spaces, bidi marks, soft
+     hyphens: invisible, so they mustn't split an address), as text or as an entity;
    - **every QR code**: each `data:` image must be a PNG that `zbarimg` reads as a QR code, of
-     such an address (the box's text right and its QR code another's is held back);
+     such an address (the box's text right and its QR code another's is held back); inverted
+     codes (light on dark) too;
    - **its places**: a `monero:` link has an address straight after it and nothing else, an
      address box (`class="address"`) one address and no markup;
+   - and no markup that hides or moves text without a stylesheet, which the design never uses:
+     `hidden`, `dir`, `style` or `popover` attributes, `<svg>`, `<template>`, `<bdo>`, `<ruby>`...;
 3. checks every other file the push changes: it must be the design's, byte for byte
    (`design.sha256`, from the design release: a stylesheet can hide the address and show
    another, an image can be another QR code), a proposal's image (`images/<proposal>/<file>`,
@@ -261,15 +267,18 @@ A proposal whose text quotes some other address stops its page updating until yo
 address to `allowed` (the refusal names it): the safe way to fail. On the testnet that was two
 (`utxobr-monero-k8s-operator`, `el00ruobuob-oct-dec-2018`). A new list: install its four files
 the same way. `tests/gate.sh` builds this in containers: a good push goes live; a foreign
-address, in the donation box or anywhere in a page, split by markup, a zero-width space or an
-entity, %-escaped in a `monero:` link, integrated, behind `data:`, or only in the QR code, is
-held back and the live file kept; so is a data: image that isn't a QR code, a stylesheet or
-design file that isn't the design's, a swapped list, a proposal image that is another QR code;
-two pushes at once go one after the other; the next good push goes through; a list that isn't the
-pinned one refuses everything; no deleting and nothing outside the folder, as with rrsync alone.
+address, in the donation box or anywhere in a page, split by markup, a comment, hidden text, a
+zero-width space, a bidi mark or an entity, %-escaped in a `monero:` link, integrated, behind
+`data:`, or only in the QR code, is held back and the live file kept; so is a page with a
+backslash or wildcard in its name, a `dir` attribute or an `<svg>`, a data: image that isn't a QR
+code, a stylesheet or design file that isn't the design's, a swapped list, a proposal image that
+is another QR code, inverted or not; two pushes at once go one after the other; the next good
+push goes through; a list that isn't the pinned one refuses everything; no deleting and nothing
+outside the folder, as with rrsync alone.
 
 **What it can't see:** an address drawn in the pixels of an image (not a QR code) the backend
-pushes as a proposal's image. The images come from the proposals repository, which the web
+pushes as a proposal's image, or a QR code cut in two images shown side by side; and text the
+design's own stylesheet hides (`visually-hidden`, `brand-short`, ...) put in to split an address. The images come from the proposals repository, which the web
 server doesn't have; ccs-watch (below) and visitors comparing what their wallet shows are what
 catch it. zbarimg reads images the backend sends, as ccs-data: keep zbar-tools (and the
 ImageMagick it uses) updated (`unattended-upgrades`).

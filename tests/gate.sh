@@ -147,11 +147,25 @@ for attack in \
     "notqr|<img src=\"data:image/png;base64,iVBORw0KGgo=\">|a data: image that is no QR code" \
     "svg|<img src=\"data:image/svg+xml,&lt;svg/&gt;\">|a data: image that isn't a PNG" \
     "junklink|<a href=\"monero:${good}x\">pay</a>|a monero: link with more than an address" \
-    "box|<div class=\"address\">${good:0:50}<b></b>${good:50}</div>|an address box with markup in it"; do
+    "box|<div class=\"address\">${good:0:50}<b></b>${good:50}</div>|an address box with markup in it" \
+    "lrm|<p>${fake:0:40}"$'\xe2\x80\x8e'"${fake:40}</p>|an address split by a left-to-right mark" \
+    "lrmentity|<p>${fake:0:40}&#8206;${fake:40}</p>|an address split by a left-to-right mark's entity" \
+    "namedentity|<p>${fake:0:40}&ZeroWidthSpace;${fake:40}</p>|an address split by a named entity" \
+    "quoted|<p>${fake:0:40}<i title=\">-\"></i>${fake:40}</p>|an address split by a tag with a quoted >" \
+    "comment|<p>${fake:0:40}<!-- > -->${fake:40}</p>|an address split by a comment with a > in it" \
+    "hidden|<p>${fake:0:40}<span hidden>-</span>${fake:40}</p>|an address split by hidden text" \
+    "dir|<p><span dir=\"rtl\">x</span></p>|a dir attribute" \
+    "svgtext|<p><svg><text>x</text></svg></p>|an <svg>"; do
     IFS='|' read -r file html what <<<"$attack"
     v=$((v + 1)); site "$v" "$good"
     put "proposals/$file.html" <<<"$html"
     held "$v" "proposals/$file.html" "$what"
+done
+# names an rsync exclude pattern can't hold exactly: a backslash with no wildcard, a wildcard, both
+for file in 'back\slash' 'star*' 'both\[x]'; do
+    v=$((v + 1)); site "$v" "$good"
+    put "proposals/$file.html" <<<"<p>$fake</p>"
+    held "$v" "proposals/$file.html" "a page named $file.html"
 done
 v=$((v + 1)); site "$v" "$good"; put assets/evil.css <<<'.address::after { content: "x" }'
 held "$v" assets/evil.css "a stylesheet that isn't the design's"
@@ -163,6 +177,8 @@ rc=0; push > /dev/null || rc=$?
 if ((rc)) && [[ $(livefile subaddresses.txt) != *"$fake"* ]]; then ok "held back: a subaddress list that isn't the one installed here"; else fail "a swapped list"; fi
 v=$((v + 1)); site "$v" "$good"; on backend "qrencode -s 4 -o /tmp/q.png 'monero:$fake'"; docker exec "$name-backend" sh -c 'mkdir -p /out/images/p && cp /tmp/q.png /out/images/p/qr.png'
 held "$v" images/p/qr.png "a proposal image that is a QR code of another address"
+v=$((v + 1)); site "$v" "$good"; docker exec "$name-backend" sh -c "mkdir -p /out/images/p && qrencode -s 4 --foreground=FFFFFF --background=000000 -o /out/images/p/inv.png 'monero:$fake'"
+held "$v" images/p/inv.png "a proposal image that is an inverted QR code of another address"
 v=$((v + 1)); site "$v" "$good"; docker exec "$name-backend" sh -c "mkdir -p /out/images/p && qrencode -s 4 -o /out/images/p/ok.png 'monero:$good'"
 if push > /dev/null && [[ $(live) == "v$v" ]] && on web 'test -s /var/lib/ccs-data/images/p/ok.png'; then ok "a proposal image with the wallet's QR code goes live"; else fail "a good proposal image"; fi
 on backend 'rm -rf /out/images'
