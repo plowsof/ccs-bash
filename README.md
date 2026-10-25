@@ -140,6 +140,7 @@ Docker on the host and gets Debian's security updates automatically.
 - [The pinned image](docs/image.md): how B is built and checked, changing the pin, releases
 - [Attesting a release](contrib/release/README.md): rebuild a release, sign what came out into ccs-sigs, as Feather Wallet does
 - [When something is wrong](docs/troubleshooting.md): what the log lines mean
+- [Reviewing](docs/reviewing.md): what each file that runs on the live machines does, and checks
 
 ## Tests
 
