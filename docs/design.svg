@@ -122,20 +122,21 @@
 
   <!-- web cards -->
   <g filter="url(#sh)" fill="#ffffff" stroke="#cbd5e1">
-    <rect x="815" y="245" width="180" height="105" rx="10"/>
+    <rect x="815" y="245" width="180" height="115" rx="10"/>
     <rect x="815" y="390" width="180" height="86" rx="10"/>
     <rect x="1050" y="390" width="135" height="86" rx="10"/>
   </g>
-  <rect x="815" y="245" width="6" height="105" rx="3" fill="#d97706"/>
+  <rect x="815" y="245" width="6" height="115" rx="3" fill="#d97706"/>
   <rect x="815" y="390" width="6" height="86" rx="3" fill="#d97706"/>
   <rect x="1050" y="390" width="6" height="86" rx="3" fill="#64748b"/>
   <g text-anchor="middle">
     <text x="890" y="273" font-size="14" font-weight="700" fill="#0f172a">ccs-data + the gate</text>
     <use href="#signedlist" x="964" y="252" width="26" height="26"/>
-    <text x="908" y="293" font-size="12.5" fill="#475569">write-only push to staging;</text>
-    <text x="908" y="310" font-size="12.5" fill="#475569">addresses, QR codes vs</text>
-    <text x="908" y="327" font-size="12.5" font-weight="600" fill="#b45309">the signed list</text>
-    <text x="908" y="344" font-size="12.5" fill="#475569">other files vs the design</text>
+    <text x="908" y="291" font-size="12" fill="#475569">write-only push to staging;</text>
+    <text x="908" y="306" font-size="12" fill="#475569">pages, files vs the design;</text>
+    <text x="908" y="321" font-size="12" fill="#475569">texts, images vs the repo;</text>
+    <text x="908" y="336" font-size="12" fill="#475569">addresses, QR codes vs</text>
+    <text x="908" y="351" font-size="12" font-weight="600" fill="#b45309">the signed list</text>
     <text x="908" y="422" font-size="15" font-weight="700" fill="#0f172a">nginx</text>
     <text x="908" y="442" font-size="12.5" fill="#475569">static files only</text>
     <text x="1120" y="422" font-size="15" font-weight="700" fill="#0f172a">Visitors</text>
@@ -179,8 +180,8 @@
   </g>
   <path d="M770,463 V578" fill="none" stroke="#16a34a" stroke-width="1.5" stroke-dasharray="3 3"/>
   <!-- web server inside -->
-  <path d="M905,350 V386" fill="none" stroke="#d97706" stroke-width="2.5" marker-end="url(#o)"/>
-  <text x="913" y="372" font-size="11.5" fill="#b45309">only if all pass</text>
+  <path d="M905,360 V386" fill="none" stroke="#d97706" stroke-width="2.5" marker-end="url(#o)"/>
+  <text x="913" y="378" font-size="11.5" fill="#b45309">only if all pass</text>
   <path d="M995,433 H1046" fill="none" stroke="#d97706" stroke-width="2.5" marker-end="url(#o)"/>
   <text x="1002" y="421" font-size="12" fill="#b45309">HTTPS</text>
 
@@ -233,6 +234,14 @@
   </g>
   <path d="M995,395 H1028 V690 H1036" fill="none" stroke="#c2410c" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#o)"/>
   <text x="1000" y="388" font-size="11" fill="#c2410c">a pushed file held back</text>
+  <!-- the gate reads the proposals itself (their text, their images), fetched each push, and has the design's pages and parts -->
+  <path d="M30,288 H16 V74 H1042 V372 H1001" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#s)"/>
+  <text x="1050" y="150" font-size="11" fill="#475569">fetched by the gate</text>
+  <text x="1050" y="164" font-size="11" fill="#475569">each push: the</text>
+  <text x="1050" y="178" font-size="11" fill="#475569">proposals' texts</text>
+  <text x="1050" y="192" font-size="11" fill="#475569">and images</text>
+  <path d="M795,126 H975 V356" fill="none" stroke="#7c3aed" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#p)"/>
+  <text x="983" y="262" font-size="11" fill="#6d28d9">and to the gate</text>
   <path d="M600,722 V760 H1110 V742" fill="none" stroke="#c2410c" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#o)"/>
   <text x="790" y="754" font-size="11" fill="#c2410c">served page or file ≠ what was pushed</text>
 
@@ -240,7 +249,7 @@
   <g transform="translate(30,775)" font-size="12.5" fill="#334155">
     <path d="M0,10 H34" stroke="#16a34a" stroke-width="3"/><text x="42" y="14">every run (2 min, or on a new tx)</text>
     <path d="M265,10 H299" stroke="#7c3aed" stroke-width="3" stroke-dasharray="6 4"/><text x="307" y="14">once, from an offline machine</text>
-    <path d="M520,10 H554" stroke="#64748b" stroke-width="2.5"/><text x="562" y="14">fetched or read by the backend (it only connects out)</text>
+    <path d="M520,10 H554" stroke="#64748b" stroke-width="2.5"/><text x="562" y="14">fetched or read (outgoing connections only)</text>
   <use href="#signedlist" x="905" y="-1" width="20" height="20"/>
   <text x="930" y="14" font-size="12.5" fill="#334155">the signed subaddress list</text>
     <text x="0" y="40" fill="#64748b">No Jekyll or front-end framework on any live machine. Every page is made fresh from the original and pushed, each run.</text>
