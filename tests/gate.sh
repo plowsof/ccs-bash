@@ -85,12 +85,12 @@ fail() { echo "FAIL $1"; status=1; }
 # QR (default ADDRESS), the General Fund in the footer, the design's stylesheet, the signed list's
 # files and some text that mentions Monero. Each version gets its own file times: two made in the
 # same second, the same size, rsync would skip as unchanged.
-qr64() { on backend "qrencode -s 4 -o - 'monero:$1' | base64 -w0"; }
+qr64() { on backend "qrencode -s ${2:-10} -o - 'monero:$1' | base64 -w0"; }
 site() {
     local qr
     qr=$(qr64 "${3:-$2}")
     on backend "rm -rf /out && mkdir -p /out/proposals /out/assets && echo '<p>v$1</p>' > /out/version.html
-        printf '<a class=\"qr\" href=\"monero:%s\"><img src=\"data:image/png;base64,%s\"></a><div class=\"address\">%s</div>\n<p>Monero: a guide, in 2 parts.</p><p class=\"address\">%s</p>\n' \
+        printf '<meta http-equiv=\"refresh\" content=\"30\"><img src=\"logo.png\" width=\"28\" height=\"28\" alt=\"\"><a class=\"qr\" href=\"monero:%s\"><img src=\"data:image/png;base64,%s\"></a><div class=\"address\">%s</div>\n<p>Monero: a guide, in 2 parts.</p><p class=\"address\">%s</p>\n' \
             '$2' '$qr' '$2' '$fund' > /out/proposals/p.html
         echo '[{\"address\": \"$2\"}]' > /out/projects.json
         printf 'body {}\n' > /out/assets/style.css
@@ -169,7 +169,20 @@ for attack in \
     "blockentity|<pre>&#x2588;&#9600;</pre>|block characters as entities" \
     "squarename|<p>&blacksquare;&squ;</p>|squares as named entities" \
     "braille|<p>"$'\xe2\xa3\xbf'"</p>|a braille character" \
-    "emoji|<p>"$'\xf0\x9f\x9f\xa5'"</p>|a coloured square emoji"; do
+    "emoji|<p>"$'\xf0\x9f\x9f\xa5'"</p>|a coloured square emoji" \
+    "mosaic|<p>&#x1FB0E;</p>|a legacy computing block mosaic" \
+    "digitname|<pre>&blk14;&blk34;</pre>|a block character as an entity named with digits" \
+    "shy|<p>${fake:0:40}&shy${fake:40}</p>|an address split by &shy without its ;" \
+    "tablink|<a href=\"mon&#9;ero:${fake:0:40}&#9;${fake:40}\">pay</a>|a monero: link split by tabs, which a browser takes out" \
+    "formlink|<form action=\"monero:${fake:0:40}&#10;${fake:40}\"><button>pay</button></form>|a monero: URL in a form, split by a newline" \
+    "alt|<p><img src=\"x\" title=\" alt=q\" alt=\"${fake:0:40}\">${fake:40}</p>|an address split by a broken image's alt text" \
+    "charset|<meta charset=\"iso-2022-jp\"><p>x</p>|a charset that isn't UTF-8" \
+    "refresh|<meta http-equiv=\"refresh\" content=\"0;url=https://example.com/\">|a refresh to another site" \
+    "font|<p>${fake:0:40}<font color=\"#fff\">x</font>${fake:40}</p>|an address split by white text in a <font>" \
+    "bgcolor|<table><tr><td bgcolor=\"#000\" width=\"9\"></td></tr></table>|table cells coloured with bgcolor" \
+    "manyimgs|$(printf '<img src="logo.png" width="9" height="9" alt="">%.0s' $(seq 65))|65 small images, enough to draw a QR code" \
+    "small|<img src=\"data:image/png;base64,$(qr64 "$good" 4)\">|the wallet's QR code, but not as qrencode -s 10 makes it" \
+    "extra|<img src=\"data:image/png;base64,$(on backend "python3 -c 'import sys,struct,zlib;d=sys.stdin.buffer.read();t=b\"tEXt\";c=b\"k\\x00v\";sys.stdout.buffer.write(d[:33]+struct.pack(\">I\",len(c))+t+c+struct.pack(\">I\",zlib.crc32(t+c))+d[33:])' < <(qrencode -s 10 -o - 'monero:$good') | base64 -w0")\">|the wallet's QR code with a chunk qrencode doesn't write"; do
     IFS='|' read -r file html what <<<"$attack"
     v=$((v + 1)); site "$v" "$good"
     put "proposals/$file.html" <<<"$html"
@@ -209,6 +222,30 @@ v=$((v + 1)); site "$v" "$good"; docker exec "$name-backend" sh -c "mkdir -p /ou
 held "$v" images/p/new.png "a new proposal image while the repository can't be read"
 on web "sed -i 's#=.*#=file:///srv/proposals#' /etc/ccs-gate/proposals.conf"
 on backend 'rm -rf /out/images'
+# a NUL byte, which HTML drops from the text
+v=$((v + 1)); site "$v" "$good"; on backend "printf '<p>%s\\000%s</p>\\n' '${fake:0:40}' '${fake:40}' > /out/proposals/nul.html"
+held "$v" proposals/nul.html "an address split by a NUL byte"
+# an image named as a page: a browser shows <img src="x.html"> by its bytes
+v=$((v + 1)); site "$v" "$good"; on backend "qrencode -s 10 -o /out/proposals/img.html 'monero:$fake'"
+held "$v" proposals/img.html "a PNG named .html"
+v=$((v + 1)); site "$v" "$good"; on backend "qrencode -s 10 -o /out/projects.json 'monero:$fake'"
+rc=0; push > /dev/null || rc=$?
+if ((rc)) && [[ $(live) == "v$v" && $(livefile projects.json) == '[{'* ]]; then ok "held back: a PNG as projects.json (its last good copy stays)"; else fail "a PNG as projects.json"; fi
+# a good QR code with more beside it: zbarimg reads the good one, the rest is another's
+v=$((v + 1)); site "$v" "$good"
+docker exec -i "$name-backend" sh -c "python3 - '$good' > /tmp/two.b64" <<'PY'
+import base64, subprocess, sys, zlib, struct
+def png(w, h, rows):
+    raw = b"".join(b"\x00" + bytes(r) for r in rows)
+    ch = lambda t, c: struct.pack(">I", len(c)) + t + c + struct.pack(">I", zlib.crc32(t + c))
+    return b"\x89PNG\r\n\x1a\n" + ch(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 0, 0, 0, 0)) + ch(b"IDAT", zlib.compress(raw)) + ch(b"IEND", b"")
+m = [l for l in subprocess.run(["qrencode", "-t", "ASCII", "-m", "4", "monero:" + sys.argv[1]], capture_output=True, text=True).stdout.splitlines()]
+q = [[0 if l[2 * x] == "#" else 255 for x in range(len(l) // 2) for _ in range(10)] for l in m for _ in range(10)]
+rows = [r + [255] * 200 + [0 if (x // 10) % 2 else 255 for x in range(200)] for r in q]
+print(base64.b64encode(png(len(rows[0]), len(rows), rows)).decode())
+PY
+put proposals/two.html <<<"<img src=\"data:image/png;base64,$(on backend 'cat /tmp/two.b64')\">"
+if on backend 'base64 -d /tmp/two.b64 > /tmp/two.png && zbarimg -q --raw /tmp/two.png' | grep -qx "monero:$good"; then held "$v" proposals/two.html "a good QR code with more drawn beside it"; else fail "the two-part test image doesn't read"; fi
 # two pushes at once: the second waits for the first (one staging folder, one at a time)
 v=$((v + 1)); site "$v" "$good"
 on backend "(rsync -a -e 'ssh -o BatchMode=yes' /out/ ccs-data@$web: > /tmp/a 2>&1; echo \$? >> /tmp/a) & (rsync -a -e 'ssh -o BatchMode=yes' /out/ ccs-data@$web: > /tmp/b 2>&1; echo \$? >> /tmp/b) & wait"
