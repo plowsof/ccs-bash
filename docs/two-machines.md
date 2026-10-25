@@ -70,6 +70,7 @@ server {
     root /var/lib/ccs-data;
     disable_symlinks on;
     server_tokens off;                              # no nginx version in headers and error pages
+    charset utf-8;                                  # pages are UTF-8, whatever a page says
     include snippets/ccs-headers.conf;
     add_header Cache-Control $ccs_cache always;
     location = /projects {                          # the site carries projects.json
@@ -82,13 +83,16 @@ server {
 ```
 
 A `location` with its own `add_header` drops all of the server's, hence the `include` in each such
-`location` again. What they do:
+`location` again. `charset utf-8` puts `charset=utf-8` in each page's `Content-Type`, which a
+browser takes over any `<meta charset>` in the page: a page can't switch itself to an encoding
+where bytes the gate reads as text show as something else (the gate refuses such a `<meta>` too).
+What the headers do:
 
 | Header | Stops |
 |---|---|
 | `Content-Security-Policy` | anything loading from another site, any script, inline styles; `frame-ancestors 'none'`: another site showing a page in a frame with its own address drawn over the donation box (`default-src` doesn't cover it); `base-uri 'self'`: for the 404 page's `<base href="/">` |
 | `Strict-Transport-Security` | once a browser has seen the site over HTTPS, plain HTTP to it, so nobody on the way can strip HTTPS and change the pages (browsers ignore it over HTTP, so it can stay in the port 80 server too). No `preload`: that is for a whole domain, not one name in it |
-| `X-Content-Type-Options` | a browser guessing a file is another type than nginx says |
+| `X-Content-Type-Options` | a browser running a file as a script or stylesheet when nginx says it is something else. It doesn't stop images: a browser shows an `<img>` of any file whose bytes are an image's, which is why the gate wants pages and JSON to start as text |
 | `X-Frame-Options` | framing, for browsers older than `frame-ancestors` |
 | `Referrer-Policy` | other sites learning which page a visitor came from |
 | `Permissions-Policy` | every browser feature the site doesn't use (camera, payment, clipboard…), so nothing on a page can ask for them |
