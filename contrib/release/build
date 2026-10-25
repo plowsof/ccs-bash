@@ -3,13 +3,18 @@
 # In place of Feather Wallet's contrib/guix/guix-build: each repository builds itself with its own
 # pinned StageX container/build.sh, so this only clones the tag and records what came out.
 #
-#   contrib/release/build                     by default: the newest release of all three
+#   contrib/release/build                     by default: the newest release of all three, but
+#                                             not one you have attested already (below)
 #   contrib/release/build ccs-bash v0.2.8 ccs-front-bash v0.1.11 ccs-front-hugo v0.1.9
 #                                             or the releases you name (any of the three)
 #   contrib/release/build ccs-bash            or the newest release of one
 #
 # The newest is the highest vX.Y.Z tag in its repository. Writes OUTDIR/<name>/SHA256SUMS.part
 # (OUTDIR default ./output), <name> being the release's folder in ccs-sigs, like ccs-bash-v0.2.8.
+# By default it skips a newest release that your ccs-sigs checkout (CCS_SIGS_REPO, default
+# external/ccs-sigs) already has your attestation of, so that after one repository's release only
+# that one is built; you are SIGNER's name, as attest has it (after the =, else gh's login, else
+# the key). A release you name is always built.
 # Needs git, Docker with buildx, gpg, curl and jq. Every step is shown as it happens.
 export LC_ALL=C
 set -euo pipefail
@@ -17,20 +22,44 @@ here=$(dirname "$(readlink -f "$0")")
 outdir=$(readlink -f "${OUTDIR:-output}")
 base=${CCS_REPOS:-https://github.com/plowsof}
 
-usage() { sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 # newest NAME: its highest release tag
 newest() {
     GIT_TERMINAL_PROMPT=0 git ls-remote --tags --refs "$base/$1" 'v*' 2> /dev/null | sed 's|.*refs/tags/||' \
         | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1
 }
+# signer: your name in ccs-sigs, as attest works it out (empty: unknown, nothing is skipped)
+signer() {
+    local key name=''
+    [[ ${SIGNER:-} ]] && IFS='=' read -r key name <<<"$SIGNER"
+    [[ $name ]] || name=$(command -v gh > /dev/null && gh api user --jq .login 2> /dev/null || true)
+    printf '%s\n' "${name:-${key:-}}"
+}
+# attested NAME SIGNER: your ccs-sigs checkout has SIGNER's attestation of release NAME, in any set
+attested() {
+    local sigs=${CCS_SIGS_REPO:-external/ccs-sigs} m
+    for m in "$sigs"/*/"$2"/all.SHA256SUMS; do
+        [[ -f $m ]] && grep -qE "^[0-9a-f]{64}  ${1//./\\.}([-.]|\$)" "$m" && return 0
+    done
+    return 1
+}
 if [[ $# == 0 ]]; then
-    repos=(ccs-bash ccs-front-bash ccs-front-hugo) tags=()
+    repos=(ccs-bash ccs-front-bash ccs-front-hugo) tags=() todo=()
     for r in "${repos[@]}"; do
         t=$(newest "$r") && [[ $t ]] || { echo "ERR: no release tag found for $r" >&2; exit 1; }
         tags+=("$t")
     done
     echo "The newest release of each: ccs-bash ${tags[0]}, ccs-front-bash ${tags[1]}, ccs-front-hugo ${tags[2]}"
-    for i in 0 1 2; do "$0" "${repos[i]}" "${tags[i]}"; done
+    me=$(signer)
+    for i in 0 1 2; do
+        if [[ $me ]] && attested "${repos[i]}-${tags[i]}" "$me"; then
+            echo "Skipping ${repos[i]} ${tags[i]}: you ($me) have attested it already (name it to build it anyway)"
+        else
+            todo+=("$i")
+        fi
+    done
+    ((${#todo[@]})) || { echo "Nothing new to build."; exit 0; }
+    for i in "${todo[@]}"; do "$0" "${repos[i]}" "${tags[i]}"; done
     exit 0
 fi
 (($# <= 2 || $# % 2 == 0)) || { echo "ERR: name each release with its tag: NAME TAG NAME TAG ..." >&2; exit 2; }
