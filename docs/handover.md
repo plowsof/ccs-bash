@@ -393,7 +393,11 @@ them is a new design release.
 `PROPOSALS_GIT=https://git.disroot.org/plowsof/ccs-proposals.git`, `LINK_HOSTS=repo.getmonero.org`,
 where the older proposals' merge requests are); its own wallet and list; the IRC
 bot on the backend machine itself (the backend's alerts reach it on 127.0.0.1, the web server's
-over HTTPS through that machine's proxy).
+over HTTPS through that machine's proxy); and a Forgejo Actions runner on the backend, for every
+repository of its owner on disroot, the testnet proposals' pre-parser among them: anyone opening a
+pull request there starts a job on the wallet's machine (master's script, in an unprivileged
+container with no Docker socket and no route to the wallet's RPC). A risk the testnet takes; the
+CCS's backend runs nothing but the CCS.
 
 ## Upgrading
 
