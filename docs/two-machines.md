@@ -195,27 +195,37 @@ a bash script, run by the push key instead of rrsync. Each push, one at a time, 
      %-escapes read as a browser or wallet reads them (`&#56;`, `&#x38;` and `%38` are all `8`);
    - **as shown**: comments and tags removed as a browser reads them (a `>` quoted in a tag, a
      comment up to its `-->`), so an address split by `<span></span>`, `<wbr>` or a comment is
-     one again;
+     one again; an image's alt text where it stands (a broken image shows it inline);
    - with every character that isn't ASCII dropped first (zero-width spaces, bidi marks, soft
      hyphens: invisible, so they mustn't split an address), as text or as an entity;
-   - **every QR code**: each `data:` image must be a PNG that `zbarimg` reads as a QR code, of
-     such an address (the box's text right and its QR code another's is held back); inverted
-     codes (light on dark) too;
-   - **its places**: a `monero:` link has an address straight after it and nothing else, an
-     address box (`class="address"`) one address and no markup;
-   - and no markup that hides or moves text without a stylesheet, which the design never uses:
-     `hidden`, `dir`, `style` or `popover` attributes, `<svg>`, `<template>`, `<bdo>`, `<ruby>`...;
+   - **every QR code**: each `data:` image must be, pixel for pixel, the QR code `qrencode -s 10`
+     makes of such an address, as ccs-front-bash makes it (the box's text right and its QR code
+     another's is held back; so is a good QR code with something drawn beside it, which zbarimg
+     would read past);
+   - pages and JSON must start as text does (`<`, `[` or `{`): a browser shows an
+     `<img src="x.html">` by its bytes, so an image named as a page would otherwise go unread;
+   - **its places**: a `monero:` URL, in any attribute, has one address straight after it and
+     nothing else, read with tabs and spaces taken out (a browser takes tabs and newlines out of
+     a URL), an address box (`class="address"`) one address and no markup;
+   - an entity without its `;` (a browser reads `&shy` as a soft hyphen), a NUL byte (dropped
+     from the text) and a charset other than UTF-8 are refused;
+   - and no markup that hides, moves or colours without a stylesheet, which the design never
+     uses: `hidden`, `dir`, `style` or `popover` attributes, `<svg>`, `<template>`, `<bdo>`,
+     `<ruby>`..., `<font>`, `<mark>`, the colour, border and size attributes (`bgcolor`,
+     `border`, `width` but on an `<img>`...), and no `http-equiv` but the design's
+     `refresh` of the page itself (no URL); at most 64 images, bars and boxes a page (a QR code
+     drawn with one a module takes hundreds; the most any page has is 13);
    - and no characters that can draw a QR code as text, as characters or entities: block
      elements and geometric shapes (`█▀▄■□▪`, U+2580–25FF), braille (U+2800–28FF), the big
-     squares and circles (`⬛⬜⚫⚪🔲🔳`) and the coloured ones (`🟥🟩`..., U+1F7E0–1F7EB). No
-     proposal uses them;
+     squares and circles (`⬛⬜⚫⚪🔲🔳`), the coloured ones (`🟥🟩`..., U+1F7E0–1F7EB) and the
+     block mosaics of U+1FB00–1FBFF. No proposal uses them;
 3. checks every other file the push changes: it must be the design's, byte for byte
    (`design.sha256`, from the design release: a stylesheet can hide the address and show
    another, an image can be another QR code), a proposal's image (`images/<proposal>/<file>`)
    that the proposals repository has, byte for byte at that path (fetched each push, below: a
    proposal is reviewed and merged before it is funded, so the backend can't add an image of its
    own, such as a QR code cut into pieces shown side by side, none of which zbarimg reads; any QR
-   code in it of such an address), `projects.json`, or the signed list, its signature and key,
+   code in it of such an address; inverted codes too), `projects.json`, or the signed list, its signature and key,
    the same files as installed here. While the repository can't be fetched, a new image waits
    (its page goes live without it);
 4. copies staging into the live site, except a file that fails: that one keeps its last good
@@ -224,7 +234,7 @@ a bash script, run by the push key instead of rrsync. Each push, one at a time, 
    the web server's journal (`journalctl -t ccs-gate`, and `/var/log/ccs-gate.log` if created
    for ccs-data), and goes to IRC (below);
 5. refuses the whole push if its own list isn't the one its `.pin` names, or it has no
-   `design.sha256`, no `zbarimg` or no `git` (it can't check then).
+   `design.sha256`, or no `zbarimg`, `qrencode`, `python3` or `git` (it can't check then).
 
 With `/etc/ccs-gate/alert.conf` it also tells IRC itself, once an hour per address or file: the
 one alarm that still sounds when the backend is the one lying.
@@ -238,7 +248,7 @@ one alarm that still sounds when the backend is the one lying.
 Between pushes only the heartbeat's timer runs (below). Set it up once, as root:
 
 ```
-apt install zbar-tools git                                           # zbarimg, for the QR codes; git, for the proposals' images
+apt install zbar-tools qrencode git                                  # the QR codes, read and remade; git, for the proposals' images
 install -m 755 contrib/ccs-receive /usr/local/bin/ccs-receive        # from this repository
 install -d -o ccs-data -m 755 /var/lib/ccs-staging
 install -d -m 755 /etc/ccs-gate
@@ -282,15 +292,22 @@ zero-width space, a bidi mark or an entity, %-escaped in a `monero:` link, integ
 `data:`, or only in the QR code, is held back and the live file kept; so is a page with a
 backslash or wildcard in its name, a `dir` attribute or an `<svg>`, a data: image that isn't a QR
 code, a stylesheet or design file that isn't the design's, a swapped list, a proposal image that
-is another QR code, inverted or not, block, square or braille characters, a proposal image the
+is another QR code, inverted or not, a `data:` image that isn't exactly qrencode's QR code (another
+size, an extra chunk, a good one with more drawn beside it), a PNG named `.html` or
+`projects.json`, block, square, braille or mosaic characters, a NUL byte, `&shy` without its
+`;`, a `monero:` URL split by tabs or newlines, alt text beside the rest of an address, a
+charset that isn't UTF-8, a refresh to another site, `<font color>`, `bgcolor`, 65 images, a proposal image the
 repository doesn't have (or has at another path, or other bytes), and a new one while the
 repository can't be fetched; two pushes at once go one after the other; the next good
 push goes through; a list that isn't the pinned one refuses everything; no deleting and nothing
 outside the folder, as with rrsync alone.
 
-**What it can't see:** text the design's own stylesheet hides (`visually-hidden`,
-`brand-short`, ...) put in to split an address; and a QR code drawn as text with characters it
-doesn't refuse (ASCII art, other emoji), which phones read badly at a page's line spacing.
+**What it can't see:** what the design's own stylesheet does with its own classes and elements:
+text it hides (`visually-hidden`, `brand-short`, ...) put in to split an address, or a QR code
+drawn with elements it colours (inline `<code>`, tag pills); a QR code drawn as text with
+characters it doesn't refuse (ASCII art, other emoji), which phones read badly at a page's line
+spacing; and a link to another site. Checking pages against the design's own pages, outside
+the regions it fills, would close the first.
 ccs-watch (below) and visitors comparing what their wallet shows are what catch those. zbarimg reads images the backend sends, as ccs-data: keep zbar-tools (and the
 ImageMagick it uses) updated (`unattended-upgrades`).
 
