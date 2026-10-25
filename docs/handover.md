@@ -60,9 +60,22 @@ user, on 127.0.0.1: [setup](setup.md) step 1.
 history the totals come from, and every subaddress made. With both, nothing is rescanned and the
 first run's totals are already right.
 
-1. On ccs-back's machine, stop its wallet-rpc (it saves on exit, so the cache is current), then
+1. **Find them on ccs-back's machine.** ccs-back doesn't set up its wallet-rpc (its `.env` only has
+   `RPC_URL`), so the files are wherever that wallet-rpc was started from: its `--wallet-file`
+   (both files are named after it), or `--wallet-dir` with the name it opened. Ask the process:
+
+   ```
+   grep RPC_URL /var/www/html/ccs-back/.env            # the wallet-rpc's port (the example: 28080)
+   ss -ltnp | grep ':28080'                             # the process listening there: pid=…
+   tr '\0' ' ' < /proc/<pid>/cmdline; echo               # --wallet-file / --wallet-dir / --config-file
+   ls -l /proc/<pid>/cwd                                # a relative path is relative to this
+   ```
+
+   With `--config-file`, the path is in that file. In Docker, `docker inspect <container>` shows
+   which host folder holds it (`Mounts`).
+2. Stop that wallet-rpc (it saves on exit, so the cache is current), then
    `sha256sum <name> <name>.keys`.
-2. On the backend, named as `wallet-file` says (`ccs`):
+3. On the backend, named as `wallet-file` says (`ccs`):
 
    ```
    install -o ccs-wallet -g ccs-wallet -m 600 <name>      /var/lib/ccs/wallet/ccs
@@ -70,8 +83,10 @@ first run's totals are already right.
    sha256sum /var/lib/ccs/wallet/ccs /var/lib/ccs/wallet/ccs.keys   # the same as on ccs-back's
    ```
 
-3. `password` in `wallet-rpc.conf` is that wallet's own password (ccs-back's); start the service.
-4. Check it is the CCS wallet, view-only, and caught up:
+4. `password` in `wallet-rpc.conf` is that wallet's own password: the old wallet-rpc was given it
+   too (`--password`, or a `--password-file`, on its command line or in its config file, step 1).
+   Start the service.
+5. Check it is the CCS wallet, view-only, and caught up:
 
    ```
    rpc() { curl -s --digest -u 'ccs:<rpc password>' http://127.0.0.1:18082/json_rpc \
@@ -82,7 +97,7 @@ first run's totals are already right.
    ```
 
    If it can spend, don't use it: make a view-only one (below).
-5. Step 2 runs ccs-bash once and compares its JSON with ccs-back's: the totals must match.
+6. Step 2 runs ccs-bash once and compares its JSON with ccs-back's: the totals must match.
 
 Without the cache (only `<name>.keys`), wallet-rpc rescans from the wallet's restore height on
 start; without either, make the wallet from the address and view key
@@ -91,7 +106,7 @@ Either way, before it scans, raise the subaddress lookahead past the highest ind
 `proposals.csv` (`rpc set_subaddress_lookahead '{"password":"<wallet password>","major_idx":1,"minor_idx":20000}'`): a fresh
 wallet looks only 200 past the last subaddress it has seen, and would miss donations beyond a gap;
 if it has scanned already, `rpc rescan_blockchain` after raising it. Then compare the totals as in
-step 5.
+step 6.
 
 ## 2. ccs-bash and its state (the backend)
 
