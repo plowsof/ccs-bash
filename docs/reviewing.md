@@ -92,10 +92,12 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
 
 - The push: `rsync --delay-updates` as `ccs` to the web server's key, which runs only the gate.
 - [`contrib/ccs-watch`](../contrib/ccs-watch), as `ccs`: fetches the donation pages (each under `/`,
-  `/dark/` or `/light/` at random) and every file they use, asking as Tor Browser does, through a
-  proxy picked at random, and compares each byte for byte with what was pushed. A difference must
-  last three fetches over 40 s and two runs before it alerts; `--run` alerts after three failed
-  runs. Its config is read key by key, never sourced.
+  `/dark/` or `/light/` at random), every file they use, `WATCH_SAMPLE` other pages at random and
+  `/projects`, asking as Tor Browser does (its headers, `Sec-Fetch-*` by what is fetched), through
+  a proxy picked at random, and compares each byte for byte with what was pushed. A difference must
+  last three fetches over 40 s and two runs before it alerts; a page answering anything else than
+  200 with a body, three checks in a row while the rest of the site answers, alerts too; `--run`
+  alerts after three failed runs. Its config is read key by key, never sourced.
 - [`contrib/ccs-backup-receive`](../contrib/ccs-backup-receive), on the backup machine, the
   backend's key's forced command: reads at most 1 MB (nothing once its folder holds 256 MB),
   which must look like `proposals.csv`, and keeps it as a new dated file; never overwrites or

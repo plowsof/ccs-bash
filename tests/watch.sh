@@ -52,7 +52,7 @@ alerts() { [[ -f $tmp/bot.txt ]] && wc -l < "$tmp/bot.txt" || echo 0; }
 
 export CCS_WATCH_WAITS="0.2 0.2"
 page=$tmp/remote/proposals/a\ b.html
-if watch && [[ $(alerts) == 0 ]] && grep -q "the 5 pages on .*, and the 5 files they use, are what was pushed" "$tmp/log"; then ok "nothing changed: no alert (5 pages: 4 fixed, 1 with a donation box; 5 files: theme.css and its dark and light ones, the QR code, the icon)"; else cat "$tmp/log"; fail "unchanged site"; fi
+if watch && [[ $(alerts) == 0 ]] && grep -q "the 5 pages on .*, and the 6 other pages and files, are what was pushed" "$tmp/log"; then ok "nothing changed: no alert (5 pages: 4 fixed, 1 with a donation box; 6 others: the page without one, theme.css and its dark and light ones, the QR code, the icon)"; else cat "$tmp/log"; fail "unchanged site"; fi
 
 # Never an alert for the web server being slow, down or answering nothing: those are failed
 # fetches, not "differs".
@@ -60,9 +60,15 @@ cp "$page" "$tmp/page.good"
 : > "$page"
 for _ in 1 2; do watch || true; done
 if [[ $(alerts) == 0 ]] && grep -q "could not fetch" "$tmp/log"; then ok "a page answering 200 with nothing, twice: no alert"; else cat "$tmp/log"; fail "an empty answer"; fi
+rm -f "$tmp/state"/answers-*   # (the 404s below are counted from none)
 rm "$page"
 for _ in 1 2; do watch || true; done
 if [[ $(alerts) == 0 ]]; then ok "a page answering 404, twice: no alert"; else fail "a 404"; fi
+# Security review 2026-10-25 (fails until fixed): a donation page that never answers 200 again (a
+# web server sending it elsewhere, say) while the rest of the site does is never an alert
+for _ in 1 2 3 4; do watch || true; done
+if [[ $(alerts) == 1 ]]; then ok "a donation page answering 404 on six runs in a row: an alert"; else fail "a donation page gone for good, the rest of the site up: no alert"; fi
+: > "$tmp/bot.txt"; rm -f "$tmp/state"/alert-* "$tmp/state/unreachable"
 cp "$tmp/page.good" "$page"
 
 # (Each run fetches a page under /, /dark/ or /light/ at random: the alerts are read without it.)
@@ -155,5 +161,25 @@ if "$here/../contrib/ccs-watch" --test https://ccs.test/ "$tmp/wmb.conf" > /dev/
     ok "wmb: the JSON it wants (IRC colours on: the tag light blue), and --test sends one message"
 else
     cat "$tmp/bot.txt"; fail "wmb"
+fi
+# Asked for as Tor Browser asks: a page as a page, a stylesheet as one (a web server can't pick
+# out the watcher by a missing Sec-Fetch-* header)
+hdr=$(port); mkdir -p "$tmp/h/site/assets"; echo '<link rel="stylesheet" href="assets/s.css">' > "$tmp/h/site/index.html"; echo 'a {}' > "$tmp/h/site/assets/s.css"
+python3 -c '
+import http.server, sys, os
+class H(http.server.SimpleHTTPRequestHandler):
+    def do_GET(self):
+        with open(sys.argv[2], "a") as f: f.write(self.path + " " + "|".join(k + ": " + v for k, v in self.headers.items()) + "\n")
+        super().do_GET()
+    def log_message(self, *a): pass
+os.chdir(sys.argv[3]); http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()' "$hdr" "$tmp/h/seen" "$tmp/h/site" & pids+=($!)
+sleep 1
+CCS_WATCH_STATE=$tmp/h/state "$here/../contrib/ccs-watch" "http://127.0.0.1:$hdr" "$tmp/h/site" /nonexistent 2> /dev/null || true
+if grep -q '^/ .*Sec-Fetch-Dest: document|Sec-Fetch-Mode: navigate|Sec-Fetch-Site: none|Sec-Fetch-User: ?1' "$tmp/h/seen" \
+    && grep -q '^/ .*Upgrade-Insecure-Requests: 1' "$tmp/h/seen" && grep -q '^/assets/s.css .*Sec-Fetch-Dest: style' "$tmp/h/seen" \
+    && ! grep -q '^/assets/s.css .*Sec-Fetch-User' "$tmp/h/seen"; then
+    ok "asked for as Tor Browser asks: a page with Sec-Fetch-Dest: document, a stylesheet with style"
+else
+    cat "$tmp/h/seen"; fail "the headers a page and a stylesheet are asked for with"
 fi
 exit "$status"

@@ -389,13 +389,17 @@ backend right after each push, fetches the pages where donations are asked for (
 Required, Donate, Verify, every funding-required proposal) from the site as a visitor's browser
 would, and every file they use (the stylesheets with `theme.css`, the fonts, the icons, the General
 Fund's QR code, the proposals' images: a changed stylesheet can hide an address and show another
-while the page stays the same), and compares each, byte for byte, with what was just pushed. A
-difference is an alert, naming the page or file and any address on the page that isn't on the
-signed list. (A push doesn't fix such a file by itself: rsync skips a file whose size and time
-were kept.)
+while the page stays the same), and `WATCH_SAMPLE` (10) of the other pages at random, so that
+every page is seen within a few runs (a web server could add a donation box to any page), and
+`/projects`, and compares each, byte for byte, with what was just pushed. A difference is an
+alert, naming the page or file and any address on the page that isn't on the signed list; so is
+a page that answers anything but the page (a redirect elsewhere, an error, nothing) on three
+checks in a row while the rest of the site answers. (A push doesn't fix such a file by itself:
+rsync skips a file whose size and time were kept.)
 
 So that the web server can't serve it the right pages and visitors others, it asks as Tor Browser
-asks (its user agent, headers, compression), in no fixed order, each page under `/`, `/dark/` or
+asks (its user agent and the headers Firefox 128 sends: `Sec-Fetch-*` for a page as a page and a
+stylesheet as one, `Upgrade-Insecure-Requests`, its compression), in no fixed order, each page under `/`, `/dark/` or
 `/light/` at random (`WATCH_THEMES=1`, with the theme lines above), through a proxy picked at
 random for each fetch. Tor alone isn't enough: its exits are a public list a web server can check.
 Give it Tor and a clearnet one on another network (`ssh -D 1080 <a machine elsewhere>`, kept up by
@@ -415,10 +419,12 @@ ALERT_URL=https://<the bot>/simple?channel=%23<channel>
 SUBADDRESSES=/etc/ccs-front/subaddresses.txt        # to name addresses not on the list
 WATCH_PROXY=socks5h://127.0.0.1:9050 socks5h://127.0.0.1:1080   # one at random a fetch: Tor (apt install tor), and a clearnet one elsewhere
 WATCH_THEMES=1                                      # also /dark/ and /light/ (the theme lines above)
+WATCH_SAMPLE=10                                     # other pages, at random, each run
 CONF
 ```
 
-and `ccs-bash-update` runs it after the push, then tells it how the whole run went
+and `ccs-bash-update` runs it after the push (also after one the gate held a file of back, exit
+7: a web server that lies can't hide behind a held-back page), then tells it how the whole run went
 (`ccs-watch --run`, the last line in [the handover](handover.md#9-the-update)), so that a backend which
 has stopped (an image gone, the wallet down, the push refused) is an alarm too: the page check
 only runs after a good push, and a stale site still matches what was last pushed.
@@ -426,7 +432,9 @@ only runs after a good push, and a stale site still matches what was last pushed
 One alert per problem an hour while it lasts; "could not be fetched" after three checks in a row;
 "the backend has failed N runs in a row since …: <steps>" after three failed runs (about six
 minutes), and "the backend runs again" on the first good run after that.
-A careful attacker on the web server can still try to tell the watcher from visitors (its timing,
-every two minutes after a push): the proxies and a second watcher elsewhere make that harder, not
-impossible, which is why the Verify page asks visitors to check the address their wallet shows.
+A careful attacker on the web server can still tell the watcher from visitors: its TLS handshake
+is curl's, not Firefox's, and it comes every two minutes after a push. The proxies and a second
+watcher elsewhere make that harder, not impossible (a real browser, headless Tor Browser, would
+close the first), which is why the Verify page asks visitors to check the address their wallet
+shows.
 `tests/watch.sh` runs it against a local web server and a fake bot.
