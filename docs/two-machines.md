@@ -68,11 +68,17 @@ map $uri $ccs_cache {                               # in the http context, e.g. 
 server {
     listen 80 default_server;
     root /var/lib/ccs-data;
+    index index.html;
     disable_symlinks on;
     server_tokens off;                              # no nginx version in headers and error pages
     charset utf-8;                                  # pages are UTF-8, whatever a page says
     include snippets/ccs-headers.conf;
     add_header Cache-Control $ccs_cache always;
+    error_page 404 /404.html;                       # a missing page, or a folder without one: the site's own
+    error_page 403 =404 /404.html;
+    location / {
+        try_files $uri $uri/ =404;
+    }
     location = /projects {                          # the site carries projects.json
         alias /var/lib/ccs-data/projects.json;
         default_type application/json;
@@ -85,7 +91,9 @@ server {
 A `location` with its own `add_header` drops all of the server's, hence the `include` in each such
 `location` again. `charset utf-8` puts `charset=utf-8` in each page's `Content-Type`, which a
 browser takes over any `<meta charset>` in the page: a page can't switch itself to an encoding
-where bytes the gate reads as text show as something else (the gate refuses such a `<meta>` too).
+where bytes the gate reads as text show as something else (and the gate allows only the design's
+own `<meta>`). A missing page answers 404 with the site's own 404 page, a folder without an index
+too (403 would say it exists); ccs-watch reads any answer but 200 as the page not being served.
 What the headers do:
 
 | Header | Stops |
@@ -125,8 +133,8 @@ map $request_uri $ccs_page {                       # the page, without a theme p
     if ($arg_theme = system) { return 302 $ccs_page; }
     location = /dark/assets/theme.css  { alias /var/lib/ccs-data/assets/theme-dark.css; }
     location = /light/assets/theme.css { alias /var/lib/ccs-data/assets/theme-light.css; }
-    location ^~ /dark/  { alias /var/lib/ccs-data/; }
-    location ^~ /light/ { alias /var/lib/ccs-data/; }
+    location ^~ /dark/  { alias /var/lib/ccs-data/; try_files $uri $uri/ =404; }
+    location ^~ /light/ { alias /var/lib/ccs-data/; try_files $uri $uri/ =404; }
 ```
 
 The pages are the very files the gate checked and ccs-watch compares, under another address.
