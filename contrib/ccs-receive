@@ -2,22 +2,22 @@
 # ccs-receive: the web server's last check (docs/two-machines.md, "The gate"). The backend's push
 # key runs only this (command= in authorized_keys). It receives the push as rrsync always did, but
 # into a staging folder, one push at a time; then
-#   - every Monero address in its pages and JSON must be one of the wallet's (the signed list and
-#     its .pin, installed here by hand) or in the allowed file: as written, as shown (tags removed,
-#     entities read), in every monero: link, in every address box, and in every QR code (each
-#     data: image must be, pixel for pixel, the QR code qrencode makes of such an address); and
-#     no run of letters and digits a visitor sees only with an element of a class the design hides
-#     things with (hidden-classes, from the release zip) hidden may be long enough for one;
-#   - pages and JSON must start as text does (<, [ or {): a browser shows an image's bytes
-#     whatever the file is called;
-#   - no block, square or braille characters in them, which could draw a QR code as text;
+#   - every page must be one of the design's own (the release zips unpacked in design/, installed
+#     here by hand), each region filled with the design's parts and each {{slot}} with a value of
+#     its kind (a number, escaped text that can't hold an address, a link to the proposals'
+#     forge...), and a proposal's text exactly what markdown.awk (ccs-front-bash's, installed here)
+#     makes of its file in the proposals repository (proposals.conf), fetched here: nothing else
+#     can be on a page, whatever a browser would make of it;
+#   - every Monero address in the pages and JSON must be one of the wallet's (the signed list and
+#     its .pin, installed here by hand) or in the allowed file, and every data: image, pixel for
+#     pixel, the QR code qrencode makes of such an address; the JSON read as JSON;
 #   - every other file it changes must be the design's (design.sha256, from the release zip), a
-#     proposal's image that the proposals repository has at that path (proposals.conf; any QR
-#     code in it holding only such addresses), projects.json, or the signed list's own files, the
-#     same as the ones installed here.
+#     proposal's image that the proposals repository has at that path (any QR code in it holding
+#     only such addresses), projects.json, or the signed list's own files, the same as the ones
+#     installed here.
 # The push goes live, except a file that fails: that one keeps its last good copy (a new one stays
-# out), and IRC is told (alert.conf). A list that isn't the pinned one, or no design.sha256,
-# hidden-classes or zbarimg, refuses the whole push. Needs bash, awk, grep, rsync (rrsync),
+# out), IRC is told (alert.conf), and it exits 7 (the backend's rsync exits 7 too). A list that isn't the pinned one, or no design.sha256,
+# design or markdown.awk, refuses the whole push. Needs bash, awk, grep, rsync (rrsync),
 # coreutils, curl, zbarimg (zbar-tools), qrencode, git, python3 (as rrsync). Root-owned, 755.
 set -euo pipefail
 export LC_ALL=C
@@ -56,47 +56,21 @@ refuse() {
     exit 1
 }
 
-# The pages' and JSON's addresses, as "file<TAB>address" lines; "file<TAB>!reason" for what the
-# gate can't accept; "file<TAB>?qr<TAB>base64" for each data: image, for zbarimg (below). An
-# address is a run of 95 (standard) or 106 (integrated) base58 characters. Each file is read
-#   1. as written, tags and attributes included (monero: links, alt and title text), with
-#      entities read as a browser would (&#56; is 8); %-escapes only in a monero: link, as a
-#      wallet reads them (%38 is 8): in a page's text, a browser shows them as they are;
-#   2. as shown: comments and tags removed as a browser reads them (a quoted ">" in a tag, a
-#      comment up to its "-->"), so an address split by <span></span> or <wbr> is one again; a
-#      block tag (<p>, <div>, <br>, <td>...) a space, as its text starts a line or a cell of its
-#      own (any other tag joins); an image's alt text where it stands (a broken image shows it
-#      inline); and, as each element with a hiding class may be hidden or not (glued()), no run
-#      of 95 or more that only shows with one hidden;
-# with every character that isn't ASCII, or is a control character, dropped first: zero-width
-# spaces, bidi marks, soft hyphens and the like show nothing, so they mustn't split an address
-# for the gate either (as characters or entities; an entity it doesn't know is dropped too). An
-# entity without its ";" in a page is refused (a browser reads &shy as a soft hyphen), and so are
-# a NUL byte (dropped from the text: below, in scan) and a charset other than UTF-8.
-# Markup that hides or moves text without the design's stylesheet (hidden, dir, style or popover
-# attributes; <template>, <svg>, <bdo>...), colours, borders or sizes it (<font>, bgcolor, width
-# but on an <img>...), or leaves the page (an http-equiv refresh with a URL),
-# which the design never uses, is refused. A link (any attribute value starting monero:, tabs and spaces
-# taken out, as a browser does tabs and newlines in a URL) must have one address straight after
-# it, an address box (class="address") one address and nothing
-# else, and a data: URI in a page (tabs and spaces in its scheme too: a browser takes tabs out)
-# must be exactly data:image/png;base64,..., a QR code (checked after this). A page
-# or JSON must start with <, [ or {: no image format does, and a browser shows an <img> of any
-# file whose bytes are an image's.
-# Characters that can draw a QR code as text, as characters or entities, are refused: block
-# elements and geometric shapes (U+2580-25FF), braille (U+2800-28FF), the big squares and
-# circles (U+2B1B-2B1C, U+26AA-26AB, U+1F532-1F533), the coloured ones (U+1F7E0-1F7EB) and the
-# block mosaics of the legacy computing symbols (U+1FB00-1FBFF).
+# The pages' and JSON's addresses, as written (pages() says what can be on a page at all), as
+# "file<TAB>address" lines; "file<TAB>!reason" for what the gate can't accept; "file<TAB>?qr<TAB>
+# base64" for each data: image, for zbarimg (below). An address is a run of 95 (standard) or 106
+# (integrated) base58 characters, tags and attributes included (a monero: link, an alt text),
+# entities read as a browser reads them (&#56; is 8). A character that isn't ASCII, or a control
+# character, is read twice: dropped (a zero-width space mustn't split an address) and as a space
+# (a no-break space mustn't join one to the word beside it). A page or JSON must start with <, [
+# or {: no image format does, and a browser shows an <img> of any file whose bytes are an image's.
 # No interval expressions ({95}): mawk 1.3.3 has none.
 scan_awk='
 function hexval(h,    i, v) { v = 0; h = tolower(h); for (i = 1; i <= length(h); i++) v = v * 16 + index("0123456789abcdef", substr(h, i, 1)) - 1; return v }
-function drawing(n) {
-    return (n >= 9600 && n <= 9727) || (n >= 10240 && n <= 10495) || n == 11035 || n == 11036 || n == 9898 || n == 9899 || n == 128306 || n == 128307 || (n >= 128992 && n <= 129003) || (n >= 129792 && n <= 130047)
-}
+# a character: printable ASCII as itself, a space as one, anything else \001 (see tokens)
 function chr(n) {
-    if (drawing(n)) drew = 1
     if (n > 32 && n < 127) return sprintf("%c", n)
-    return (n == 9 || n == 10 || n == 12 || n == 13 || n == 32) ? " " : ""
+    return (n == 9 || n == 10 || n == 12 || n == 13 || n == 32) ? " " : "\001"
 }
 function decode(s,    out, e, n) {
     out = ""
@@ -105,227 +79,28 @@ function decode(s,    out, e, n) {
         sub(/;$/, "", e)
         if (e ~ /^&#[xX]/) n = hexval(substr(e, 4))
         else if (e ~ /^&#/) n = substr(e, 3) + 0
-        else { e = substr(e, 2); n = (e == "amp") ? 38 : (e == "lt") ? 60 : (e == "gt") ? 62 : (e == "quot") ? 34 : (e == "apos") ? 39 : (e ~ drawnames) ? 9608 : -1 }
+        else { e = substr(e, 2); n = (e == "amp") ? 38 : (e == "lt") ? 60 : (e == "gt") ? 62 : (e == "quot") ? 34 : (e == "apos") ? 39 : -1 }
         out = out chr(n)
     }
     return out s
 }
-# %-escapes, as a wallet reads a monero: URI (ASCII only)
-function pct(s,    out) {
-    out = ""
-    while (match(s, /%[0-7][0-9A-Fa-f]/)) {
-        out = out substr(s, 1, RSTART - 1) chr(hexval(substr(s, RSTART + 1, 2))); s = substr(s, RSTART + 3)
-    }
-    return out s
-}
-function tokens(f, s,    t) {
+function run(f, s,    t) {
     while (match(s, /[0-9A-Za-z]+/)) {
         t = substr(s, RSTART, RLENGTH); s = substr(s, RSTART + RLENGTH)
         if ((length(t) == 95 || length(t) == 106) && t !~ /[0OIl]/) print f "\t" t
     }
 }
-# the text of a page as a browser shows it: comments and tags out (hides() looks at each tag);
-# the text of an element with a class the design hides things with between \001 and \002
-# (region(), for glued(); taken out before tokens())
-function strip(f, s,    out, i, j, k, t) {
-    out = ""; nr = 0; ns = 0; split("", opened)
-    while ((i = index(s, "<")) > 0) {
-        out = out substr(s, 1, i - 1); s = substr(s, i)
-        if (substr(s, 1, 4) == "<!--") {
-            s = substr(s, 5)
-            if (s ~ /^-?>/) { s = substr(s, index(s, ">") + 1); continue }   # <!--> and <!--->
-            j = index(s, "-->"); k = index(s, "--!>")
-            if (k && (!j || k < j)) s = substr(s, k + 4)
-            else if (j) s = substr(s, j + 3)
-            else s = ""   # never closed: the rest is the comment
-            continue
-        }
-        if (s ~ /^<([!?]|\/[^A-Za-z])/) {   # <!doctype ...>, <?...>, </>: up to the first >
-            j = index(s, ">"); s = j ? substr(s, j + 1) : ""; continue
-        }
-        if (match(s, tagre)) {
-            t = substr(s, 1, RLENGTH); s = substr(s, RLENGTH + 1); hides(f, t)
-            out = out region(f, t, tolower(t) ~ blockre ? " " : ""); continue
-        }
-        if (s ~ /^<\/?[A-Za-z]/) { s = ""; break }   # a tag never closed: the rest is in it
-        out = out "<"; s = substr(s, 2)
-    }
-    out = out s
-    for (; nr > 0; nr--) out = out "\002"   # never closed: to the end of the page
-    return out
-}
-# what tag T shows (SPACE, a block tag\047s, and an alt text), with \001 where an element with a
-# hiding class starts and \002 where its end tag ends it (a block one\047s space inside it: hidden,
-# it is no line of its own). Inside one, where a browser may end it before then (an end tag out
-# of order, an <a> in an <a>: the gate can\047t tell), it is cut in two there, each part shown or
-# not on its own: that holds where the browser ends it too. One a browser ends without its end
-# tag (<p>, <li>) it ends at a block\047s start: a line of its own either way.
-function region(f, t, space,    name, txt) {
-    name = tolower(t); sub(/^<\/?/, "", name); sub(/[^a-z0-9-].*$/, "", name)
-    txt = space alt(t)
-    if (t ~ /^<\//) {
-        if (name ~ nestre && opened[name]) opened[name]--
-        if (!nr) return txt
-        if (!ns || stack[ns] != name) return cut() txt
-        if (ns-- > at[nr]) return txt
-        nr--; return space "\002"
-    }
-    if (name ~ nestre && opened[name]++ && nr) txt = cut() txt
-    if (!hideclass(t)) {
-        if (nr && name !~ voidre) stack[++ns] = name
-        return txt
-    }
-    if (name ~ voidre) return "\001" txt "\002"
-    stack[++ns] = name; at[++nr] = ns
-    return "\001" txt
-}
-function cut(    i, c) { c = ""; for (i = 0; i < nr; i++) c = "\002" c "\001"; return c }
-# 1 if tag T has a class the design hides things with (hidden-classes; any case: a page without
-# a doctype matches them so)
-function hideclass(t,    w, n, i) {
-    n = split(tolower(attr(t, "class")), w, /[ \t\n\f\r]+/)
-    for (i = 1; i <= n; i++) if (w[i] in hiding) return 1
-    return 0
-}
-# A design class hides an element only sometimes (by the screen\047s width, a box ticked, a
-# theme, when empty), and two may take turns (Menu, Close). The text as shown above has them
-# all; a run of letters and digits a visitor sees only with one hidden (it joins across the gap,
-# or stops at it), 95 or more, is refused: it could be an address the gate doesn\047t read. Each
-# such element shown or not on its own, a level each (\001 to \002), the longest:
-#   W  the level\047s text so far, if it can have no space in it (NEG: it has one)
-#   L  the run it starts with           cp  the run ending here
-#   bx a run with one hidden            and Wx, Lx, cx: W, L, cp with one hidden (NEG: none)
-function glued(f, s,    d, n) {
-    d = 0; level(0)
-    while (s != "") {
-        n = 1
-        if (match(s, /^[0-9A-Za-z]+/)) { n = RLENGTH; W[d] += n; Wx[d] += n; cp[d] += n; cx[d] += n }
-        else if (s ~ /^\001/) level(++d)
-        else if (s ~ /^\002/) { if (d) shut(d--) }
-        else {
-            match(s, /^[^0-9A-Za-z\001\002]+/); n = RLENGTH
-            if (W[d] >= 0) { L[d] = max(L[d], W[d]); Lx[d] = max(Lx[d], Wx[d]); W[d] = Wx[d] = NEG }
-            bx[d] = max(bx[d], cx[d]); cp[d] = 0; cx[d] = NEG
-        }
-        s = substr(s, n + 1)
-    }
-    for (; d > 0; d--) shut(d)
-    if (max(bx[0], cx[0]) >= 95) print f "\t!letters and digits that join into 95 or more where an element with a hiding class is hidden: an address the gate cannot read"
-}
-function level(d) { W[d] = L[d] = cp[d] = 0; Wx[d] = Lx[d] = cx[d] = bx[d] = NEG }
-# level D ends: its element in level D-1\047s text, shown or hidden (hidden, it changes the text
-# around it only if it has text, or a block\047s space)
-function shut(d,    p, l, lx, w, wx, gone, c, x) {
-    p = d - 1; l = max(L[d], W[d]); lx = max(Lx[d], Wx[d]); w = W[d]; wx = Wx[d]; gone = w != 0
-    bx[p] = max(bx[p], max(max(bx[d], cx[d]), max(cx[p] + l, cp[p] + lx)))
-    c = max(cp[p], cp[d]); x = max(cx[d], gone ? cp[p] : cx[p])
-    if (w >= 0) { c = max(c, cp[p] + w); x = max(x, max(cx[p] + w, cp[p] + wx)) }
-    cp[p] = c; cx[p] = x
-    if (W[p] < 0) return
-    L[p] = max(L[p], W[p] + l); Lx[p] = max(Lx[p], max(Wx[p] + l, W[p] + lx))
-    x = gone ? W[p] : Wx[p]
-    if (w >= 0) x = max(x, max(Wx[p] + w, W[p] + wx))
-    W[p] += max(w, 0); Wx[p] = x
-}
-function max(a, b) { return a > b ? a : b }
-# the value of attribute WANT in tag T ("" if none; has = 1 if there), its attributes read in
-# order, as HTML reads them (the first of a name counts)
-function attr(t, want,    name, v, q, j) {
-    has = 0
-    sub(/^<\/?[^ \t\n\f\r\/>]*/, "", t)
-    while (1) {
-        sub(/^[ \t\n\f\r\/]+/, "", t)
-        if (t == "" || t ~ /^>/) return ""
-        match(t, /^[^ \t\n\f\r\/>=]+|^=[^ \t\n\f\r\/>=]*/); name = tolower(substr(t, 1, RLENGTH)); t = substr(t, RLENGTH + 1)
-        v = ""
-        if (t ~ /^[ \t\n\f\r]*=/) {
-            sub(/^[ \t\n\f\r]*=[ \t\n\f\r]*/, "", t); q = substr(t, 1, 1)
-            if (q == "\"" || q == "\047") { t = substr(t, 2); j = index(t, q); v = substr(t, 1, j - 1); t = substr(t, j + 1) }
-            else { match(t, /^[^ \t\n\f\r>]*/); v = substr(t, 1, RLENGTH); t = substr(t, RLENGTH + 1) }
-        }
-        if (name == want) { has = 1; return v }
-    }
-}
-# the alt text of an <img> or <input>, which shows where it stands when the image doesn\047t load
-function alt(t) { return tolower(t) ~ /^<(img|input)[ \t\n\f\r\/>]/ ? attr(t, "alt") : "" }
-function hides(f, t,    name, c) {
-    name = tolower(t); sub(/^<\/?/, "", name); sub(/[^a-z0-9-].*$/, "", name)
-    # the design\047s one: <meta http-equiv="refresh" content="30">, the page again; nothing else
-    if (tolower(attr(t, "http-equiv")) != "refresh" && has) print f "\t!an http-equiv other than a refresh (the design has none)"
-    else if (has && ((c = attr(t, "content")) !~ /^[ \t\n\f\r]*[0-9]+[ \t\n\f\r]*$/ || name != "meta"))
-        print f "\t!a refresh to somewhere else than the page itself (the design\047s refresh is a number of seconds)"
-    if (name ~ /^(template|noscript|svg|math|bdo|bdi|ruby|rt|rp|select|datalist|dialog|object|embed|iframe|frame|frameset|audio|video|canvas|noembed|noframes|xmp|plaintext|marquee|style|script|font|basefont|mark|blink)$/)
-        print f "\t!a <" name "> element, which can hide or move text (the design has none)"
-    gsub(/=[ \t\n\f\r]*("[^"]*"|\047[^\047]*\047)/, "=", t)   # the values out: only names count
-    if (tolower(t) ~ /[ \t\n\f\r\/"\047](hidden|dir|style|popover)([ \t\n\f\r\/=>]|$)/)
-        print f "\t!a hidden, dir, style or popover attribute, which can hide or move text (the design has none)"
-    # the colours, borders and sizes HTML had before stylesheets: they could hide text, or draw
-    # with table cells; sizes only on an <img> (the design\047s logo, as the design has them)
-    if (tolower(t) ~ /[ \t\n\f\r\/"\047](color|bgcolor|background|border|align|valign|face|size|cellpadding|cellspacing|text|link|vlink|alink|hspace|vspace|frame|rules|noshade|clear|nowrap)([ \t\n\f\r\/=>]|$)/ \
-        || (name != "img" && tolower(t) ~ /[ \t\n\f\r\/"\047](width|height)([ \t\n\f\r\/=>]|$)/))
-        print f "\t!a colour, border or size attribute, which can hide text or draw (the design has none)"
-    if (t !~ /^<\// && name ~ /^(img|progress|meter|input)$/) shown++
-}
-function base58run(s) { return match(s, /^[1-9A-HJ-NP-Za-km-z]+/) && (RLENGTH == 95 || RLENGTH == 106) }
-function check(f, d,    a, l, m, i, box, page, v) {
-    shown = 0; page = f ~ /\.html$/
-    # as UTF-8 bytes: \342\226\200 is U+2580
-    drew = d ~ /\342[\226\227][\200-\277]|\342[\240-\243][\200-\277]|\342\254[\233\234]|\342\232[\252\253]|\360\237\224[\262\263]|\360\237\237[\240-\253]|\360\237[\254-\257][\200-\277]/
+# both readings of \001: dropped, and a space
+function tokens(f, s,    d) { d = s; gsub(/\001/, "", d); run(f, d); gsub(/\001/, " ", s); run(f, s) }
+function check(f, d,    a, m) {
     if (d !~ /^[ \t\n\r]*[<[{]/) print f "\t!not text that starts as a page or JSON does (<, [ or {): a browser would show it as an image"
-    gsub(/[\200-\377]|[\001-\010\013\016-\037\177]/, "", d)
-    if (page && d ~ /&[A-Za-z][A-Za-z0-9]*([^A-Za-z0-9;]|$)/) print f "\t!an entity without its ; (a browser reads some, such as &shy, a soft hyphen)"
+    gsub(/[\200-\377]|[\001-\010\013\016-\037\177]/, "\001", d)
     a = decode(d)
-    l = tolower(a)
-    while (match(l, /charset[ \t\n\f\r]*=[ \t\n\f\r]*["\047]?[ \t\n\f\r]*/)) {
-        l = substr(l, RSTART + RLENGTH)
-        if (l !~ /^utf-?8([^a-z0-9_-]|$)/) print f "\t!a charset that isn\047t UTF-8"
-    }
-    # a page\047s data: URIs (a scheme starts after a non-scheme character: not "metadata:"; a
-    # browser takes tabs and newlines out of it, spaces count here too): exactly
-    # data:image/png;base64,... only; each one goes to zbarimg, and its base64 is not text
-    m = " " a
-    while (page && match(tolower(m), /[^a-z0-9+.-]d[ \t\n\f\r]*a[ \t\n\f\r]*t[ \t\n\f\r]*a[ \t\n\f\r]*:/)) {
-        m = substr(m, RSTART + 1)
-        if (match(m, /^data:image\/png;base64,[A-Za-z0-9+\/]+=*/)) print f "\t?qr\t" substr(m, 23, RLENGTH - 22)
-        else print f "\t!a data: URI that is not exactly data:image/png;base64,"
-        m = substr(m, 2)
-    }
+    # each data: image (the QR codes: pages() allows them nowhere else) to zbarimg; not text
+    m = a
+    while (match(m, /data:image\/png;base64,[A-Za-z0-9+\/]+=*/)) { print f "\t?qr\t" substr(m, RSTART + 22, RLENGTH - 22); m = substr(m, RSTART + RLENGTH) }
     gsub(/data:image\/png;base64,[A-Za-z0-9+\/]+=*/, " ", a)
     tokens(f, a)
-    v = decode(strip(f, d)); glued(f, v); gsub(/[\001\002]/, "", v)
-    tokens(f, v)
-    # a QR code drawn with images, one a module, takes hundreds; the design and a proposal, 13
-    if (shown > 64) print f "\t!more than 64 images (and bars and boxes): enough to draw a QR code with"
-    if (drew) print f "\t!a block, square or braille character, which can draw a QR code as text"
-    # monero: links (any attribute, any case; %-escapes read; a browser takes tabs and newlines
-    # out of a URL, and spaces go here too): one address right after, nothing else, and that one
-    # checked
-    m = pct(a); gsub(/[ \t\n\f\r]/, "", m); l = tolower(m)
-    while (match(l, /=["\047]?monero:/)) {
-        i = RSTART + RLENGTH; m = substr(m, i); l = substr(l, i)
-        if (!base58run(m)) print f "\t!a monero: link without one address right after it"
-        else print f "\t" substr(m, 1, RLENGTH)
-    }
-    # address boxes: one address, no markup in them
-    m = a; l = tolower(a)
-    while (match(l, /class[ \t\n]*=[ \t\n]*["\047]?[^"\047>]*address/)) {
-        i = RSTART + RLENGTH; m = substr(m, i); l = substr(l, i)
-        if (!match(m, /^[^>]*>/)) { print f "\t!an address box that never ends"; continue }
-        box = substr(m, RLENGTH + 1)
-        if (!base58run(box) || substr(box, RLENGTH + 1, 2) != "</") print f "\t!an address box that holds more than one address"
-    }
-}
-# a start or end tag: a ">" inside a value quoted after "=" doesn\047t end it, as in HTML
-BEGIN {
-    NEG = -1000000000
-    n = split(tolower(classes), w, " "); for (i = 1; i <= n; i++) hiding[w[i]] = 1
-    voidre = "^(area|base|br|col|embed|hr|img|input|keygen|link|meta|param|source|track|wbr)$"
-    nestre = "^(a|button|nobr)$"   # one in another ends the first, its end tag or not
-    tagre = "^</?[A-Za-z]([^>=]|=[ \t\n\f\r]*\"[^\"]*\"|=[ \t\n\f\r]*\047[^\047]*\047|=)*>"
-    # the tags whose text starts a line or a cell of its own: a space in the text as shown
-    blockre = "^</?(address|article|aside|blockquote|body|br|caption|dd|details|dialog|div|dl|dt|fieldset|figcaption|figure|footer|form|h[1-6]|head|header|hgroup|hr|html|legend|li|main|menu|nav|ol|p|pre|section|summary|table|tbody|td|tfoot|th|thead|title|tr|ul)([ \t\n\f\r/>]|$)"
-    # the named entities that are such characters
-    drawnames = "^(EmptySmallSquare|EmptyVerySmallSquare|FilledSmallSquare|FilledVerySmallSquare|Square|bigcirc|bigtriangledown|bigtriangleup|blacksquare|blacktriangle|blacktriangledown|blacktriangleleft|blacktriangleright|blk12|blk14|blk34|block|cir|dtri|dtrif|fltns|lhblk|lltri|loz|lozenge|ltri|ltrif|marker|rect|rtri|rtrif|squ|square|squarf|squf|triangle|triangledown|triangleleft|triangleright|tridot|uhblk|ultri|urtri|utri|utrif|xcirc|xdtri|xutri)$"
 }
 FNR == 1 && NR > 1 { check(prev, doc); doc = "" }
 { doc = doc $0 "\n"; prev = FILENAME }
@@ -405,14 +180,218 @@ qrdata() {
     printf '%s\t%s\n' "$1" "${text#monero:}"
 }
 
+# json FILE...: each JSON file's strings as a reader of it gets them (\u escapes read, every key
+# and value, a key twice both), their addresses as "file<TAB>address" lines, read as the pages'
+# text is: a character that isn't ASCII dropped (it mustn't split an address), and again as a
+# space (it mustn't join one to its neighbour); "file<TAB>!reason" if it isn't JSON.
+json_py='
+import json, re, sys
+for f in sys.argv[1:]:
+    seen = []
+    def pairs(p):   # every pair as it is read, the same key twice too; what is left to walk: none
+        for k, v in p: seen.append(k); walk(v)
+        return {}
+    def walk(v):
+        if isinstance(v, str): seen.append(v)
+        elif isinstance(v, list):
+            for x in v: walk(x)
+        elif isinstance(v, dict):
+            for x in v.values(): walk(x)
+    try:
+        with open(f, "rb") as h: walk(json.loads(h.read(16 << 20).decode("utf-8"), object_pairs_hook=pairs))
+    except Exception:
+        print(f + "\t!not JSON (UTF-8) that reads"); continue
+    out = set()
+    for s in seen:
+        s = re.sub(r"[\t\n\f\r]", " ", s); s = re.sub(r"[\x00-\x1f\x7f]", "", s)
+        for t in (re.sub(r"[^\x00-\x7f]", "", s), re.sub(r"[^\x00-\x7f]", " ", s)):
+            out.update(w for w in re.findall(r"[0-9A-Za-z]+", t) if len(w) in (95, 106) and not re.search(r"[0OIl]", w))
+    for a in sorted(out): print(f + "\t" + a)
+'
+
+# pages SITE DESIGNS BODIES LIST VIEWKEY HOSTS < pages (NUL-separated, relative to SITE): each must
+# be one of the design's own, every region filled with the design's parts and every {{slot}} with a
+# value of its kind, as ccs-front-bash fills them; a proposal's text exactly what markdown.awk makes
+# of its file. DESIGNS: unpacked release zips, ":"-separated (any one will do); BODIES: markdown.awk's
+# lines, ":"-separated (one file per commit of the proposals, and markdown.awk); LIST: the signed list
+# (its .pin beside it); VIEWKEY: its .viewkey or ""; HOSTS: where a link to a proposal may go.
+# Prints "page<TAB>!reason". Python's standard library only.
+pages_py='
+import json, os, re, sys
+
+site, designs, bodies, lst, viewkey, hosts = sys.argv[1:7]
+B58 = "[1-9A-HJ-NP-Za-km-z]"
+# escaped text (as ccs-bash and markdown.awk escape it): no markup, and no run of 90 base58
+# characters, joined by characters that are not ASCII or not: it could be an address
+TEXT = "(?:(?!(?:" + B58 + "[^\\x00-\\x7f]*){90})(?:[^<>\"\x27&\\x00-\\x1f\\x7f]|&(?:amp|lt|gt|quot|#39|apos);))*"
+NAME = "(?:[^\"<>/&\\n]|&(?:amp|lt|gt|quot|#39|apos);)+"
+NUM = "[0-9]+"
+XMR = "[0-9]+(?:\\.[0-9]+)?"
+DATE = "[A-Za-z0-9, ]*"
+LINK = "https://(?:" + "|".join(re.escape(h) for h in hosts.split()) + ")/[^\\s\"\x27<>\\\\]*"
+
+def read(p):
+    with open(p, "rb") as f: return f.read().decode("utf-8")
+def part(t): return t[:-1] if t.endswith("\n") else t      # as jq rtrimstr("\n")
+def strip(t): return t.rstrip("\n")                         # $(cat FILE)
+def prefix(depth): return "./" if depth == 0 else "../" * depth
+def rel(t, depth):   # as relative_links in ccs-front-bash, a line at a time as sed
+    return re.sub("((?:href|src)=\")/([^/\\n])", lambda m: m.group(1) + prefix(depth) + m.group(2), t)
+
+# the main address and fingerprint of the signed list, as check_addresses shows them on Verify
+main = next(l.split()[1] for l in read(lst).splitlines() if l.split()[:1] == ["0"])
+fpr = next(l[4:].strip() for l in read(lst + ".pin").splitlines() if l.startswith("key "))
+fpr = re.sub("^((.{4} ){5})", "\\1 ", re.sub(" $", "", re.sub("(.{4})", "\\1 ", fpr)))
+net = " --testnet" if main[0] in "9A" else " --stagenet" if main[0] in "57" else ""
+
+# the body of each proposal as markdown.awk renders it, from each commit: any of them will do
+md = {}
+for f in bodies.split(":"):
+    if f and os.path.exists(f):
+        for l in read(f).splitlines():
+            if l: j = json.loads(l); md.setdefault(j["file"], set()).add(j["body"].replace("\x01", ""))
+
+class Design:
+    def __init__(self, d):
+        self.d = d
+        self.p = {f[:-5]: read(os.path.join(d, "parts", f)) for f in os.listdir(os.path.join(d, "parts")) if f.endswith(".html")}
+    # the regex of a part: its literal text as it is, each {{slot}} by SLOTS (name: regex)
+    def fill(self, text, slots):
+        out, i = "", 0
+        for m in re.finditer("\\{\\{([a-z_]+)\\}\\}", text):
+            if m.group(1) not in slots: raise KeyError(m.group(1))
+            out += re.escape(text[i:m.start()]) + "(?:" + slots[m.group(1)] + ")"; i = m.end()
+        return out + re.escape(text[i:])
+    def card(self, stage, depth, tagpage):
+        c = part(self.p["card-" + stage])
+        if tagpage: c = c.replace("=\"../", "=\"../../../")
+        c = rel(c, depth)
+        url = "#|" + re.escape(prefix(depth)) + "proposals/" + NAME + "\\.html|" + LINK
+        seg = "(?:" + re.escape(part(self.p["segment-done"])) + "|" + re.escape(part(self.p["segment-todo"])) + ")*"
+        label = self.fill(part(self.p["label"]), {"tag": TEXT, "color": "tag-[0-7]"})
+        return self.fill(c, {"url": url, "name": TEXT, "author": TEXT, "date": DATE,
+            "funding_note": "(?: · funding since " + DATE + ")?", "contributors": NUM, "amount": XMR, "raised": XMR,
+            "percentage": NUM, "done": NUM, "milestones": NUM, "pending_note": "(?: · " + XMR + " XMR pending)?",
+            "upvotes": NUM + "|–", "downvotes": NUM + "|–", "segments": seg, "tags": "(?:" + label + ")*"})
+    def nav(self, depth):
+        href = re.escape(prefix(depth)) + "explore/tag/[A-Za-z0-9%._~-]+/"
+        f = self.fill(part(self.p["filter"]), {"tag": TEXT, "color": "tag-[0-7]", "href": href, "count": NUM, "active": "(?: active)?"})
+        return "(?:" + self.fill(part(self.p["filters"]), {"filters": "(?:" + f + ")*"}) + ")?"
+    def verify(self):
+        f = strip(self.p["verify"])
+        slots = {"address": re.escape(main), "fingerprint": re.escape(fpr), "network": re.escape(net),
+                 "viewkey": "[0-9a-f]{64}", "wallet_source": "published by this site|<a href=\"https://[^\"<>\\s]+\">[A-Za-z0-9 .,:_&#;-]*</a>"}
+        if viewkey:
+            v = read(viewkey).splitlines()
+            src = next((l.split(None, 1)[1].strip() for l in v if l.startswith("source ")), "")
+            txt = next((l.split(None, 1)[1].strip() for l in v if l.startswith("source-text ")), "").replace("\x27", "&#39;")
+            slots["viewkey"] = re.escape(v[0].replace(" ", ""))
+            slots["wallet_source"] = re.escape("<a href=\"" + src.replace("&", "&amp;") + "\">" + (txt or "where they were published") + "</a>") if src else "published by this site"
+        return self.fill(f, slots)
+    # what region NAME may hold on a page DEPTH folders down
+    def region(self, name, depth, tagpage, stage=None):
+        kind, _, arg = name.partition(" ")
+        if kind in ("count", "number"): return NUM
+        if kind == "title": return TEXT
+        if kind == "filters": return self.nav(depth)
+        if kind == "verify": return self.verify()
+        if kind == "list":
+            c = self.card(arg, depth, tagpage)
+            return "(?:" + c + "(?:\\n" + c + ")*|" + re.escape(part(self.p["empty"])) + ")?"
+        if kind in ("donate", "funded"): return self.fill(part(self.p[kind]), self.slots(depth))
+        if kind == "milestones":
+            m = "(?:" + self.fill(part(self.p["milestone-done"]), {"name": TEXT, "funds": TEXT, "date": TEXT}) + "|" \
+                + self.fill(part(self.p["milestone-todo"]), {"name": TEXT, "funds": TEXT}) + ")"
+            return m + "(?:\\n" + m + ")*|" + re.escape(part(self.p["no-milestones"]))
+        if kind == "payouts":
+            m = self.fill(part(self.p["payout"]), {"amount": TEXT, "date": TEXT})
+            return m + "(?:\\n" + m + ")*|" + re.escape(part(self.p["no-payouts"]))
+        raise KeyError(name)
+    def slots(self, depth, body=None):
+        seg = "(?:" + re.escape(part(self.p["segment-done"])) + "|" + re.escape(part(self.p["segment-todo"])) + ")*"
+        href = re.escape(prefix(depth)) + "explore/tag/[A-Za-z0-9%._~-]+/"
+        s = {"name": TEXT, "author": TEXT, "date": DATE, "funding_note": "(?: · funding since " + DATE + ")?",
+             "contributors": NUM, "amount": XMR, "raised": XMR, "percentage": NUM, "done": NUM, "milestones": NUM,
+             "pending_note": "(?: · " + XMR + " XMR pending)?", "gitlab_url": "#|" + LINK, "segments": seg,
+             "address": B58 + "{95}", "qr": "data:image/png;base64,[A-Za-z0-9+/]+=*",
+             "verify_link": re.escape(strip(self.p["verify-link"])), "milestones_list": "", "payouts_list": "",
+             "tag_links": "(?:" + self.fill(part(self.p["label-link"]), {"tag": TEXT, "color": "tag-[0-7]", "href": href}) + ")*"}
+        if body: s["body"] = "(?P<body>.*?)"   # compared with the repository after (one regex for every page)
+        return s
+    # the regex of a page: its literal text, the regions as above, the slots (on a proposal page)
+    def page(self, text, depth, tagpage, body=False):
+        out, i = [], 0
+        for m in re.finditer("<!-- ccs:([a-z]+(?: [a-z]+)?) -->", text):
+            end = "<!-- /ccs:" + m.group(1) + " -->"
+            j = text.index(end, m.end())
+            out.append(self.fill(rel(text[i:m.start()], depth), self.slots(depth, body)) if body else re.escape(rel(text[i:m.start()], depth)))
+            out.append(re.escape(m.group(0)) + "\\n*(?:" + self.region(m.group(1), depth, tagpage) + ")\\n*" + re.escape(end))
+            i = j + len(end)
+        rest = rel(text[i:], depth)
+        out.append(self.fill(rest, self.slots(depth, body)) if body else re.escape(rest))
+        return out
+
+cache, diag = {}, [10]
+def compiled(d, key, text, depth, tagpage, body=False):
+    k = (d.d, key, depth, tagpage)
+    if k not in cache:
+        segs = d.page(text, depth, tagpage, body)
+        cache[k] = (re.compile("".join(segs), re.S), segs)
+    return cache[k]
+
+def check(rp, got, d):
+    depth, want = rp.count("/"), None
+    if rp.startswith("proposals/"):
+        name = rp[len("proposals/"):-len(".html")]
+        if "/" in name: return "a page the design does not have"
+        if name not in md: return "a proposal page with no proposal (" + name + ".md) in the proposals repository"
+        # pages.jq prints the page, jq -r a newline after it, which the split keeps
+        want = {rel(b, depth) for b in md[name]}
+        tries = [compiled(d, "proposal-" + s, d.p["proposal-" + s] + "\n", depth, False, True) for s in ("fr", "wip", "cp")]
+    elif re.match("explore/tag/[^/]+/index\\.html$", rp):
+        tries = [compiled(d, "tag", read(os.path.join(d.d, "explore/tag/example/index.html")), depth, True)]
+    elif not rp.startswith(("parts/", "explore/tag/")) and os.path.isfile(os.path.join(d.d, rp)):
+        tries = [compiled(d, rp, read(os.path.join(d.d, rp)), depth, False)]
+    else: return "a page the design does not have"
+    best, why = 0, "not a page of the design as ccs-front-bash fills it"
+    for rx, segs in tries:
+        m = rx.fullmatch(got)
+        if m and (m.groupdict().get("body") is None or m.group("body") in want): return None
+        if m:   # the page of the design, but another text than the proposal has in the repository
+            best, why = m.start("body"), "not the text of its proposal as the proposals repository has it"; continue
+        if diag[0] <= 0: continue
+        for k in range(len(segs), 0, -1):   # how far it is the design, for the reason (10 pages)
+            m = re.match("".join(segs[:k]), got, re.S)
+            if m: best = max(best, m.end()); break
+    diag[0] -= 1
+    return why + (" (it differs at character %d: %s)" % (best, json.dumps(got[best:best + 60])) if diag[0] >= 0 else "")
+
+ds = [Design(d) for d in designs.split(":") if d]
+for rp in sys.stdin.read().split("\0"):
+    if not rp: continue
+    try: got = read(os.path.join(site, rp))
+    except Exception: print(os.path.join(site, rp) + "\t!a page that is not UTF-8"); continue
+    why = None
+    for d in ds:
+        try: why = check(rp, got, d)
+        except KeyError as e: why = "the design has no part or slot " + str(e)
+        if why is None: break
+    if why: print(os.path.join(site, rp) + "\t!" + why)
+'
+
 # scan FILE...: the addresses (and reasons) of the pages and JSON among FILEs; every data:
 # image exactly the QR code of an address
 scan() {
-    local file tag payload png
+    local file tag payload png jsons=()
     png=$(mktemp)
     # a NUL byte: HTML drops it from the text, so it could split an address
     printf '%s\0' "$@" | grep -zE '\.(html|json)$' | xargs -0 -r grep -laP '\x00' -- | sed 's/$/\t!a NUL byte (a browser drops it from the text)/'
-    printf '%s\0' "$@" | grep -zE '\.(html|json)$' | xargs -0 -r awk -v classes="$classes" "$scan_awk" \
+    # the JSON, as JSON (its \u escapes are an address's characters to whoever reads it)
+    mapfile -d '' jsons < <(printf '%s\0' "$@" | grep -zE '\.json$')
+    if ((${#jsons[@]})); then
+        timeout 60 python3 -I -c "$json_py" "${jsons[@]}" || printf '%s\t!the JSON could not be read in time\n' "${jsons[@]}"
+    fi
+    printf '%s\0' "$@" | grep -zE '\.(html|json)$' | xargs -0 -r awk "$scan_awk" \
         | while IFS=$'\t' read -r file tag payload; do
             if [[ $tag != '?qr' ]]; then printf '%s\t%s\n' "$file" "$tag"; continue; fi
             if ! base64 -d <<<"$payload" > "$png" 2> /dev/null || ! qrdata "$file" "$png"; then
@@ -422,50 +401,102 @@ scan() {
     rm -f "$png"
 }
 
-# repo_images: "blob path" for each proposal image in the proposals repository
-# (/etc/ccs-gate/proposals.conf: PROPOSALS_GIT, its URL; PROPOSALS_BRANCH, default master), as
-# git ls-tree has them, fetched each push. Reviewed and merged: a backend that isn't the one it
-# was can't add an image of its own (a QR code cut into pieces, shown side by side, that zbarimg
-# reads in none of them). Its last commit only (--depth=1; disroot's Forgejo breaks off a
-# --filter=blob:none fetch): the images are a few MB.
-repo_images() {
-    local git=$state/proposals.git url='' branch=master k v
+# fetch: the proposals repository (/etc/ccs-gate/proposals.conf: PROPOSALS_GIT, its URL;
+# PROPOSALS_BRANCH, default master), fetched each push, its last two commits (the backend's
+# checkout may be one behind or ahead). Reviewed and merged: what a page says a proposal says, and
+# the images it may show, come from here, not from the backend. Can't be fetched (disroot's Forgejo
+# breaks off now and then): the last fetch is used, and said so. Sets hosts: where a link to a
+# proposal may go (the repository's host, and proposals.conf's LINK_HOSTS: the old forge's, say).
+git=$state/proposals.git hosts=''
+fetch() {
+    local url='' branch=master k v h
     [[ -r $conf/proposals.conf ]] || return 1
     while IFS='=' read -r k v; do
-        case $k in PROPOSALS_GIT) url=$v ;; PROPOSALS_BRANCH) branch=$v ;; esac
-    done < <(grep -E '^(PROPOSALS_GIT|PROPOSALS_BRANCH)=' "$conf/proposals.conf")
+        case $k in PROPOSALS_GIT) url=$v ;; PROPOSALS_BRANCH) branch=$v ;; LINK_HOSTS) hosts=$v ;; esac
+    done < <(grep -E '^(PROPOSALS_GIT|PROPOSALS_BRANCH|LINK_HOSTS)=' "$conf/proposals.conf")
     [[ $url ]] || return 1
+    if [[ $url == https://* ]]; then h=${url#https://}; h=${h%%/*}; hosts="${h##*@} $hosts"; fi
     [[ -d $git ]] || git init -q --bare "$git" || return 1
-    GIT_TERMINAL_PROMPT=0 timeout 60 git -C "$git" fetch -q --no-tags --depth=1 "$url" "+refs/heads/$branch:refs/heads/ccs" 2> /dev/null || return 1
+    GIT_TERMINAL_PROMPT=0 timeout 60 git -C "$git" fetch -q --no-tags --depth=2 "$url" "+refs/heads/$branch:refs/heads/ccs" 2> /dev/null \
+        || say "could not fetch the proposals repository (proposals.conf): checking against the last fetch"
+    git -C "$git" rev-parse -q --verify refs/heads/ccs > /dev/null
+}
+
+# repo_images: "blob path" for each proposal image in the fetched repository, as git ls-tree has
+# them: a backend that isn't the one it was can't add an image of its own (a QR code cut into
+# pieces, shown side by side, that zbarimg reads in none of them)
+repo_images() {
     git -C "$git" ls-tree -r refs/heads/ccs -- images/ | awk -F '\t' '{ split($1, m, " ") } m[2] == "blob" { print m[3] " " $2 }'
+}
+
+# bodies: one file of markdown.awk's lines (each proposal's text as HTML) per commit fetched and
+# markdown.awk installed (markdown*.awk, from the ccs-front-bash release the backend runs; two
+# while it switches), ":"-separated; kept by commit, so a push made again needs no rendering. The
+# images it shows, as ccs-bash copies them: images/<proposal>/<file>, a plain file, 2 MB at most,
+# a PNG, JPEG or GIF by its first bytes.
+bodies() {
+    local rev c awkf sum out d list='' a f m
+    for rev in refs/heads/ccs refs/heads/ccs~1; do
+        c=$(git -C "$git" rev-parse -q --verify "$rev^{commit}" 2> /dev/null) || continue
+        for awkf in "$conf"/markdown*.awk; do
+            [[ -f $awkf ]] || continue
+            sum=$(sha256sum < "$awkf" | cut -c1-16)
+            out=$state/bodies-$c-$sum.jsonl
+            if [[ ! -s $out ]]; then
+                d=$(mktemp -d)
+                git -C "$git" archive "$c" | tar -x -C "$d" 2> /dev/null || true
+                (cd "$d" && find images -mindepth 2 -maxdepth 2 -type f 2> /dev/null) | while IFS= read -r a; do
+                    [[ $a =~ ^images/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+\.(png|jpg|jpeg|gif)$ ]] || continue
+                    f=$d/$a
+                    (($(wc -c < "$f") <= 2097152)) || continue
+                    m=$(head -c 8 "$f" | od -An -tx1 | tr -d ' \n')
+                    [[ $m == 89504e470d0a1a0a || $m == ffd8ff* || $m == 4749463837* || $m == 4749463839* ]] || continue
+                    printf '%s\t%s\n' "$a" "${a#images/}"
+                done > "$d/.images"
+                find "$d" -maxdepth 1 -type f -name '*.md' -print0 \
+                    | xargs -0 -r timeout 120 awk -v images="$d/.images" -f "$awkf" > "$out.tmp" && mv "$out.tmp" "$out"
+                rm -rf "$d" "$out.tmp"
+            fi
+            [[ -s $out ]] && touch "$out" && list+=${list:+:}$out
+        done
+    done
+    # the commits fetched before (not used for an hour): their files go
+    find "$state" -maxdepth 1 -name 'bodies-*.jsonl' -mmin +60 -delete 2> /dev/null || true
+    printf '%s' "$list"
+}
+
+# pages: every page in staging as pages_py checks it ("page<TAB>!reason")
+pages() {
+    local designs='' d b vk=''
+    for d in "$conf"/design/*/; do [[ -d $d/parts ]] && designs+=${designs:+:}${d%/}; done
+    b=$(bodies)
+    [[ -f $list.viewkey ]] && vk=$list.viewkey
+    (cd "$staging" && find . -type f -name '*.html' -printf '%P\0') \
+        | timeout 300 python3 -I -c "$pages_py" "$staging" "$designs" "$b" "$list" "$vk" "$hosts" \
+        || printf '%s\t%s\n' "$staging/index.html" "!the pages could not be checked in time"
 }
 
 # changes: every file the push brings that isn't already live, byte for byte, as "file<TAB>!reason"
 # for any that isn't allowed, and "file<TAB>address" for the addresses in a proposal image's QR codes
 changes() {
-    local f rel sum repo='' fetched=''
+    local f rel sum repo=''
+    [[ $fetched ]] && repo=$(repo_images)
     while IFS= read -r -d '' f; do
         rel=${f#"$staging"/}
         cmp -s "$f" "$live/$rel" 2> /dev/null && continue
         case $rel in
-            *.html | projects.json) ;;   # the pages and the /projects JSON: scanned, all of them
+            *.html | projects.json) ;;   # the pages and the /projects JSON: checked, all of them
             subaddresses.txt | subaddresses.txt.asc | subaddresses.txt.key.asc)
                 cmp -s "$f" "$conf/$rel" || printf '%s\t%s\n' "$f" "!not the $rel installed in $conf" ;;
             images/*/*)
                 if [[ ! $rel =~ ^images/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+\.(png|jpg|jpeg|gif)$ ]]; then
                     printf '%s\t%s\n' "$f" "!not a proposal image (images/<proposal>/<file>.png|jpg|jpeg|gif)"
+                elif [[ ! $fetched ]]; then
+                    printf '%s\t%s\n' "$f" "!a new image, and the proposals repository could not be read to check it"
+                elif ! grep -qxF "$(git hash-object --no-filters -- "$f") $rel" <<<"$repo"; then
+                    printf '%s\t%s\n' "$f" "!not the proposals repository's $rel"
                 else
-                    if [[ ! $fetched ]]; then
-                        fetched=1
-                        if repo=$(repo_images); then fetched=ok; else say "could not fetch the proposals repository (proposals.conf): new images wait"; fi
-                    fi
-                    if [[ $fetched != ok ]]; then
-                        printf '%s\t%s\n' "$f" "!a new image, and the proposals repository could not be read to check it"
-                    elif ! grep -qxF "$(git hash-object --no-filters -- "$f") $rel" <<<"$repo"; then
-                        printf '%s\t%s\n' "$f" "!not the proposals repository's $rel"
-                    else
-                        qr "$f" "$f" || true
-                    fi
+                    qr "$f" "$f" || true
                 fi ;;
             *)
                 sum=$(sha256sum < "$f" | cut -d' ' -f1)
@@ -504,6 +535,7 @@ heartbeat() {
     alert heartbeat "no push from the backend for $age minutes: is it running? (its cron, its push key, its network) @ @SITE@"
     touch "$d/heartbeat-alerted"
 }
+
 if [[ ${1:-} == --heartbeat ]]; then heartbeat; exit 0; fi
 
 # One push at a time: two at once would share the staging folder, and one could change it after
@@ -522,25 +554,28 @@ list=$conf/subaddresses.txt
 [[ -f $list && $(sha256sum < "$list" | cut -d' ' -f1) == "$(sed -n 's/^sha256 *//p' "$list.pin" 2> /dev/null)" ]] \
     || refuse "$list is not the list $list.pin names" list "its signed list isn't the one its .pin names"
 command -v qrencode > /dev/null || refuse "it has no qrencode to check the QR codes with (apt install qrencode)" qrencode
-command -v python3 > /dev/null || refuse "it has no python3 to read the QR codes' pixels with" python3
-command -v git > /dev/null || refuse "it has no git to check images against the proposals repository (apt install git)" git
+command -v python3 > /dev/null || refuse "it has no python3 to check the pages with" python3
+command -v git > /dev/null || refuse "it has no git to read the proposals repository with (apt install git)" git
 command -v zbarimg > /dev/null || refuse "it has no zbarimg to read the QR codes with (apt install zbar-tools)" zbarimg
 # the design's files, "sha256  path" as sha256sum writes them (./ and binary-mode * dropped);
 # several releases' may be in it
 [[ -s $conf/design.sha256 ]] || refuse "it has no $conf/design.sha256 (the design release's files)" design
+# the design's pages and parts (its release zip, unpacked in design/<release>/), and the
+# markdown.awk that fills a proposal's text (ccs-front-bash's): several releases' while switching
+compgen -G "$conf/design/*/parts/proposal-fr.html" > /dev/null || refuse "it has no $conf/design/<release>/ (the design's release zip, unpacked)" designs
+[[ -r $conf/proposals.conf ]] || refuse "it has no $conf/proposals.conf (the proposals repository, for their text and images)" proposals
+compgen -G "$conf/markdown*.awk" > /dev/null || refuse "it has no $conf/markdown.awk (ccs-front-bash's lib/markdown.awk)" markdown
 design=$(mktemp)
 trap 'rm -f "$design"' EXIT
 sed -nE 's#^([0-9a-f]{64}) [ *](\./)?(.+)$#\1 \3#p' "$conf/design.sha256" > "$design"
-# the classes the design's stylesheets hide something with, one a line, from the release zip's
-# assets/hidden-classes.txt; several releases' may be in it
-classes=$(grep -sE '^-?[_A-Za-z][_A-Za-z0-9-]*$' "$conf/hidden-classes" | tr '\n' ' ') || true
-[[ $classes ]] || refuse "it has no $conf/hidden-classes (the design release's assets/hidden-classes.txt)" classes
 # the checks below list files one a line, tab-separated: a name with a newline or tab can't be held back
 if find "$staging" -name '*[[:cntrl:]]*' | grep -q .; then refuse "a file name with a control character in it" names; fi
+fetched=''
+fetch && fetched=1
 
 # the list's addresses, then the allowed file's (first word of each line; # comments)
-mapfile -d '' pages < <(find "$staging" -type f \( -name '*.html' -o -name '*.json' \) -print0)
-bad=$( { scan "${pages[@]}"; changes; } | awk -F '\t' 'NR == FNR { if ($1 !~ /^#/ && NF) ok[$1] = 1; next } !($2 in ok)' \
+mapfile -d '' files < <(find "$staging" -type f \( -name '*.html' -o -name '*.json' \) -print0)
+bad=$( { scan "${files[@]}"; pages; changes; } | awk -F '\t' 'NR == FNR { if ($1 !~ /^#/ && NF) ok[$1] = 1; next } !($2 in ok)' \
     <(cut -d' ' -f2 "$list"; awk '{ print $1 }' "$conf/allowed" 2> /dev/null) - | sort -u)
 # The rest of the push goes live; a file that fails keeps its last good copy (a new one stays
 # out): one bad page doesn't stop the site updating, and nothing here rewrites a file. The push
@@ -567,4 +602,6 @@ if [[ $bad ]]; then
     done < <(awk -F '\t' '$1 ~ /\.html$/' <<<"$bad"; awk -F '\t' '$1 !~ /\.html$/' <<<"$bad")   # a page before the rest
 fi
 rsync -a --delay-updates "$staging/" "$live/"
-[[ ! $bad ]]
+# 7 (which rsync never uses, and passes on): it went live but for the files held back, so the
+# backend's ccs-watch still checks the live pages; a refused push is 1
+[[ ! $bad ]] || exit 7
