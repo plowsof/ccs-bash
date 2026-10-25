@@ -4,7 +4,7 @@ For the maintainer of ccs.getmonero.org, which runs today on ccs-back (PHP and M
 Jekyll ccs-front. This is how to move it to the setup below: the steps build it box by box, in
 order, then the old site is switched off.
 
-<p align="center"><img src="design.svg" width="900" alt="The setup: the backend (monero-wallet-rpc, ccs-bash, ccs-front-bash) makes the whole site from the design and pushes it to a web server whose gate checks every address against the signed list; ccs-watch checks the live pages and alerts IRC, and the web server alerts when pushes stop; the state is backed up; releases are attested in ccs-sigs"></p>
+<p align="center"><img src="design.svg" width="900" alt="The setup: the backend (monero-wallet-rpc, ccs-bash, ccs-front-bash) makes the whole site from the design and pushes it to a web server whose gate checks every page against the design and the proposals repository, and every address against the signed list; ccs-watch checks the live pages and alerts IRC, and the web server alerts when pushes stop; the state is backed up; releases are attested in ccs-sigs"></p>
 
 **What stays the same:** the proposals repository, the CCS wallet and every proposal's
 subaddress, the site's address and `/projects`.
@@ -191,10 +191,12 @@ steps 2 and 5. It makes `/var/lib/ccs/www/site`, every page, each run.
 
 [Two machines](two-machines.md), way A: the `ccs-data` account the backend pushes to (write-only,
 no deleting), nginx with HTTPS, the security headers, the cache rule and the theme lines, and
-**the gate**, which checks every address in each push, its QR codes included, against the signed
-list (its files from step 4, and the `allowed` file), and every other file against the design
-release's (`design.sha256`), and holds back any that fails; and the gate's heartbeat timer
-(step 8).
+**the gate**, which checks every page in each push against the design release's own (its zip
+unpacked there, as on the backend; a proposal's text against the proposals repository, which it
+fetches itself, with ccs-front-bash's `markdown.awk`), every address, its QR codes included,
+against the signed list (its files from step 4, and the `allowed` file), and every other file
+against the design release's (`design.sha256`), and holds back any that fails; and the gate's
+heartbeat timer (step 8).
 
 ## 7. The backup machine
 
@@ -242,13 +244,19 @@ if [ "$sum" != "$(cat /var/lib/ccs/backup-sent 2>/dev/null)" ] \
     echo "$sum" > /var/lib/ccs/backup-sent
 fi
 
-# ccs-front-bash makes the site; it goes to the web server, which must then serve exactly that
+# ccs-front-bash makes the site; it goes to the web server, which must then serve exactly that.
+# The push exits 7 when the gate held a file back but the rest went live: a failed run, and the
+# live pages are still checked (a web server that lies must not hide behind a held-back page)
 if ccs-front-run >> $L 2>&1; then
-    if timeout -k 5 120 runuser -u ccs -- rsync -a --delay-updates \
-            -e "ssh -p 22 -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15" \
-            /var/lib/ccs/www/site/ ccs-data@<web server>: >> $L 2>&1; then
+    rc=0
+    timeout -k 5 120 runuser -u ccs -- rsync -a --delay-updates \
+        -e "ssh -p 22 -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15" \
+        /var/lib/ccs/www/site/ ccs-data@<web server>: >> $L 2>&1 || rc=$?
+    [ "$rc" = 7 ] && failed="${failed:+$failed, }the push (the web server held a file back)"
+    [ "$rc" = 0 ] || [ "$rc" = 7 ] || failed="${failed:+$failed, }the push"
+    if [ "$rc" = 0 ] || [ "$rc" = 7 ]; then
         runuser -u ccs -- $W https://ccs.getmonero.org /var/lib/ccs/www/site >> $L 2>&1
-    else failed="${failed:+$failed, }the push"; fi
+    fi
 else failed="${failed:+$failed, }ccs-front-bash"; fi
 
 # how the run went: three failed runs in a row alert, so a stopped backend can't go unnoticed
@@ -354,7 +362,10 @@ in these files, root-owned, never in a repository or on a command line.
 | `/etc/ssh/authorized_keys/ccs-data` | `from=`, the key | the backend's address and its push key, `command="/usr/local/bin/ccs-receive"`; `sshd_config`'s `Match User ccs-data` reads only it | 6 |
 | `/etc/ccs-gate/` | `subaddresses.txt` and its `.pin`, `.asc`, `.key.asc` | the same files as the backend's | 6 |
 | | `design.sha256` | the design release's files, from its zip (two-machines, "The gate"); `apt install zbar-tools` | 6 |
-| | `hidden-classes` | the classes the design hides text with, its zip's `assets/hidden-classes.txt` (from ccs-front-hugo v0.1.16) | 6 |
+| | `design/<release>/` | the design's release zip, unpacked (the same as the backend's); `design.sha256` from it | 6 |
+| | `markdown.awk` | `lib/markdown.awk` of the ccs-front-bash release the backend runs | 6 |
+| | `proposals.conf` | `PROPOSALS_GIT=https://repo.getmonero.org/monero-project/ccs-proposals.git`, `PROPOSALS_BRANCH=master` (and `LINK_HOSTS`, other forges a proposal's merge request link may be on) | 6 |
+| | `subaddresses.txt.viewkey` | the same as the backend's (the Verify page is then checked word for word) | 6 |
 | | `allowed` | the General Fund, `888tNkZrPN6JsEgekjMnABU4TBzc2Dt29EPAvkRxbANsAnjyPbb3iQ1YBRk1UXcdRsiKc9dhwMVgN5S9cQUiyoogDavup3H`, and any address a proposal's text quotes (the gate's refusal names it) | 6 |
 | | `alert.conf` | `ALERT_URL` (the bot), `SITE_URL=https://ccs.getmonero.org` | 8 |
 | nginx | `server_name`, the certificate | `ccs.getmonero.org`, from certbot | 6 |
@@ -374,7 +385,9 @@ them is a new design release.
 
 **Where the testnet differs** (don't copy these): `testnet=1`, monerod on `28081`, wallet-rpc on
 `18182`; `MIN_CONFIRMATIONS=1`; the proposals on Forgejo
-(`https://git.disroot.org/api/v1/repos/plowsof/ccs-proposals`); its own wallet and list; the IRC
+(`https://git.disroot.org/api/v1/repos/plowsof/ccs-proposals`; the gate's `proposals.conf`:
+`PROPOSALS_GIT=https://git.disroot.org/plowsof/ccs-proposals.git`, `LINK_HOSTS=repo.getmonero.org`,
+where the older proposals' merge requests are); its own wallet and list; the IRC
 bot on the backend machine itself (the backend's alerts reach it on 127.0.0.1, the web server's
 over HTTPS through that machine's proxy).
 
@@ -406,7 +419,11 @@ the release's zip, checked by its sha256. For each new release, in this order:
    The design: download the zip from its release and `sha256sum` it.
 3. **Compared.** The built image ID (`docker image inspect … --format '{{.Id}}'`) and the zip's
    sha256 must be the attested ones, and the release notes'. Anything different: stop, keep what runs.
-4. **Switched.** Tag the new image as the one the run scripts use (`ccs-bash`, `ccs-front-bash`);
+4. **Switched.** First the web server, so its gate allows the new pages: a new design, unpacked
+   beside the old in `/etc/ccs-gate/design/` and its lines added to `design.sha256`; a new
+   ccs-front-bash whose `lib/markdown.awk` changed, that file beside the old as
+   `/etc/ccs-gate/markdown-<release>.awk` ([two machines](two-machines.md), "The gate"). Then
+   tag the new image as the one the run scripts use (`ccs-bash`, `ccs-front-bash`);
    unzip the design into a new folder and swap it with `/opt/ccs-front-hugo/public`, between runs.
    Keep the previous images (a stopped container on each, so nothing prunes them) to go back to.
 5. **Watched and noted.** The next run fills the site and ccs-watch confirms the pages; then add a
