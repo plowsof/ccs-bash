@@ -146,6 +146,7 @@ v=20
 for attack in \
     "split|<p>${fake:0:40}<span></span>${fake:40}</p>|an address split by markup (<span></span>)" \
     "wbr|<p>${fake:0:40}<wbr>${fake:40}</p>|an address split by <wbr>" \
+    "inline|<p>${fake:0:30}<em></em>${fake:30:30}<a href=\"x\"><code>${fake:60}</code></a></p>|an address split by inline tags (<em>, <a>, <code>)" \
     "zwsp|<p>${fake:0:40}"$'\xe2\x80\x8b'"${fake:40}</p>|an address split by a zero-width space" \
     "entity|<p>&#$(printf '%d' "'${fake:0:1}");${fake:1}</p>|an address with an HTML entity in it" \
     "hexentity|<a href=\"monero:&#x$(printf '%x' "'${fake:0:1}");${fake:1}\">pay</a>|a monero: link with a hex entity in its address" \
@@ -155,6 +156,8 @@ for attack in \
     "qr|<a href=\"monero:$good\"><img src=\"data:image/png;base64,$(qr64 "$fake")\"></a><div class=\"address\">$good</div>|the right address, the QR code of another" \
     "notqr|<img src=\"data:image/png;base64,iVBORw0KGgo=\">|a data: image that is no QR code" \
     "svg|<img src=\"data:image/svg+xml,&lt;svg/&gt;\">|a data: image that isn't a PNG" \
+    "datatab|<img src=\"da&#9;ta:image/svg+xml,&lt;svg/&gt;\">|a data: URI with a tab in its scheme, which a browser takes out" \
+    "datanewline|<img src=\"d&#10;ata:image/png;base64,$(qr64 "$good")\">|the wallet's QR code, but a newline in data: (not exactly data:image/png;base64,)" \
     "junklink|<a href=\"monero:${good}x\">pay</a>|a monero: link with more than an address" \
     "box|<div class=\"address\">${good:0:50}<b></b>${good:50}</div>|an address box with markup in it" \
     "lrm|<p>${fake:0:40}"$'\xe2\x80\x8e'"${fake:40}</p>|an address split by a left-to-right mark" \
@@ -188,6 +191,25 @@ for attack in \
     put "proposals/$file.html" <<<"$html"
     held "$v" "proposals/$file.html" "$what"
 done
+# what reads like an address only to a gate that reads too much: these go live
+passes() {
+    local rc=0
+    push > /dev/null || rc=$?
+    if ((!rc)) && [[ $(live) == "v$1" && -n $(livefile "$2") ]]; then ok "goes live: $3"; else echo "push exit $rc, live $(live)"; on web 'tail -n 3 /var/log/ccs-gate.log'; fail "$3"; fi
+}
+for page in \
+    "pcttext|<p>%$(printf '%X' "'${fake:0:1}")${fake:1}</p>|a %-escape in a page's text, which a browser shows as it is (only a monero: link's are read)" \
+    "paragraphs|<p>${fake:0:40}</p><p>${fake:40}</p>|halves in two paragraphs, two lines on the page (block tags are a space)" \
+    "cells|<table><tr><td>${fake:0:40}</td><td>${fake:40}</td></tr></table><div>${fake:0:40}<br>${fake:40}</div>|halves in two table cells, or either side of a <br>"; do
+    IFS='|' read -r file html what <<<"$page"
+    v=$((v + 1)); site "$v" "$good"
+    put "proposals/$file.html" <<<"$html"
+    passes "$v" "proposals/$file.html" "$what"
+done
+v=$((v + 1)); site "$v" "$good"
+put projects.json <<<"[{\"address\": \"$good\", \"title\": \"R&D notes\", \"url\": \"data:text/plain,x\"}]"
+passes "$v" projects.json "JSON with & and data: in its text (entities and data: URIs are a page's)"
+[[ $(livefile projects.json) == *'R&D'* ]] || fail "the JSON with & and data: isn't the one live"
 # names an rsync exclude pattern can't hold exactly: a backslash with no wildcard, a wildcard, both
 for file in 'back\slash' 'star*' 'both\[x]'; do
     v=$((v + 1)); site "$v" "$good"

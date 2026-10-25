@@ -58,22 +58,26 @@ refuse() {
 # gate can't accept; "file<TAB>?qr<TAB>base64" for each data: image, for zbarimg (below). An
 # address is a run of 95 (standard) or 106 (integrated) base58 characters. Each file is read
 #   1. as written, tags and attributes included (monero: links, alt and title text), with
-#      entities and %-escapes read as a browser or a wallet would (&#56; and %38 are both 8);
+#      entities read as a browser would (&#56; is 8); %-escapes only in a monero: link, as a
+#      wallet reads them (%38 is 8): in a page's text, a browser shows them as they are;
 #   2. as shown: comments and tags removed as a browser reads them (a quoted ">" in a tag, a
-#      comment up to its "-->"), so an address split by <span></span> or <wbr> is one again; an
-#      image's alt text where it stands (a broken image shows it inline);
+#      comment up to its "-->"), so an address split by <span></span> or <wbr> is one again; a
+#      block tag (<p>, <div>, <br>, <td>...) a space, as its text starts a line or a cell of its
+#      own (any other tag joins); an image's alt text where it stands (a broken image shows it
+#      inline);
 # with every character that isn't ASCII, or is a control character, dropped first: zero-width
 # spaces, bidi marks, soft hyphens and the like show nothing, so they mustn't split an address
 # for the gate either (as characters or entities; an entity it doesn't know is dropped too). An
-# entity without its ";" is refused (a browser reads &shy as a soft hyphen), and so are a NUL byte
-# (dropped from the text: below, in scan) and a charset other than UTF-8.
+# entity without its ";" in a page is refused (a browser reads &shy as a soft hyphen), and so are
+# a NUL byte (dropped from the text: below, in scan) and a charset other than UTF-8.
 # Markup that hides or moves text without the design's stylesheet (hidden, dir, style or popover
 # attributes; <template>, <svg>, <bdo>...), colours, borders or sizes it (<font>, bgcolor, width
 # but on an <img>...), or leaves the page (an http-equiv refresh with a URL),
 # which the design never uses, is refused. A link (any attribute value starting monero:, tabs and spaces
 # taken out, as a browser does tabs and newlines in a URL) must have one address straight after
 # it, an address box (class="address") one address and nothing
-# else, and a data: URI must be a PNG image, which must be a QR code (checked after this). A page
+# else, and a data: URI in a page (tabs and spaces in its scheme too: a browser takes tabs out)
+# must be exactly data:image/png;base64,..., a QR code (checked after this). A page
 # or JSON must start with <, [ or {: no image format does, and a browser shows an <img> of any
 # file whose bytes are an image's.
 # Characters that can draw a QR code as text, as characters or entities, are refused: block
@@ -93,14 +97,21 @@ function chr(n) {
 }
 function decode(s,    out, e, n) {
     out = ""
-    while (match(s, /&#[0-9]+;?|&#[xX][0-9A-Fa-f]+;?|&[A-Za-z][A-Za-z0-9]*;|%[0-7][0-9A-Fa-f]/)) {
+    while (match(s, /&#[0-9]+;?|&#[xX][0-9A-Fa-f]+;?|&[A-Za-z][A-Za-z0-9]*;/)) {
         e = substr(s, RSTART, RLENGTH); out = out substr(s, 1, RSTART - 1); s = substr(s, RSTART + RLENGTH)
         sub(/;$/, "", e)
-        if (e ~ /^%/) n = hexval(substr(e, 2))
-        else if (e ~ /^&#[xX]/) n = hexval(substr(e, 4))
+        if (e ~ /^&#[xX]/) n = hexval(substr(e, 4))
         else if (e ~ /^&#/) n = substr(e, 3) + 0
         else { e = substr(e, 2); n = (e == "amp") ? 38 : (e == "lt") ? 60 : (e == "gt") ? 62 : (e == "quot") ? 34 : (e == "apos") ? 39 : (e ~ drawnames) ? 9608 : -1 }
         out = out chr(n)
+    }
+    return out s
+}
+# %-escapes, as a wallet reads a monero: URI (ASCII only)
+function pct(s,    out) {
+    out = ""
+    while (match(s, /%[0-7][0-9A-Fa-f]/)) {
+        out = out substr(s, 1, RSTART - 1) chr(hexval(substr(s, RSTART + 1, 2))); s = substr(s, RSTART + 3)
     }
     return out s
 }
@@ -127,7 +138,10 @@ function strip(f, s,    out, i, j, k, t) {
         if (s ~ /^<([!?]|\/[^A-Za-z])/) {   # <!doctype ...>, <?...>, </>: up to the first >
             j = index(s, ">"); s = j ? substr(s, j + 1) : ""; continue
         }
-        if (match(s, tagre)) { t = substr(s, 1, RLENGTH); s = substr(s, RLENGTH + 1); hides(f, t); out = out alt(t); continue }
+        if (match(s, tagre)) {
+            t = substr(s, 1, RLENGTH); s = substr(s, RLENGTH + 1); hides(f, t)
+            out = out (tolower(t) ~ blockre ? " " : "") alt(t); continue
+        }
         if (s ~ /^<\/?[A-Za-z]/) { s = ""; break }   # a tag never closed: the rest is in it
         out = out "<"; s = substr(s, 2)
     }
@@ -172,27 +186,28 @@ function hides(f, t,    name, c) {
     if (t !~ /^<\// && name ~ /^(img|progress|meter|input)$/) shown++
 }
 function base58run(s) { return match(s, /^[1-9A-HJ-NP-Za-km-z]+/) && (RLENGTH == 95 || RLENGTH == 106) }
-function check(f, d,    a, l, m, i, box) {
-    shown = 0
+function check(f, d,    a, l, m, i, box, page) {
+    shown = 0; page = f ~ /\.html$/
     # as UTF-8 bytes: \342\226\200 is U+2580
     drew = d ~ /\342[\226\227][\200-\277]|\342[\240-\243][\200-\277]|\342\254[\233\234]|\342\232[\252\253]|\360\237\224[\262\263]|\360\237\237[\240-\253]|\360\237[\254-\257][\200-\277]/
     if (d !~ /^[ \t\n\r]*[<[{]/) print f "\t!not text that starts as a page or JSON does (<, [ or {): a browser would show it as an image"
     gsub(/[\200-\377]|[\001-\010\013\016-\037\177]/, "", d)
-    if (d ~ /&[A-Za-z][A-Za-z0-9]*([^A-Za-z0-9;]|$)/) print f "\t!an entity without its ; (a browser reads some, such as &shy, a soft hyphen)"
+    if (page && d ~ /&[A-Za-z][A-Za-z0-9]*([^A-Za-z0-9;]|$)/) print f "\t!an entity without its ; (a browser reads some, such as &shy, a soft hyphen)"
     a = decode(d)
     l = tolower(a)
     while (match(l, /charset[ \t\n\f\r]*=[ \t\n\f\r]*["\047]?[ \t\n\f\r]*/)) {
         l = substr(l, RSTART + RLENGTH)
         if (l !~ /^utf-?8([^a-z0-9_-]|$)/) print f "\t!a charset that isn\047t UTF-8"
     }
-    # data: URIs (a scheme starts after a non-scheme character: not "metadata:"): PNG images
-    # only; each one goes to zbarimg, and its base64 is not text
+    # a page\047s data: URIs (a scheme starts after a non-scheme character: not "metadata:"; a
+    # browser takes tabs and newlines out of it, spaces count here too): exactly
+    # data:image/png;base64,... only; each one goes to zbarimg, and its base64 is not text
     m = " " a
-    while (match(tolower(m), /[^a-z0-9+.-]data:/)) {
+    while (page && match(tolower(m), /[^a-z0-9+.-]d[ \t\n\f\r]*a[ \t\n\f\r]*t[ \t\n\f\r]*a[ \t\n\f\r]*:/)) {
         m = substr(m, RSTART + 1)
         if (match(m, /^data:image\/png;base64,[A-Za-z0-9+\/]+=*/)) print f "\t?qr\t" substr(m, 23, RLENGTH - 22)
-        else print f "\t!a data: URI that is not a PNG image"
-        m = substr(m, 6)
+        else print f "\t!a data: URI that is not exactly data:image/png;base64,"
+        m = substr(m, 2)
     }
     gsub(/data:image\/png;base64,[A-Za-z0-9+\/]+=*/, " ", a)
     tokens(f, a)
@@ -200,9 +215,10 @@ function check(f, d,    a, l, m, i, box) {
     # a QR code drawn with images, one a module, takes hundreds; the design and a proposal, 13
     if (shown > 64) print f "\t!more than 64 images (and bars and boxes): enough to draw a QR code with"
     if (drew) print f "\t!a block, square or braille character, which can draw a QR code as text"
-    # monero: links (any attribute, any case; a browser takes tabs and newlines out of a URL,
-    # and spaces go here too): one address right after, nothing else, and that one checked
-    m = a; gsub(/[ \t\n\f\r]/, "", m); l = tolower(m)
+    # monero: links (any attribute, any case; %-escapes read; a browser takes tabs and newlines
+    # out of a URL, and spaces go here too): one address right after, nothing else, and that one
+    # checked
+    m = pct(a); gsub(/[ \t\n\f\r]/, "", m); l = tolower(m)
     while (match(l, /=["\047]?monero:/)) {
         i = RSTART + RLENGTH; m = substr(m, i); l = substr(l, i)
         if (!base58run(m)) print f "\t!a monero: link without one address right after it"
@@ -220,6 +236,8 @@ function check(f, d,    a, l, m, i, box) {
 # a start or end tag: a ">" inside a value quoted after "=" doesn\047t end it, as in HTML
 BEGIN {
     tagre = "^</?[A-Za-z]([^>=]|=[ \t\n\f\r]*\"[^\"]*\"|=[ \t\n\f\r]*\047[^\047]*\047|=)*>"
+    # the tags whose text starts a line or a cell of its own: a space in the text as shown
+    blockre = "^</?(address|article|aside|blockquote|body|br|caption|dd|details|dialog|div|dl|dt|fieldset|figcaption|figure|footer|form|h[1-6]|head|header|hgroup|hr|html|legend|li|main|menu|nav|ol|p|pre|section|summary|table|tbody|td|tfoot|th|thead|title|tr|ul)([ \t\n\f\r/>]|$)"
     # the named entities that are such characters
     drawnames = "^(EmptySmallSquare|EmptyVerySmallSquare|FilledSmallSquare|FilledVerySmallSquare|Square|bigcirc|bigtriangledown|bigtriangleup|blacksquare|blacktriangle|blacktriangledown|blacktriangleleft|blacktriangleright|blk12|blk14|blk34|block|cir|dtri|dtrif|fltns|lhblk|lltri|loz|lozenge|ltri|ltrif|marker|rect|rtri|rtrif|squ|square|squarf|squf|triangle|triangledown|triangleleft|triangleright|tridot|uhblk|ultri|urtri|utri|utrif|xcirc|xdtri|xutri)$"
 }
