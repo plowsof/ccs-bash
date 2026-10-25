@@ -3,7 +3,14 @@
 # key in builder-keys/, and every signer's all.SHA256SUMS the same for a release.
 # Adapted from Feather Wallet's contrib/guix/guix-verify (tobtoht), itself from Bitcoin Core's
 # (MIT, see contrib/release/README.md). Unlike it, the keys come from builder-keys/ into a
-# keyring of their own, not from yours.
+# keyring of their own, not from yours, and each signature must be by the key of the signer whose
+# folder it is in (builder-keys/<signer>.asc, one key): one key can't sign as several signers, and
+# signers with the same key count once.
+#
+#   TRUSTED_KEYS=FILE   only signers whose key's fingerprint is in FILE (one a line, # comments)
+#                       count; the others are shown, not counted. Keep FILE yourself, not in ccs-sigs.
+#   --min-signers N     a release needs N signers who agree: 2 by default, so that one stolen or
+#                       careless key isn't enough; 1 relaxes it (a release only you have attested)
 export LC_ALL=C
 set -e -o pipefail
 
@@ -22,7 +29,11 @@ cmd_usage() {
 cat <<EOF
 Synopsis:
 
-    env [ CCS_SIGS_REPO=<path/to/ccs-sigs> ] [ SIGNER=<signer> ] ./contrib/release/verify [ NAME... ]
+    env [ CCS_SIGS_REPO=<path/to/ccs-sigs> ] [ SIGNER=<signer> ] [ TRUSTED_KEYS=<file> ] \
+        ./contrib/release/verify [ --min-signers N ] [ NAME... ]
+
+A release needs --min-signers signers who agree (default 2), each signature by the key of the
+signer whose folder it is in; with TRUSTED_KEYS, only keys listed there count.
 
 NAME is a folder in ccs-sigs (a set of releases attested together, e.g.
 ccs-bash-v0.2.7+ccs-front-bash-v0.1.9+ccs-front-hugo-v0.1.8), or one release (ccs-bash-v0.2.7):
@@ -37,6 +48,9 @@ EOF
 }
 
 if [ "$1" = -h ] || [ "$1" = --help ]; then cmd_usage; exit 0; fi
+min_signers=2
+if [ "$1" = --min-signers ]; then min_signers=$2; shift 2 || { cmd_usage; exit 1; }; fi
+[[ $min_signers =~ ^[1-9][0-9]*$ ]] || { echo "ERR: --min-signers takes a number, 1 or more"; exit 1; }
 
 CCS_SIGS_REPO=${CCS_SIGS_REPO:-external/ccs-sigs}
 [ -d "$CCS_SIGS_REPO/builder-keys" ] || { echo "ERR: '$CCS_SIGS_REPO' isn't a ccs-sigs checkout"; exit 1; }
@@ -48,6 +62,30 @@ trap 'gpgconf --kill all 2> /dev/null || true; rm -rf "$GNUPGHOME"' EXIT
 shopt -s nullglob
 keys=( "$CCS_SIGS_REPO"/builder-keys/*.asc )
 (( ${#keys[@]} )) && gpg --quiet --batch --import "${keys[@]}" 2> /dev/null
+if [[ -n ${TRUSTED_KEYS:-} ]]; then
+    [[ -f $TRUSTED_KEYS ]] || { echo "ERR: no TRUSTED_KEYS file '$TRUSTED_KEYS'"; exit 1; }
+    trusted=$(sed 's/#.*//; s/[[:space:]]//g' "$TRUSTED_KEYS" | tr 'a-f' 'A-F' | grep -E '^[0-9A-F]{40}$' || true)
+fi
+
+# key_of SIGNER: the fingerprint of the one primary key in builder-keys/SIGNER.asc
+key_of() {
+    local f="$CCS_SIGS_REPO/builder-keys/$1.asc" fprs
+    [ -e "$f" ] || return 1
+    fprs=$(gpg --batch --with-colons --import-options show-only --import "$f" 2> /dev/null \
+        | awk -F: '$1 == "pub" { want = 1; next } want && $1 == "fpr" { print $10; want = 0 }')
+    [[ $fprs =~ ^[0-9A-F]{40}$ ]] && echo "$fprs"
+}
+# signed MANIFEST: good signature (.asc) by the key of the signer whose folder it is in; prints
+# that key's fingerprint
+signed() {
+    local signer key by
+    signer=$(basename "$(dirname "$1")")
+    key=$(key_of "$signer") || return 1
+    by=$(gpg --batch --status-fd 1 --verify "$1.asc" "$1" 2> /dev/null | awk '$2 == "VALIDSIG" { print $NF }') || return 1
+    [[ $by == "$key" ]] && echo "$key"
+}
+# counts KEY: it counts, unless TRUSTED_KEYS is set and doesn't have it
+counts() { [[ -z ${TRUSTED_KEYS:-} ]] || grep -qxF "$1" <<<"$trusted"; }
 
 # Usage: verify compare_manifest current_manifest
 verify() {
@@ -55,14 +93,14 @@ verify() {
     local current_manifest="$2"
     local signer
     signer=$(basename "$(dirname "$current_manifest")")
-    if ! gpg --quiet --batch --verify "$current_manifest".asc "$current_manifest" 1>&2; then
-        echo "ERR: Failed to verify GPG signature in '${current_manifest}'"
-        echo ""
-        echo "Hint: Either the signature is invalid or the public key is missing"
-        echo ""
+    if [ ! -e "$CCS_SIGS_REPO/builder-keys/$signer.asc" ]; then
+        echo "ERR: there is no builder-keys/$signer.asc for '${current_manifest}'"
         failure=1
-    elif [ ! -e "$CCS_SIGS_REPO/builder-keys/$signer.asc" ]; then
-        echo "ERR: '${current_manifest}' is signed, but there is no builder-keys/$signer.asc"
+    elif ! signed "$current_manifest" > /dev/null; then
+        echo "ERR: '${current_manifest}' is not signed by builder-keys/$signer.asc (one key)"
+        echo ""
+        echo "Hint: Either the signature is invalid, or made by another key than $signer's"
+        echo ""
         failure=1
     elif ! diff --report-identical "$compare_manifest" "$current_manifest" 1>&2; then
         echo "ERR: The SHA256SUMS attestation in these two directories differ:"
@@ -85,14 +123,13 @@ fi
 # release NAME: one release, in every set (folder) that has it: each signature checked, and its
 # line the same for every signer, whichever set they attested
 release() {
-    local name=$1 set m line first='' firstfrom='' n=0
+    local name=$1 set m line key first='' firstfrom='' n=0 commit counted=' '
     for set in "$CCS_SIGS_REPO"/*/; do
         set=$(basename "$set")
         [[ +$set+ == *"+$name+"* ]] || continue
         for m in "$CCS_SIGS_REPO/$set"/*/all.SHA256SUMS; do
-            if ! gpg --quiet --batch --verify "$m".asc "$m" 2> /dev/null \
-                    || [ ! -e "$CCS_SIGS_REPO/builder-keys/$(basename "$(dirname "$m")").asc" ]; then
-                echo "ERR: Failed to verify GPG signature in '$m'"; failure=1; continue
+            if ! key=$(signed "$m"); then
+                echo "ERR: '$m' is not signed by its signer's key (builder-keys/$(basename "$(dirname "$m")").asc)"; failure=1; continue
             fi
             line=$(grep -E "^[0-9a-f]{64}  $name([-.]|\$)" "$m" | head -n 1 || true)
             [ -n "$line" ] || { echo "ERR: '$m' has no line for $name"; failure=1; continue; }
@@ -100,13 +137,24 @@ release() {
             elif [ "${line%% *}" != "${first%% *}" ]; then
                 echo "ERR: $name differs: '$firstfrom' has ${first%% *}, '$m' has ${line%% *}"; failure=1; continue
             fi
+            if ! counts "$key"; then echo "Not counted: '$m' (key $key is not in TRUSTED_KEYS)"; continue; fi
+            if [[ $counted == *" $key "* ]]; then echo "Not counted again: '$m' (key $key already counted)"; continue; fi
+            counted+="$key "
             n=$((n + 1))
             echo "Verified: $name in '$m'"
         done
     done
     (( n )) && checked=1
     echo ""
-    (( n )) && echo "$name: ${first%% *} (${n} signer(s) agree)" || echo "WARN: no attestation of $name"
+    if (( n )); then
+        echo "$name: ${first%% *} (${n} signer(s) agree)"
+        # the commit it was built from, when the attestation names it (contrib/release/build)
+        commit=${first##*  "$name"-}; commit=${commit%.image-id}
+        [[ $commit =~ ^[0-9a-f]{12,40}$ ]] && echo "$name: from commit $commit (check the tag is it before building)"
+        if (( n < min_signers )); then echo "ERR: $name: $n signer(s) agree, $min_signers needed (--min-signers)"; failure=1; fi
+    else
+        echo "WARN: no attestation of $name"
+    fi
     echo ""
 }
 
