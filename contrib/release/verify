@@ -35,10 +35,10 @@ Synopsis:
 A release needs --min-signers signers who agree (default 2), each signature by the key of the
 signer whose folder it is in; with TRUSTED_KEYS, only keys listed there count.
 
-NAME is a folder in ccs-sigs (a set of releases attested together, e.g.
-ccs-bash-v0.2.7+ccs-front-bash-v0.1.9+ccs-front-hugo-v0.1.8), or one release (ccs-bash-v0.2.7):
-then every set it is in counts, and its line must be the same for every signer. Default: every
-folder.
+NAME is a release (ccs-bash-v0.2.7): its folder, and every older set folder it is in
+(ccs-bash-v0.2.7+ccs-front-bash-v0.1.9+ccs-front-hugo-v0.1.8, from before attest made one folder
+per release), count, and its line must be the same for every signer. Or a set folder's name: that
+folder only. Default: every folder.
 
 Example overriding signer's manifest to use as base
 
@@ -122,8 +122,8 @@ if (( $# )); then names=( "$@" ); else
     (( ${#names[@]} )) && mapfile -t names < <(printf '%s\n' "${names[@]}" | sort -u)
 fi
 
-# release NAME: one release, in every set (folder) that has it: each signature checked, and its
-# line the same for every signer, whichever set they attested
+# release NAME: one release, in its folder and every older set folder that has it: each signature
+# checked, and its line the same for every signer, whichever folder they attested in
 release() {
     local name=$1 set m line key first='' firstfrom='' n=0 commit counted=' '
     for set in "$CCS_SIGS_REPO"/*/; do
