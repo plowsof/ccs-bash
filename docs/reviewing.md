@@ -50,8 +50,8 @@ Pinned container, read-only, no capabilities, `--network host` only to reach wal
   mapped to GitLab's shape). `merged_mr_url`: the merged MR that added a file. `mr_proposal_file`:
   an MR is an idea only if it adds exactly one `.md` at the root, and besides it only files in
   `images/<its name>/`. `ideas`: open MRs whose file reads as a proposal; title and author
-  HTML-escaped, any run of 90 or more base58 characters shortened (an MR title can't carry an
-  address to the gate), links `https:` only.
+  HTML-escaped, any run of 90 or more base58 characters shortened, invisible characters in it or
+  not (an MR title can't carry an address to the gate), links `https:` only; its file 1 MB at most.
 - [`lib/images.sh`](../lib/images.sh): copies the images a proposal's Markdown shows from
   `images/<proposal>/` (plain files, PNG, JPEG or GIF by their first bytes, 2 MB at most) and writes
   `images.json`. No network.
@@ -97,26 +97,33 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
   last three fetches over 40 s and two runs before it alerts; `--run` alerts after three failed
   runs. Its config is read key by key, never sourced.
 - [`contrib/ccs-backup-receive`](../contrib/ccs-backup-receive), on the backup machine, the
-  backend's key's forced command: reads at most 10 MB, which must look like `proposals.csv`, and
-  keeps it as a new dated file; never overwrites or deletes one.
+  backend's key's forced command: reads at most 1 MB (nothing once its folder holds 256 MB),
+  which must look like `proposals.csv`, and keeps it as a new dated file; never overwrites or
+  deletes one.
 
 ## Web server
 
 - [`contrib/ccs-receive`](../contrib/ccs-receive), the push key's forced command, as `ccs-data`:
   one push at a time (`flock`); staging starts as a copy of the live site; rrsync
   (`-wo -no-del -munge`) receives into it. The whole push is refused if the list isn't its `.pin`'s,
-  or there is no `zbarimg` or `design.sha256`, or a file name has a control character. `scan`
-  (awk) reads every page and JSON four ways: as written (entities and %-escapes decoded), as shown
-  (tags removed, zero-width characters dropped), every `monero:` link and address box (one address,
-  nothing else), and every `data:` image (a PNG that `zbarimg` reads as a QR code of a listed
-  address). `changes`: any other file the push changes must be the design's (`design.sha256`), a
-  proposal image (its QR codes checked), `projects.json`, or the list's files as installed in
-  `/etc/ccs-gate`. A failing file keeps its last good copy, the rest goes live, the push fails, IRC
-  is told. `--heartbeat` (a timer): alerts when no push has come for 15 minutes.
+  or there is no `zbarimg`, `qrencode`, `python3`, `git` or `design.sha256`, or a file name has a control character. `scan`
+  (awk) reads every page and JSON four ways: as written (entities decoded; %-escapes in `monero:` links only), as
+  shown (comments and tags removed as HTML reads them, a block tag a space, `strip`), every `monero:` link and address box
+  (one address, nothing else), and every `data:` image (`qrdata`: zbarimg reads one listed
+  address, and its pixels, read by `pixels_py`, Python's standard library only, are those of
+  `qrencode -s 10` of it). A page or JSON must start with `<`, `[` or `{`. Every non-ASCII or control character is dropped first, so
+  none can split an address; `hidden`, `dir`, `style` and `popover` attributes and `<svg>`,
+  `<template>`, `<bdo>`... (`hides`), which the design never uses, are refused, and so are block,
+  square and braille characters (`drawing`), which can draw a QR code as text. `changes`: any other
+  file the push changes must be the design's (`design.sha256`), a proposal image the proposals
+  repository has at that path (`repo_images`: a shallow fetch each push, `git hash-object`
+  compared with `ls-tree`; its QR codes checked too), `projects.json`, or the list's files as installed in `/etc/ccs-gate`. A failing file is
+  deleted from staging, so it keeps its last good copy; the rest goes live, the push fails, IRC is
+  told. `--heartbeat` (a timer): alerts when no push has come for 15 minutes.
 - nginx: static files, the security headers, the theme map ([two machines](two-machines.md)).
 
 ## The dense parts
 
-Where to slow down: `markdown.awk`'s `hold`/`unhold`; `ccs-receive`'s `decode` and `tokens` (entity
+Where to slow down: `markdown.awk`'s `hold`/`unhold`; `ccs-receive`'s `decode`, `strip` and `tokens` (entity
 decoding by hand, no interval expressions for old mawk); `load_state`'s CSV regex
 (`proposals.sh`); `forgejo_prs`' time-zone conversion (`gitlab.sh`).
