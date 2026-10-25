@@ -5,12 +5,12 @@
 **A) Packages on the host:**
 
 ```
-apt install bash coreutils findutils mawk util-linux curl ca-certificates jq qrencode git logrotate
+apt install bash coreutils findutils grep sed diffutils mawk util-linux curl ca-certificates jq qrencode git logrotate
 ```
 
 | Package | Used for | Notes |
 |---|---|---|
-| `bash`, `coreutils`, `findutils`, `util-linux` | the scripts, `xargs`, `flock`, `runuser` | priority required |
+| `bash`, `coreutils`, `findutils`, `grep`, `sed`, `diffutils`, `util-linux` | the scripts, `xargs`, `diff` (images), `flock`, `runuser` | priority required |
 | `mawk` or `gawk` | `lib/frontmatter.awk` | either works |
 | `curl`, `ca-certificates` | wallet RPC, GitLab API | curl only recommends `ca-certificates` |
 | `jq` | all JSON | 1.6 or newer |
