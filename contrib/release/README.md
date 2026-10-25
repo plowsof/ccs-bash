@@ -54,8 +54,11 @@ env SIGNER=<fingerprint>=<github username> contrib/release/attest
 ```
 
 By default `build` takes each repository's newest release tag (the set at the top of the handover's
-[releases table](../../docs/handover.md#the-releases)) and says which before it starts. Or name
-the releases yourself, any of the three:
+[releases table](../../docs/handover.md#the-releases)) and says which before it starts, skipping
+any you have attested already in your ccs-sigs checkout (your name as `attest` has it: `SIGNER`'s,
+else gh's login). So after a release of one repository, only that one is built (the design: under
+half a minute) and `attest` signs a set of just it; `verify` counts each release in every set it
+is in. Or name the releases yourself, any of the three, built whether attested or not:
 
 ```
 contrib/release/build ccs-bash v0.2.8 ccs-front-bash v0.1.11 ccs-front-hugo v0.1.9
