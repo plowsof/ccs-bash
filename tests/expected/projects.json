@@ -9,7 +9,8 @@
         "state": "FUNDING-REQUIRED",
         "target_amount": "1500.0000",
         "title": "Fund &lt;b&gt;this&lt;/b&gt; &amp; that",
-        "filename": "a-fund.md"
+        "filename": "a-fund.md",
+        "gitlab_url": "https://example.org/mr/1"
     },
     {
         "address": "80000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002",
@@ -21,7 +22,8 @@
         "state": "WORK-IN-PROGRESS",
         "target_amount": "85.0000",
         "title": "Work in progress",
-        "filename": "b-wip.md"
+        "filename": "b-wip.md",
+        "gitlab_url": "https://example.org/mr/2"
     },
     {
         "address": null,
@@ -33,7 +35,8 @@
         "state": "COMPLETED",
         "target_amount": "240.1202",
         "title": "Finished thing",
-        "filename": "c done, (old).md"
+        "filename": "c done, (old).md",
+        "gitlab_url": "https://example.org/mr/3"
     },
     {
         "address": "80000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003",
@@ -45,7 +48,8 @@
         "state": "FUNDING-REQUIRED",
         "target_amount": "100.0000",
         "title": "Nearly funded",
-        "filename": "near-funded.md"
+        "filename": "near-funded.md",
+        "gitlab_url": "https://example.org/mr/5"
     },
     {
         "address": "80000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004",
@@ -57,7 +61,8 @@
         "state": "FUNDING-REQUIRED",
         "target_amount": "20.0000",
         "title": "Name starts with a space",
-        "filename": " leading-space.md"
+        "filename": " leading-space.md",
+        "gitlab_url": null
     },
     {
         "address": null,
@@ -69,7 +74,8 @@
         "state": "COMPLETED",
         "target_amount": "3.0000",
         "title": "Ends with dots",
-        "filename": "dots-end.md"
+        "filename": "dots-end.md",
+        "gitlab_url": null
     },
     {
         "address": "80000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005",
@@ -81,7 +87,8 @@
         "state": "FUNDING-REQUIRED",
         "target_amount": "100.0000",
         "title": "Brand new",
-        "filename": "new-fund.md"
+        "filename": "new-fund.md",
+        "gitlab_url": "https://example.org/mr/8"
     },
     {
         "address": null,
@@ -93,6 +100,7 @@
         "state": "COMPLETED",
         "target_amount": "5.0000",
         "title": "Name with a quote",
-        "filename": "o'quote.md"
+        "filename": "o'quote.md",
+        "gitlab_url": null
     }
 ]

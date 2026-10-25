@@ -49,7 +49,9 @@ $props[0] as $props | $state[0] as $state | $funds[0] as $funds | $qr[0] as $qr
         state: {fr: "FUNDING-REQUIRED", wip: "WORK-IN-PROGRESS", cp: "COMPLETED"}[.layout],
         target_amount: $f.amount,
         title: (.title | @html),
-        filename: .file
+        filename: .file,
+        # the proposal's merge request, wherever the proposals are (GitLab, Forgejo): as the site's own
+        gitlab_url: ((.gitlab_url // $state[.file].gitlab_url) | link)
       };
 
   def stage($name; $layout):
