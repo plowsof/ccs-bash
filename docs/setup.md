@@ -249,8 +249,9 @@ passwd -l ccs-backup
 install -d -o ccs-backup -g ccs-backup -m 700 /var/lib/ccs-backup
 install -m 755 ccs-backup-receive /usr/local/bin/              # from ccs-bash's contrib/
 install -d -m 755 /etc/ssh/authorized_keys
-# root-owned and outside the account's home (which it owns), so it can't change it; the backend's key below
-echo 'restrict,command="/usr/local/bin/ccs-backup-receive" ssh-ed25519 AAAA... ccs-bash state backup' \
+# root-owned and outside the account's home (which it owns), so it can't change it; the backend's key
+# below, usable only from the backend's address (its from=, as the web server's push key)
+echo 'from="<backend IP>",restrict,command="/usr/local/bin/ccs-backup-receive" ssh-ed25519 AAAA... ccs-bash state backup' \
     > /etc/ssh/authorized_keys/ccs-backup
 ```
 
