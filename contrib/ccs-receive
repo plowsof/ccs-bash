@@ -202,7 +202,8 @@ scan() {
 # (/etc/ccs-gate/proposals.conf: PROPOSALS_GIT, its URL; PROPOSALS_BRANCH, default master), as
 # git ls-tree has them, fetched each push. Reviewed and merged: a backend that isn't the one it
 # was can't add an image of its own (a QR code cut into pieces, shown side by side, that zbarimg
-# reads in none of them). Its trees only, no files (--filter=blob:none): a few hundred KB.
+# reads in none of them). Its last commit only (--depth=1; disroot's Forgejo breaks off a
+# --filter=blob:none fetch): the images are a few MB.
 repo_images() {
     local git=$state/proposals.git url='' branch=master k v
     [[ -r $conf/proposals.conf ]] || return 1
@@ -211,7 +212,7 @@ repo_images() {
     done < <(grep -E '^(PROPOSALS_GIT|PROPOSALS_BRANCH)=' "$conf/proposals.conf")
     [[ $url ]] || return 1
     [[ -d $git ]] || git init -q --bare "$git" || return 1
-    GIT_TERMINAL_PROMPT=0 timeout 60 git -C "$git" fetch -q --no-tags --filter=blob:none "$url" "+refs/heads/$branch:refs/heads/ccs" 2> /dev/null || return 1
+    GIT_TERMINAL_PROMPT=0 timeout 60 git -C "$git" fetch -q --no-tags --depth=1 "$url" "+refs/heads/$branch:refs/heads/ccs" 2> /dev/null || return 1
     git -C "$git" ls-tree -r refs/heads/ccs -- images/ | awk -F '\t' '{ split($1, m, " ") } m[2] == "blob" { print m[3] " " $2 }'
 }
 
