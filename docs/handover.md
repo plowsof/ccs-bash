@@ -134,8 +134,11 @@ chown ccs:ccs /var/lib/ccs/state/proposals.csv
 
 No jq on the host? The image's: `docker run --rm -i --network none --entrypoint jq ccs-bash -rR 'split("\t") | @csv'`.
 
-Run `ccs-bash-run` once. `donations at subaddress ..., which proposals.csv doesn't have` means the
-wallet has donations at indices the export lacks: find out why. Old indices that belong to nothing
+Run `ccs-bash-run` once. It labels every subaddress in `proposals.csv` with its proposal's file
+(ccs-back left them unlabelled). A log line `warning: donations at subaddress ..., which no
+proposal was given (no label)` means the wallet has donations at indices the export lacks, which
+no total counts: find out why before going on (after the switch, the same line is a stranger's
+donation to an address of the wallet's that isn't on the site, and harmless). Old indices that belong to nothing
 (say from before a database reset) can be recorded as retired, never shown or handed out (here 8
 and 9):
 
