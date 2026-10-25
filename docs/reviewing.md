@@ -44,8 +44,12 @@ Pinned container, read-only, no capabilities, `--network host` only to reach wal
   funding-required proposal, its index above every index in the state. `donation_totals`:
   `get_transfers` (in and pool), time-locked ones left out, deduplicated by txid and index; every number checked
   to be digits before bash arithmetic (a subscript can run commands); sums in 64-bit bash, not
-  jq's doubles. `check_known_subaddresses`: donations at an index the state doesn't have stop the
-  run. `qr_codes`: for the old Jekyll front only; ccs-front-bash makes its own.
+  jq's doubles. `check_wallet_addresses` also labels each subaddress in the state with its
+  proposal's file (`label_address`; a wallet from ccs-back or restored has none), as
+  `assign_addresses` labels new ones. `check_known_subaddresses`: donations at a labelled index
+  the state doesn't have stop the run (a lost state); at an unlabelled one, which anyone can send
+  to from the signed list, they are logged and counted for no proposal. `qr_codes`: for the old
+  Jekyll front only; ccs-front-bash makes its own.
 - [`lib/gitlab.sh`](../lib/gitlab.sh): the public API of GitLab or Forgejo (Forgejo's pull requests
   mapped to GitLab's shape). `merged_mr_url`: the merged MR that added a file. `mr_proposal_file`:
   an MR is an idea only if it adds exactly one `.md` at the root, and besides it only files in
