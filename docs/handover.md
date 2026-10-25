@@ -323,7 +323,7 @@ server, the backup machine, the IRC bot, Tor).
 
 | Account | Does | Can't |
 |---|---|---|
-| `ccs-backup` | adds a dated copy of the state: its key only runs `ccs-backup-receive` | read, change or delete a copy |
+| `ccs-backup` | adds a dated copy of the state: its key works only from the backend's address and only runs `ccs-backup-receive` | read, change or delete a copy |
 
 **The IRC bot's machine:** HTTPS in from the backend and the web server; their alert URLs are its
 only password, so keep them in the root-owned files above.
