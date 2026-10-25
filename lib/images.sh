@@ -51,9 +51,10 @@ proposal_images() {
             if (($(wc -c < "$src") > IMAGE_MAX_BYTES)); then log "warning: $a is over $IMAGE_MAX_BYTES bytes, left a link"; continue; fi
             if ! image_type "$src" > /dev/null; then log "warning: $a is not a PNG, JPEG or GIF, left a link"; continue; fi
             dst=$dir/${a#images/}
-            # copied with its time, and only when it changed: the push sends it once
+            # copied with its time (not cp -p: it would also try to keep the owner, which this
+            # account may not), and only when it changed: the push sends it once
             if ! diff -q "$src" "$dst" > /dev/null 2>&1; then
-                if ! mkdir -p "${dst%/*}" || ! cp -p "$src" "$dst" || ! chmod 644 "$dst"; then
+                if ! mkdir -p "${dst%/*}" || ! cp "$src" "$dst" || ! touch -r "$src" "$dst" || ! chmod 644 "$dst"; then
                     log "warning: could not copy $a"; continue
                 fi
             fi
