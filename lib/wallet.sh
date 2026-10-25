@@ -27,11 +27,20 @@ check_wallet_addresses() {
         rpc create_address '{"account_index": 0}' > /dev/null || return 1
         have=$((have + 1))
     done
-    rpc get_address '{"account_index": 0}' | jq -e --slurpfile state "$WORK/state.json" '
+    addrs=$(rpc get_address '{"account_index": 0}') || return 1
+    jq -e --slurpfile state "$WORK/state.json" '
         (.addresses | map({key: (.address_index | tostring), value: .address}) | from_entries) as $wallet
         | [$state[0] | to_entries[] | select(.value.address)
-           | select($wallet[.value.subaddr_index | tostring] != .value.address)] | length == 0' > /dev/null \
+           | select($wallet[.value.subaddr_index | tostring] != .value.address)] | length == 0' <<<"$addrs" > /dev/null \
         || die "wallet subaddresses do not match $STATE_DIR/proposals.csv (wrong wallet?)"
+    # each with its proposal's file as its label, as assign_addresses gives new ones: a wallet from
+    # ccs-back, or restored, has none, and check_known_subaddresses tells handed-out ones by it
+    jq -r --slurpfile state "$WORK/state.json" '
+        (.addresses | map({key: (.address_index | tostring), value: (.label // "")}) | from_entries) as $labels
+        | $state[0] | to_entries[] | select(.value.subaddr_index != null and ($labels[.value.subaddr_index | tostring] // "") == "")
+        | [.value.subaddr_index, .key] | @tsv' <<<"$addrs" | while IFS=$'\t' read -r idx file; do
+            rpc label_address "$(jq -nc --argjson i "$idx" --arg l "$file" '{index: {major: 0, minor: $i}, label: $l}')" > /dev/null || exit 1
+        done || return 1
 }
 
 # A new subaddress for every fr proposal without one (after check_wallet_addresses).
@@ -111,15 +120,21 @@ donation_totals() {
     done
 }
 
-# Stop if donations sit at a subaddress the state doesn't have (lost, emptied or swapped
-# state; going on would hand out new addresses). Runs before new ones are made.
+# Stop if donations sit at a subaddress this wallet gave a proposal (assign_addresses labels each
+# with its file) that the state doesn't have (lost, emptied or swapped state; going on would hand
+# out new addresses). Runs before new ones are made. One with no label was never handed out: the
+# signed list publishes them, so anyone can send to one, which mustn't stop every run; it is
+# logged, and counted for no proposal.
 check_known_subaddresses() {
-    local unknown
-    unknown=$(cut -f1 "$WORK/totals.tsv" | jq -R -s --slurpfile state "$WORK/state.json" '
+    local unknown labelled
+    unknown=$(cut -f1 "$WORK/totals.tsv" | jq -c -R -s --slurpfile state "$WORK/state.json" '
         ([$state[0][] | .subaddr_index | numbers | tostring]) as $known
-        | split("\n") | map(select(. != "" and (IN($known[]) | not))) | join(" ")') || return 1
-    unknown=$(jq -r . <<<"$unknown")
-    [[ -z $unknown ]] || die "donations at subaddress $unknown, which $STATE_DIR/proposals.csv doesn't have (lost or wrong state file?)"
+        | split("\n") | map(select(. != "" and (IN($known[]) | not)) | tonumber)') || return 1
+    [[ $unknown != '[]' ]] || return 0
+    labelled=$(rpc get_address "{\"account_index\": 0, \"address_index\": $unknown}" \
+        | jq -r '[.addresses[] | select((.label // "") != "") | .address_index] | join(" ")') || return 1
+    [[ -z $labelled ]] || die "donations at subaddress $labelled, which this wallet gave a proposal but $STATE_DIR/proposals.csv doesn't have (lost or wrong state file?)"
+    log "warning: donations at subaddress $(jq -r 'join(" ")' <<<"$unknown"), which no proposal was given (no label): someone sent to an address of the wallet's that isn't on the site; not counted"
 }
 
 # Print {"file.md": {amount, raised, pending, count, percentage}}, ready to show: amount and
