@@ -107,8 +107,8 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
   one push at a time (`flock`); staging starts as a copy of the live site; rrsync
   (`-wo -no-del -munge`) receives into it. The whole push is refused if the list isn't its `.pin`'s,
   or there is no `zbarimg`, `qrencode`, `python3`, `git` or `design.sha256`, or a file name has a control character. `scan`
-  (awk) reads every page and JSON four ways: as written (entities and %-escapes decoded), as shown
-  (comments and tags removed as HTML reads them, `strip`), every `monero:` link and address box
+  (awk) reads every page and JSON four ways: as written (entities decoded; %-escapes in `monero:` links only), as
+  shown (comments and tags removed as HTML reads them, a block tag a space, `strip`), every `monero:` link and address box
   (one address, nothing else), and every `data:` image (`qrdata`: zbarimg reads one listed
   address, and its pixels, read by `pixels_py`, Python's standard library only, are those of
   `qrencode -s 10` of it). A page or JSON must start with `<`, `[` or `{`. Every non-ASCII or control character is dropped first, so
