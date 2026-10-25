@@ -248,10 +248,18 @@ useradd --system --create-home --home-dir /home/ccs-backup --shell /bin/sh ccs-b
 passwd -l ccs-backup
 install -d -o ccs-backup -g ccs-backup -m 700 /var/lib/ccs-backup
 install -m 755 ccs-backup-receive /usr/local/bin/              # from ccs-bash's contrib/
-install -d -m 755 /home/ccs-backup/.ssh
-# root-owned, so the account can't change it; the backend's key below
+install -d -m 755 /etc/ssh/authorized_keys
+# root-owned and outside the account's home (which it owns), so it can't change it; the backend's key below
 echo 'restrict,command="/usr/local/bin/ccs-backup-receive" ssh-ed25519 AAAA... ccs-bash state backup' \
-    > /home/ccs-backup/.ssh/authorized_keys
+    > /etc/ssh/authorized_keys/ccs-backup
+```
+
+and in `/etc/ssh/sshd_config` (at the end), then `systemctl reload ssh`, so sshd reads no other key
+file for it:
+
+```
+Match User ccs-backup
+    AuthorizedKeysFile /etc/ssh/authorized_keys/%u
 ```
 
 On the **backend**, a key for it (`ssh-keygen -t ed25519 -N '' -f /root/.ssh/ccs-backup_ed25519`,
