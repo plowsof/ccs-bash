@@ -205,18 +205,26 @@ a bash script, run by the push key instead of rrsync. Each push, one at a time, 
      address box (`class="address"`) one address and no markup;
    - and no markup that hides or moves text without a stylesheet, which the design never uses:
      `hidden`, `dir`, `style` or `popover` attributes, `<svg>`, `<template>`, `<bdo>`, `<ruby>`...;
+   - and no characters that can draw a QR code as text, as characters or entities: block
+     elements and geometric shapes (`█▀▄■□▪`, U+2580–25FF), braille (U+2800–28FF), the big
+     squares and circles (`⬛⬜⚫⚪🔲🔳`) and the coloured ones (`🟥🟩`..., U+1F7E0–1F7EB). No
+     proposal uses them;
 3. checks every other file the push changes: it must be the design's, byte for byte
    (`design.sha256`, from the design release: a stylesheet can hide the address and show
-   another, an image can be another QR code), a proposal's image (`images/<proposal>/<file>`,
-   any QR code in it of such an address), `projects.json`, or the signed list, its signature and
-   key, the same files as installed here;
+   another, an image can be another QR code), a proposal's image (`images/<proposal>/<file>`)
+   that the proposals repository has, byte for byte at that path (fetched each push, below: a
+   proposal is reviewed and merged before it is funded, so the backend can't add an image of its
+   own, such as a QR code cut into pieces shown side by side, none of which zbarimg reads; any QR
+   code in it of such an address), `projects.json`, or the signed list, its signature and key,
+   the same files as installed here. While the repository can't be fetched, a new image waits
+   (its page goes live without it);
 4. copies staging into the live site, except a file that fails: that one keeps its last good
    copy (a new one stays out), so one bad page doesn't stop the site updating, and the gate never
    rewrites a file. The push then fails (the backend's log shows it); which file, and why, is in
    the web server's journal (`journalctl -t ccs-gate`, and `/var/log/ccs-gate.log` if created
    for ccs-data), and goes to IRC (below);
 5. refuses the whole push if its own list isn't the one its `.pin` names, or it has no
-   `design.sha256` or no `zbarimg` (it can't check then).
+   `design.sha256`, no `zbarimg` or no `git` (it can't check then).
 
 With `/etc/ccs-gate/alert.conf` it also tells IRC itself, once an hour per address or file: the
 one alarm that still sounds when the backend is the one lying.
@@ -230,7 +238,7 @@ one alarm that still sounds when the backend is the one lying.
 Between pushes only the heartbeat's timer runs (below). Set it up once, as root:
 
 ```
-apt install zbar-tools                                               # zbarimg, for the QR codes
+apt install zbar-tools git                                           # zbarimg, for the QR codes; git, for the proposals' images
 install -m 755 contrib/ccs-receive /usr/local/bin/ccs-receive        # from this repository
 install -d -o ccs-data -m 755 /var/lib/ccs-staging
 install -d -m 755 /etc/ccs-gate
@@ -243,6 +251,8 @@ install -m 644 subaddresses.txt subaddresses.txt.pin subaddresses.txt.asc subadd
 cat > /etc/ccs-gate/allowed <<'LIST'                                # other addresses allowed on the site, one a line
 888tNkZrPN6JsEgekjMnABU4TBzc2Dt29EPAvkRxbANsAnjyPbb3iQ1YBRk1UXcdRsiKc9dhwMVgN5S9cQUiyoogDavup3H  # the General Fund
 LIST
+# the proposals repository the backend reads (its checkout's origin), and its branch
+printf 'PROPOSALS_GIT=https://repo.getmonero.org/monero-project/ccs-proposals.git\nPROPOSALS_BRANCH=master\n' > /etc/ccs-gate/proposals.conf
 ```
 
 They are the same files as on the backend (`/etc/ccs-front/`); `gpg --verify` the list there
@@ -272,15 +282,16 @@ zero-width space, a bidi mark or an entity, %-escaped in a `monero:` link, integ
 `data:`, or only in the QR code, is held back and the live file kept; so is a page with a
 backslash or wildcard in its name, a `dir` attribute or an `<svg>`, a data: image that isn't a QR
 code, a stylesheet or design file that isn't the design's, a swapped list, a proposal image that
-is another QR code, inverted or not; two pushes at once go one after the other; the next good
+is another QR code, inverted or not, block, square or braille characters, a proposal image the
+repository doesn't have (or has at another path, or other bytes), and a new one while the
+repository can't be fetched; two pushes at once go one after the other; the next good
 push goes through; a list that isn't the pinned one refuses everything; no deleting and nothing
 outside the folder, as with rrsync alone.
 
-**What it can't see:** an address drawn in the pixels of an image (not a QR code) the backend
-pushes as a proposal's image, or a QR code cut in two images shown side by side; and text the
-design's own stylesheet hides (`visually-hidden`, `brand-short`, ...) put in to split an address. The images come from the proposals repository, which the web
-server doesn't have; ccs-watch (below) and visitors comparing what their wallet shows are what
-catch it. zbarimg reads images the backend sends, as ccs-data: keep zbar-tools (and the
+**What it can't see:** text the design's own stylesheet hides (`visually-hidden`,
+`brand-short`, ...) put in to split an address; and a QR code drawn as text with characters it
+doesn't refuse (ASCII art, other emoji), which phones read badly at a page's line spacing.
+ccs-watch (below) and visitors comparing what their wallet shows are what catch those. zbarimg reads images the backend sends, as ccs-data: keep zbar-tools (and the
 ImageMagick it uses) updated (`unattended-upgrades`).
 
 It can't help if the web server itself is taken over (whoever has it can turn the gate off):
