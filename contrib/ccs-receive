@@ -43,7 +43,7 @@ blue=$'\x0312' red=$'\x0304' off=$'\x03'   # IRC colours, as ccs-watch's
 
 say() {
     logger -t ccs-gate -- "$*" 2> /dev/null || true
-    printf '%s %s\n' "$(date -u '+%F %T')" "$*" >> /var/log/ccs-gate.log 2> /dev/null || true
+    printf '%s %s\n' "$(date -u '+%F %T')" "$*" 2> /dev/null >> /var/log/ccs-gate.log || true   # 2> first: it also hides a log it can't open
     printf 'ccs-gate: %s\n' "$*" >&2
 }
 
