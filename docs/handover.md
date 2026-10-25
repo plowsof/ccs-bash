@@ -139,10 +139,11 @@ steps 2 and 5. It makes `/var/lib/ccs/www/site`, every page, each run.
 ## 6. The web server: the push, the gate, nginx
 
 [Two machines](two-machines.md), way A: the `ccs-data` account the backend pushes to (write-only,
-no deleting), nginx with HTTPS, the security headers, the cache rule and the theme lines, and **the gate**, which checks every address
-in each push, its QR codes included, against the signed list (its files from step 4, and the
-`allowed` file), and every other file against the design release's (`design.sha256`), and holds
-back any that fails; and the gate's heartbeat timer (step 8).
+no deleting), nginx with HTTPS, the security headers, the cache rule and the theme lines, and
+**the gate**, which checks every address in each push, its QR codes included, against the signed
+list (its files from step 4, and the `allowed` file), and every other file against the design
+release's (`design.sha256`), and holds back any that fails; and the gate's heartbeat timer
+(step 8).
 
 ## 7. The backup machine
 
