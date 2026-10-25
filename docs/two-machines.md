@@ -126,9 +126,10 @@ map $request_uri $ccs_page {                       # the page, without a theme p
 ```
 
 The pages are the very files the gate checked and ccs-watch compares, under another address.
-The map never yields an address starting `//` or `/\` (`\x5c`, a backslash, written so because nginx reads `\\` itself): a browser reads either as another site's
-(`?theme=system` on `//evil.example/` would send it there), which nginx's default
-`absolute_redirect on` stops today, but `absolute_redirect off` (common behind a proxy) wouldn't.
+The map never yields an address starting `//` or `/\` (`\x5c` is a backslash, written so because
+nginx reads `\\` itself): a browser reads either as another site's (`?theme=system` on
+`//evil.example/` would send it there). nginx's default `absolute_redirect on` stops that today,
+but `absolute_redirect off` (common behind a proxy) wouldn't.
 Without these lines the toggle just reloads the page in the browser's own setting.
 
 HTTPS: point a DNS A record at the web server, set `server_name` to that name, then
