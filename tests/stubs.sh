@@ -6,17 +6,24 @@
 # Subaddress N is "8" followed by N zero-padded to 94 digits.
 fake_address() { printf '8%094d' "$1"; }
 rpc() {
-    local n i
+    local n
     n=$(cat "$TEST_TMP/wallet-count")
     case $1 in
-        get_address)
-            for ((i = 0; i < n; i++)); do
-                printf '{"address_index": %d, "address": "%s"}\n' "$i" "$(fake_address "$i")"
-            done | jq -s --arg main "$(fake_address 0)" '{address: $main, addresses: .}' ;;
+        get_address) # all, or those address_index asks for; each with the label create_address gave it
+            : >> "$TEST_TMP/wallet-labels"
+            jq -n --arg p "$(fake_address 0 | cut -c1)" --argjson n "$n" --argjson want "$(jq -c '.address_index // null' <<<"${2:-"{}"}")" \
+                --rawfile l "$TEST_TMP/wallet-labels" '
+                ($l | split("\n") | map(select(. != "") | capture("^(?<i>[0-9]+) ?(?<l>.*)$") | {(.i): .l}) | add // {}) as $labels
+                | def address: $p + (("0" * 94) + tostring)[-94:];
+                {address: (0 | address), addresses: [if $want then $want[] else range(0; $n) end | select(. < $n)
+                    | {address_index: ., address: address, label: ($labels[tostring] // "")}]}' ;;
         create_address) # TEST_REUSE_INDEX=1: a wallet that hands out subaddress 1 again
             echo $((n + 1)) > "$TEST_TMP/wallet-count"
             [[ -z ${TEST_REUSE_INDEX:-} ]] || n=1
+            printf '%d %s\n' "$n" "$(jq -r '.label // empty' <<<"$2")" >> "$TEST_TMP/wallet-labels"
             printf '{"address_index": %d, "address": "%s"}\n' "$n" "$(fake_address "$n")" ;;
+        label_address)
+            jq -r '"\(.index.minor) \(.label)"' <<<"$2" >> "$TEST_TMP/wallet-labels"; echo '{}' ;;
         get_transfers) # like the real one: only the subaddresses asked for
             jq --argjson want "$(jq -c '.subaddr_indices // []' <<<"$2")" \
                 'map_values(map(select(.subaddr_index.minor | IN($want[]))))' "$FIXTURES/rpc/get_transfers.json" ;;
