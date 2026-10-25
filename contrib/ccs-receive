@@ -5,14 +5,18 @@
 #   - every Monero address in its pages and JSON must be one of the wallet's (the signed list and
 #     its .pin, installed here by hand) or in the allowed file: as written, as shown (tags removed,
 #     entities read), in every monero: link, in every address box, and in every QR code (each
-#     data: image must be a QR code zbarimg reads, holding such an address);
+#     data: image must be, pixel for pixel, the QR code qrencode makes of such an address);
+#   - pages and JSON must start as text does (<, [ or {): a browser shows an image's bytes
+#     whatever the file is called;
+#   - no block, square or braille characters in them, which could draw a QR code as text;
 #   - every other file it changes must be the design's (design.sha256, from the release zip), a
-#     proposal's image (any QR code in it holding only such addresses), projects.json, or the
-#     signed list's own files, the same as the ones installed here.
+#     proposal's image that the proposals repository has at that path (proposals.conf; any QR
+#     code in it holding only such addresses), projects.json, or the signed list's own files, the
+#     same as the ones installed here.
 # The push goes live, except a file that fails: that one keeps its last good copy (a new one stays
 # out), and IRC is told (alert.conf). A list that isn't the pinned one, or no design.sha256 or
 # zbarimg, refuses the whole push. Needs bash, awk, grep, rsync (rrsync), coreutils, curl,
-# zbarimg (zbar-tools). Root-owned, 755.
+# zbarimg (zbar-tools), qrencode, git, python3 (as rrsync). Root-owned, 755.
 set -euo pipefail
 export LC_ALL=C
 staging=/var/lib/ccs-staging live=/var/lib/ccs-data conf=/etc/ccs-gate state=/var/lib/ccs-gate
@@ -54,28 +58,60 @@ refuse() {
 # gate can't accept; "file<TAB>?qr<TAB>base64" for each data: image, for zbarimg (below). An
 # address is a run of 95 (standard) or 106 (integrated) base58 characters. Each file is read
 #   1. as written, tags and attributes included (monero: links, alt and title text), with
-#      entities and %-escapes read as a browser or a wallet would (&#56; and %38 are both 8);
-#   2. as shown: tags removed, so an address split by <span></span> or <wbr> is one again;
-# with invisible characters (zero-width spaces, soft hyphens) dropped first. A monero: link must
-# have an address straight after it, an address box (class="address") one address and nothing
-# else, and a data: URI must be a PNG image, which must be a QR code (checked after this).
+#      entities read as a browser would (&#56; is 8); %-escapes only in a monero: link, as a
+#      wallet reads them (%38 is 8): in a page's text, a browser shows them as they are;
+#   2. as shown: comments and tags removed as a browser reads them (a quoted ">" in a tag, a
+#      comment up to its "-->"), so an address split by <span></span> or <wbr> is one again; a
+#      block tag (<p>, <div>, <br>, <td>...) a space, as its text starts a line or a cell of its
+#      own (any other tag joins); an image's alt text where it stands (a broken image shows it
+#      inline);
+# with every character that isn't ASCII, or is a control character, dropped first: zero-width
+# spaces, bidi marks, soft hyphens and the like show nothing, so they mustn't split an address
+# for the gate either (as characters or entities; an entity it doesn't know is dropped too). An
+# entity without its ";" in a page is refused (a browser reads &shy as a soft hyphen), and so are
+# a NUL byte (dropped from the text: below, in scan) and a charset other than UTF-8.
+# Markup that hides or moves text without the design's stylesheet (hidden, dir, style or popover
+# attributes; <template>, <svg>, <bdo>...), colours, borders or sizes it (<font>, bgcolor, width
+# but on an <img>...), or leaves the page (an http-equiv refresh with a URL),
+# which the design never uses, is refused. A link (any attribute value starting monero:, tabs and spaces
+# taken out, as a browser does tabs and newlines in a URL) must have one address straight after
+# it, an address box (class="address") one address and nothing
+# else, and a data: URI in a page (tabs and spaces in its scheme too: a browser takes tabs out)
+# must be exactly data:image/png;base64,..., a QR code (checked after this). A page
+# or JSON must start with <, [ or {: no image format does, and a browser shows an <img> of any
+# file whose bytes are an image's.
+# Characters that can draw a QR code as text, as characters or entities, are refused: block
+# elements and geometric shapes (U+2580-25FF), braille (U+2800-28FF), the big squares and
+# circles (U+2B1B-2B1C, U+26AA-26AB, U+1F532-1F533), the coloured ones (U+1F7E0-1F7EB) and the
+# block mosaics of the legacy computing symbols (U+1FB00-1FBFF).
 # No interval expressions ({95}): mawk 1.3.3 has none.
 scan_awk='
 function hexval(h,    i, v) { v = 0; h = tolower(h); for (i = 1; i <= length(h); i++) v = v * 16 + index("0123456789abcdef", substr(h, i, 1)) - 1; return v }
+function drawing(n) {
+    return (n >= 9600 && n <= 9727) || (n >= 10240 && n <= 10495) || n == 11035 || n == 11036 || n == 9898 || n == 9899 || n == 128306 || n == 128307 || (n >= 128992 && n <= 129003) || (n >= 129792 && n <= 130047)
+}
 function chr(n) {
-    if (n == 173 || (n >= 8203 && n <= 8205) || (n >= 8288 && n <= 8292) || n == 65279) return ""
-    return (n > 32 && n < 127) ? sprintf("%c", n) : " "
+    if (drawing(n)) drew = 1
+    if (n > 32 && n < 127) return sprintf("%c", n)
+    return (n == 9 || n == 10 || n == 12 || n == 13 || n == 32) ? " " : ""
 }
 function decode(s,    out, e, n) {
     out = ""
-    while (match(s, /&#[0-9]+;?|&#[xX][0-9A-Fa-f]+;?|&[A-Za-z]+;|%[0-7][0-9A-Fa-f]/)) {
+    while (match(s, /&#[0-9]+;?|&#[xX][0-9A-Fa-f]+;?|&[A-Za-z][A-Za-z0-9]*;/)) {
         e = substr(s, RSTART, RLENGTH); out = out substr(s, 1, RSTART - 1); s = substr(s, RSTART + RLENGTH)
         sub(/;$/, "", e)
-        if (e ~ /^%/) n = hexval(substr(e, 2))
-        else if (e ~ /^&#[xX]/) n = hexval(substr(e, 4))
+        if (e ~ /^&#[xX]/) n = hexval(substr(e, 4))
         else if (e ~ /^&#/) n = substr(e, 3) + 0
-        else { e = substr(e, 2); n = (e == "amp") ? 38 : (e == "lt") ? 60 : (e == "gt") ? 62 : (e == "quot") ? 34 : (e == "apos") ? 39 : 32 }
+        else { e = substr(e, 2); n = (e == "amp") ? 38 : (e == "lt") ? 60 : (e == "gt") ? 62 : (e == "quot") ? 34 : (e == "apos") ? 39 : (e ~ drawnames) ? 9608 : -1 }
         out = out chr(n)
+    }
+    return out s
+}
+# %-escapes, as a wallet reads a monero: URI (ASCII only)
+function pct(s,    out) {
+    out = ""
+    while (match(s, /%[0-7][0-9A-Fa-f]/)) {
+        out = out substr(s, 1, RSTART - 1) chr(hexval(substr(s, RSTART + 1, 2))); s = substr(s, RSTART + 3)
     }
     return out s
 }
@@ -85,27 +121,108 @@ function tokens(f, s,    t) {
         if ((length(t) == 95 || length(t) == 106) && t !~ /[0OIl]/) print f "\t" t
     }
 }
+# the text of a page as a browser shows it: comments and tags out (hides() looks at each tag)
+function strip(f, s,    out, i, j, k, t) {
+    out = ""
+    while ((i = index(s, "<")) > 0) {
+        out = out substr(s, 1, i - 1); s = substr(s, i)
+        if (substr(s, 1, 4) == "<!--") {
+            s = substr(s, 5)
+            if (s ~ /^-?>/) { s = substr(s, index(s, ">") + 1); continue }   # <!--> and <!--->
+            j = index(s, "-->"); k = index(s, "--!>")
+            if (k && (!j || k < j)) s = substr(s, k + 4)
+            else if (j) s = substr(s, j + 3)
+            else s = ""   # never closed: the rest is the comment
+            continue
+        }
+        if (s ~ /^<([!?]|\/[^A-Za-z])/) {   # <!doctype ...>, <?...>, </>: up to the first >
+            j = index(s, ">"); s = j ? substr(s, j + 1) : ""; continue
+        }
+        if (match(s, tagre)) {
+            t = substr(s, 1, RLENGTH); s = substr(s, RLENGTH + 1); hides(f, t)
+            out = out (tolower(t) ~ blockre ? " " : "") alt(t); continue
+        }
+        if (s ~ /^<\/?[A-Za-z]/) { s = ""; break }   # a tag never closed: the rest is in it
+        out = out "<"; s = substr(s, 2)
+    }
+    return out s
+}
+# the value of attribute WANT in tag T ("" if none; has = 1 if there), its attributes read in
+# order, as HTML reads them (the first of a name counts)
+function attr(t, want,    name, v, q, j) {
+    has = 0
+    sub(/^<\/?[^ \t\n\f\r\/>]*/, "", t)
+    while (1) {
+        sub(/^[ \t\n\f\r\/]+/, "", t)
+        if (t == "" || t ~ /^>/) return ""
+        match(t, /^[^ \t\n\f\r\/>=]+|^=[^ \t\n\f\r\/>=]*/); name = tolower(substr(t, 1, RLENGTH)); t = substr(t, RLENGTH + 1)
+        v = ""
+        if (t ~ /^[ \t\n\f\r]*=/) {
+            sub(/^[ \t\n\f\r]*=[ \t\n\f\r]*/, "", t); q = substr(t, 1, 1)
+            if (q == "\"" || q == "\047") { t = substr(t, 2); j = index(t, q); v = substr(t, 1, j - 1); t = substr(t, j + 1) }
+            else { match(t, /^[^ \t\n\f\r>]*/); v = substr(t, 1, RLENGTH); t = substr(t, RLENGTH + 1) }
+        }
+        if (name == want) { has = 1; return v }
+    }
+}
+# the alt text of an <img> or <input>, which shows where it stands when the image doesn\047t load
+function alt(t) { return tolower(t) ~ /^<(img|input)[ \t\n\f\r\/>]/ ? attr(t, "alt") : "" }
+function hides(f, t,    name, c) {
+    name = tolower(t); sub(/^<\/?/, "", name); sub(/[^a-z0-9-].*$/, "", name)
+    # the design\047s one: <meta http-equiv="refresh" content="30">, the page again; nothing else
+    if (tolower(attr(t, "http-equiv")) != "refresh" && has) print f "\t!an http-equiv other than a refresh (the design has none)"
+    else if (has && ((c = attr(t, "content")) !~ /^[ \t\n\f\r]*[0-9]+[ \t\n\f\r]*$/ || name != "meta"))
+        print f "\t!a refresh to somewhere else than the page itself (the design\047s refresh is a number of seconds)"
+    if (name ~ /^(template|noscript|svg|math|bdo|bdi|ruby|rt|rp|select|datalist|dialog|object|embed|iframe|frame|frameset|audio|video|canvas|noembed|noframes|xmp|plaintext|marquee|style|script|font|basefont|mark|blink)$/)
+        print f "\t!a <" name "> element, which can hide or move text (the design has none)"
+    gsub(/=[ \t\n\f\r]*("[^"]*"|\047[^\047]*\047)/, "=", t)   # the values out: only names count
+    if (tolower(t) ~ /[ \t\n\f\r\/"\047](hidden|dir|style|popover)([ \t\n\f\r\/=>]|$)/)
+        print f "\t!a hidden, dir, style or popover attribute, which can hide or move text (the design has none)"
+    # the colours, borders and sizes HTML had before stylesheets: they could hide text, or draw
+    # with table cells; sizes only on an <img> (the design\047s logo, as the design has them)
+    if (tolower(t) ~ /[ \t\n\f\r\/"\047](color|bgcolor|background|border|align|valign|face|size|cellpadding|cellspacing|text|link|vlink|alink|hspace|vspace|frame|rules|noshade|clear|nowrap)([ \t\n\f\r\/=>]|$)/ \
+        || (name != "img" && tolower(t) ~ /[ \t\n\f\r\/"\047](width|height)([ \t\n\f\r\/=>]|$)/))
+        print f "\t!a colour, border or size attribute, which can hide text or draw (the design has none)"
+    if (t !~ /^<\// && name ~ /^(img|progress|meter|input)$/) shown++
+}
 function base58run(s) { return match(s, /^[1-9A-HJ-NP-Za-km-z]+/) && (RLENGTH == 95 || RLENGTH == 106) }
-function check(f, d,    a, l, m, i, box) {
-    gsub(zw, "", d)
+function check(f, d,    a, l, m, i, box, page) {
+    shown = 0; page = f ~ /\.html$/
+    # as UTF-8 bytes: \342\226\200 is U+2580
+    drew = d ~ /\342[\226\227][\200-\277]|\342[\240-\243][\200-\277]|\342\254[\233\234]|\342\232[\252\253]|\360\237\224[\262\263]|\360\237\237[\240-\253]|\360\237[\254-\257][\200-\277]/
+    if (d !~ /^[ \t\n\r]*[<[{]/) print f "\t!not text that starts as a page or JSON does (<, [ or {): a browser would show it as an image"
+    gsub(/[\200-\377]|[\001-\010\013\016-\037\177]/, "", d)
+    if (page && d ~ /&[A-Za-z][A-Za-z0-9]*([^A-Za-z0-9;]|$)/) print f "\t!an entity without its ; (a browser reads some, such as &shy, a soft hyphen)"
     a = decode(d)
-    # data: URIs (a scheme starts after a non-scheme character: not "metadata:"): PNG images
-    # only; each one goes to zbarimg, and its base64 is not text
+    l = tolower(a)
+    while (match(l, /charset[ \t\n\f\r]*=[ \t\n\f\r]*["\047]?[ \t\n\f\r]*/)) {
+        l = substr(l, RSTART + RLENGTH)
+        if (l !~ /^utf-?8([^a-z0-9_-]|$)/) print f "\t!a charset that isn\047t UTF-8"
+    }
+    # a page\047s data: URIs (a scheme starts after a non-scheme character: not "metadata:"; a
+    # browser takes tabs and newlines out of it, spaces count here too): exactly
+    # data:image/png;base64,... only; each one goes to zbarimg, and its base64 is not text
     m = " " a
-    while (match(tolower(m), /[^a-z0-9+.-]data:/)) {
+    while (page && match(tolower(m), /[^a-z0-9+.-]d[ \t\n\f\r]*a[ \t\n\f\r]*t[ \t\n\f\r]*a[ \t\n\f\r]*:/)) {
         m = substr(m, RSTART + 1)
         if (match(m, /^data:image\/png;base64,[A-Za-z0-9+\/]+=*/)) print f "\t?qr\t" substr(m, 23, RLENGTH - 22)
-        else print f "\t!a data: URI that is not a PNG image"
-        m = substr(m, 6)
+        else print f "\t!a data: URI that is not exactly data:image/png;base64,"
+        m = substr(m, 2)
     }
     gsub(/data:image\/png;base64,[A-Za-z0-9+\/]+=*/, " ", a)
     tokens(f, a)
-    m = d; gsub(/<[^>]*>/, "", m); tokens(f, decode(m))
-    # monero: links (href, any case, spaces around =): an address right after, nothing else
-    m = a; l = tolower(a)
-    while (match(l, /href[ \t\n]*=[ \t\n]*["\047]?[ \t\n]*monero:/)) {
+    tokens(f, decode(strip(f, d)))
+    # a QR code drawn with images, one a module, takes hundreds; the design and a proposal, 13
+    if (shown > 64) print f "\t!more than 64 images (and bars and boxes): enough to draw a QR code with"
+    if (drew) print f "\t!a block, square or braille character, which can draw a QR code as text"
+    # monero: links (any attribute, any case; %-escapes read; a browser takes tabs and newlines
+    # out of a URL, and spaces go here too): one address right after, nothing else, and that one
+    # checked
+    m = pct(a); gsub(/[ \t\n\f\r]/, "", m); l = tolower(m)
+    while (match(l, /=["\047]?monero:/)) {
         i = RSTART + RLENGTH; m = substr(m, i); l = substr(l, i)
         if (!base58run(m)) print f "\t!a monero: link without one address right after it"
+        else print f "\t" substr(m, 1, RLENGTH)
     }
     # address boxes: one address, no markup in them
     m = a; l = tolower(a)
@@ -116,38 +233,131 @@ function check(f, d,    a, l, m, i, box) {
         if (!base58run(box) || substr(box, RLENGTH + 1, 2) != "</") print f "\t!an address box that holds more than one address"
     }
 }
-BEGIN { zw = "\342\200[\213-\215]|\342\201[\240-\244]|\357\273\277|\302\255" }
+# a start or end tag: a ">" inside a value quoted after "=" doesn\047t end it, as in HTML
+BEGIN {
+    tagre = "^</?[A-Za-z]([^>=]|=[ \t\n\f\r]*\"[^\"]*\"|=[ \t\n\f\r]*\047[^\047]*\047|=)*>"
+    # the tags whose text starts a line or a cell of its own: a space in the text as shown
+    blockre = "^</?(address|article|aside|blockquote|body|br|caption|dd|details|dialog|div|dl|dt|fieldset|figcaption|figure|footer|form|h[1-6]|head|header|hgroup|hr|html|legend|li|main|menu|nav|ol|p|pre|section|summary|table|tbody|td|tfoot|th|thead|title|tr|ul)([ \t\n\f\r/>]|$)"
+    # the named entities that are such characters
+    drawnames = "^(EmptySmallSquare|EmptyVerySmallSquare|FilledSmallSquare|FilledVerySmallSquare|Square|bigcirc|bigtriangledown|bigtriangleup|blacksquare|blacktriangle|blacktriangledown|blacktriangleleft|blacktriangleright|blk12|blk14|blk34|block|cir|dtri|dtrif|fltns|lhblk|lltri|loz|lozenge|ltri|ltrif|marker|rect|rtri|rtrif|squ|square|squarf|squf|triangle|triangledown|triangleleft|triangleright|tridot|uhblk|ultri|urtri|utri|utrif|xcirc|xdtri|xutri)$"
+}
 FNR == 1 && NR > 1 { check(prev, doc); doc = "" }
 { doc = doc $0 "\n"; prev = FILENAME }
 END { if (NR) check(prev, doc) }'
 
 # qr FILE IMAGE: the addresses in every QR code in IMAGE as "FILE<TAB>address" lines (none if it
-# has no QR code). zbarimg reads it, as ccs-data, with a time limit.
+# has no QR code). zbarimg reads it, as ccs-data, with a time limit; inverted codes (light on dark)
+# too, which it skips by default and phones read.
 qr() {
     local out
-    out=$(timeout 20 zbarimg -q --raw -- "$2" 2> /dev/null) || return 1
+    out=$(timeout 20 zbarimg -q --raw -Stest-inverted -- "$2" 2> /dev/null) || return 1
     grep -oE '[0-9A-Za-z]+' <<<"$out" | awk -v f="$1" '(length($0) == 95 || length($0) == 106) && !/[0OIl]/ { print f "\t" $0; n++ } END { exit !n }'
 }
 
+# pixels PNG: "<width> <height> <sha256 of its RGBA pixels>", as a browser shows it; nothing (and
+# 1) for a PNG it can't read, or with any chunk qrencode doesn't write (an animated PNG's frames,
+# a gamma or colour profile could show something else). Python's standard library only.
+pixels_py='
+import hashlib, struct, sys, zlib
+d = sys.stdin.buffer.read(4 << 20)
+assert d[:8] == b"\x89PNG\r\n\x1a\n"
+i, idat, plte, trns, hdr = 8, b"", b"", None, None
+while True:
+    n, t = struct.unpack(">I4s", d[i:i + 8]); c = d[i + 8:i + 8 + n]; i += 12 + n
+    assert len(c) == n and t in (b"IHDR", b"PLTE", b"tRNS", b"pHYs", b"IDAT", b"IEND")
+    if t == b"IHDR": hdr = struct.unpack(">IIBBBBB", c)
+    elif t == b"PLTE": plte = c
+    elif t == b"tRNS": trns = c
+    elif t == b"IDAT": idat += c
+    elif t == b"IEND": break
+w, h, depth, kind, _, _, interlace = hdr
+assert 0 < w <= 4096 and 0 < h <= 4096 and interlace == 0 and (kind, depth) in ((0, 1), (0, 8), (3, 1), (3, 8), (2, 8), (6, 8))
+ch = {0: 1, 3: 1, 2: 3, 6: 4}[kind]
+stride = (w * ch * depth + 7) // 8; bpp = max(1, ch * depth // 8)
+z = zlib.decompressobj(); raw = z.decompress(idat, h * (stride + 1) + 1)
+assert len(raw) == h * (stride + 1)
+out, prev = bytearray(), bytearray(stride)
+for y in range(h):
+    f, row = raw[y * (stride + 1)], bytearray(raw[y * (stride + 1) + 1:(y + 1) * (stride + 1)])
+    for x in range(stride):
+        a = row[x - bpp] if x >= bpp else 0; b = prev[x]; c = prev[x - bpp] if x >= bpp else 0
+        if f == 1: row[x] = (row[x] + a) & 255
+        elif f == 2: row[x] = (row[x] + b) & 255
+        elif f == 3: row[x] = (row[x] + (a + b) // 2) & 255
+        elif f == 4:
+            p = a + b - c; pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+            row[x] = (row[x] + (a if pa <= pb and pa <= pc else b if pb <= pc else c)) & 255
+        else: assert f == 0
+    prev = row
+    for x in range(w):
+        if depth == 1: v = (row[x >> 3] >> (7 - (x & 7))) & 1
+        else: v = row[x * ch]
+        if kind == 3:
+            assert 3 * v + 3 <= len(plte)
+            out += plte[3 * v:3 * v + 3] + bytes([trns[v] if trns and v < len(trns) else 255])
+        elif kind == 0:
+            g = v * 255 if depth == 1 else v
+            out += bytes([g, g, g, 0 if trns and len(trns) == 2 and struct.unpack(">H", trns)[0] == v else 255])
+        elif kind == 2:
+            assert trns is None
+            out += row[x * 3:x * 3 + 3] + b"\xff"
+        else: out += row[x * 4:x * 4 + 4]
+print(w, h, hashlib.sha256(out).hexdigest())
+'
+pixels() { timeout 20 python3 -I -c "$pixels_py" < "$1" 2> /dev/null; }
+
+# qrdata FILE IMAGE: "FILE<TAB>address" if IMAGE is exactly the QR code of one address that
+# qrencode makes (as ccs-front-bash does: qrencode -s 10 "monero:<address>"), pixel for pixel;
+# else 1. zbarimg finding a good address isn't enough: the backend draws these, and one
+# could hold a good QR code beside a piece of another.
+qrdata() {
+    local text ref got
+    text=$(timeout 20 zbarimg -q --raw -- "$2" 2> /dev/null) || return 1
+    [[ $text =~ ^monero:[1-9A-HJ-NP-Za-km-z]+$ && (${#text} == 102 || ${#text} == 113) ]] || return 1
+    got=$(pixels "$2") && [[ $got ]] || return 1
+    ref=$(qrencode -s 10 -o - -- "$text" | pixels /dev/stdin) && [[ $ref == "$got" ]] || return 1
+    printf '%s\t%s\n' "$1" "${text#monero:}"
+}
+
 # scan FILE...: the addresses (and reasons) of the pages and JSON among FILEs; every data:
-# image a QR code with an address
+# image exactly the QR code of an address
 scan() {
     local file tag payload png
     png=$(mktemp)
+    # a NUL byte: HTML drops it from the text, so it could split an address
+    printf '%s\0' "$@" | grep -zE '\.(html|json)$' | xargs -0 -r grep -laP '\x00' -- | sed 's/$/\t!a NUL byte (a browser drops it from the text)/'
     printf '%s\0' "$@" | grep -zE '\.(html|json)$' | xargs -0 -r awk "$scan_awk" \
         | while IFS=$'\t' read -r file tag payload; do
             if [[ $tag != '?qr' ]]; then printf '%s\t%s\n' "$file" "$tag"; continue; fi
-            if ! base64 -d <<<"$payload" > "$png" 2> /dev/null || ! qr "$file" "$png"; then
-                printf '%s\t%s\n' "$file" "!an image that is not a QR code of an address"
+            if ! base64 -d <<<"$payload" > "$png" 2> /dev/null || ! qrdata "$file" "$png"; then
+                printf '%s\t%s\n' "$file" "!an image that is not exactly qrencode's QR code of one address"
             fi
         done
     rm -f "$png"
 }
 
+# repo_images: "blob path" for each proposal image in the proposals repository
+# (/etc/ccs-gate/proposals.conf: PROPOSALS_GIT, its URL; PROPOSALS_BRANCH, default master), as
+# git ls-tree has them, fetched each push. Reviewed and merged: a backend that isn't the one it
+# was can't add an image of its own (a QR code cut into pieces, shown side by side, that zbarimg
+# reads in none of them). Its last commit only (--depth=1; disroot's Forgejo breaks off a
+# --filter=blob:none fetch): the images are a few MB.
+repo_images() {
+    local git=$state/proposals.git url='' branch=master k v
+    [[ -r $conf/proposals.conf ]] || return 1
+    while IFS='=' read -r k v; do
+        case $k in PROPOSALS_GIT) url=$v ;; PROPOSALS_BRANCH) branch=$v ;; esac
+    done < <(grep -E '^(PROPOSALS_GIT|PROPOSALS_BRANCH)=' "$conf/proposals.conf")
+    [[ $url ]] || return 1
+    [[ -d $git ]] || git init -q --bare "$git" || return 1
+    GIT_TERMINAL_PROMPT=0 timeout 60 git -C "$git" fetch -q --no-tags --depth=1 "$url" "+refs/heads/$branch:refs/heads/ccs" 2> /dev/null || return 1
+    git -C "$git" ls-tree -r refs/heads/ccs -- images/ | awk -F '\t' '{ split($1, m, " ") } m[2] == "blob" { print m[3] " " $2 }'
+}
+
 # changes: every file the push brings that isn't already live, byte for byte, as "file<TAB>!reason"
 # for any that isn't allowed, and "file<TAB>address" for the addresses in a proposal image's QR codes
 changes() {
-    local f rel sum
+    local f rel sum repo='' fetched=''
     while IFS= read -r -d '' f; do
         rel=${f#"$staging"/}
         cmp -s "$f" "$live/$rel" 2> /dev/null && continue
@@ -159,7 +369,17 @@ changes() {
                 if [[ ! $rel =~ ^images/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+\.(png|jpg|jpeg|gif)$ ]]; then
                     printf '%s\t%s\n' "$f" "!not a proposal image (images/<proposal>/<file>.png|jpg|jpeg|gif)"
                 else
-                    qr "$f" "$f" || true
+                    if [[ ! $fetched ]]; then
+                        fetched=1
+                        if repo=$(repo_images); then fetched=ok; else say "could not fetch the proposals repository (proposals.conf): new images wait"; fi
+                    fi
+                    if [[ $fetched != ok ]]; then
+                        printf '%s\t%s\n' "$f" "!a new image, and the proposals repository could not be read to check it"
+                    elif ! grep -qxF "$(git hash-object --no-filters -- "$f") $rel" <<<"$repo"; then
+                        printf '%s\t%s\n' "$f" "!not the proposals repository's $rel"
+                    else
+                        qr "$f" "$f" || true
+                    fi
                 fi ;;
             *)
                 sum=$(sha256sum < "$f" | cut -d' ' -f1)
@@ -215,15 +435,17 @@ touch "$state/last-push" 2> /dev/null || true   # the backend's heartbeat (--hea
 list=$conf/subaddresses.txt
 [[ -f $list && $(sha256sum < "$list" | cut -d' ' -f1) == "$(sed -n 's/^sha256 *//p' "$list.pin" 2> /dev/null)" ]] \
     || refuse "$list is not the list $list.pin names" list "its signed list isn't the one its .pin names"
+command -v qrencode > /dev/null || refuse "it has no qrencode to check the QR codes with (apt install qrencode)" qrencode
+command -v python3 > /dev/null || refuse "it has no python3 to read the QR codes' pixels with" python3
+command -v git > /dev/null || refuse "it has no git to check images against the proposals repository (apt install git)" git
 command -v zbarimg > /dev/null || refuse "it has no zbarimg to read the QR codes with (apt install zbar-tools)" zbarimg
 # the design's files, "sha256  path" as sha256sum writes them (./ and binary-mode * dropped);
 # several releases' may be in it
 [[ -s $conf/design.sha256 ]] || refuse "it has no $conf/design.sha256 (the design release's files)" design
 design=$(mktemp)
-held=$(mktemp)
-trap 'rm -f "$held" "$design"' EXIT
+trap 'rm -f "$design"' EXIT
 sed -nE 's#^([0-9a-f]{64}) [ *](\./)?(.+)$#\1 \3#p' "$conf/design.sha256" > "$design"
-# a file name rsync's exclude patterns can't hold exactly (a newline) can't be held back either
+# the checks below list files one a line, tab-separated: a name with a newline or tab can't be held back
 if find "$staging" -name '*[[:cntrl:]]*' | grep -q .; then refuse "a file name with a control character in it" names; fi
 
 # the list's addresses, then the allowed file's (first word of each line; # comments)
@@ -234,11 +456,15 @@ bad=$( { scan "${pages[@]}"; changes; } | awk -F '\t' 'NR == FNR { if ($1 !~ /^#
 # out): one bad page doesn't stop the site updating, and nothing here rewrites a file. The push
 # still fails, so the backend's log shows it.
 if [[ $bad ]]; then
-    # rsync patterns, anchored, wildcards escaped: exactly these files
-    cut -f1 <<<"$bad" | sort -u | while IFS= read -r file; do
-        f=${file#"$staging"/}; printf '/%s\n' "${f//[][*?\\]/\\&}"
-    done > "$held"
-    say "held back $(wc -l < "$held") file(s), with an address that isn't the wallet's nor allowed, or not allowed here; the rest goes live"
+    # out of staging, so the copy below leaves the live one as it is. Not rsync exclude patterns:
+    # a pattern without wildcards reads a backslash as itself, so an escaped name never matched
+    nheld=0
+    while IFS= read -r file; do
+        [[ $file == "$staging"/* ]] || continue
+        rm -f -- "$file"
+        nheld=$((nheld + 1))
+    done < <(cut -f1 <<<"$bad" | sort -u)
+    say "held back $nheld file(s), with an address that isn't the wallet's nor allowed, or not allowed here; the rest goes live"
     while IFS=$'\t' read -r file addr; do say "  ${file#"$staging"/}: $addr"; done < <(head -n 10 <<<"$bad")
     n=0
     while IFS=$'\t' read -r file addr; do
@@ -250,5 +476,5 @@ if [[ $bad ]]; then
         fi
     done < <(awk -F '\t' '$1 ~ /\.html$/' <<<"$bad"; awk -F '\t' '$1 !~ /\.html$/' <<<"$bad")   # a page before the rest
 fi
-rsync -a --delay-updates --exclude-from="$held" "$staging/" "$live/"
-[[ ! -s $held ]]
+rsync -a --delay-updates "$staging/" "$live/"
+[[ ! $bad ]]

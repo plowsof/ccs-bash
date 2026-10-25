@@ -236,6 +236,28 @@ got=$(
     WORK=$(mktemp -d) PROPOSALS_DIR=$FIXTURES/proposals TEST_FAIL_MR=13 ideas 2> /dev/null | jq -r '[.[]."gitlab-url"] | join(" ")'
 )
 if [[ $got == https://example.org/mr/11 ]]; then echo "ok   one unreadable MR leaves only that one out of the ideas"; else echo "FAIL one unreadable MR: ideas were '$got'"; status=1; fi
+# Anyone can open an MR: an address in its title is shortened, also when invisible characters
+# (a left-to-right mark, a zero-width space) split it, and words around it stay
+addr=44AFFq5kSiGBoZ4NMDwYtN18obc8AemS33DBLWs3H7otXft3XjrpDtQGv7SqSsaBYBb98uNbr2VBBEt7f2wfn3RVGQBEP3A
+fx=$(mktemp -d); cp -r "$FIXTURES/." "$fx"
+jq --arg t "Pay naïve me: ${addr:0:30}"$'\xe2\x80\x8e'"${addr:30:30}"$'\xe2\x80\x8b'"${addr:60}!" 'map(if .iid == 11 then .title = $t else . end)' \
+    "$FIXTURES/gitlab/opened.json" > "$fx/gitlab/opened.json"
+got=$(
+    # shellcheck source=tests/stubs.sh
+    source "$here/stubs.sh"
+    WORK=$(mktemp -d) FIXTURES=$fx PROPOSALS_DIR=$here/fixtures/proposals ideas 2> /dev/null | jq -r '.[] | select(."gitlab-url" | endswith("/11")) | .name'
+)
+if [[ $got == 'Pay naïve me: 44AFFq…EP3A!' ]]; then echo "ok   an address in an idea's title is shortened, invisible characters in it or not"; else echo "FAIL an address in an idea's title: '$got'"; status=1; fi
+# an idea's file over 1 MB isn't kept, nor read: that idea is left out (13 stays)
+awk 'BEGIN { for (i = 0; i < 1048576; i += 64) printf "%63s\n", "" }' >> "$fx/gitlab/raw/sha-11"
+got=$(
+    # shellcheck source=tests/stubs.sh
+    source "$here/stubs.sh"
+    WORK=$(mktemp -d) FIXTURES=$fx PROPOSALS_DIR=$here/fixtures/proposals ideas 2>&1 > "$fx/ideas.json" | grep -c 'MR !11.*over 1048576 bytes'
+    jq -r '[.[]."gitlab-url" | sub(".*/"; "")] | join(" ")' "$fx/ideas.json"
+)
+if [[ $got == $'1\n13' ]]; then echo "ok   an idea's file over 1 MB leaves that idea out"; else echo "FAIL an idea's file over 1 MB: '$got'"; status=1; fi
+rm -rf "$fx"
 # Ideas are open MRs adding exactly one new .md whose text reads as a proposal: not one that only
 # edits a file (16), adds two (14), adds a proposal already merged (12), or adds junk (15). A file
 # that can't be fetched leaves out only that idea, this run (13 here).
