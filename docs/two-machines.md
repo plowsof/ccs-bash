@@ -203,6 +203,13 @@ a bash script, run by the push key instead of rrsync. Each push, one at a time, 
      one again, while a block tag (`<p>`, `<div>`, `<br>`, `<td>`...) is a space, its text on a
      line or in a cell of its own; an image's alt text where it stands (a broken image shows it
      inline);
+   - **the design's hidden text**: an element with a class its stylesheets hide something with
+     (`hidden-classes`, below) may be hidden or not, each on its own: by the screen's width, a
+     box ticked, the theme, being empty, and two may take turns (*Menu*, *Close*). A run of
+     letters and digits a visitor would see only with one hidden, 95 or more, joined across the
+     gap or cut short by it, is held back: it could be an address the text as shown doesn't
+     hold. Where a browser may end such an element before its end tag (an end tag out of order,
+     an `<a>` in an `<a>`), it counts as two there, each hidden or not;
    - with every character that isn't ASCII dropped first (zero-width spaces, bidi marks, soft
      hyphens: invisible, so they mustn't split an address), as text or as an entity;
    - **every QR code**: each `data:` URI in a page must be written exactly
@@ -243,7 +250,8 @@ a bash script, run by the push key instead of rrsync. Each push, one at a time, 
    the web server's journal (`journalctl -t ccs-gate`, and `/var/log/ccs-gate.log` if created
    for ccs-data), and goes to IRC (below);
 5. refuses the whole push if its own list isn't the one its `.pin` names, or it has no
-   `design.sha256`, or no `zbarimg`, `qrencode`, `python3` or `git` (it can't check then).
+   `design.sha256` or `hidden-classes`, or no `zbarimg`, `qrencode`, `python3` or `git` (it
+   can't check then).
 
 With `/etc/ccs-gate/alert.conf` it also tells IRC itself, once an hour per address or file: the
 one alarm that still sounds when the backend is the one lying.
@@ -286,10 +294,11 @@ v=v0.1.13
 sha256sum ccs-front-hugo-$v.zip                                      # the attested one
 unzip -q ccs-front-hugo-$v.zip -d /tmp/design-$v
 (cd /tmp/design-$v && find . -type f ! -name '*.html' -exec sha256sum {} +) > /etc/ccs-gate/design.sha256
+cp /tmp/design-$v/assets/hidden-classes.txt /etc/ccs-gate/hidden-classes   # the classes it hides text with
 ```
 
-A new design release: **add** its lines (`>>`) before the backend switches to it, so both are
-allowed while it does; old lines can go once the new design is live. Then the push key's
+A new design release: **add** its lines (`>>`) to both files before the backend switches to
+it, so both are allowed while it does; old lines can go once the new design is live. Then the push key's
 `command="rrsync -wo -no-del -munge /var/lib/ccs-data"` becomes `command="/usr/local/bin/ccs-receive"`.
 
 A proposal whose text quotes some other address stops its page updating until you add that
@@ -304,19 +313,19 @@ code, a stylesheet or design file that isn't the design's, a swapped list, a pro
 is another QR code, inverted or not, a `data:` image that isn't exactly qrencode's QR code (another
 size, an extra chunk, a good one with more drawn beside it), a PNG named `.html` or
 `projects.json`, block, square, braille or mosaic characters, a NUL byte, `&shy` without its
-`;`, a `monero:` URL split by tabs or newlines, alt text beside the rest of an address, a
+`;`, a `monero:` URL split by tabs or newlines, alt text beside the rest of an address, an address
+split by text the design's classes hide or whole only with one hidden, a
 charset that isn't UTF-8, a refresh to another site, `<font color>`, `bgcolor`, 65 images, a proposal image the
 repository doesn't have (or has at another path, or other bytes), and a new one while the
 repository can't be fetched; two pushes at once go one after the other; the next good
 push goes through; a list that isn't the pinned one refuses everything; no deleting and nothing
 outside the folder, as with rrsync alone.
 
-**What it can't see:** what the design's own stylesheet does with its own classes and elements:
-text it hides (`visually-hidden`, `brand-short`, ...) put in to split an address, or a QR code
-drawn with elements it colours (inline `<code>`, tag pills); a QR code drawn as text with
-characters it doesn't refuse (ASCII art, other emoji), which phones read badly at a page's line
-spacing; and a link to another site. Checking pages against the design's own pages, outside
-the regions it fills, would close the first.
+**What it can't see:** a QR code drawn with elements the design's own stylesheet colours
+(inline `<code>`, tag pills); a QR code drawn as text with characters it doesn't refuse (ASCII
+art, other emoji), which phones read badly at a page's line spacing; and a link to another
+site. Checking pages against the design's own pages, outside the regions it fills, would close
+the first.
 ccs-watch (below) and visitors comparing what their wallet shows are what catch those. zbarimg reads images the backend sends, as ccs-data: keep zbar-tools (and the
 ImageMagick it uses) updated (`unattended-upgrades`).
 
