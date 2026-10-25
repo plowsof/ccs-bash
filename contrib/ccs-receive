@@ -5,7 +5,9 @@
 #   - every Monero address in its pages and JSON must be one of the wallet's (the signed list and
 #     its .pin, installed here by hand) or in the allowed file: as written, as shown (tags removed,
 #     entities read), in every monero: link, in every address box, and in every QR code (each
-#     data: image must be, pixel for pixel, the QR code qrencode makes of such an address);
+#     data: image must be, pixel for pixel, the QR code qrencode makes of such an address); and
+#     no run of letters and digits a visitor sees only with an element of a class the design hides
+#     things with (hidden-classes, from the release zip) hidden may be long enough for one;
 #   - pages and JSON must start as text does (<, [ or {): a browser shows an image's bytes
 #     whatever the file is called;
 #   - no block, square or braille characters in them, which could draw a QR code as text;
@@ -14,9 +16,9 @@
 #     code in it holding only such addresses), projects.json, or the signed list's own files, the
 #     same as the ones installed here.
 # The push goes live, except a file that fails: that one keeps its last good copy (a new one stays
-# out), and IRC is told (alert.conf). A list that isn't the pinned one, or no design.sha256 or
-# zbarimg, refuses the whole push. Needs bash, awk, grep, rsync (rrsync), coreutils, curl,
-# zbarimg (zbar-tools), qrencode, git, python3 (as rrsync). Root-owned, 755.
+# out), and IRC is told (alert.conf). A list that isn't the pinned one, or no design.sha256,
+# hidden-classes or zbarimg, refuses the whole push. Needs bash, awk, grep, rsync (rrsync),
+# coreutils, curl, zbarimg (zbar-tools), qrencode, git, python3 (as rrsync). Root-owned, 755.
 set -euo pipefail
 export LC_ALL=C
 staging=/var/lib/ccs-staging live=/var/lib/ccs-data conf=/etc/ccs-gate state=/var/lib/ccs-gate
@@ -64,7 +66,8 @@ refuse() {
 #      comment up to its "-->"), so an address split by <span></span> or <wbr> is one again; a
 #      block tag (<p>, <div>, <br>, <td>...) a space, as its text starts a line or a cell of its
 #      own (any other tag joins); an image's alt text where it stands (a broken image shows it
-#      inline);
+#      inline); and, as each element with a hiding class may be hidden or not (glued()), no run
+#      of 95 or more that only shows with one hidden;
 # with every character that isn't ASCII, or is a control character, dropped first: zero-width
 # spaces, bidi marks, soft hyphens and the like show nothing, so they mustn't split an address
 # for the gate either (as characters or entities; an entity it doesn't know is dropped too). An
@@ -121,9 +124,11 @@ function tokens(f, s,    t) {
         if ((length(t) == 95 || length(t) == 106) && t !~ /[0OIl]/) print f "\t" t
     }
 }
-# the text of a page as a browser shows it: comments and tags out (hides() looks at each tag)
+# the text of a page as a browser shows it: comments and tags out (hides() looks at each tag);
+# the text of an element with a class the design hides things with between \001 and \002
+# (region(), for glued(); taken out before tokens())
 function strip(f, s,    out, i, j, k, t) {
-    out = ""
+    out = ""; nr = 0; ns = 0; split("", opened)
     while ((i = index(s, "<")) > 0) {
         out = out substr(s, 1, i - 1); s = substr(s, i)
         if (substr(s, 1, 4) == "<!--") {
@@ -140,13 +145,89 @@ function strip(f, s,    out, i, j, k, t) {
         }
         if (match(s, tagre)) {
             t = substr(s, 1, RLENGTH); s = substr(s, RLENGTH + 1); hides(f, t)
-            out = out (tolower(t) ~ blockre ? " " : "") alt(t); continue
+            out = out region(f, t, tolower(t) ~ blockre ? " " : ""); continue
         }
         if (s ~ /^<\/?[A-Za-z]/) { s = ""; break }   # a tag never closed: the rest is in it
         out = out "<"; s = substr(s, 2)
     }
-    return out s
+    out = out s
+    for (; nr > 0; nr--) out = out "\002"   # never closed: to the end of the page
+    return out
 }
+# what tag T shows (SPACE, a block tag\047s, and an alt text), with \001 where an element with a
+# hiding class starts and \002 where its end tag ends it (a block one\047s space inside it: hidden,
+# it is no line of its own). Inside one, where a browser may end it before then (an end tag out
+# of order, an <a> in an <a>: the gate can\047t tell), it is cut in two there, each part shown or
+# not on its own: that holds where the browser ends it too. One a browser ends without its end
+# tag (<p>, <li>) it ends at a block\047s start: a line of its own either way.
+function region(f, t, space,    name, txt) {
+    name = tolower(t); sub(/^<\/?/, "", name); sub(/[^a-z0-9-].*$/, "", name)
+    txt = space alt(t)
+    if (t ~ /^<\//) {
+        if (name ~ nestre && opened[name]) opened[name]--
+        if (!nr) return txt
+        if (!ns || stack[ns] != name) return cut() txt
+        if (ns-- > at[nr]) return txt
+        nr--; return space "\002"
+    }
+    if (name ~ nestre && opened[name]++ && nr) txt = cut() txt
+    if (!hideclass(t)) {
+        if (nr && name !~ voidre) stack[++ns] = name
+        return txt
+    }
+    if (name ~ voidre) return "\001" txt "\002"
+    stack[++ns] = name; at[++nr] = ns
+    return "\001" txt
+}
+function cut(    i, c) { c = ""; for (i = 0; i < nr; i++) c = "\002" c "\001"; return c }
+# 1 if tag T has a class the design hides things with (hidden-classes; any case: a page without
+# a doctype matches them so)
+function hideclass(t,    w, n, i) {
+    n = split(tolower(attr(t, "class")), w, /[ \t\n\f\r]+/)
+    for (i = 1; i <= n; i++) if (w[i] in hiding) return 1
+    return 0
+}
+# A design class hides an element only sometimes (by the screen\047s width, a box ticked, a
+# theme, when empty), and two may take turns (Menu, Close). The text as shown above has them
+# all; a run of letters and digits a visitor sees only with one hidden (it joins across the gap,
+# or stops at it), 95 or more, is refused: it could be an address the gate doesn\047t read. Each
+# such element shown or not on its own, a level each (\001 to \002), the longest:
+#   W  the level\047s text so far, if it can have no space in it (NEG: it has one)
+#   L  the run it starts with           cp  the run ending here
+#   bx a run with one hidden            and Wx, Lx, cx: W, L, cp with one hidden (NEG: none)
+function glued(f, s,    d, n) {
+    d = 0; level(0)
+    while (s != "") {
+        n = 1
+        if (match(s, /^[0-9A-Za-z]+/)) { n = RLENGTH; W[d] += n; Wx[d] += n; cp[d] += n; cx[d] += n }
+        else if (s ~ /^\001/) level(++d)
+        else if (s ~ /^\002/) { if (d) shut(d--) }
+        else {
+            match(s, /^[^0-9A-Za-z\001\002]+/); n = RLENGTH
+            if (W[d] >= 0) { L[d] = max(L[d], W[d]); Lx[d] = max(Lx[d], Wx[d]); W[d] = Wx[d] = NEG }
+            bx[d] = max(bx[d], cx[d]); cp[d] = 0; cx[d] = NEG
+        }
+        s = substr(s, n + 1)
+    }
+    for (; d > 0; d--) shut(d)
+    if (max(bx[0], cx[0]) >= 95) print f "\t!letters and digits that join into 95 or more where an element with a hiding class is hidden: an address the gate cannot read"
+}
+function level(d) { W[d] = L[d] = cp[d] = 0; Wx[d] = Lx[d] = cx[d] = bx[d] = NEG }
+# level D ends: its element in level D-1\047s text, shown or hidden (hidden, it changes the text
+# around it only if it has text, or a block\047s space)
+function shut(d,    p, l, lx, w, wx, gone, c, x) {
+    p = d - 1; l = max(L[d], W[d]); lx = max(Lx[d], Wx[d]); w = W[d]; wx = Wx[d]; gone = w != 0
+    bx[p] = max(bx[p], max(max(bx[d], cx[d]), max(cx[p] + l, cp[p] + lx)))
+    c = max(cp[p], cp[d]); x = max(cx[d], gone ? cp[p] : cx[p])
+    if (w >= 0) { c = max(c, cp[p] + w); x = max(x, max(cx[p] + w, cp[p] + wx)) }
+    cp[p] = c; cx[p] = x
+    if (W[p] < 0) return
+    L[p] = max(L[p], W[p] + l); Lx[p] = max(Lx[p], max(Wx[p] + l, W[p] + lx))
+    x = gone ? W[p] : Wx[p]
+    if (w >= 0) x = max(x, max(Wx[p] + w, W[p] + wx))
+    W[p] += max(w, 0); Wx[p] = x
+}
+function max(a, b) { return a > b ? a : b }
 # the value of attribute WANT in tag T ("" if none; has = 1 if there), its attributes read in
 # order, as HTML reads them (the first of a name counts)
 function attr(t, want,    name, v, q, j) {
@@ -186,7 +267,7 @@ function hides(f, t,    name, c) {
     if (t !~ /^<\// && name ~ /^(img|progress|meter|input)$/) shown++
 }
 function base58run(s) { return match(s, /^[1-9A-HJ-NP-Za-km-z]+/) && (RLENGTH == 95 || RLENGTH == 106) }
-function check(f, d,    a, l, m, i, box, page) {
+function check(f, d,    a, l, m, i, box, page, v) {
     shown = 0; page = f ~ /\.html$/
     # as UTF-8 bytes: \342\226\200 is U+2580
     drew = d ~ /\342[\226\227][\200-\277]|\342[\240-\243][\200-\277]|\342\254[\233\234]|\342\232[\252\253]|\360\237\224[\262\263]|\360\237\237[\240-\253]|\360\237[\254-\257][\200-\277]/
@@ -211,7 +292,8 @@ function check(f, d,    a, l, m, i, box, page) {
     }
     gsub(/data:image\/png;base64,[A-Za-z0-9+\/]+=*/, " ", a)
     tokens(f, a)
-    tokens(f, decode(strip(f, d)))
+    v = decode(strip(f, d)); glued(f, v); gsub(/[\001\002]/, "", v)
+    tokens(f, v)
     # a QR code drawn with images, one a module, takes hundreds; the design and a proposal, 13
     if (shown > 64) print f "\t!more than 64 images (and bars and boxes): enough to draw a QR code with"
     if (drew) print f "\t!a block, square or braille character, which can draw a QR code as text"
@@ -235,6 +317,10 @@ function check(f, d,    a, l, m, i, box, page) {
 }
 # a start or end tag: a ">" inside a value quoted after "=" doesn\047t end it, as in HTML
 BEGIN {
+    NEG = -1000000000
+    n = split(tolower(classes), w, " "); for (i = 1; i <= n; i++) hiding[w[i]] = 1
+    voidre = "^(area|base|br|col|embed|hr|img|input|keygen|link|meta|param|source|track|wbr)$"
+    nestre = "^(a|button|nobr)$"   # one in another ends the first, its end tag or not
     tagre = "^</?[A-Za-z]([^>=]|=[ \t\n\f\r]*\"[^\"]*\"|=[ \t\n\f\r]*\047[^\047]*\047|=)*>"
     # the tags whose text starts a line or a cell of its own: a space in the text as shown
     blockre = "^</?(address|article|aside|blockquote|body|br|caption|dd|details|dialog|div|dl|dt|fieldset|figcaption|figure|footer|form|h[1-6]|head|header|hgroup|hr|html|legend|li|main|menu|nav|ol|p|pre|section|summary|table|tbody|td|tfoot|th|thead|title|tr|ul)([ \t\n\f\r/>]|$)"
@@ -326,7 +412,7 @@ scan() {
     png=$(mktemp)
     # a NUL byte: HTML drops it from the text, so it could split an address
     printf '%s\0' "$@" | grep -zE '\.(html|json)$' | xargs -0 -r grep -laP '\x00' -- | sed 's/$/\t!a NUL byte (a browser drops it from the text)/'
-    printf '%s\0' "$@" | grep -zE '\.(html|json)$' | xargs -0 -r awk "$scan_awk" \
+    printf '%s\0' "$@" | grep -zE '\.(html|json)$' | xargs -0 -r awk -v classes="$classes" "$scan_awk" \
         | while IFS=$'\t' read -r file tag payload; do
             if [[ $tag != '?qr' ]]; then printf '%s\t%s\n' "$file" "$tag"; continue; fi
             if ! base64 -d <<<"$payload" > "$png" 2> /dev/null || ! qrdata "$file" "$png"; then
@@ -445,6 +531,10 @@ command -v zbarimg > /dev/null || refuse "it has no zbarimg to read the QR codes
 design=$(mktemp)
 trap 'rm -f "$design"' EXIT
 sed -nE 's#^([0-9a-f]{64}) [ *](\./)?(.+)$#\1 \3#p' "$conf/design.sha256" > "$design"
+# the classes the design's stylesheets hide something with, one a line, from the release zip's
+# assets/hidden-classes.txt; several releases' may be in it
+classes=$(grep -sE '^-?[_A-Za-z][_A-Za-z0-9-]*$' "$conf/hidden-classes" | tr '\n' ' ') || true
+[[ $classes ]] || refuse "it has no $conf/hidden-classes (the design release's assets/hidden-classes.txt)" classes
 # the checks below list files one a line, tab-separated: a name with a newline or tab can't be held back
 if find "$staging" -name '*[[:cntrl:]]*' | grep -q .; then refuse "a file name with a control character in it" names; fi
 
