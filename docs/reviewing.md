@@ -106,15 +106,17 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
 - [`contrib/ccs-receive`](../contrib/ccs-receive), the push key's forced command, as `ccs-data`:
   one push at a time (`flock`); staging starts as a copy of the live site; rrsync
   (`-wo -no-del -munge`) receives into it. The whole push is refused if the list isn't its `.pin`'s,
-  or there is no `zbarimg` or `design.sha256`, or a file name has a control character. `scan`
+  or there is no `zbarimg`, `git` or `design.sha256`, or a file name has a control character. `scan`
   (awk) reads every page and JSON four ways: as written (entities and %-escapes decoded), as shown
   (comments and tags removed as HTML reads them, `strip`), every `monero:` link and address box
   (one address, nothing else), and every `data:` image (a PNG that `zbarimg` reads as a QR code of
   a listed address, inverted codes too). Every non-ASCII or control character is dropped first, so
   none can split an address; `hidden`, `dir`, `style` and `popover` attributes and `<svg>`,
-  `<template>`, `<bdo>`... (`hides`), which the design never uses, are refused. `changes`: any other
-  file the push changes must be the design's (`design.sha256`), a proposal image (its QR codes
-  checked), `projects.json`, or the list's files as installed in `/etc/ccs-gate`. A failing file is
+  `<template>`, `<bdo>`... (`hides`), which the design never uses, are refused, and so are block,
+  square and braille characters (`drawing`), which can draw a QR code as text. `changes`: any other
+  file the push changes must be the design's (`design.sha256`), a proposal image the proposals
+  repository has at that path (`repo_images`: a blobless fetch each push, `git hash-object`
+  compared with `ls-tree`; its QR codes checked too), `projects.json`, or the list's files as installed in `/etc/ccs-gate`. A failing file is
   deleted from staging, so it keeps its last good copy; the rest goes live, the push fails, IRC is
   told. `--heartbeat` (a timer): alerts when no push has come for 15 minutes.
 - nginx: static files, the security headers, the theme map ([two machines](two-machines.md)).
