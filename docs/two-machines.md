@@ -36,20 +36,34 @@ Then either of two ways:
 the web server only serves what arrives, nothing else is installed or run there. nginx:
 
 ```
+map $uri $ccs_cache {                               # in the http context, e.g. at the top of the file
+    "~\.[0-9a-f]{64}\.(css|png|woff2)$" "public, max-age=31536000, immutable";
+    default                            "no-cache";
+}
 server {
     listen 80 default_server;
     root /var/lib/ccs-data;
     disable_symlinks on;
     add_header Content-Security-Policy "default-src 'none'; style-src 'self'; img-src 'self' data:; font-src 'self'" always;
+    add_header Cache-Control $ccs_cache always;
     location = /projects {                          # the site carries projects.json
         alias /var/lib/ccs-data/projects.json;
         default_type application/json;
+        add_header Cache-Control "no-cache, must-revalidate";
         add_header Content-Security-Policy "default-src 'none'; style-src 'self'; img-src 'self' data:; font-src 'self'" always;
     }
 }
 ```
 
 (A `location` with its own `add_header` drops the server's, hence the CSP twice.)
+
+**Caching:** the stylesheet, the icons and the fonts are named by their content hash
+(`style.<sha256>.css`), so browsers may keep them for good: a new design release gives them new
+names. Everything else (the pages, remade each run, `theme.css`, `/projects`) is `no-cache`: the
+browser checks before reusing it, and an unchanged file isn't sent again. Kept files are what stop
+pages shifting as you click around, slow connections and Tor included: the font is already there
+for the first paint. The regex goes in quotes (its `{64}` would otherwise open a block), and the
+`map` covers `/dark/` and `/light/` too, where a `location` wouldn't (their `^~` wins).
 
 **The theme** (Light, Dark or System, the button in the site's header) is kept in the address,
 without cookies or JavaScript: `/dark/…` and `/light/…` are the same files, except that there
