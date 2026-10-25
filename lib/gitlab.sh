@@ -148,11 +148,15 @@ ideas() {
         fi
     done < <(jq -r '.[].iid' <<<"$mrs")
 
+    # Anyone can open one, so a title or name can't hold a whole address (the web server's gate
+    # would hold back every page listing it): a run of 90 or more base58 characters is shortened,
+    # as alerts show addresses, to its first 6 and last 4.
     jq --argjson keep "$(printf '%s\n' "${keep[@]}" | jq -s .)" --argjson votes "$votes" '
+        def noaddress: gsub("(?<a>[1-9A-HJ-NP-Za-km-z]{6})[1-9A-HJ-NP-Za-km-z]{80,}(?<b>[1-9A-HJ-NP-Za-km-z]{4})"; "\(.a)…\(.b)");
         map(select(.iid | IN($keep[])) | ($votes[.iid | tostring] // {upvotes, downvotes}) as $v | {
-            name: (.title | sub("^\\s+"; "") | sub("\\s+$"; "") | @html),
+            name: (.title | sub("^\\s+"; "") | sub("\\s+$"; "") | noaddress | @html),
             "gitlab-url": (.web_url | if type == "string" and test("^https://[^\\s\"\\x27<>\\\\]+$") then @html else null end),
-            author: (.author.username | @html),
+            author: (.author.username | noaddress | @html),
             date: (.created_at | sub("\\.[0-9]+"; "") | fromdate | strftime("%B %-d, %Y")),
             ts: (.created_at | sub("\\.[0-9]+"; "") | fromdate),
             upvotes: ($v.upvotes // null | if type == "number" then . else null end),
