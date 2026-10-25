@@ -55,11 +55,43 @@ agree, by default), then that the ID or sha256 you install is the attested one
 monerod, local or one you trust, and monero-wallet-rpc with the CCS wallet, view-only, as its own
 user, on 127.0.0.1: [setup](setup.md) step 1.
 
-The wallet from ccs-back: stop its wallet-rpc (it saves on exit), copy `<name>` and `<name>.keys`
-into `/var/lib/ccs/wallet` (owner `ccs-wallet`, mode 600), set `wallet-file`, start the service.
-`wallet_info` in `monero-wallet-cli` must say `Watch only`; if it can spend, make a view-only one
-instead (`--generate-from-view-key`, with the address, the view key and a restore height from
-before the first donation). Amounts come from the wallet's history, so it needs all of it.
+**Moving the wallet from ccs-back:** copy its two files as they are. `<name>.keys` holds the keys
+(encrypted with the wallet's password); `<name>`, the cache, holds everything scanned so far: the
+history the totals come from, and every subaddress made. With both, nothing is rescanned and the
+first run's totals are already right.
+
+1. On ccs-back's machine, stop its wallet-rpc (it saves on exit, so the cache is current), then
+   `sha256sum <name> <name>.keys`.
+2. On the backend, named as `wallet-file` says (`ccs`):
+
+   ```
+   install -o ccs-wallet -g ccs-wallet -m 600 <name>      /var/lib/ccs/wallet/ccs
+   install -o ccs-wallet -g ccs-wallet -m 600 <name>.keys /var/lib/ccs/wallet/ccs.keys
+   sha256sum /var/lib/ccs/wallet/ccs /var/lib/ccs/wallet/ccs.keys   # the same as on ccs-back's
+   ```
+
+3. `password` in `wallet-rpc.conf` is that wallet's own password (ccs-back's); start the service.
+4. Check it is the CCS wallet, view-only, and caught up:
+
+   ```
+   rpc() { curl -s --digest -u 'ccs:<rpc password>' http://127.0.0.1:18082/json_rpc \
+       -d "{\"jsonrpc\":\"2.0\",\"id\":0,\"method\":\"$1\",\"params\":${2:-{\}}}"; }
+   rpc get_address | jq -r .result.address                    # WALLET_ADDRESS
+   rpc query_key '{"key_type":"spend_key"}' | jq -r .error.message   # "The wallet is watch-only. ..."
+   rpc get_height | jq .result.height                         # within a few blocks of monerod's
+   ```
+
+   If it can spend, don't use it: make a view-only one (below).
+5. Step 2 runs ccs-bash once and compares its JSON with ccs-back's: the totals must match.
+
+Without the cache (only `<name>.keys`), wallet-rpc rescans from the wallet's restore height on
+start; without either, make the wallet from the address and view key
+(`monero-wallet-cli --generate-from-view-key`, a restore height from before the first donation).
+Either way, before it scans, raise the subaddress lookahead past the highest index in
+`proposals.csv` (`rpc set_subaddress_lookahead '{"password":"<wallet password>","major_idx":1,"minor_idx":20000}'`): a fresh
+wallet looks only 200 past the last subaddress it has seen, and would miss donations beyond a gap;
+if it has scanned already, `rpc rescan_blockchain` after raising it. Then compare the totals as in
+step 5.
 
 ## 2. ccs-bash and its state (the backend)
 
