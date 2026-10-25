@@ -1,15 +1,24 @@
 #!/usr/bin/env bash
 # ccs-watch SITE_URL LOCAL_SITE [CONF]: the backend watching the web server. Right after a push,
 # fetch the pages where donations are asked for (home, Funding Required, Donate, Verify, every
-# funding-required proposal) from SITE_URL, as a visitor would, and compare each, byte for byte,
-# with LOCAL_SITE, what was just pushed. A difference means the web server serves something the
+# funding-required proposal) from SITE_URL, as a visitor's browser would, and every file they use
+# (stylesheets with theme.css, fonts, icons, the General Fund's QR code, images), and compare each,
+# byte for byte, with LOCAL_SITE, what was just pushed. A difference means the web server serves something the
 # backend didn't make (a push skips a file whose size and time were kept: this doesn't): alert.
 # CONF (default /etc/ccs/alert.conf, root-owned, not in any repository):
 #   ALERT_URL=https://bot.example/simple?channel=%23ccs   POSTed the message as plain text
 #                                                         (CptHook's simple module, ntfy, ...)
 #   ALERT_TARGET=#channel  ALERT_PASSWORD=...             instead, wmb's /directedMessage JSON
 #                                                         (ALERT_URL=http://127.0.0.1:8081/directedMessage)
-#   WATCH_PROXY=socks5h://127.0.0.1:9050                  recommended: fetch through Tor
+#   WATCH_PROXY=socks5h://127.0.0.1:9050                  recommended: fetch through a proxy, or
+#                                                         several (space-separated), one picked at
+#                                                         random for each fetch: Tor and a clearnet
+#                                                         one elsewhere (ssh -D), so the web server
+#                                                         can't tell the watcher by its address
+#   WATCH_THEMES=1                                        also /dark/ and /light/ (the theme lines
+#                                                         in docs/two-machines.md): each page under
+#                                                         one of the three, at random, and both
+#                                                         theme.css files
 #   SUBADDRESSES=/etc/ccs-front/subaddresses.txt          optional: name addresses not on it
 #   ALERT_PREFIX=[CCS-watch]                              optional: how messages start
 #   ALERT_PLAIN=1                                         optional: no IRC colours (for ntfy and the like)
@@ -34,12 +43,12 @@ if [[ ${1:-} == --run ]]; then
 fi
 site_url=${1:?SITE_URL} local_site=${2:?LOCAL_SITE} conf=${3:-/etc/ccs/alert.conf}
 state=${CCS_WATCH_STATE:-/var/lib/ccs/state/watch}
-ALERT_URL='' WATCH_PROXY='' SUBADDRESSES='' ALERT_PREFIX='' ALERT_TARGET='' ALERT_PASSWORD='' ALERT_PLAIN=''
+ALERT_URL='' WATCH_PROXY='' WATCH_THEMES='' SUBADDRESSES='' ALERT_PREFIX='' ALERT_TARGET='' ALERT_PASSWORD='' ALERT_PLAIN=''
 if [[ -f $conf ]]; then
     # only these keys, KEY=value lines; nothing in it is run
     while IFS='=' read -r k v; do
-        case $k in ALERT_URL|WATCH_PROXY|SUBADDRESSES|ALERT_PREFIX|ALERT_TARGET|ALERT_PASSWORD|ALERT_PLAIN) printf -v "$k" '%s' "$v" ;; esac
-    done < <(grep -E '^(ALERT_URL|WATCH_PROXY|SUBADDRESSES|ALERT_PREFIX|ALERT_TARGET|ALERT_PASSWORD|ALERT_PLAIN)=' "$conf")
+        case $k in ALERT_URL|WATCH_PROXY|WATCH_THEMES|SUBADDRESSES|ALERT_PREFIX|ALERT_TARGET|ALERT_PASSWORD|ALERT_PLAIN) printf -v "$k" '%s' "$v" ;; esac
+    done < <(grep -E '^(ALERT_URL|WATCH_PROXY|WATCH_THEMES|SUBADDRESSES|ALERT_PREFIX|ALERT_TARGET|ALERT_PASSWORD|ALERT_PLAIN)=' "$conf")
 fi
 # IRC colours as CptHook's GitLab messages have them: the [CCS-watch] tag light blue (12), a
 # bad address red (04); none with ALERT_PLAIN
@@ -71,9 +80,17 @@ send() {
 
 # fetch URL FILE: only a whole answer counts: HTTP 200, not empty, within 60s (curl also fails a
 # body cut short of its Content-Length). Anything else is a failed fetch, never a "differs".
+# Asked for as Tor Browser asks (its user agent and headers, compressed), through one of the
+# proxies at random: a web server serving the watcher the right pages and visitors others must
+# first tell it apart from them.
+read -ra proxies <<<"$WATCH_PROXY"
+ua='Mozilla/5.0 (Windows NT 10.0; rv:128.0) Gecko/20100101 Firefox/128.0'
 fetch() {
-    local code
-    code=$(curl -sS --max-time 60 ${WATCH_PROXY:+--proxy "$WATCH_PROXY"} -o "$2" -w '%{http_code}' "$1" 2> /dev/null) || return 1
+    local code proxy=''
+    ((${#proxies[@]})) && proxy=${proxies[RANDOM % ${#proxies[@]}]}
+    code=$(curl -sS --max-time 60 ${proxy:+--proxy "$proxy"} --compressed -A "$ua" \
+        -H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' -H 'Accept-Language: en-US,en;q=0.5' \
+        -o "$2" -w '%{http_code}' "$1" 2> /dev/null) || return 1
     [[ $code == 200 && -s $2 ]]
 }
 
@@ -115,13 +132,44 @@ pages=(index.html funding-required/index.html donate/index.html verify/index.htm
 while IFS= read -r f; do pages+=("proposals/${f##*/}"); done \
     < <(grep -l 'class="contribute"' "$local_site"/proposals/*.html 2> /dev/null || true)   # the Contribute box: funding-required only
 
+# what they use: every file of the site's own a page links to with href=, src= or srcset= (the
+# pages' links are relative), but not other pages; with the themes, both theme.css files
+uses() {
+    local p d ref path
+    for p in "${pages[@]}"; do
+        [[ -f $local_site/$p ]] || continue
+        d=${p%/*}; [[ $d == "$p" ]] && d=.
+        grep -oE '(href|src|srcset)="[^"]*"' "$local_site/$p" | sed -E 's/^[a-z]+="//; s/"$//' | tr ',' '\n' \
+            | awk '{ print $1 }' | while IFS= read -r ref; do
+                ref=${ref%%[?#]*}
+                [[ $ref && $ref != *:* && $ref != //* && $ref != */ && $ref != *.html ]] || continue
+                if [[ $ref == /* ]]; then path=${ref#/}; else path=$(realpath -m --relative-to="$local_site" "$local_site/$d/$ref"); fi
+                [[ $path != ../* && -f $local_site/$path ]] && printf '%s\n' "$path"
+            done
+    done | sort -u
+}
+# each check "address<TAB>local file"; a page under one of the theme prefixes at random
+checks=()
+prefixes=('')
+[[ $WATCH_THEMES ]] && prefixes+=(dark/ light/)
+for p in "${pages[@]}"; do
+    [[ -f $local_site/$p ]] && checks+=("${prefixes[RANDOM % ${#prefixes[@]}]}${p%index.html}"$'\t'"$p")
+done
+while IFS= read -r f; do checks+=("$f"$'\t'"$f"); done < <(uses)
+if [[ $WATCH_THEMES ]]; then
+    for t in dark light; do
+        [[ -f $local_site/assets/theme-$t.css ]] && checks+=("$t/assets/theme.css"$'\t'"assets/theme-$t.css")
+    done
+fi
+mapfile -t checks < <(printf '%s\n' "${checks[@]}" | grep . | shuf)   # in no fixed order
+
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 bad=0 failed=0
-for p in "${pages[@]}"; do
-    [[ -f $local_site/$p ]] || continue
-    url=$site_url/$(jq -rn --arg p "${p%index.html}" '$p | split("/") | map(@uri) | join("/")')
-    seen=$state/differs-${p//[^A-Za-z0-9._-]/_}
+for c in "${checks[@]}"; do
+    remote=${c%%$'\t'*} p=${c#*$'\t'}
+    url=$site_url/$(jq -rn --arg p "$remote" '$p | split("/") | map(@uri) | join("/")')
+    seen=$state/differs-${p//[^A-Za-z0-9._-]/_}   # by the pushed file: the same under any prefix
     if ! fetch "$url" "$tmp/page"; then
         failed=$((failed + 1)); log "could not fetch $url"; continue
     fi
@@ -139,7 +187,8 @@ for p in "${pages[@]}"; do
     fi
     # n1oc's style: "<what> @ <link>"; an address shortened to its first 6 and last 4
     what="the page differs from what was pushed"
-    if [[ $SUBADDRESSES && -f $SUBADDRESSES ]]; then
+    [[ $p == *.html ]] || what="the file differs from what was pushed (a page's stylesheet, font or image)"
+    if [[ $p == *.html && $SUBADDRESSES && -f $SUBADDRESSES ]]; then
         # the addresses on the live page that aren't on the pushed one (the General Fund in every
         # footer is on both), and of those, the ones not on the wallet's signed list
         addrs() { grep -o 'monero:[0-9A-Za-z]\{95\}\|class="address">[0-9A-Za-z]\{95\}' "$1" | grep -o '[0-9A-Za-z]\{95\}$' | sort -u; }
@@ -149,11 +198,12 @@ for p in "${pages[@]}"; do
     fi
     alert "page-$p" "$what @ $url"
 done
-if ((failed == ${#pages[@]})); then
+if ((failed == ${#checks[@]})); then
     n=$(($(cat "$state/unreachable" 2> /dev/null || echo 0) + 1)); echo "$n" > "$state/unreachable"
     ((n < 3)) || alert unreachable "$site_url could not be fetched ($n checks in a row)"
 else
     rm -f "$state/unreachable"
 fi
-((bad == 0 && failed == 0)) && log "the ${#pages[@]} pages on $site_url are what was pushed"
+n=0; for p in "${pages[@]}"; do [[ -f $local_site/$p ]] && n=$((n + 1)); done
+((bad == 0 && failed == 0)) && log "the $n pages on $site_url, and the $((${#checks[@]} - n)) files they use, are what was pushed"
 exit $((bad > 0))
