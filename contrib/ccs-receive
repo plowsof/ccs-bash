@@ -55,16 +55,21 @@ refuse() {
 # address is a run of 95 (standard) or 106 (integrated) base58 characters. Each file is read
 #   1. as written, tags and attributes included (monero: links, alt and title text), with
 #      entities and %-escapes read as a browser or a wallet would (&#56; and %38 are both 8);
-#   2. as shown: tags removed, so an address split by <span></span> or <wbr> is one again;
-# with invisible characters (zero-width spaces, soft hyphens) dropped first. A monero: link must
+#   2. as shown: comments and tags removed as a browser reads them (a quoted ">" in a tag, a
+#      comment up to its "-->"), so an address split by <span></span> or <wbr> is one again;
+# with every character that isn't ASCII, or is a control character, dropped first: zero-width
+# spaces, bidi marks, soft hyphens and the like show nothing, so they mustn't split an address
+# for the gate either (as characters or entities; an entity it doesn't know is dropped too).
+# Markup that hides or moves text without the design's stylesheet (hidden, dir, style or popover
+# attributes; <template>, <svg>, <bdo>...), which the design never uses, is refused. A monero: link must
 # have an address straight after it, an address box (class="address") one address and nothing
 # else, and a data: URI must be a PNG image, which must be a QR code (checked after this).
 # No interval expressions ({95}): mawk 1.3.3 has none.
 scan_awk='
 function hexval(h,    i, v) { v = 0; h = tolower(h); for (i = 1; i <= length(h); i++) v = v * 16 + index("0123456789abcdef", substr(h, i, 1)) - 1; return v }
 function chr(n) {
-    if (n == 173 || (n >= 8203 && n <= 8205) || (n >= 8288 && n <= 8292) || n == 65279) return ""
-    return (n > 32 && n < 127) ? sprintf("%c", n) : " "
+    if (n > 32 && n < 127) return sprintf("%c", n)
+    return (n == 9 || n == 10 || n == 12 || n == 13 || n == 32) ? " " : ""
 }
 function decode(s,    out, e, n) {
     out = ""
@@ -74,7 +79,7 @@ function decode(s,    out, e, n) {
         if (e ~ /^%/) n = hexval(substr(e, 2))
         else if (e ~ /^&#[xX]/) n = hexval(substr(e, 4))
         else if (e ~ /^&#/) n = substr(e, 3) + 0
-        else { e = substr(e, 2); n = (e == "amp") ? 38 : (e == "lt") ? 60 : (e == "gt") ? 62 : (e == "quot") ? 34 : (e == "apos") ? 39 : 32 }
+        else { e = substr(e, 2); n = (e == "amp") ? 38 : (e == "lt") ? 60 : (e == "gt") ? 62 : (e == "quot") ? 34 : (e == "apos") ? 39 : -1 }
         out = out chr(n)
     }
     return out s
@@ -85,9 +90,40 @@ function tokens(f, s,    t) {
         if ((length(t) == 95 || length(t) == 106) && t !~ /[0OIl]/) print f "\t" t
     }
 }
+# the text of a page as a browser shows it: comments and tags out (hides() looks at each tag)
+function strip(f, s,    out, i, j, k, t) {
+    out = ""
+    while ((i = index(s, "<")) > 0) {
+        out = out substr(s, 1, i - 1); s = substr(s, i)
+        if (substr(s, 1, 4) == "<!--") {
+            s = substr(s, 5)
+            if (s ~ /^-?>/) { s = substr(s, index(s, ">") + 1); continue }   # <!--> and <!--->
+            j = index(s, "-->"); k = index(s, "--!>")
+            if (k && (!j || k < j)) s = substr(s, k + 4)
+            else if (j) s = substr(s, j + 3)
+            else s = ""   # never closed: the rest is the comment
+            continue
+        }
+        if (s ~ /^<([!?]|\/[^A-Za-z])/) {   # <!doctype ...>, <?...>, </>: up to the first >
+            j = index(s, ">"); s = j ? substr(s, j + 1) : ""; continue
+        }
+        if (match(s, tagre)) { hides(f, substr(s, 1, RLENGTH)); s = substr(s, RLENGTH + 1); continue }
+        if (s ~ /^<\/?[A-Za-z]/) { s = ""; break }   # a tag never closed: the rest is in it
+        out = out "<"; s = substr(s, 2)
+    }
+    return out s
+}
+function hides(f, t,    name) {
+    name = tolower(t); sub(/^<\/?/, "", name); sub(/[^a-z0-9-].*$/, "", name)
+    if (name ~ /^(template|noscript|svg|math|bdo|bdi|ruby|rt|rp|select|datalist|dialog|object|embed|iframe|frame|frameset|audio|video|canvas|noembed|noframes|xmp|plaintext|marquee|style|script)$/)
+        print f "\t!a <" name "> element, which can hide or move text (the design has none)"
+    gsub(/=[ \t\n\f\r]*("[^"]*"|\047[^\047]*\047)/, "=", t)   # the values out: only names count
+    if (tolower(t) ~ /[ \t\n\f\r\/"\047](hidden|dir|style|popover)([ \t\n\f\r\/=>]|$)/)
+        print f "\t!a hidden, dir, style or popover attribute, which can hide or move text (the design has none)"
+}
 function base58run(s) { return match(s, /^[1-9A-HJ-NP-Za-km-z]+/) && (RLENGTH == 95 || RLENGTH == 106) }
 function check(f, d,    a, l, m, i, box) {
-    gsub(zw, "", d)
+    gsub(/[\200-\377]|[\001-\010\013\016-\037\177]/, "", d)
     a = decode(d)
     # data: URIs (a scheme starts after a non-scheme character: not "metadata:"): PNG images
     # only; each one goes to zbarimg, and its base64 is not text
@@ -100,7 +136,7 @@ function check(f, d,    a, l, m, i, box) {
     }
     gsub(/data:image\/png;base64,[A-Za-z0-9+\/]+=*/, " ", a)
     tokens(f, a)
-    m = d; gsub(/<[^>]*>/, "", m); tokens(f, decode(m))
+    tokens(f, decode(strip(f, d)))
     # monero: links (href, any case, spaces around =): an address right after, nothing else
     m = a; l = tolower(a)
     while (match(l, /href[ \t\n]*=[ \t\n]*["\047]?[ \t\n]*monero:/)) {
@@ -116,16 +152,18 @@ function check(f, d,    a, l, m, i, box) {
         if (!base58run(box) || substr(box, RLENGTH + 1, 2) != "</") print f "\t!an address box that holds more than one address"
     }
 }
-BEGIN { zw = "\342\200[\213-\215]|\342\201[\240-\244]|\357\273\277|\302\255" }
+# a start or end tag: a ">" inside a value quoted after "=" doesn\047t end it, as in HTML
+BEGIN { tagre = "^</?[A-Za-z]([^>=]|=[ \t\n\f\r]*\"[^\"]*\"|=[ \t\n\f\r]*\047[^\047]*\047|=)*>" }
 FNR == 1 && NR > 1 { check(prev, doc); doc = "" }
 { doc = doc $0 "\n"; prev = FILENAME }
 END { if (NR) check(prev, doc) }'
 
 # qr FILE IMAGE: the addresses in every QR code in IMAGE as "FILE<TAB>address" lines (none if it
-# has no QR code). zbarimg reads it, as ccs-data, with a time limit.
+# has no QR code). zbarimg reads it, as ccs-data, with a time limit; inverted codes (light on dark)
+# too, which it skips by default and phones read.
 qr() {
     local out
-    out=$(timeout 20 zbarimg -q --raw -- "$2" 2> /dev/null) || return 1
+    out=$(timeout 20 zbarimg -q --raw -Stest-inverted -- "$2" 2> /dev/null) || return 1
     grep -oE '[0-9A-Za-z]+' <<<"$out" | awk -v f="$1" '(length($0) == 95 || length($0) == 106) && !/[0OIl]/ { print f "\t" $0; n++ } END { exit !n }'
 }
 
@@ -220,10 +258,9 @@ command -v zbarimg > /dev/null || refuse "it has no zbarimg to read the QR codes
 # several releases' may be in it
 [[ -s $conf/design.sha256 ]] || refuse "it has no $conf/design.sha256 (the design release's files)" design
 design=$(mktemp)
-held=$(mktemp)
-trap 'rm -f "$held" "$design"' EXIT
+trap 'rm -f "$design"' EXIT
 sed -nE 's#^([0-9a-f]{64}) [ *](\./)?(.+)$#\1 \3#p' "$conf/design.sha256" > "$design"
-# a file name rsync's exclude patterns can't hold exactly (a newline) can't be held back either
+# the checks below list files one a line, tab-separated: a name with a newline or tab can't be held back
 if find "$staging" -name '*[[:cntrl:]]*' | grep -q .; then refuse "a file name with a control character in it" names; fi
 
 # the list's addresses, then the allowed file's (first word of each line; # comments)
@@ -234,11 +271,15 @@ bad=$( { scan "${pages[@]}"; changes; } | awk -F '\t' 'NR == FNR { if ($1 !~ /^#
 # out): one bad page doesn't stop the site updating, and nothing here rewrites a file. The push
 # still fails, so the backend's log shows it.
 if [[ $bad ]]; then
-    # rsync patterns, anchored, wildcards escaped: exactly these files
-    cut -f1 <<<"$bad" | sort -u | while IFS= read -r file; do
-        f=${file#"$staging"/}; printf '/%s\n' "${f//[][*?\\]/\\&}"
-    done > "$held"
-    say "held back $(wc -l < "$held") file(s), with an address that isn't the wallet's nor allowed, or not allowed here; the rest goes live"
+    # out of staging, so the copy below leaves the live one as it is. Not rsync exclude patterns:
+    # a pattern without wildcards reads a backslash as itself, so an escaped name never matched
+    nheld=0
+    while IFS= read -r file; do
+        [[ $file == "$staging"/* ]] || continue
+        rm -f -- "$file"
+        nheld=$((nheld + 1))
+    done < <(cut -f1 <<<"$bad" | sort -u)
+    say "held back $nheld file(s), with an address that isn't the wallet's nor allowed, or not allowed here; the rest goes live"
     while IFS=$'\t' read -r file addr; do say "  ${file#"$staging"/}: $addr"; done < <(head -n 10 <<<"$bad")
     n=0
     while IFS=$'\t' read -r file addr; do
@@ -250,5 +291,5 @@ if [[ $bad ]]; then
         fi
     done < <(awk -F '\t' '$1 ~ /\.html$/' <<<"$bad"; awk -F '\t' '$1 !~ /\.html$/' <<<"$bad")   # a page before the rest
 fi
-rsync -a --delay-updates --exclude-from="$held" "$staging/" "$live/"
-[[ ! -s $held ]]
+rsync -a --delay-updates "$staging/" "$live/"
+[[ ! $bad ]]
