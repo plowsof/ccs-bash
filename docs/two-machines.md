@@ -45,6 +45,21 @@ Then either of two ways:
 **A) With ccs-front-bash** (the site is made on the ccs-bash machine, see [the design](design.md)):
 the web server only serves what arrives, nothing else is installed or run there. nginx:
 
+The security headers, in a file of their own, `/etc/nginx/snippets/ccs-headers.conf` (as
+beta.getmonero.org sends them, with a stricter CSP; an A+ on securityheaders.com):
+
+```
+add_header Content-Security-Policy "default-src 'none'; style-src 'self'; img-src 'self' data:; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'none'" always;
+add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+add_header X-Content-Type-Options "nosniff" always;
+add_header X-Frame-Options "DENY" always;
+add_header Referrer-Policy "no-referrer" always;
+add_header Permissions-Policy "accelerometer=(), ambient-light-sensor=(), autoplay=(), battery=(), camera=(), clipboard-read=(), clipboard-write=(), display-capture=(), document-domain=(), encrypted-media=(), fullscreen=(), geolocation=(), gyroscope=(), hid=(), idle-detection=(), interest-cohort=(), magnetometer=(), microphone=(), midi=(), payment=(), picture-in-picture=(), publickey-credentials-get=(), screen-wake-lock=(), serial=(), sync-xhr=(), usb=(), xr-spatial-tracking=()" always;
+add_header X-XSS-Protection "0" always;
+```
+
+and the site:
+
 ```
 map $uri $ccs_cache {                               # in the http context, e.g. at the top of the file
     "~\.[0-9a-f]{64}\.(css|png|woff2)$" "public, max-age=31536000, immutable";
@@ -54,25 +69,30 @@ server {
     listen 80 default_server;
     root /var/lib/ccs-data;
     disable_symlinks on;
-    add_header Content-Security-Policy "default-src 'none'; style-src 'self'; img-src 'self' data:; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'none'" always;
-    add_header Strict-Transport-Security "max-age=31536000" always;
+    server_tokens off;                              # no nginx version in headers and error pages
+    include snippets/ccs-headers.conf;
     add_header Cache-Control $ccs_cache always;
     location = /projects {                          # the site carries projects.json
         alias /var/lib/ccs-data/projects.json;
         default_type application/json;
+        include snippets/ccs-headers.conf;
         add_header Cache-Control "no-cache, must-revalidate";
-        add_header Content-Security-Policy "default-src 'none'; style-src 'self'; img-src 'self' data:; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'none'" always;
-        add_header Strict-Transport-Security "max-age=31536000" always;
     }
 }
 ```
 
-(A `location` with its own `add_header` drops the server's, hence the headers twice.) The CSP:
-nothing loads from another site, no script runs; `frame-ancestors 'none'`: no other site can show a
-page in a frame and draw its own address over the donation box (`default-src` doesn't cover it);
-`base-uri 'self'` for the 404 page's `<base href="/">`. HSTS: once a browser has seen the site over
-HTTPS it never uses plain HTTP for it again, so nobody on the way can strip HTTPS and change the
-pages (browsers ignore the header over HTTP, so it can stay in the port 80 server too).
+A `location` with its own `add_header` drops all of the server's, hence the `include` in each such
+`location` again. What they do:
+
+| Header | Stops |
+|---|---|
+| `Content-Security-Policy` | anything loading from another site, any script, inline styles; `frame-ancestors 'none'`: another site showing a page in a frame with its own address drawn over the donation box (`default-src` doesn't cover it); `base-uri 'self'`: for the 404 page's `<base href="/">` |
+| `Strict-Transport-Security` | once a browser has seen the site over HTTPS, plain HTTP to it, so nobody on the way can strip HTTPS and change the pages (browsers ignore it over HTTP, so it can stay in the port 80 server too). No `preload`: that is for a whole domain, not one name in it |
+| `X-Content-Type-Options` | a browser guessing a file is another type than nginx says |
+| `X-Frame-Options` | framing, for browsers older than `frame-ancestors` |
+| `Referrer-Policy` | other sites learning which page a visitor came from |
+| `Permissions-Policy` | every browser feature the site doesn't use (camera, payment, clipboard…), so nothing on a page can ask for them |
+| `X-XSS-Protection: 0` | old browsers' XSS filters, which could be used to blank parts of a page; the CSP is the protection |
 
 **Caching:** the stylesheet, the icons and the fonts are named by their content hash
 (`style.<sha256>.css`), so browsers may keep them for good: a new design release gives them new
