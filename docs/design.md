@@ -68,9 +68,11 @@ and is "the original". Nothing here runs while the CCS does.
 (`rrsync -wo -no-del -munge`). Nothing else: no checkout, no cron, no Jekyll, Node, Ruby or PHP.
 Its nginx is the distribution's, not StageX's: StageX has no nginx, and builds for amd64 only.
 One script of ours runs there, and only when a push comes in: the gate (`contrib/ccs-receive`),
-which holds back any file with an address that isn't the wallet's (as written, as shown, in a
-`monero:` link or a QR code) and any other file that isn't the design release's
-([two machines](two-machines.md#the-gate-way-a-recommended-the-web-server-checks-every-address)).
+which holds back any page that isn't one of the design release's, filled as ccs-front-bash fills
+it (a proposal's text as the proposals repository has it, fetched there), any file with an
+address that isn't the wallet's (in its text, a `monero:` link or a QR code) and any other file
+that isn't the design release's
+([two machines](two-machines.md#the-gate-way-a-recommended-the-web-server-checks-every-page)).
 
 ccs-front-bash runs on the backend, not on its own machine or the web server: whatever writes
 the addresses into the pages can redirect donations, so it belongs with ccs-bash, and pushing
@@ -127,7 +129,7 @@ on purpose; each copy has its own job, and they are all the same file:
 |---|---|---|
 | the offline machine | made from a view-only wallet, signed with a key destroyed right after | the only place the list is made or signed; it writes the four files: the list, `.asc` (signature), `.key.asc` (public key), `.pin` (sha256 and fingerprint) |
 | backend, `/etc/ccs-front/` | the four files | ccs-front-bash checks the list against its pin, then every donation address, before each push, and makes the QR codes from those addresses; a run with a wrong address makes no site: what ccs-bash's account writes can't change one |
-| web server, `/etc/ccs-gate/` | the four files (installed by hand, root-owned) | the gate checks every pushed page against it, the address however it is written and in every QR code, and every other file against the design release: a taken-over backend can't get a wrong address live as text, link or QR code (only, at worst, drawn in a proposal's image, which ccs-watch and visitors see) |
+| web server, `/etc/ccs-gate/` | the four files (installed by hand, root-owned) | the gate checks every pushed page against the design's (nothing but its parts, each slot a value of its kind, a proposal's text the repository's), every address on it against the list, however it is written and in every QR code, and every other file against the design release: a taken-over backend can't get a wrong address live as text, link or QR code |
 | the site, `/subaddresses.txt(.asc, .key.asc)` | the list, signature and key, pushed with the pages (the gate lets through only its own copies); the Verify page with the fingerprint | visitors check the address their wallet shows, after scanning or pasting, themselves (`gpg --verify`, `grep`, or a copy of the wallet): the defence left if the web server itself is taken over |
 
 So a wrong address has to get past the backend's check, then the web server's, then the

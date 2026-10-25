@@ -183,150 +183,144 @@ machine's key (commands, forwarding, reading back, `..`, `--temp-dir`, `--backup
 alone (`--loose`) they get through, so the test does catch them.
 
 A taken-over wallet machine can still push false pages or JSON: the gate below makes the web
-server refuse any with an address that isn't the wallet's ([Security](../README.md#security)).
+server refuse any page that isn't the design's, filled as ccs-front-bash fills it, and any with an
+address that isn't the wallet's ([Security](../README.md#security)).
 
-## The gate (way A, recommended): the web server checks every address
+## The gate (way A, recommended): the web server checks every page
 
-The web server's last check, so a bad address has to get past two machines: `contrib/ccs-receive`,
-a bash script, run by the push key instead of rrsync. Each push, one at a time, it
+The web server's last check, so a bad page has to get past two machines: `contrib/ccs-receive`,
+a bash script, run by the push key instead of rrsync. It doesn't guess how a browser would show
+what it is sent; it knows what a page may be. Each push, one at a time, it
 
 1. makes a staging folder a copy of the live site, and receives the push into it (rrsync, with
    the same `-wo -no-del -munge`);
-2. checks every address (95 base58 characters, or 106 for an integrated one) in its pages and
-   JSON against the wallet's signed list and an `allowed` file, read four ways, so that it can't
-   be slipped past by how it is written:
-   - **as written**, attributes included (`monero:` links, `alt`, `title`), with entities read
-     as a browser reads them (`&#56;` and `&#x38;` are `8`), and %-escapes in a `monero:` link as
-     a wallet reads them (`%38` is `8`; in a page's text a browser shows them as they are);
-   - **as shown**: comments and tags removed as a browser reads them (a `>` quoted in a tag, a
-     comment up to its `-->`), so an address split by `<span></span>`, `<wbr>` or a comment is
-     one again, while a block tag (`<p>`, `<div>`, `<br>`, `<td>`...) is a space, its text on a
-     line or in a cell of its own; an image's alt text where it stands (a broken image shows it
-     inline);
-   - **the design's hidden text**: an element with a class its stylesheets hide something with
-     (`hidden-classes`, below) may be hidden or not, each on its own: by the screen's width, a
-     box ticked, the theme, being empty, and two may take turns (*Menu*, *Close*). A run of
-     letters and digits a visitor would see only with one hidden, 95 or more, joined across the
-     gap or cut short by it, is held back: it could be an address the text as shown doesn't
-     hold. Where a browser may end such an element before its end tag (an end tag out of order,
-     an `<a>` in an `<a>`), it counts as two there, each hidden or not;
-   - with every character that isn't ASCII dropped first (zero-width spaces, bidi marks, soft
-     hyphens: invisible, so they mustn't split an address), as text or as an entity;
-   - **every QR code**: each `data:` URI in a page must be written exactly
-     `data:image/png;base64,` (no tab or space in its scheme, which a browser would take out),
-     and be, pixel for pixel, the QR code `qrencode -s 10`
-     makes of such an address, as ccs-front-bash makes it (the box's text right and its QR code
-     another's is held back; so is a good QR code with something drawn beside it, which zbarimg
-     would read past);
-   - pages and JSON must start as text does (`<`, `[` or `{`): a browser shows an
-     `<img src="x.html">` by its bytes, so an image named as a page would otherwise go unread;
-   - **its places**: a `monero:` URL, in any attribute, has one address straight after it and
-     nothing else, read with tabs and spaces taken out (a browser takes tabs and newlines out of
-     a URL), an address box (`class="address"`) one address and no markup;
-   - an entity without its `;` (a browser reads `&shy` as a soft hyphen), a NUL byte (dropped
-     from the text) and a charset other than UTF-8 are refused;
-   - and no markup that hides, moves or colours without a stylesheet, which the design never
-     uses: `hidden`, `dir`, `style` or `popover` attributes, `<svg>`, `<template>`, `<bdo>`,
-     `<ruby>`..., `<font>`, `<mark>`, the colour, border and size attributes (`bgcolor`,
-     `border`, `width` but on an `<img>`...), and no `http-equiv` but the design's
-     `refresh` of the page itself (no URL); at most 64 images, bars and boxes a page (a QR code
-     drawn with one a module takes hundreds; the most any page has is 13);
-   - and no characters that can draw a QR code as text, as characters or entities: block
-     elements and geometric shapes (`█▀▄■□▪`, U+2580–25FF), braille (U+2800–28FF), the big
-     squares and circles (`⬛⬜⚫⚪🔲🔳`), the coloured ones (`🟥🟩`..., U+1F7E0–1F7EB) and the
-     block mosaics of U+1FB00–1FBFF. No proposal uses them;
-3. checks every other file the push changes: it must be the design's, byte for byte
-   (`design.sha256`, from the design release: a stylesheet can hide the address and show
-   another, an image can be another QR code), a proposal's image (`images/<proposal>/<file>`)
-   that the proposals repository has, byte for byte at that path (fetched each push, below: a
-   proposal is reviewed and merged before it is funded, so the backend can't add an image of its
-   own, such as a QR code cut into pieces shown side by side, none of which zbarimg reads; any QR
-   code in it of such an address; inverted codes too), `projects.json`, or the signed list, its signature and key,
-   the same files as installed here. While the repository can't be fetched, a new image waits
-   (its page goes live without it);
-4. copies staging into the live site, except a file that fails: that one keeps its last good
+2. checks **every page against the design**: the design's release zip, unpacked here, has every
+   page and every part ccs-front-bash fills them with (ccs-front-hugo's README, "What
+   ccs-front-bash fills in"). A page must be one of the design's own, byte for byte outside its
+   `<!-- ccs:… -->` regions, each region filled with the design's parts and each `{{slot}}` with a
+   value of its kind:
+   - a number, an amount or a date as ccs-bash writes them;
+   - a name, author, tag or milestone: escaped text (no markup), with no run of 90 base58
+     characters in it, joined by characters that aren't ASCII or not (so not an address, padded
+     or split by a zero-width space);
+   - a link to a proposal: the site's own page, or the proposals' forge (`proposals.conf`'s
+     host, and `LINK_HOSTS`);
+   - a proposal's text: exactly what ccs-front-bash's `markdown.awk`, installed here, makes of its
+     file in the **proposals repository**, which the gate fetches itself each push (its last two
+     commits, so a merge landing between the backend's pull and the push doesn't hold the page
+     back; can't be fetched, the last fetch is used). Reviewed and merged: a backend can't change
+     what a proposal says;
+   - the donation box: an address, its QR code, the Verify link, the design's markup around them.
+
+   So nothing else can be on a page: no markup the design doesn't have, no text where it puts
+   none, no `<br>` or image or class inside an address, no QR code drawn as text, no link to
+   another site except in a proposal's own reviewed text;
+3. checks **every address** (95 base58 characters, or 106 for an integrated one) in its pages and
+   JSON against the wallet's signed list and an `allowed` file, as written (tags and attributes
+   included, entities read as a browser reads them; a character that isn't ASCII read both as
+   nothing and as a space), the JSON as JSON (its `\u` escapes read, a key twice both times), and
+   **every QR code**: each `data:image/png;base64,` image must be, pixel for pixel, the QR code
+   `qrencode -s 10` makes of such an address, as ccs-front-bash makes it (a good QR code with
+   something drawn beside it, which zbarimg would read past, is held back). Pages and JSON must
+   start as text does (`<`, `[` or `{`): a browser shows an `<img src="x.html">` by its bytes;
+4. checks every other file the push changes: it must be the design's, byte for byte
+   (`design.sha256`, from the design release: a stylesheet can hide the address and show another,
+   an image can be another QR code), a proposal's image (`images/<proposal>/<file>`) that the
+   proposals repository has, byte for byte at that path (a proposal is reviewed and merged before
+   it is funded, so the backend can't add an image of its own, such as a QR code cut into pieces
+   shown side by side, none of which zbarimg reads; any QR code in it of such an address;
+   inverted codes too), `projects.json`, or the signed list, its signature and key, the same
+   files as installed here;
+5. copies staging into the live site, except a file that fails: that one keeps its last good
    copy (a new one stays out), so one bad page doesn't stop the site updating, and the gate never
-   rewrites a file. The push then fails (the backend's log shows it); which file, and why, is in
+   rewrites a file. The push then exits 7 (the backend's log shows it, and its ccs-watch still
+   checks the live pages; a refused push is 1); which file, and why, is in
    the web server's journal (`journalctl -t ccs-gate`, and `/var/log/ccs-gate.log` if created
    for ccs-data), and goes to IRC (below);
-5. refuses the whole push if its own list isn't the one its `.pin` names, or it has no
-   `design.sha256` or `hidden-classes`, or no `zbarimg`, `qrencode`, `python3` or `git` (it
-   can't check then).
+6. refuses the whole push if its own list isn't the one its `.pin` names, or it has no
+   `design.sha256`, design release, `markdown.awk` or `proposals.conf`, or no `zbarimg`,
+   `qrencode`, `python3` or `git` (it can't check then).
 
 With `/etc/ccs-gate/alert.conf` it also tells IRC itself, once an hour per address or file: the
 one alarm that still sounds when the backend is the one lying.
 
 ```
 [CCS-watch] the web server held back a page: donation address 9yQXrj…4Kd2 is not in the signed list (its last good copy stays) @ https://<site>/proposals/<page>
-[CCS-watch] the web server held back a file: not the design's (design.sha256) (its last good copy stays) @ https://<site>/assets/theme.css
+[CCS-watch] the web server held back a file: not a page of the design as ccs-front-bash fills it (it differs at character 4916: …) @ https://<site>/funding-required/index.html
 [CCS-watch] the web server refuses every push: its signed list isn't the one its .pin names
 ```
 
 Between pushes only the heartbeat's timer runs (below). Set it up once, as root:
 
 ```
-apt install zbar-tools qrencode git                                  # the QR codes, read and remade; git, for the proposals' images
+apt install zbar-tools qrencode git                                  # the QR codes, read and remade; git, for the proposals
 install -m 755 contrib/ccs-receive /usr/local/bin/ccs-receive        # from this repository
 install -d -o ccs-data -m 755 /var/lib/ccs-staging
-install -d -m 755 /etc/ccs-gate
+install -d -m 755 /etc/ccs-gate /etc/ccs-gate/design
 install -o ccs-data -m 644 /dev/null /var/log/ccs-gate.log          # optional: the refusals, as a file
-install -d -o ccs-data -m 755 /var/lib/ccs-gate                      # one push at a time, the last push (the heartbeat), when it last alerted
+install -d -o ccs-data -m 755 /var/lib/ccs-gate                      # one push at a time, the last push (the heartbeat), when it last alerted, the proposals fetched
 install -m 640 -g ccs-data /dev/null /etc/ccs-gate/alert.conf        # optional: the bot (as ccs-watch's, plain text POST)
 printf 'ALERT_URL=http://<bot>:8086/<path>\nSITE_URL=https://<site>\n' > /etc/ccs-gate/alert.conf
-# the signed list, its pin, signature and key (ccs-front-bash, setup step 5)
-install -m 644 subaddresses.txt subaddresses.txt.pin subaddresses.txt.asc subaddresses.txt.key.asc /etc/ccs-gate/
+# the signed list, its pin, signature and key (ccs-front-bash, setup step 5); its view key file too, if the backend has one
+install -m 644 subaddresses.txt subaddresses.txt.pin subaddresses.txt.asc subaddresses.txt.key.asc subaddresses.txt.viewkey /etc/ccs-gate/
 cat > /etc/ccs-gate/allowed <<'LIST'                                # other addresses allowed on the site, one a line
 888tNkZrPN6JsEgekjMnABU4TBzc2Dt29EPAvkRxbANsAnjyPbb3iQ1YBRk1UXcdRsiKc9dhwMVgN5S9cQUiyoogDavup3H  # the General Fund
 LIST
-# the proposals repository the backend reads (its checkout's origin), and its branch
+# the proposals repository the backend reads (its checkout's origin), and its branch; LINK_HOSTS:
+# other hosts a proposal's link may go to (an older forge its merge requests were on)
 printf 'PROPOSALS_GIT=https://repo.getmonero.org/monero-project/ccs-proposals.git\nPROPOSALS_BRANCH=master\n' > /etc/ccs-gate/proposals.conf
+# the markdown.awk of the ccs-front-bash release the backend runs (its lib/markdown.awk)
+install -m 644 <ccs-front-bash checkout at that tag>/lib/markdown.awk /etc/ccs-gate/markdown.awk
 ```
 
 They are the same files as on the backend (`/etc/ccs-front/`); `gpg --verify` the list there
 first, with the key whose fingerprint ccs-front-hugo's README publishes. `ccs-receive` refuses
 every push while the list isn't the one its `.pin` names.
 
-**The design's files**, from the release zip the backend runs (its sha256 checked, as on the
-backend: ccs-front-bash's setup step 1), every file but the pages:
+**The design**, the release zip the backend runs (its sha256 checked, as on the backend:
+ccs-front-bash's setup step 1): unpacked, and the sums of every file but the pages:
 
 ```
-v=v0.1.13
+v=v0.1.16
 sha256sum ccs-front-hugo-$v.zip                                      # the attested one
-unzip -q ccs-front-hugo-$v.zip -d /tmp/design-$v
-(cd /tmp/design-$v && find . -type f ! -name '*.html' -exec sha256sum {} +) > /etc/ccs-gate/design.sha256
-cp /tmp/design-$v/assets/hidden-classes.txt /etc/ccs-gate/hidden-classes   # the classes it hides text with
+unzip -q ccs-front-hugo-$v.zip -d /etc/ccs-gate/design/$v
+(cd /etc/ccs-gate/design/$v && find . -type f ! -name '*.html' -exec sha256sum {} +) > /etc/ccs-gate/design.sha256
 ```
 
-A new design release: **add** its lines (`>>`) to both files before the backend switches to
-it, so both are allowed while it does; old lines can go once the new design is live. Then the push key's
-`command="rrsync -wo -no-del -munge /var/lib/ccs-data"` becomes `command="/usr/local/bin/ccs-receive"`.
+A new design release: unpack it beside the old one and **add** its lines (`>>`) to
+`design.sha256` before the backend switches to it, so both are allowed while it does; the old
+folder and lines can go once the new design is live. A new ccs-front-bash release whose
+`markdown.awk` changed: install it as a second file (`markdown-<release>.awk`) first, the same
+way. Then the push key's `command="rrsync -wo -no-del -munge /var/lib/ccs-data"` becomes
+`command="/usr/local/bin/ccs-receive"`; empty `/var/lib/ccs-data` first if anything was pushed
+before (the gate trusts what is already live, and nothing can delete it).
 
 A proposal whose text quotes some other address stops its page updating until you add that
 address to `allowed` (the refusal names it): the safe way to fail. On the testnet that was two
 (`utxobr-monero-k8s-operator`, `el00ruobuob-oct-dec-2018`). A new list: install its four files
-the same way. `tests/gate.sh` builds this in containers: a good push goes live; a foreign
-address, in the donation box or anywhere in a page, split by markup, a comment, hidden text, a
-zero-width space, a bidi mark or an entity, %-escaped in a `monero:` link, integrated, behind
-`data:`, or only in the QR code, is held back and the live file kept; so is a page with a
-backslash or wildcard in its name, a `dir` attribute or an `<svg>`, a data: image that isn't a QR
-code, a stylesheet or design file that isn't the design's, a swapped list, a proposal image that
-is another QR code, inverted or not, a `data:` image that isn't exactly qrencode's QR code (another
-size, an extra chunk, a good one with more drawn beside it), a PNG named `.html` or
-`projects.json`, block, square, braille or mosaic characters, a NUL byte, `&shy` without its
-`;`, a `monero:` URL split by tabs or newlines, alt text beside the rest of an address, an address
-split by text the design's classes hide or whole only with one hidden, a
-charset that isn't UTF-8, a refresh to another site, `<font color>`, `bgcolor`, 65 images, a proposal image the
-repository doesn't have (or has at another path, or other bytes), and a new one while the
-repository can't be fetched; two pushes at once go one after the other; the next good
-push goes through; a list that isn't the pinned one refuses everything; no deleting and nothing
-outside the folder, as with rrsync alone.
+the same way. `tests/gate.sh` builds this in containers, with a small design in the release
+zip's shape: a good push goes live; a page changed anywhere the design doesn't fill, an address
+split by markup, an invisible image's alt text, a `<br>`, a class or a zero-width space, padded
+by a no-break space, an entity in an address, another proposal text than the repository's, text
+the design's classes could hide, a `style` attribute, an `<svg>`, a QR code drawn as text, a link
+to another site, a `monero:` link with more than an address, a foreign address in the donation
+box, a QR code of another address or not exactly qrencode's (another size, more drawn beside
+it), a `\u` escape or a key twice in `projects.json`, a page the design doesn't have, a page
+named with a backslash or wildcard, a PNG named `.html` or `projects.json`, a NUL byte, a
+stylesheet or design file that isn't the design's, a swapped list, a proposal image that is
+another QR code, inverted or not, or that the repository doesn't have (or has at another path,
+or other bytes) are held back and the live file kept; ideas titled with "data:", "charset=",
+`▶` or `🟢` go live; the repository down, the last fetch is used; two pushes at once go one
+after the other; the next good push goes through; no design or `markdown.awk`, or a list that
+isn't the pinned one, refuses everything; no deleting and nothing outside the folder, as with
+rrsync alone.
 
-**What it can't see:** a QR code drawn with elements the design's own stylesheet colours
-(inline `<code>`, tag pills); a QR code drawn as text with characters it doesn't refuse (ASCII
-art, other emoji), which phones read badly at a page's line spacing; and a link to another
-site. Checking pages against the design's own pages, outside the regions it fills, would close
-the first.
-ccs-watch (below) and visitors comparing what their wallet shows are what catch those. zbarimg reads images the backend sends, as ccs-data: keep zbar-tools (and the
+**What it can't see:** what only the backend knows, in the shape it has: a total, a count or a
+percentage that is wrong but a number, an idea that is no merge request (its title still
+escaped text, its link still to the forge), one of the wallet's own subaddresses on another
+proposal's page (the money stays in the CCS wallet). ccs-watch (below) and visitors comparing
+what their wallet shows are what catch a web server that lies; the forge's own pages, an idea
+list that lies. zbarimg reads images the backend sends, as ccs-data: keep zbar-tools (and the
 ImageMagick it uses) updated (`unattended-upgrades`).
 
 It can't help if the web server itself is taken over (whoever has it can turn the gate off):
