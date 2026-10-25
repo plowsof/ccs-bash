@@ -19,7 +19,7 @@ cleanup
 # Debian 12, as in the docs (the same pinned image as tests/rrsync.sh)
 docker buildx build -q --load -t "$name" - > /dev/null <<IMG
 FROM debian@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
-RUN apt-get update -q && apt-get install -y -q --no-install-recommends openssh-server openssh-client rsync python3 curl qrencode zbar-tools \
+RUN apt-get update -q && apt-get install -y -q --no-install-recommends openssh-server openssh-client rsync python3 curl qrencode zbar-tools git \
     && rm -rf /var/lib/apt/lists/*
 IMG
 docker network create --subnet "$net.0/24" "$name" > /dev/null
@@ -49,6 +49,15 @@ on web "
     printf '%s  # the General Fund\n' '$fund' > /etc/ccs-gate/allowed
     echo sig > /etc/ccs-gate/subaddresses.txt.asc && echo key > /etc/ccs-gate/subaddresses.txt.key.asc
     printf '%s  ./assets/style.css\n' \$(printf 'body {}\n' | sha256sum | cut -d' ' -f1) > /etc/ccs-gate/design.sha256
+    # the proposals repository, with the images that may go live (the same qrencode makes them
+    # byte for byte on the backend)
+    git init -q -b master /srv/proposals && mkdir -p /srv/proposals/images/p && cd /srv/proposals
+    qrencode -s 4 -o images/p/qr.png 'monero:$(addr 9 B)'
+    qrencode -s 4 --foreground=FFFFFF --background=000000 -o images/p/inv.png 'monero:$(addr 9 B)'
+    qrencode -s 4 -o images/p/ok.png 'monero:$(addr 2)'
+    git add -A && git -c user.name=t -c user.email=t@t commit -q -m images && git config uploadpack.allowFilter true && cd /
+    chown -R ccs-data /srv/proposals   # git reads a local repository only as its owner
+    echo PROPOSALS_GIT=file:///srv/proposals > /etc/ccs-gate/proposals.conf
     chmod 644 /etc/ccs-gate/*
     install -d -m 755 /etc/ssh/authorized_keys
     echo 'from=\"$backend\",command=\"/usr/local/bin/ccs-receive\",restrict $key' > /etc/ssh/authorized_keys/ccs-data
@@ -155,7 +164,12 @@ for attack in \
     "comment|<p>${fake:0:40}<!-- > -->${fake:40}</p>|an address split by a comment with a > in it" \
     "hidden|<p>${fake:0:40}<span hidden>-</span>${fake:40}</p>|an address split by hidden text" \
     "dir|<p><span dir=\"rtl\">x</span></p>|a dir attribute" \
-    "svgtext|<p><svg><text>x</text></svg></p>|an <svg>"; do
+    "svgtext|<p><svg><text>x</text></svg></p>|an <svg>" \
+    "block|<pre>"$'\xe2\x96\x88\xe2\x96\x80'"</pre>|block characters, which can draw a QR code" \
+    "blockentity|<pre>&#x2588;&#9600;</pre>|block characters as entities" \
+    "squarename|<p>&blacksquare;&squ;</p>|squares as named entities" \
+    "braille|<p>"$'\xe2\xa3\xbf'"</p>|a braille character" \
+    "emoji|<p>"$'\xf0\x9f\x9f\xa5'"</p>|a coloured square emoji"; do
     IFS='|' read -r file html what <<<"$attack"
     v=$((v + 1)); site "$v" "$good"
     put "proposals/$file.html" <<<"$html"
@@ -181,6 +195,19 @@ v=$((v + 1)); site "$v" "$good"; docker exec "$name-backend" sh -c "mkdir -p /ou
 held "$v" images/p/inv.png "a proposal image that is an inverted QR code of another address"
 v=$((v + 1)); site "$v" "$good"; docker exec "$name-backend" sh -c "mkdir -p /out/images/p && qrencode -s 4 -o /out/images/p/ok.png 'monero:$good'"
 if push > /dev/null && [[ $(live) == "v$v" ]] && on web 'test -s /var/lib/ccs-data/images/p/ok.png'; then ok "a proposal image with the wallet's QR code goes live"; else fail "a good proposal image"; fi
+# an image the proposals repository doesn't have, at that path or at all: half a QR code, say
+v=$((v + 1)); site "$v" "$good"; docker exec "$name-backend" sh -c "mkdir -p /out/images/p && qrencode -s 4 -o /out/images/p/half.png 'monero:$good'"
+held "$v" images/p/half.png "a proposal image the proposals repository doesn't have"
+v=$((v + 1)); site "$v" "$good"; docker exec "$name-backend" sh -c "mkdir -p /out/images/q && qrencode -s 4 -o /out/images/q/ok.png 'monero:$good'"
+held "$v" images/q/ok.png "a proposal image the repository has, but at another path"
+on backend 'rm -rf /out/images/q'
+v=$((v + 1)); site "$v" "$good"; docker exec "$name-backend" sh -c "mkdir -p /out/images/p && qrencode -s 5 -o /out/images/p/ok.png 'monero:$good'"
+rc=0; push > /dev/null || rc=$?
+if ((rc)) && [[ $(live) == "v$v" ]] && on web 'cmp -s /var/lib/ccs-data/images/p/ok.png /srv/proposals/images/p/ok.png'; then ok "held back: a proposal image changed from the repository's (its last good copy stays)"; else fail "a changed proposal image"; fi
+on web "sed -i 's#=.*#=file:///nowhere#' /etc/ccs-gate/proposals.conf"
+v=$((v + 1)); site "$v" "$good"; docker exec "$name-backend" sh -c "mkdir -p /out/images/p && qrencode -s 4 -o /out/images/p/ok.png 'monero:$good' && cp /out/images/p/ok.png /out/images/p/new.png"
+held "$v" images/p/new.png "a new proposal image while the repository can't be read"
+on web "sed -i 's#=.*#=file:///srv/proposals#' /etc/ccs-gate/proposals.conf"
 on backend 'rm -rf /out/images'
 # two pushes at once: the second waits for the first (one staging folder, one at a time)
 v=$((v + 1)); site "$v" "$good"
