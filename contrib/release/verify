@@ -111,7 +111,9 @@ verify() {
     else
         echo "Verified: '${current_manifest}'"
         echo ""
+        return 0
     fi
+    return 1
 }
 
 if (( $# )); then names=( "$@" ); else
@@ -176,9 +178,19 @@ for name in "${names[@]}"; do
             echo "Using $SIGNER's manifest as the base to compare against"
             compare_all="$OUTSIGDIR_BASE/$SIGNER/all.SHA256SUMS"
         fi
+        # as for one release: only signers who agree count, each key once, TRUSTED_KEYS' only
+        n=0 counted=' '
         for current_manifest in "${all_all[@]}"; do
-            verify "$compare_all" "$current_manifest"
+            verify "$compare_all" "$current_manifest" || continue
+            key=$(signed "$current_manifest")
+            if ! counts "$key"; then echo "Not counted: '$current_manifest' (key $key is not in TRUSTED_KEYS)"; continue; fi
+            if [[ $counted == *" $key "* ]]; then echo "Not counted again: '$current_manifest' (key $key already counted)"; continue; fi
+            counted+="$key "
+            n=$((n + 1))
         done
+        echo "$name: ${n} signer(s) agree"
+        if (( n < min_signers )); then echo "ERR: $name: $n signer(s) agree, $min_signers needed (--min-signers)"; failure=1; fi
+        echo ""
         checked=1
     else
         echo "WARN: No signature directories with all.SHA256SUMS found for '$name'"
