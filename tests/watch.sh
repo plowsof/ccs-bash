@@ -109,8 +109,8 @@ for f in assets/theme.css dark/assets/theme.css assets/general-fund-qr.png asset
     cp "$tmp/remote/$f" "$tmp/good" && cp --remove-destination "$tmp/changed" "$tmp/remote/$f"
     watch || true; watch || true
     # (fetched under /, /dark/ or /light/ at random, but theme.css: each prefix has its own)
-    strip=cat; [[ $f == *theme.css ]] || strip="sed -E s#/(dark|light)/#/#"
-    if [[ $(alerts) == 1 ]] && $strip "$tmp/bot.txt" | grep -qF "the file differs from what was pushed (a page's stylesheet, font or image) @ http://127.0.0.1:$web/$f"; then
+    strip() { if [[ $f == *theme.css ]]; then cat "$@"; else sed -E 's#/(dark|light)/#/#' "$@"; fi; }
+    if [[ $(alerts) == 1 ]] && strip "$tmp/bot.txt" | grep -qF "the file differs from what was pushed (a page's stylesheet, font or image) @ http://127.0.0.1:$web/$f"; then
         ok "a file a page uses changed: $f"
     else
         cat "$tmp/log" "$tmp/bot.txt"; fail "a changed $f"
