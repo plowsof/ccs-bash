@@ -1,6 +1,6 @@
-# The mainnet CCS wallet's subaddresses
+# CCS2: the mainnet CCS wallet's subaddresses
 
-The first 15,000 subaddresses of the CCS wallet (CCS2), made with ccs-front-bash's
+The first 15,000 subaddresses of the CCS2 wallet (main address `41hzbgqgkrYi…`, line 0), made with ccs-front-bash's
 `tools/make-subaddresses.sh` from its public address and view key (luigi1111,
 [meta #935](https://github.com/monero-project/meta/issues/935#issuecomment-1867257410)): anyone can
 make the same file and compare its sha256 (`663c054c5d3ae96390302e1dee8bf0b823347087c64e79f1a4513b4114283d60`).
