@@ -19,18 +19,27 @@ source "$CCS_LIB/wallet.sh"
 source "$CCS_LIB/images.sh"
 
 # New proposals: remember their merged MR, and when funding started if already fr.
-# GitLab down: tried again next run.
+# GitLab down: tried again next run, and only once this run (a fresh install has hundreds of new
+# proposals, and each lookup would wait for curl's timeout).
 record_new_proposals() {
-    local file layout url
+    local file layout url waiting=0
     while IFS=$'\t' read -r file layout; do
+        if ((waiting)); then
+            waiting=$((waiting + 1))
+            continue
+        fi
         if ! url=$(merged_mr_url "$file"); then
             log "warning: GitLab lookup failed for new proposal $file, retrying next run"
+            waiting=1
             continue
         fi
         state_update --arg f "$file" --arg u "$url" --arg fr "$([[ $layout == fr ]] && now_utc)" \
             '.[$f] = {gitlab_url: (if $u == "" then null else $u end), funding_required_date: (if $fr == "" then null else $fr end)}'
         log "new proposal $file ${url:-(no merged MR found)}"
     done < <(jq -r --slurpfile state "$WORK/state.json" '.[] | select($state[0][.file] == null) | [.file, .layout] | @tsv' "$WORK/props.json")
+    if ((waiting > 1)); then
+        log "warning: and $((waiting - 1)) more new proposals, not looked up this run"
+    fi
 }
 
 # GitLab down: keep the last run's Ideas.
