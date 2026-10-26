@@ -56,6 +56,9 @@ and is "the original". Nothing here runs while the CCS does.
 - **The state's backup**: `proposals.csv`, the one file that can't be made again, goes to another
   machine whenever it changes, to an account that can only add copies (every version kept, none
   overwritten or deleted, even by a taken-over backend): [setup](setup.md#backing-up-the-state).
+  `deposits.csv`, the wallet's deposits 30 blocks deep, is a cache (a run makes it again from the
+  wallet), but goes there too, as one copy that is only replaced by one with every deposit it has:
+  a restored wallet that knows less is caught against it, never shown as lower totals.
 - **Both from pinned images:** ccs-bash and ccs-front-bash each run in their own
   [StageX](https://stagex.tools) image ([the pinned image](image.md)): source-built parts
   signed by two or more StageX maintainers, the same image ID from the same commit anywhere.
