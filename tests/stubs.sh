@@ -33,6 +33,7 @@ rpc() {
 
 gitlab_get() {
     local iid
+    echo "$1" >> "$TEST_TMP/gitlab-calls"   # what was asked for (the ideas' cache is checked by it)
     case $1 in
         merge_requests\?state=opened*) cat "$FIXTURES/gitlab/opened.json" ;;
         merge_requests\?state=merged*) cat "$FIXTURES/gitlab/merged.json" ;;
