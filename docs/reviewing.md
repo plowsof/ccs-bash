@@ -165,7 +165,7 @@ key; its `.pin` (sha256 and key) is what each machine trusts, installed by hand 
 | 8. Every QR code is of a listed address | `contrib/ccs-receive` `qrdata` (`pixels_py`) | each `data:` image is, pixel for pixel, `qrencode -s 10` of the `monero:` address zbarimg reads in it, and that address goes through step 7 | held back |
 | 9. Addresses only where the design puts them | `contrib/ccs-receive` `pages` (`pages_py`, the `address` and `qr` slots) | a page is the design's, filled: an address can only be in the donation box's slots, each one address | held back |
 | 10. What is live is what was pushed | `contrib/ccs-watch`, the page comparison (`differs`) | the live donation pages (and others at random) byte for byte; a live address not on the list is named in the alert | IRC told |
-| 11. The visitor | the Verify page (`parts/verify.html`, filled by `check_addresses`) | the wallet's address and view key, and where they were published: a view-only copy of the wallet says whether an address is its own (`get_address_index`); the list itself isn't published | the visitor doesn't pay |
+| 11. The visitor | the Verify page (`parts/verify.html`, filled by `check_addresses`) | the wallet's address and view key, and where they were published: a view-only copy of the wallet says whether an address is its own (`get_address_index`) | the visitor doesn't pay |
 
 Function names, not line numbers, so this stays right as the code moves. Steps 3–5 stop a wrong
 address on the backend (whatever changes ccs-bash's JSON); 6–9 on the web
