@@ -129,33 +129,55 @@ idea_file_reads() {
 # Print the "Ideas" list for ccs-front: open MRs adding a proposal that is not merged yet, and
 # whose file reads as a proposal, with their 👍/👎 counts (null if they couldn't be read: the
 # idea still shows).
+# Anyone can open MRs, as many as they like: only the IDEAS_MAX (100) most recently updated are
+# looked at, and what an MR at a commit adds, and whether its file reads, is kept in IDEAS_CACHE
+# ("iid<TAB>commit<TAB>file<TAB>0 reads|1 doesn't|- no proposal", when set: ccs-back.sh's main sets
+# it), so each is fetched once, not every run. Unset (the tests): everything is fetched.
 ideas() {
-    local mrs iid file sha why rc keep=() votes='{}' v
+    local mrs iid file sha why rc keep=() votes='{}' v max=${IDEAS_MAX:-100} cached='' fresh='' hit
     mrs=$(gitlab_mrs opened) || return 1
-    while read -r iid; do
-        # an unreadable MR is left out, not the whole list
-        if ! file=$(mr_proposal_file "$iid"); then
-            log "warning: could not read MR !$iid, leaving it out of the ideas this run"
-            continue
-        fi
-        if [[ -n $file && ! -e $PROPOSALS_DIR/$file ]]; then
-            # its file must read as a proposal, as the site would read it: not just any .md
-            sha=$(jq -r --argjson i "$iid" '.[] | select(.iid == $i) | .sha // empty' <<<"$mrs")
-            rc=0; why=$(idea_file_reads "$file" "$sha") || rc=$?
-            if ((rc == 2)); then
-                log "warning: could not fetch $file of MR !$iid, leaving it out of the ideas this run"
-                continue
-            elif ((rc)); then
-                log "not an idea: MR !$iid's $file doesn't read as a proposal: ${why:-no reason given}"
+    [[ $max =~ ^[0-9]+$ ]] || max=100
+    if (($(jq length <<<"$mrs") > max)); then
+        log "warning: $(jq length <<<"$mrs") open MRs, only the $max most recently updated are looked at for ideas"
+    fi
+    [[ -n ${IDEAS_CACHE:-} && -f $IDEAS_CACHE ]] && cached=$(cat "$IDEAS_CACHE")
+    while IFS=$'\t' read -r iid sha; do
+        hit=''
+        [[ $iid =~ ^[0-9]+$ && $sha =~ ^[0-9A-Za-z._-]{1,64}$ ]] && hit=$(awk -F '\t' -v i="$iid" -v c="$sha" '$1 == i && $2 == c { print; exit }' <<<"$cached")
+        if [[ $hit ]]; then
+            IFS=$'\t' read -r _ _ file rc <<<"$hit"
+            fresh+=$hit$'\n'
+            [[ $file == - ]] && file=''
+        else
+            # an unreadable MR is left out, not the whole list
+            if ! file=$(mr_proposal_file "$iid"); then
+                log "warning: could not read MR !$iid, leaving it out of the ideas this run"
                 continue
             fi
-            keep+=("$iid")
-            if forgejo; then
-                v=$(forgejo_votes "$iid") || { log "warning: could not read the reactions on PR #$iid"; v=null; }
-                votes=$(jq -c --arg i "$iid" --argjson v "$v" '.[$i] = $v' <<<"$votes")
+            rc=-
+            # already in the repository (merged): no idea, and not kept, so it is seen again if not
+            [[ -n $file && -e $PROPOSALS_DIR/$file ]] && continue
+            if [[ -n $file ]]; then
+                # its file must read as a proposal, as the site would read it: not just any .md
+                rc=0; why=$(idea_file_reads "$file" "$sha") || rc=$?
+                if ((rc == 2)); then
+                    log "warning: could not fetch $file of MR !$iid, leaving it out of the ideas this run"
+                    continue
+                elif ((rc)); then
+                    log "not an idea: MR !$iid's $file doesn't read as a proposal: ${why:-no reason given}"
+                fi
             fi
+            [[ $sha =~ ^[0-9A-Za-z._-]{1,64}$ ]] && fresh+=$iid$'\t'$sha$'\t'${file:--}$'\t'$rc$'\n'
         fi
-    done < <(jq -r '.[].iid' <<<"$mrs")
+        [[ -n $file && $rc == 0 && ! -e $PROPOSALS_DIR/$file ]] || continue
+        keep+=("$iid")
+        if forgejo; then
+            v=$(forgejo_votes "$iid") || { log "warning: could not read the reactions on PR #$iid"; v=null; }
+            votes=$(jq -c --arg i "$iid" --argjson v "$v" '.[$i] = $v' <<<"$votes")
+        fi
+    done < <(jq -r --argjson max "$max" '.[:$max][] | [.iid, (.sha // "")] | @tsv' <<<"$mrs")
+    # the open MRs looked at this run only: a closed one's line goes
+    [[ -z ${IDEAS_CACHE:-} ]] || atomic_write "$IDEAS_CACHE" printf '%s' "${fresh:-$'\n'}" || true
 
     # Anyone can open one, so a title or name can't hold a whole address (the web server's gate
     # would hold back every page listing it): a run of 90 or more base58 characters is shortened,
