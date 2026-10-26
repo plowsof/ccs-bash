@@ -1,9 +1,8 @@
 # When something is wrong
 
-For the maintainer, with a shell on each machine. Start from what you see (the symptoms below),
-or from what IRC said ([the alerts](#what-irc-says)). Every run rebuilds the whole site from the
-proposals, the wallet and the design, so most things fix themselves once their cause is gone; the
-manual jobs are at the end.
+Start from what you see (the symptoms below) or what IRC said ([the alerts](#what-irc-says)).
+Every run rebuilds the whole site, so most things fix themselves once their cause is gone; manual
+jobs are at the end.
 
 ## Where everything is
 
@@ -17,19 +16,16 @@ manual jobs are at the end.
 | | the live site, and its settings | `/var/lib/ccs-data/` (live), `/etc/ccs-gate/` (the list, `allowed`, the design, `markdown.awk`, `proposals.conf`) |
 | **backup machine** | the copies of the state | `ls -l /var/lib/ccs-backup/` (`proposals-<time>.csv`, every version; `deposits.csv`, one copy) |
 
-A run is: pull the proposals → ccs-bash (wallet, totals, addresses, ideas → JSON) → back up the
-state → ccs-front-bash (JSON + design → pages) → push to the web server, whose gate checks
-everything → ccs-watch fetches the live pages and compares them. Every 2 minutes, and on each new
-donation. In the log, a run that went well ends with
-`ccs-watch: the N pages on https://… and the M other pages and files, are what was pushed`.
+A run, every 2 minutes and on each donation: pull the proposals → ccs-bash (JSON) → back up the
+state → ccs-front-bash (pages) → push, through the gate → ccs-watch compares the live pages. A good
+run ends with `ccs-watch: the N pages on https://… and the M other pages and files, are what was pushed`.
 
 ## A proposal isn't on the site
 
-1. **Is it in the checkout?** `ls /var/lib/ccs/proposals/<name>.md`. No: it isn't merged on the
-   proposals repository's branch yet, or the pull failed (the forge down: wait).
-2. **Did ccs-bash read it?** `grep '<name>.md' /var/log/ccs-bash.log | tail -n 3`, or ask its parser
-   directly: `awk -f /opt/ccs-bash/lib/frontmatter.awk /var/lib/ccs/proposals/<name>.md` prints one
-   line if it reads, else `skipping <name>.md: <reason>`:
+1. **Is it in the checkout?** `ls /var/lib/ccs/proposals/<name>.md`. No: not merged yet, or the
+   pull failed (the forge down: wait).
+2. **Did ccs-bash read it?** `awk -f /opt/ccs-bash/lib/frontmatter.awk /var/lib/ccs/proposals/<name>.md`
+   prints one line if it reads, else `skipping <name>.md: <reason>` (also in the log):
 
    | Reason | Fix (in the proposals repository: the site follows on the next run) |
    |---|---|
@@ -48,8 +44,8 @@ donation. In the log, a run that went well ends with
 
 ## A proposal's page isn't updating (old text, old totals)
 
-The gate held the page back: the last good copy stays live. On the **web server**,
-`journalctl -t ccs-gate -n 50` names the file and why:
+The gate held it back; its last good copy stays live. On the **web server**,
+`journalctl -t ccs-gate -n 50` says why:
 
 | The gate says | Meaning | Fix |
 |---|---|---|
@@ -61,8 +57,7 @@ The gate held the page back: the last good copy stays live. On the **web server*
 | `not the design's (design.sha256)` | a stylesheet, font or icon that isn't the design release's | install the new design's lines on the web server, or **stop and look** |
 | `not the proposals repository's images/…` | a proposal image the repository doesn't have at that path | it was changed or removed upstream; the next fetch, or **stop and look** |
 
-The push then ends with exit 7 ("held a file back"): the run counts as failed, ccs-watch still
-checks the live pages.
+The push then exits 7: a failed run; ccs-watch still checks the live pages.
 
 ## The totals look stuck, or wrong
 
@@ -88,8 +83,7 @@ rpc get_height; head -n 1 /var/lib/ccs/state/deposits.csv     # the wallet's hei
 | `retired/<name>.csv: not a retired wallet's file`, `a line that isn't a deposit` | a retired wallet's record is damaged: state, not a cache | copy its newest `retired-<name>-*.csv` back from the backup machine (as [restore the state](#restore-the-state)) |
 | a proposal funded through an older wallet shows 0 raised | it was renamed: its retired donations are under the old name | rename it in `retired/*.csv` too ([edit the state](#edit-the-state)) |
 
-A **time-locked** donation counts only once its lock has passed, and isn't shown as pending
-before. A donation counts as **confirmed** at `MIN_CONFIRMATIONS` (10).
+A donation counts at `MIN_CONFIRMATIONS` (10); a **time-locked** one only once its lock has passed.
 
 ## Ideas are missing
 
@@ -100,8 +94,8 @@ before. A donation counts as **confirmed** at `MIN_CONFIRMATIONS` (10).
 | `could not read MR !N` / `could not fetch <file> of MR !N` | that one MR, this run only |
 | `N open MRs, only the 100 most recently updated are looked at` | many open MRs (spam?): `IDEAS_MAX` in `ccs.conf` |
 
-An MR is an idea only if it adds exactly one `.md` at the root, and besides it only images in
-`images/<its name>/`. A title holding a long run of address characters is shortened (`9ZqZqZ…ZqZq`).
+An idea is an MR adding exactly one `.md` at the root (and only images in `images/<its name>/`).
+A title with a long run of address characters is shortened (`9ZqZqZ…ZqZq`).
 
 ## The whole site isn't updating
 
@@ -132,8 +126,8 @@ the lines above it say why.
 
 ## Doing things by hand
 
-On the backend, as root. The loop runs every 2 minutes: **pause it** before changing anything it
-reads, and check one run before letting it go on.
+On the backend, as root. **Pause the loop** before changing anything it reads; check one run
+before resuming.
 
 | Job | How |
 |---|---|
@@ -145,8 +139,8 @@ reads, and check one run before letting it go on.
 
 ### Edit the state
 
-`proposals.csv` maps each proposal to its subaddress: `"file","merge request link",index,"address","funding since (UTC)"`.
-Never change the index or address of a proposal that has been shown: donors pay that address.
+`proposals.csv`: `"file","merge request link",index,"address","funding since (UTC)"`. Never change
+a shown proposal's index or address: donors pay that address.
 
 ```
 systemctl stop ccs-bash
@@ -156,29 +150,26 @@ runuser -u ccs -- nano /var/lib/ccs/state/proposals.csv   # as ccs: the file is 
 systemctl start ccs-bash
 ```
 
-Typical edits: a missing merge request link (column 2, `https://…`), a funding date (column 5,
-`2026-10-25T13:00:00Z`), an old index that belongs to nothing recorded as retired (the
-[handover](handover.md#2-ccs-bash-and-its-state-the-backend), step 2). The next run sends the new
-version to the backup machine.
+Typical: a missing merge request link (column 2), a funding date (column 5, `2026-10-25T13:00:00Z`),
+an old index recorded as retired ([handover](handover.md#2-ccs-bash-and-its-state-the-backend)).
+The next run backs the new version up. `retired/*.csv` (a renamed proposal) is edited the same way.
 
 ### Make deposits.csv again
 
-It is a cache of the wallet's deposits: deleted, the next run makes it again from the wallet (one
-full fetch; the wallet must be caught up, else the run stops until it is).
+A cache: deleted, the next run makes it again from the wallet (which must be caught up).
 
 ```
 runuser -u ccs -- mv /var/lib/ccs/state/deposits.csv /var/lib/ccs/state/deposits.csv.old
 touch /var/lib/ccs-notify/new-tx; tail -f /var/log/ccs-bash.log
 ```
 
-The backup machine keeps one copy that may only grow: after a real shrink (a reorg deeper than 30
-blocks), replace it there by hand, as root (`/var/lib/ccs-backup/deposits.csv`).
+After a real shrink (a reorg deeper than 30 blocks), replace the backup machine's copy by hand, as
+root (`/var/lib/ccs-backup/deposits.csv`): it only takes one that grows.
 
 ### Restore the state
 
-From the backup machine: the newest `proposals-<time>.csv` from before whatever went wrong (a
-taken-over backend could have sent bad ones since: compare with the site's `/projects`). Copy it to
-the backend (`scp`, as you log in to the backup machine), then there:
+The newest `proposals-<time>.csv` on the backup machine from before it went wrong (a taken-over
+backend could have sent bad ones since: compare with `/projects`), copied to the backend, then:
 
 ```
 systemctl stop ccs-bash
@@ -190,18 +181,15 @@ systemctl start ccs-bash
 
 ### Go back to the previous release
 
-The previous images are kept (`docker ps -a --filter name=keep` shows them, with their IDs), the
-previous design is `/opt/ccs-front-hugo/public.old`. Pause the loop; put the previous image ID in
-`ccs-bash-run` or `ccs-front-run` (or swap `public` and `public.old`); one run by hand; resume.
-On the web server the gate allows both designs while their lines are in `design.sha256` and both
-are in `/etc/ccs-gate/design/`.
+Pause the loop; put the previous image ID (`docker ps -a --filter name=keep`) in `ccs-bash-run` or
+`ccs-front-run`, or swap `/opt/ccs-front-hugo/public` and `public.old`; one run by hand; resume.
+The gate allows both designs while both are in `/etc/ccs-gate/design/` and `design.sha256`.
 
 ## Don't
 
-- **Edit files on the web server's live site** (`/var/lib/ccs-data`): the next push replaces them,
-  and ccs-watch alerts on any page that differs. Change the source instead.
-- **Edit `WALLET_ADDRESS`, the signed list, its pin or `list-signers`** except as the handover's
-  step 4 says: they are what everything is checked against.
+- **Edit the live site** (`/var/lib/ccs-data`): the next push replaces it, and ccs-watch alerts.
+- **Edit `WALLET_ADDRESS`, the signed list, its pin or `list-signers`** outside the handover's
+  steps: everything is checked against them.
 - **Run a second update while one runs**: pause the loop first.
 
 ## Other
@@ -212,8 +200,6 @@ are in `/etc/ccs-gate/design/`.
 | `warning: <file> shows images/…, which isn't in the repository`, `is not a PNG, JPEG or GIF`, `is over … bytes` | that image stays a link |
 | `error: <name>: 1 of 2 maintainer signatures` (build) | a StageX pin lacks two trusted signatures. Don't work around it: refresh the [keys](image.md#signatures) if StageX added a maintainer, else wait |
 
-Inside the image there is only bash and the busybox applets in `container/busybox-applets`.
-To look around: `docker run --rm -it --entrypoint bash <image ID>` (with `ccs-bash-run`'s `-v`s).
-
-Another image ID than CI's? Rebuild with `NO_CACHE=1 container/build.sh`. (Builds of `v0.1.0`
-and older could pick up file times from another commit's cache.)
+The image has bash and `container/busybox-applets` only; look around with
+`docker run --rm -it --entrypoint bash <image ID>` (and `ccs-bash-run`'s `-v`s). Another image ID
+than CI's: rebuild with `NO_CACHE=1 container/build.sh`.
