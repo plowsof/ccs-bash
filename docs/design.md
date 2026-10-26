@@ -97,7 +97,7 @@ against it on both machines (the same four files on each: the list, `.asc` its s
 | the offline machine | made from a view-only wallet and signed by a Core Team member's own key (the one the Monero repository publishes); its sha256 published beside the wallet's view key and reproduced by others |
 | backend, `/etc/ccs-front/` | ccs-front-bash checks the list against its pin, then every donation address, and makes the QR codes from them: what ccs-bash's account writes can't change one |
 | web server, `/etc/ccs-gate/` (installed by hand) | the gate checks every address on every pushed page, however written and in every QR code: a taken-over backend can't get a wrong one live |
-| the Verify page (not the list) | visitors check the address their wallet shows in a view-only copy of the CCS wallet, from its published address and view key: the defence left if the web server is taken over |
+| the Verify page | visitors check the address their wallet shows in a view-only copy of the CCS wallet, from its published address and view key: the defence left if the web server is taken over |
 
 So a wrong address has to get past the backend, the web server, ccs-watch and anyone who looks.
 When the wallet nears index 15,000, a longer list is made and signed the same way.
