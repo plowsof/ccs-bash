@@ -281,9 +281,11 @@ printf 'PROPOSALS_GIT=https://repo.getmonero.org/monero-project/ccs-proposals.gi
 install -m 644 <ccs-front-bash checkout at that tag>/lib/markdown.awk /etc/ccs-gate/markdown.awk
 ```
 
-They are the same files as on the backend (`/etc/ccs-front/`); `gpg --verify` the list there
-first, with the key whose fingerprint ccs-front-hugo's README publishes. `ccs-receive` refuses
-every push while the list isn't the one its `.pin` names.
+They are the same files as on the backend (`/etc/ccs-front/`), checked there first with
+ccs-front-bash's `tools/verify-subaddresses.sh` (signed by a Core Team member's key in
+`list-signers`: [the handover](handover.md#4-the-signed-subaddress-list), step 4); here,
+`sha256sum` each of the four must match the backend's. `ccs-receive` refuses every push while the
+list isn't the one its `.pin` names.
 
 **The design**, the release zip the backend runs (its sha256 checked, as on the backend:
 ccs-front-bash's setup step 1): unpacked, and the sums of every file but the pages:
