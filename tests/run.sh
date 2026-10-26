@@ -563,6 +563,13 @@ else
             echo "ok   compare-deposits: ccs-back's deposits are the wallet's: OK; one it lacks, or another amount: NOT OK"
         else cat "$TEST_TMP/cmp.out"; echo "FAIL compare-deposits: differences"; status=1; fi
     else cat "$TEST_TMP/cmp.out"; echo "FAIL compare-deposits: the same deposits"; status=1; fi
+    # a deposits.csv line hiding a command in a field (it runs as root): refused, nothing run
+    bad=$TEST_TMP/deposits-bad.csv
+    { head -n 1 "$dep"; printf '3099901,%064d,1,BASH_VERSINFO[$(touch${IFS}%s)],0\n' 7 "$TEST_TMP/pwned"; } > "$bad"
+    if ! "$cmpd" "$TEST_TMP/ccs-back.tsv" "$bad" > "$TEST_TMP/cmp.out" 2>&1 && [[ ! -e $TEST_TMP/pwned ]] \
+        && grep -q "a line that isn't" "$TEST_TMP/cmp.out"; then
+        echo "ok   compare-deposits: a deposits.csv line that isn't digits and a txid is refused, nothing in it run"
+    else cat "$TEST_TMP/cmp.out"; echo "FAIL compare-deposits: a hostile deposits.csv line"; status=1; fi
 fi
 
 # reactions that can't be read: the idea stays, without counts

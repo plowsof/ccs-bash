@@ -282,10 +282,15 @@ for S in /var/lib/ccs/state/proposals.csv /var/lib/ccs/state/deposits.csv; do
 sent=/var/lib/ccs/backup-sent-${S##*/}; [ "$S" = /var/lib/ccs/state/proposals.csv ] && sent=/var/lib/ccs/backup-sent
 # (deposits.csv: its deposits, not its first line, whose height changes every run)
 sum=$(runuser -u ccs -- sed '/^# final /d' "$S" | sha256sum | cut -c1-64)
-if [ "$sum" != "$(cat "$sent" 2>/dev/null)" ] \
-    && runuser -u ccs -- cat "$S" | timeout -k 5 30 ssh -T -i /root/.ssh/ccs-backup_ed25519 -o BatchMode=yes \
+if [ "$sum" != "$(cat "$sent" 2>/dev/null)" ]; then
+    # a backup that doesn't go through is a failed run: three in a row tell IRC (the backup
+    # machine down, its folder full, a deposits.csv it refuses)
+    if runuser -u ccs -- cat "$S" | timeout -k 5 30 ssh -T -i /root/.ssh/ccs-backup_ed25519 -o BatchMode=yes \
         -o IdentitiesOnly=yes -o ConnectTimeout=15 ccs-backup@<backup machine> >> $L 2>&1; then
-    echo "$sum" > "$sent"
+        echo "$sum" > "$sent"
+    else
+        failed="${failed:+$failed, }the backup (${S##*/})"
+    fi
 fi
 done
 
