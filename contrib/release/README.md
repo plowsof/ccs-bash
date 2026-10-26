@@ -2,7 +2,9 @@
 
 Anyone can rebuild a CCS release and say, with their own GPG key, what came out: the same
 image ID or sha256 from the same tag, on their machine as on everyone else's. The signatures are
-collected in [ccs-sigs](https://github.com/plowsof/ccs-sigs), one folder per release and signer.
+collected in [ccs-sigs](https://github.com/plowsof/ccs-sigs), one folder per set and signer: a
+version of the CCS is the three together (`ccs-bash-v0.2.18+ccs-front-bash-v0.1.17+ccs-front-hugo-v0.1.17`),
+as feather-sigs has one folder per version of Feather.
 (The signed subaddress list isn't attested here: a Core Team member makes and signs it, and
 contributors can regenerate it and confirm its hash; see ccs-front-bash's docs/setup.md, step 5.)
 A release is trustworthy when several people who don't share a machine have attested the same.
@@ -54,11 +56,12 @@ env SIGNER=<fingerprint>=<github username> contrib/release/attest
 ```
 
 By default `build` takes each repository's newest release tag (the set at the top of the handover's
-[releases table](../../docs/handover.md#the-releases)) and says which before it starts, skipping
-any you have attested already in your ccs-sigs checkout (your name as `attest` has it: `SIGNER`'s,
-else gh's login). So after a release of one repository, only that one is built (the design: under
-half a minute) and `attest` signs a set of just it; `verify` counts each release in every set it
-is in. Or name the releases yourself, any of the three, built whether attested or not:
+[releases table](../../docs/handover.md#the-releases)), says which before it starts, and builds
+all three, so that `attest` signs the whole set; after a release of one repository the other two
+are built and signed again in the new set. It builds nothing if your ccs-sigs checkout already
+has your attestation of that set (your name as `attest` has it: `SIGNER`'s, else gh's login).
+`verify` counts each release in every set it is in. Or name the releases yourself, any of the
+three, built whether attested or not:
 
 ```
 contrib/release/build ccs-bash v0.2.8 ccs-front-bash v0.1.11 ccs-front-hugo v0.1.9
