@@ -122,8 +122,10 @@ ccs-front-hugo's release zip, sha256 checked, unpacked on the backend: ccs-front
 
 ## 4. The signed subaddress list
 
-Every donation address shown must be one of the wallet's first 15,000 subaddresses, a list
-checked by the backend, the web server and visitors. In full: ccs-front-bash's
+Every donation address shown must be one of the live wallet's first 15,000 subaddresses, a list
+checked by the backend and the web server. Each wallet's is in this repository, in
+`subaddresses/<wallet>/` (the mainnet's: [`subaddresses/ccs2/`](../subaddresses/ccs2/)), with its
+signature, key, `.pin`, `list-signers` and view key file. In full: ccs-front-bash's
 [setup](https://github.com/plowsof/ccs-front-bash/blob/master/docs/setup.md), step 5. In short:
 
 1. **Made** by a Core Team member on the offline machine (`tools/make-subaddresses.sh`) from the
@@ -381,8 +383,10 @@ added to the new wallet's each run. Funding-required proposals get new addresses
    ```
    It writes `retired/ccs2.csv`, clears those proposals' index and address in `proposals.csv` (the
    old file kept beside it) and, for the live wallet, moves `deposits.csv` aside.
-3. **The new wallet:** its files and `wallet-rpc.conf` (step 1), `WALLET_ADDRESS` (step 2), its
-   signed list on both machines (step 4); on the backup machine, as root, move the old
+3. **The new wallet:** its files and `wallet-rpc.conf` (step 1), `WALLET_ADDRESS` (step 2), and
+   **its list**: made and signed as in step 4, added as `subaddresses/<new wallet>/`, and installed
+   on both machines in place of the old one's (`/etc/ccs-front/`, `/etc/ccs-gate/`: every address
+   shown from then on is the new wallet's). On the backup machine, as root, move the old
    `deposits.csv` aside (it only takes one with every deposit it has).
 4. **One run by hand**, then `systemctl start ccs-bash`: the same totals, new addresses.
 
