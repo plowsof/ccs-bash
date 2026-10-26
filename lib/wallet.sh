@@ -116,8 +116,10 @@ donation_totals() {
     now=$(date +%s)
     if [[ -n $file && -s $file ]]; then
         read -r _ _ H _ T < "$file" || true
-        [[ $(head -n 1 "$file") =~ ^#\ final\ [0-9]+\ checked\ [0-9]+$ ]] || die "$file: not a deposits file (delete it: the next run makes it again)"
-        kept=$(tail -n +2 "$file")
+        local first=''
+        IFS= read -r first < "$file" || true
+        [[ $first =~ ^#\ final\ [0-9]+\ checked\ [0-9]+$ ]] || die "$file: not a deposits file (delete it: the next run makes it again)"
+        kept=$(awk 'NR > 1' "$file")
         if [[ -n $kept ]] && grep -qvE '^[0-9]+,[0-9a-f]{64},[0-9]+,[0-9]+,[0-9]+$' <<<"$kept"; then
             die "$file: a line that isn't a deposit (delete it: the next run makes it again)"
         fi
@@ -149,13 +151,13 @@ donation_totals() {
     if [[ $full && -n $kept ]]; then
         # everything compared, up to the file's height: the wallet must know every kept deposit
         local wallet missing extra
-        wallet=$(awk -v h="$H" '$1 == "in" && $2 > 0 && $2 <= h { print $2 "," $3 "," $4 "," $5 "," $6 }' <<<"$transfers" | sort)
-        missing=$(comm -23 <(sort <<<"$kept") <(printf '%s\n' "$wallet") | grep -c . || true)
+        wallet=$(awk -v h="$H" '$1 == "in" && $2 > 0 && $2 <= h { print $2 "," $3 "," $4 "," $5 "," $6 }' <<<"$transfers")
+        missing=$(only_in "$kept" "$wallet" | grep -c . || true)
         ((missing == 0)) || die "the wallet lacks $missing of the deposits kept in $file: a reorg deeper than $depth blocks, or a wallet rescanning; check, then delete $file to make it again from the wallet"
-        extra=$(comm -13 <(sort <<<"$kept") <(printf '%s\n' "$wallet"))
+        extra=$(only_in "$wallet" "$kept")
         if [[ -n $extra ]]; then
             log "warning: the wallet knows $(grep -c . <<<"$extra") deposit(s) below height $H that $file lacked: added"
-            kept=$(printf '%s\n%s\n' "$kept" "$extra" | grep . | sort -t, -k1,1n -k2,2 -k3,3n)
+            kept=$(printf '%s\n%s\n' "$kept" "$extra" | sort_deposits)
         fi
     fi
     # deposits now final: into the file, and its height up to final
@@ -163,7 +165,7 @@ donation_totals() {
     [[ $full && -n $kept ]] && new=$(awk -F, -v h="$H" '$1 > h' <<<"$new")   # (those up to H were compared above)
     if [[ -n $file ]]; then
         local all
-        all=$(printf '%s\n%s\n' "$kept" "$new" | grep . | sort -u -t, -k1,1n -k2,2 -k3,3n || true)
+        all=$(printf '%s\n%s\n' "$kept" "$new" | sort_deposits)
         ((final > H)) || final=$H
         atomic_write "$file" printf '# final %s checked %s\n%s' "$final" "$([[ $full ]] && echo "$now" || echo "$T")" "${all:+$all$'\n'}" || return 1
         kept=$all
@@ -193,6 +195,18 @@ donation_totals() {
     for idx in "${!count[@]}"; do
         printf '%s\t%s\t%s\t%s\n' "$idx" "${confirmed[$idx]:-0}" "${pending[$idx]:-0}" "${count[$idx]}"
     done
+}
+
+# only_in A B: the lines of A that B lacks (the image has no comm or sort)
+only_in() {
+    awk 'NR == FNR { b[$0] = 1; next } $0 != "" && !($0 in b)' <(printf '%s\n' "$2") <(printf '%s\n' "$1")
+}
+
+# Deposit lines on stdin, once each, by height, txid, subaddress (jq: the image has no sort;
+# the amounts stay text)
+sort_deposits() {
+    jq -R -r -s 'split("\n") | map(select(. != "")) | unique
+        | sort_by(split(",") | [(.[0] | tonumber), .[1], (.[2] | tonumber)]) | .[]'
 }
 
 # locked UNLOCK_TIME: still time-locked (a block height below 500,000,000, else a unix time), with

@@ -487,8 +487,8 @@ dep() {   # dep NAME [ENV...]: a run on a copy of the state, its own deposits.cs
     env "$@" bash -c 'source "$1/../ccs-back.sh" && source "$1/stubs.sh" && main "$2"' _ "$here" "$d/ccs.conf" 2> "$d/log"
 }
 deposits_ok=1
-if dep a && f=$TEST_TMP/dep-a/state/deposits.csv && [[ $(head -n 1 "$f") =~ ^#\ final\ 3099970\ checked\ [0-9]+$ ]] \
-    && [[ $(tail -n +2 "$f" | cut -d, -f1 | tr '\n' ' ') == "3099901 3099940 3099950 3099960 3099960 3099970 " ]] \
+if dep a && f=$TEST_TMP/dep-a/state/deposits.csv && [[ $(awk "NR == 1" "$f") =~ ^#\ final\ 3099970\ checked\ [0-9]+$ ]] \
+    && [[ $(awk "NR > 1" "$f" | cut -d, -f1 | tr '\n' ' ') == "3099901 3099940 3099950 3099960 3099960 3099970 " ]] \
     && ! grep -q filter_by_height "$TEST_TMP/get_transfers-calls"; then
     first=$(jq -c . "$TEST_TMP/dep-a/out/projects.json")
     if dep a && grep -q '"filter_by_height":true,"min_height":3099970' <(jq -c . "$TEST_TMP/get_transfers-calls") \
@@ -515,17 +515,22 @@ else cat "$TEST_TMP/dep-a/log"; echo "FAIL deposits.csv: a deposit the file lack
 
 # ccs-backup-receive (the backup machine): proposals.csv, every version kept; deposits.csv, one
 # copy, replaced only by one that has all its deposits; anything else refused
-bk=$TEST_TMP/backup; mkdir -p "$bk"
-recv() { CCS_BACKUP_DIR=$bk "$here/../contrib/ccs-backup-receive" > "$TEST_TMP/recv.out" 2>&1; }
-d1=$TEST_TMP/dep-a/state/deposits.csv
-if recv < "$TEST_TMP/state/proposals.csv" && recv < "$d1" && [[ $(find "$bk" -name 'proposals-*.csv' | wc -l) == 1 ]] && cmp -s "$d1" "$bk/deposits.csv" \
-    && { sed '1s/checked [0-9]*/checked 1/' "$d1"; printf '3099999,%064d,1,5,0\n' 7; } | recv && [[ $(wc -l < "$bk/deposits.csv") == $(($(wc -l < "$d1") + 1)) ]] \
-    && ! sed '$d' "$d1" | recv && grep -q 'lacks 2 deposit' "$TEST_TMP/recv.out" \
-    && ! printf '# final 1 checked 1\n1,zz,1,1,0\n' | recv && grep -q 'not a deposits.csv' "$TEST_TMP/recv.out" \
-    && ! printf 'hello\n' | recv && [[ $(find "$bk" -name 'proposals-*.csv' | wc -l) == 1 ]]; then
-    echo "ok   backup: proposals.csv kept as a new copy; deposits.csv one copy, replaced only by one with all its deposits; anything else refused"
+# (a host script: not in the image, which has no du, head, comm or sort; skipped there)
+if ! type -P du head comm sort > /dev/null; then
+    echo "ok   backup receiver: skipped (a host script, its tools are not in the image)"
 else
-    cat "$TEST_TMP/recv.out"; ls -la "$bk"; echo "FAIL backup receiver"; status=1
+    bk=$TEST_TMP/backup; mkdir -p "$bk"
+    recv() { CCS_BACKUP_DIR=$bk "$here/../contrib/ccs-backup-receive" > "$TEST_TMP/recv.out" 2>&1; }
+    d1=$TEST_TMP/dep-a/state/deposits.csv
+    if recv < "$TEST_TMP/state/proposals.csv" && recv < "$d1" && [[ $(find "$bk" -name 'proposals-*.csv' | wc -l) == 1 ]] && cmp -s "$d1" "$bk/deposits.csv" \
+        && { sed '1s/checked [0-9]*/checked 1/' "$d1"; printf '3099999,%064d,1,5,0\n' 7; } | recv && [[ $(wc -l < "$bk/deposits.csv") == $(($(wc -l < "$d1") + 1)) ]] \
+        && ! sed '$d' "$d1" | recv && grep -q 'lacks 2 deposit' "$TEST_TMP/recv.out" \
+        && ! printf '# final 1 checked 1\n1,zz,1,1,0\n' | recv && grep -q 'not a deposits.csv' "$TEST_TMP/recv.out" \
+        && ! printf 'hello\n' | recv && [[ $(find "$bk" -name 'proposals-*.csv' | wc -l) == 1 ]]; then
+        echo "ok   backup: proposals.csv kept as a new copy; deposits.csv one copy, replaced only by one with all its deposits; anything else refused"
+    else
+        cat "$TEST_TMP/recv.out"; ls -la "$bk"; echo "FAIL backup receiver"; status=1
+    fi
 fi
 
 # reactions that can't be read: the idea stays, without counts
