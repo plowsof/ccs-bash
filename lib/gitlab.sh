@@ -87,6 +87,27 @@ merged_mr_url() {
     done < <(jq -r '.[] | [.iid, .web_url] | @tsv' "$WORK/merged.json")
 }
 
+# is_address S: S (base58, 95 or 106 characters) is a Monero address, by its checksum: base58 as
+# Monero has it (blocks of 11 characters, 8 bytes; the last, of 7, 5 bytes), Keccak-256 by openssl
+# (3.2 or later). The first byte must be a network's (mainnet, testnet, stagenet; integrated and
+# sub). 2 if openssl can't (then nothing is known).
+B58=123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz
+is_address() {
+    local s=$1 i j b n c hex='' raw='' sum
+    [[ (${#s} == 95 || ${#s} == 106) && $s =~ ^[45789AB][1-9A-HJ-NP-Za-km-z]+$ ]] || return 1
+    for ((i = 0; i < ${#s}; i += 11)); do
+        b=${s:i:11} n=0
+        for ((j = 0; j < ${#b}; j++)); do c=${B58%%"${b:j:1}"*}; n=$((n * 58 + ${#c})); done
+        # (an 11-character block can be over 2^64, wrapping: such an address's checksum fails anyway)
+        if ((${#b} == 11)); then printf -v b '%016x' "$n"; else printf -v b '%010x' "$n"; fi
+        hex+=$b
+        ((i)) || [[ ${hex:0:2} =~ ^(12|13|18|19|24|2a|35|36|3f)$ ]] || return 1
+    done
+    for ((i = 0; i < ${#hex} - 8; i += 2)); do raw+="\\x${hex:i:2}"; done
+    sum=$(printf '%b' "$raw" | openssl dgst -keccak-256 -r 2> /dev/null) || return 2
+    [[ ${sum:0:8} == "${hex: -8}" ]]
+}
+
 # Forgejo: the 👍 and 👎 reactions on pull request $1 as {"upvotes": n, "downvotes": n}
 # (GitLab has both on each MR already). 50 a page.
 forgejo_votes() {
@@ -180,18 +201,33 @@ ideas() {
     [[ -z ${IDEAS_CACHE:-} ]] || atomic_write "$IDEAS_CACHE" printf '%s' "${fresh:-$'\n'}" || true
 
     # Anyone can open one, so a title or name can't hold a whole address (the web server's gate
-    # would hold back every page listing it, as it does with the same rule): a run of 90 or more
+    # would hold back every page listing it, as it does with the same rules): a run of 90 or more
     # characters each base58 or not ASCII (an address padded or split by invisible characters, or
     # drawn with look-alikes: a mathematical 9, a fullwidth or Cyrillic A; any character that isn't
-    # ASCII, not only letters: jq's Unicode tables miss some), split or not into groups by spaces
-    # or one of . _ : - (an address in groups of four still reads as one; a comma, or ". ", ends
-    # the run, as sentences do), is shortened, as alerts show addresses, to its first 6 and last 4.
-    # Bidi controls go first (they could show an address's halves, a space between them, in
-    # another order than written), and control characters become spaces.
-    jq --argjson keep "$(printf '%s\n' "${keep[@]}" | jq -s .)" --argjson votes "$votes" '
-        def noaddress: gsub("[\u202a-\u202e\u2066-\u2069]"; "") | gsub("[\\x00-\\x1F\\x7F]"; " ")
-            | gsub("(?<r>(?:[1-9A-HJ-NP-Za-km-z]|[^\\x00-\\x7F])(?:(?: +|[._:-])?(?:[1-9A-HJ-NP-Za-km-z]|[^\\x00-\\x7F])){89,})";
-                .r | gsub("[^\\x20-\\x7E]"; "") | "\(.[0:6])…\(.[-4:])");
+    # ASCII, not only letters: jq's Unicode tables miss some) is shortened, as alerts show
+    # addresses, to its first 6 and last 4. So is one split into groups by spaces or one of
+    # . _ : - ("4A9b xZq3 ...") when, read joined, it holds an address (its checksum: is_address);
+    # without openssl's Keccak, every such run (a long title of plain words too). Bidi controls go
+    # first (they could show an address's halves, a space between them, in another order than
+    # written), and control characters become spaces.
+    local prep='def prep: gsub("[\u202a-\u202e\u2066-\u2069]"; "") | gsub("[\\x00-\\x1F\\x7F]"; " ")
+            | gsub("(?<r>(?:[1-9A-HJ-NP-Za-km-z]|[^\\x00-\\x7F]){90,})"; .r | gsub("[^\\x20-\\x7E]"; "") | "\(.[0:6])…\(.[-4:])");
+        def groups: "(?:[1-9A-HJ-NP-Za-km-z]|[^\\x00-\\x7F])(?:(?: +|[._:-])?(?:[1-9A-HJ-NP-Za-km-z]|[^\\x00-\\x7F])){89,}";'
+    local run joined w n shorten=() keccak=1
+    printf '' | openssl dgst -keccak-256 > /dev/null 2>&1 || keccak=''
+    while IFS= read -r run; do
+        if [[ -z $keccak ]]; then shorten+=("$run"); continue; fi
+        joined=$(LC_ALL=C sed 's/[ ._:-]//g; s/[^1-9A-HJ-NP-Za-km-z]//g' <<<"$run")
+        for n in 95 106; do
+            for ((w = 0; w + n <= ${#joined}; w++)); do
+                if is_address "${joined:w:n}"; then shorten+=("$run"); break 2; fi
+            done
+        done
+    done < <(jq -r "$prep"' .[] | (.title, .author.username) | strings | prep | [scan(groups)] | .[]' <<<"$mrs")
+    [[ $keccak ]] || ((${#shorten[@]} == 0)) || log "warning: openssl has no Keccak-256 (3.2 or later): ${#shorten[@]} idea title(s) shortened that may hold no address"
+    jq --argjson keep "$(printf '%s\n' "${keep[@]}" | jq -s .)" --argjson votes "$votes" \
+        --argjson shorten "$(printf '%s\n' "${shorten[@]}" | jq -R . | jq -s 'map(select(. != ""))')" "$prep"'
+        def noaddress: prep | gsub("(?<r>" + groups + ")"; if .r | IN($shorten[]) then .r | gsub("[^\\x20-\\x7E]"; "") | "\(.[0:6])…\(.[-4:])" else .r end);
         map(select(.iid | IN($keep[])) | ($votes[.iid | tostring] // {upvotes, downvotes}) as $v | {
             name: (.title | sub("^\\s+"; "") | sub("\\s+$"; "") | noaddress | @html),
             "gitlab-url": (.web_url | if type == "string" and test("^https://[^\\s\"\\x27<>\\\\]+$") then @html else null end),
