@@ -117,32 +117,36 @@ release in one file; `verify` still reads them.) The line:
 ## Checking a release before using it
 
 As Feather does: after other signers' attestations are in ccs-sigs, fetch the newest
-and check them all (CCS_SIGS_REPO defaults to the submodule):
+and check them all (CCS_SIGS_REPO defaults to the submodule). Only the keys of the attesters you
+trust count, their fingerprints in a file of your own (below); `--any-key` counts every key in
+ccs-sigs instead, to see who agrees with whom:
 
 ```
 git submodule update --remote external/ccs-sigs
-contrib/release/verify
+env TRUSTED_KEYS=/etc/ccs/trusted-signers contrib/release/verify
+contrib/release/verify --any-key
 ```
 
 Or one release: its folder and every older set folder it is in count, and its line must be the
 same for all of them:
 
 ```
-env CCS_SIGS_REPO=external/ccs-sigs contrib/release/verify ccs-bash-v0.2.7
+env CCS_SIGS_REPO=external/ccs-sigs TRUSTED_KEYS=/etc/ccs/trusted-signers contrib/release/verify ccs-bash-v0.2.7
 ```
 
 A release needs **two signers who agree** by default, so that one stolen or careless key isn't
 enough; `--min-signers 1` relaxes it (for a release only one person has attested yet):
 
 ```
-contrib/release/verify --min-signers 1 ccs-bash-v0.2.7
+env TRUSTED_KEYS=/etc/ccs/trusted-signers contrib/release/verify --min-signers 1 ccs-bash-v0.2.7
 ```
 
 Each signature must be by the key of the signer whose folder it is in
 (`builder-keys/<signer>.asc`, one key), and a key counts once however many folders it signed: one
-person can't add up to two. Anyone can open a pull request with a new key, so count only the
-people you trust: their keys' fingerprints in a file of your own, one a line (the others are
-shown, not counted):
+person can't add up to two. Anyone can open a pull request with a new key, so only the people
+you trust count: their keys' fingerprints in a file of your own, one a line (the others are
+shown, not counted). Without `TRUSTED_KEYS`, `verify` counts nothing and says so (`--any-key`
+counts every key):
 
 ```
 env TRUSTED_KEYS=/etc/ccs/trusted-signers contrib/release/verify ccs-bash-v0.2.7
