@@ -51,8 +51,8 @@ not at risk.) So ccs-bash leaves as few ways in as possible:
 - **Nothing to connect to.** No server, open port or database; only outgoing calls, to the
   wallet and GitLab.
 - **Few dependencies.** About ten Debian packages, or the same tools from
-  [StageX](docs/image.md), built from source. All of ccs-bash is about 850 lines, or 640 without
-  comments: about 610 of bash (460 without comments), the proposal parser in awk and the JSON in jq.
+  [StageX](docs/image.md), built from source. All of ccs-bash is about 890 lines, or 660 without
+  comments: about 650 of bash (480 without comments), the proposal parser in awk and the JSON in jq.
 - **Least privilege.** Runs as a `ccs` user that can only write its state and output; refuses
   to run if it can write its own config. The wallet has its own user ([setup](docs/setup.md) steps 1–2).
 - **Checks the wallet.** Its main address is pinned in the root-owned config

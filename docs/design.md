@@ -44,10 +44,12 @@ and is "the original". Nothing here runs while the CCS does.
   after), a donation address that isn't in it stops the run, and the list goes out with the
   site so visitors can check an address themselves.
 - **ccs-watch**, right after each push: fetches the live donation pages, and every file they use
-  (stylesheets, fonts, icons, QR codes, images), over HTTPS as Tor Browser asks for them, through
+  (stylesheets, fonts, icons, QR codes, images), ten of the other pages at random and `/projects`,
+  over HTTPS as Tor Browser asks for them, through
   Tor and a clearnet proxy at random, so the web server can't easily tell it from a visitor, and
   checks they are what was pushed; if one isn't (three whole fetches and the next run
-  agreeing, so a slow or down web server is never mistaken for it), an alert goes to IRC
+  agreeing, so a slow or down web server is never mistaken for it; or a page that keeps answering
+  anything but the page, while the site answers), an alert goes to IRC
   (`#irc-room`). It catches what the gate can't: the web server itself taken over
   ([two machines](two-machines.md#watching-the-web-server-way-a-the-backend-raises-the-alarm)).
 - **The state's backup**: `proposals.csv`, the one file that can't be made again, goes to another

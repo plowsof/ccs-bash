@@ -289,7 +289,7 @@ every push while the list isn't the one its `.pin` names.
 ccs-front-bash's setup step 1): unpacked, and the sums of every file but the pages:
 
 ```
-v=v0.1.16
+v=v0.1.17
 sha256sum ccs-front-hugo-$v.zip                                      # the attested one
 unzip -q ccs-front-hugo-$v.zip -d /etc/ccs-gate/design/$v
 (cd /etc/ccs-gate/design/$v && find . -type f ! -name '*.html' -exec sha256sum {} +) > /etc/ccs-gate/design.sha256
