@@ -87,7 +87,12 @@ send() {
 # Asked for as Tor Browser asks: its user agent and the headers Firefox 128 sends, a page as a
 # page (Sec-Fetch-Dest: document...) and a stylesheet, font or image as one, compressed as it
 # compresses (what this curl can undo of it), through one of the proxies at random: a web server
-# serving the watcher the right pages and visitors others must first tell it apart from them.
+# serving the watcher the right pages and visitors others must first tell it apart from them. A
+# page is asked for as a visitor arrives at it, at random: typed in or from a bookmark
+# (Sec-Fetch-Site: none), a click on the site itself (same-origin: from Funding Required, say) or
+# on another (cross-site: getmonero.org's link); never only one way, or a web server could change
+# the page for the others. No Referer: the site's Referrer-Policy (no-referrer) has a browser send
+# none to it either.
 # Its TLS handshake is still curl's, which a web server can tell from Firefox's.
 read -ra proxies <<<"$WATCH_PROXY"
 ua='Mozilla/5.0 (Windows NT 10.0; rv:128.0) Gecko/20100101 Firefox/128.0'
@@ -101,8 +106,9 @@ fetch() {
         *.css) kind=(-H 'Accept: text/css,*/*;q=0.1' -H 'Sec-Fetch-Dest: style' -H 'Sec-Fetch-Mode: no-cors' -H 'Sec-Fetch-Site: same-origin') ;;
         *.woff2) kind=(-H 'Accept: application/font-woff2;q=1.0,application/font-woff;q=0.9,*/*;q=0.8' -H 'Sec-Fetch-Dest: font' -H 'Sec-Fetch-Mode: cors' -H 'Sec-Fetch-Site: same-origin') ;;
         *.png | *.jpg | *.jpeg | *.gif) kind=(-H 'Accept: image/avif,image/webp,image/png,image/svg+xml,image/*;q=0.8,*/*;q=0.5' -H 'Sec-Fetch-Dest: image' -H 'Sec-Fetch-Mode: no-cors' -H 'Sec-Fetch-Site: same-origin') ;;
-        *) kind=(-H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' -H 'Upgrade-Insecure-Requests: 1'
-            -H 'Sec-Fetch-Dest: document' -H 'Sec-Fetch-Mode: navigate' -H 'Sec-Fetch-Site: none' -H 'Sec-Fetch-User: ?1' -H 'Priority: u=0, i') ;;
+        *) local from=(none same-origin cross-site)
+            kind=(-H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' -H 'Upgrade-Insecure-Requests: 1'
+            -H 'Sec-Fetch-Dest: document' -H 'Sec-Fetch-Mode: navigate' -H "Sec-Fetch-Site: ${from[RANDOM % 3]}" -H 'Sec-Fetch-User: ?1' -H 'Priority: u=0, i') ;;
     esac
     code=$(curl -sS --max-time 60 ${proxy:+--proxy "$proxy"} --compressed -A "$ua" -H 'Accept-Language: en-US,en;q=0.5' \
         -H "Accept-Encoding: $enc" "${kind[@]}" -o "$2" -w '%{http_code}' "$1" 2> /dev/null) || code=000
@@ -150,20 +156,31 @@ while IFS= read -r f; do pages+=("proposals/${f##*/}"); done \
     < <(grep -l 'class="contribute"' "$local_site"/proposals/*.html 2> /dev/null || true)   # the Contribute box: funding-required only
 
 # what they use: every file of the site's own a page links to with href=, src= or srcset= (the
-# pages' links are relative), but not other pages; with the themes, both theme.css files
+# pages' links are relative), but not other pages, and every file those stylesheets use with
+# url() (fonts, icons: a changed font can draw one character as another); with the themes, both
+# theme.css files
+# local_ref DIR REF: REF, a link in the file DIR/..., as a path in the site, if it is one of its files
+local_ref() {
+    local ref=${2%%[?#]*} path
+    [[ $ref && $ref != *:* && $ref != //* && $ref != */ && $ref != *.html ]] || return 0
+    if [[ $ref == /* ]]; then path=${ref#/}; else path=$(realpath -m --relative-to="$local_site" "$local_site/$1/$ref"); fi
+    [[ $path != ../* && -f $local_site/$path ]] && printf '%s\n' "$path"
+    return 0
+}
 uses() {
-    local p d ref path
-    for p in "${pages[@]}"; do
+    local p d ref list
+    list=$(for p in "${pages[@]}"; do
         [[ -f $local_site/$p ]] || continue
         d=${p%/*}; [[ $d == "$p" ]] && d=.
         grep -oE '(href|src|srcset)="[^"]*"' "$local_site/$p" | sed -E 's/^[a-z]+="//; s/"$//' | tr ',' '\n' \
-            | awk '{ print $1 }' | while IFS= read -r ref; do
-                ref=${ref%%[?#]*}
-                [[ $ref && $ref != *:* && $ref != //* && $ref != */ && $ref != *.html ]] || continue
-                if [[ $ref == /* ]]; then path=${ref#/}; else path=$(realpath -m --relative-to="$local_site" "$local_site/$d/$ref"); fi
-                [[ $path != ../* && -f $local_site/$path ]] && printf '%s\n' "$path"
-            done
-    done | sort -u
+            | awk '{ print $1 }' | while IFS= read -r ref; do local_ref "$d" "$ref"; done
+    done | sort -u)
+    { printf '%s\n' "$list"
+      grep '\.css$' <<<"$list" | while IFS= read -r p; do
+          d=${p%/*}; [[ $d == "$p" ]] && d=.
+          grep -oE 'url\([^)]*\)' "$local_site/$p" | sed -E "s/^url\\(['\"]?//; s/['\"]?\\)\$//" \
+              | while IFS= read -r ref; do local_ref "$d" "$ref"; done
+      done; } | grep . | sort -u
 }
 # each check "address<TAB>local file"; a page under one of the theme prefixes at random
 checks=()

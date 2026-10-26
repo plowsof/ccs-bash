@@ -100,7 +100,9 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
 - The push: `rsync --delay-updates` as `ccs` to the web server's key, which runs only the gate.
 - [`contrib/ccs-watch`](../contrib/ccs-watch), as `ccs`: fetches the donation pages (each under `/`,
   `/dark/` or `/light/` at random), every file they use, `WATCH_SAMPLE` other pages at random and
-  `/projects`, asking as Tor Browser does (its headers, `Sec-Fetch-*` by what is fetched), through
+  `/projects`, and the fonts and icons the stylesheets use (`url()`), asking as Tor Browser does
+  (its headers, `Sec-Fetch-*` by what is fetched, a page typed in, clicked on the site or from
+  another at random), through
   a proxy picked at random, and compares each byte for byte with what was pushed. A difference must
   last three fetches over 40 s and two runs before it alerts; a page answering anything else than
   200 with a body, three checks in a row while the rest of the site answers, alerts too; `--run`
