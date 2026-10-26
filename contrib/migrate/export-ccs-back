@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# export-ccs-back DATABASE OUT [CCS_BACK_DIR]: moving from ccs-back (handover step 2), take from its
+# database what ccs-bash needs, into the folder OUT, and nothing else. Only SELECTs: the database is
+# not changed. MYSQL is how to reach it (default "mysql"; for example "mysql -u ccs -p", or
+# "docker exec -i <db container> mysql -u root -p<password>"). Writes:
+#   OUT/proposals.csv          the projects table as ccs-bash's state: "file","link",index,"address",
+#                              "funding since" (ccs-back's funding_required_date when it has one,
+#                              stored as UTC), in ccs-back's order; checked: one row a file, no index
+#                              or address twice, each address 95 characters
+#   OUT/ccs-back-deposits.tsv  the deposits table, for compare-deposits (via check-migration)
+#   OUT/ccs-back-proposals.json, OUT/ccs-back-completed-proposals.json, with CCS_BACK_DIR (ccs-back's
+#                              checkout): what its site showed, for check-migration to compare
+# Then: install OUT/proposals.csv as /var/lib/ccs/state/proposals.csv (owner ccs), run ccs-bash once,
+# and check-migration OUT.
+set -euo pipefail
+export LC_ALL=C
+db=${1:?DATABASE} out=${2:?OUT} back=${3:-}
+read -ra my <<<"${MYSQL:-mysql}"
+q() { "${my[@]}" -B -N -e "$1" "$db"; }
+command -v jq > /dev/null || { echo "no jq (apt install jq)" >&2; exit 1; }
+mkdir -p "$out"
+has_date=$(q "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'projects' AND column_name = 'funding_required_date'")
+if [[ $has_date == 1 ]]; then
+    date="IFNULL(DATE_FORMAT(funding_required_date, '%Y-%m-%dT%H:%i:%sZ'), '')"
+else
+    date="''"   # upstream ccs-back: no funding-required date (proposals funded after the switch get one)
+fi
+q "SELECT filename, IFNULL(gitlab_url, ''), IFNULL(subaddr_index, ''), IFNULL(address, ''), $date FROM projects ORDER BY id" \
+    | jq -rR 'split("\t") | @csv' > "$out/proposals.csv.new"
+q "SELECT tx_id, subaddr_index, amount, block_received FROM deposits" > "$out/ccs-back-deposits.tsv"
+# the state as ccs-bash reads it (lib/proposals.sh's load_state): checked before it is used
+bad=$(jq -rR -s '
+    def csvrow: [("," + .) | match(",(\"(?:[^\"]|\"\")*\"|[^,]*)"; "g") | (.captures[0].string // "")
+                 | if startswith("\"") then .[1:-1] | gsub("\"\""; "\"") else . end];
+    split("\n") | map(select(. != "") | csvrow) as $rows
+    | ($rows | map(select(length != 5 or (.[0] | test("\\.md$") | not)) | "not a row of a proposal: \(.)")),
+      ($rows | map(select(.[2] != "" and (.[2] | test("^[0-9]+$") | not)) | "\(.[0]): index \(.[2]) is not a number")),
+      ($rows | map(select(.[3] != "" and (.[3] | test("^[1-9A-HJ-NP-Za-km-z]{95}$") | not)) | "\(.[0]): address \(.[3]) is not 95 base58 characters")),
+      ($rows | map(select(.[2] != "")) | group_by(.[2]) | map(select(length > 1) | "index \(.[0][2]) twice: \(map(.[0]) | join(", "))")),
+      ($rows | map(select(.[3] != "")) | group_by(.[3]) | map(select(length > 1) | "address twice: \(map(.[0]) | join(", "))")),
+      ($rows | group_by(.[0]) | map(select(length > 1) | "file \(.[0][0]) twice"))
+    | .[]' "$out/proposals.csv.new")
+if [[ -n $bad ]]; then echo "NOT OK: the projects table doesn't make a state ccs-bash can use:" >&2; printf '  %s\n' "$bad" >&2; exit 1; fi
+mv "$out/proposals.csv.new" "$out/proposals.csv"
+if [[ -n $back ]]; then
+    for f in proposals completed-proposals; do
+        [[ -f $back/storage/app/$f.json ]] && cp "$back/storage/app/$f.json" "$out/ccs-back-$f.json"
+    done
+fi
+summary=$(jq -rR -s '
+    def csvrow: [("," + .) | match(",(\"(?:[^\"]|\"\")*\"|[^,]*)"; "g") | (.captures[0].string // "")
+                 | if startswith("\"") then .[1:-1] | gsub("\"\""; "\"") else . end];
+    split("\n") | map(select(. != "") | csvrow) | [length, (map(select(.[2] != "")) | length),
+        (map(.[2] | select(. != "") | tonumber) | max // "none")] | "\(.[0]) proposals, \(.[1]) with a subaddress (highest index \(.[2]))"' "$out/proposals.csv")
+echo "exported to $out:"
+echo "  proposals.csv: $summary, funding dates: $([[ $has_date == 1 ]] && echo yes || echo "none in this ccs-back")"
+echo "  ccs-back-deposits.tsv: $(grep -c . "$out/ccs-back-deposits.tsv" || true) deposits"
+[[ -n $back ]] && echo "  ccs-back's JSON: $(find "$out" -maxdepth 1 -name 'ccs-back-*.json' | wc -l) file(s)"
+echo "next: install -o ccs -g ccs -m 644 $out/proposals.csv /var/lib/ccs/state/proposals.csv; ccs-bash-run; check-migration $out"

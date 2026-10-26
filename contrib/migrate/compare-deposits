@@ -20,10 +20,11 @@ trap 'rm -rf "$tmp"' EXIT
 # "txid,subaddress amount block unlock" lines, sorted, of the deposits both sides consider final
 awk -F '\t' -v h="$H" -v bad="$tmp/bad" '
     NF != 4 || $1 !~ /^[0-9a-f]+$/ || length($1) != 64 || $2 !~ /^[0-9]+$/ || $3 !~ /^[0-9]+$/ || $4 !~ /^[0-9]+$/ { print NR ": " $0 > bad; next }
+    $4 > top { top = $4 }
     $2 == 0 { zero++; next }
     $4 == 0 || $4 > h { later++; next }
     { print $1 "," $2 " " $3 " " $4 " -" }
-    END { print zero + 0 > "'"$tmp/zero"'"; print later + 0 > "'"$tmp/later"'" }' "$old" | sort > "$tmp/old"
+    END { print zero + 0 > "'"$tmp/zero"'"; print later + 0 > "'"$tmp/later"'"; print top + 0 > "'"$tmp/top"'" }' "$old" | sort > "$tmp/old"
 if [[ -s $tmp/bad ]]; then echo "$old: lines that aren't 'tx_id subaddr_index amount block_received' (tab-separated):" >&2; head -n 5 "$tmp/bad" >&2; exit 2; fi
 tail -n +2 "$new" | awk -F, '{ print $2 "," $3 " " $4 " " $1 " " $5 }' | sort > "$tmp/new"
 cut -d' ' -f1 "$tmp/old" | sort -u > "$tmp/ok"; cut -d' ' -f1 "$tmp/new" | sort -u > "$tmp/nk"
@@ -48,7 +49,13 @@ if [[ -s $tmp/differ ]]; then
 fi
 if [[ -s $tmp/only-new ]]; then
     echo; echo "$(wc -l < "$tmp/only-new") deposit(s) only the wallet has (block, txid, subaddress, amount, why likely):"
-    join -t' ' -j1 "$tmp/only-new" "$tmp/new" | awk '{ split($1, k, ","); why = ($4 != "0") ? "time-locked: ccs-back skipped it while locked" : "missed by ccs-back (its scan only looked 50 blocks back from its newest deposit)"; print "  " $3 " " k[1] " " k[2] " " $2 "  " why }' | sort -n | head -n 20
+    # why, by its block against ccs-back's newest recorded deposit (its scan looked from 50 below it)
+    join -t' ' -j1 "$tmp/only-new" "$tmp/new" | awk -v top="$(cat "$tmp/top")" '{ split($1, k, ",")
+        if ($4 != "0") why = "time-locked: ccs-back skipped it while locked"
+        else if ($3 > top) why = "after ccs-back'"'"'s newest recorded deposit (block " top "): it had stopped, or not caught up"
+        else if ($3 < top - 50) why = "below ccs-back'"'"'s scan window (it looked from 50 blocks under its newest deposit)"
+        else { why = "WITHIN ccs-back'"'"'s scan window: it should have seen it, look why"; odd = 1 }
+        print "  " $3 " " k[1] " " k[2] " " $2 "  " why }' | sort -n | head -n 20
 fi
 # the totals per subaddress, both ways (bash: exact)
 declare -A a=() b=()
