@@ -1,13 +1,13 @@
-# ccs-front on another machine
+# Two machines: the backend pushes, the web server only receives
 
-The wallet machine then takes no incoming connections: after each run it pushes the output
-to the web server, which can only receive those files into one folder.
+The backend (the wallet machine) takes no incoming connections: after each run it pushes the
+site to the web server, which can only receive those files into one folder.
 
-| | ccs-bash machine | web server |
+| | backend | web server |
 |---|---|---|
-| Has | the wallet, ccs-bash (A or B), proposals checkout, state file | ccs-front with its own proposals checkout, nginx, `ccs-data` |
-| Setup | [setup](setup.md) steps 1–3 and 7; step 6 with the push below | steps 4 and 5 with `/var/lib/ccs-data` |
-| The image (B) | here only, ID checked here | no Docker needed |
+| Has | the wallet, ccs-bash, ccs-front-bash, the proposals checkout, the state | nginx, `ccs-data` and its gate (way A); or Jekyll (way B, the old ccs-front) |
+| Setup | [the handover](handover.md), steps 1–5 and 9 | below, and the handover's steps 6 and 8 |
+| The images | here only, IDs checked here | no Docker needed |
 
 **Web server:** an account that can only receive, with `rrsync` (rsync 3.2.4+;
 `apt install rsync python3`):
