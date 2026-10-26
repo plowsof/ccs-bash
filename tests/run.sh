@@ -247,13 +247,14 @@ if [[ $got == '1 1 0' ]]; then echo "ok   the forge down: one failed lookup a ru
 # ideas came, left as it was by one whose didn't (the previous ideas kept)
 d=$TEST_TMP/forge && mkdir -p "$d" && cp -r "$TEST_TMP/state" "$d/state" && cp -r "$TEST_TMP/out" "$d/out"
 sed "s|$TEST_TMP/state|$d/state|; s|$TEST_TMP/out|$d/out|" "$TEST_TMP/ccs.conf" > "$d/ccs.conf" && chmod 444 "$d/ccs.conf"
-touch -d '-7 hours' "$d/state/forge-ok"
+touch -d "@$(($(date +%s) - 25200))" "$d/state/forge-ok"   # 7 hours ago (busybox's touch: no "-7 hours")
 # shellcheck disable=SC2016
 bash -c 'source "$1/../ccs-back.sh" && source "$1/stubs.sh" && ideas() { return 1; } && main "$2"' _ "$here" "$d/ccs.conf" 2> "$d/log" || true
-old_ok=$(find "$d/state/forge-ok" -mmin +60)
+touch -d "@$(($(date +%s) - 3600))" "$d/hour-ago"   # (the image has no stat, no find: -nt)
+old_ok=''; [[ $d/hour-ago -nt $d/state/forge-ok ]] && old_ok=1
 # shellcheck disable=SC2016
 bash -c 'source "$1/../ccs-back.sh" && source "$1/stubs.sh" && main "$2"' _ "$here" "$d/ccs.conf" 2>> "$d/log" || true
-if [[ -f $TEST_TMP/state/forge-ok && $old_ok && -z $(find "$d/state/forge-ok" -mmin +60) ]] && grep -q 'keeping the previous list' "$d/log"; then
+if [[ -f $TEST_TMP/state/forge-ok && $old_ok && $d/state/forge-ok -nt $d/hour-ago ]] && grep -q 'keeping the previous list' "$d/log"; then
     echo "ok   forge-ok: touched when the ideas came, not when they didn't"
 else
     cat "$d/log"; echo "FAIL forge-ok"; status=1
