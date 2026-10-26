@@ -24,7 +24,7 @@ new set replaces the row (earlier sets: this file's history, and ccs-sigs).
 
 | Set | ccs-bash | ccs-front-bash | ccs-front-hugo | Running on |
 |---|---|---|---|---|
-| 2026-10-26 | v0.2.20 | v0.1.18 | v0.1.18 | testnet ([ccs.monerodevs.org](https://ccs.monerodevs.org)) |
+| 2026-10-26 | v0.2.21 | v0.1.19 | v0.1.19 | testnet ([ccs.monerodevs.org](https://ccs.monerodevs.org)) |
 
 Each is reproducible, and attested in [ccs-sigs](https://github.com/plowsof/ccs-sigs) by those who
 rebuilt it. Install only what `contrib/release/verify` confirms ([upgrading](#upgrading)).
