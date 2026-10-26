@@ -118,6 +118,14 @@ step 6.
 The users, folders, config and proposals checkout, and `ccs-bash-run`, from its pinned image (check
 its ID against the releases): [setup](setup.md) steps 2 and 3.
 
+**What moves from ccs-back, and what doesn't.** The wallet's two files (step 1) carry every
+donation: the cache has each transfer, and the first run writes `deposits.csv` from it. The
+`projects` table becomes `proposals.csv` (below): which proposal has which subaddress, the one thing
+nothing can make again. The `deposits` table moves nowhere: it is checked instead, deposit by
+deposit, against what the wallet gives ccs-bash (`contrib/migrate/compare-deposits`, below). A
+deposit the wallet doesn't have is the wallet's to fix (its restore height, its lookahead, its sync:
+step 1); the chain and the view key always find it again.
+
 **The state from ccs-back**, so every proposal keeps its subaddress. Back up ccs-back's database
 (`mysqldump`) first. `<ccs_db>` is the database (add `-u`/`-p`, or `docker exec <db> mysql ...`);
 `ORDER BY id` keeps the `/projects` order. Upstream ccs-back (no funding-required date; proposals
@@ -159,6 +167,20 @@ the differences listed under [step 10](#10-the-cutover):
 norm() { jq -S '[.[] | {stage, proposals: [.proposals[] | del(.["donate-qr-code"])] | sort_by(.name)}]' "$1"; }
 diff <(norm ccs-back/storage/app/proposals.json) <(norm /var/lib/ccs/out/proposals.json)
 ```
+
+Then the donations themselves: ccs-back's `deposits` table against the `deposits.csv` the run made
+(it says `OK`, or `NOT OK` with each deposit ccs-back recorded that the wallet lacks, and the
+totals per subaddress both ways):
+
+```
+mysql -B -N -e "SELECT tx_id, subaddr_index, amount, block_received FROM deposits" <ccs_db> > ccs-back-deposits.tsv
+/opt/ccs-bash/contrib/migrate/compare-deposits ccs-back-deposits.tsv /var/lib/ccs/state/deposits.csv
+```
+
+Deposits only the wallet has are expected, and listed with why: time-locked ones (ccs-back skipped
+them while locked, and never looked back), and ones ccs-back's scan missed (it only looked 50 blocks
+back from its newest deposit). Only blocks at least 30 deep are compared; run it again later for
+the newest.
 
 While ccs-back still runs, don't let both hand out addresses: if a funding-required proposal has
 none yet, stop ccs-back's cron first.
