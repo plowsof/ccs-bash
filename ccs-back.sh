@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # ccs-back.sh [CONFIG]: one run. Reads the proposals, GitLab and a view-only wallet, writes
-# the JSON into OUTPUT_DIR (ccs-front's _data). Only STATE_DIR/proposals.csv is kept.
+# the JSON into OUTPUT_DIR (ccs-front's _data). Only STATE_DIR/proposals.csv is kept (and
+# STATE_DIR/ideas.cache, which open MRs were checked: it can be deleted, they are checked again).
 set -euo pipefail
 export LC_ALL=C TZ=UTC
 
@@ -49,6 +50,7 @@ build_site() {
 main() {
     load_config "${1:-/etc/ccs/ccs.conf}"
     mkdir -p "$STATE_DIR" "$OUTPUT_DIR"
+    IDEAS_CACHE=$STATE_DIR/ideas.cache   # lib/gitlab.sh, ideas
 
     exec 9> "$STATE_DIR/lock"
     flock -n 9 || { log "another run is still going, skipping"; exit 0; }
