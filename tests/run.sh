@@ -561,19 +561,24 @@ fi
 # The same deposits: OK. One ccs-back has and the wallet doesn't, or another amount: NOT OK (exit 1).
 # One only the wallet has (time-locked: ccs-back skipped it) is listed with why. Blocks past the
 # file's height, the pool and subaddress 0 aren't compared.
-cmpd=$here/../contrib/migrate/compare-deposits dep=$TEST_TMP/dep-a/state/deposits.csv
-tail -n +2 "$dep" | awk -F, '$5 == 0 { printf "%s\t%s\t%s\t%s\n", $2, $3, $4, $1 }' > "$TEST_TMP/ccs-back.tsv"
-printf '%064d\t1\t5\t0\n%064d\t0\t5\t3099900\n%064d\t1\t5\t3100000\n' 1 2 3 >> "$TEST_TMP/ccs-back.tsv"   # pool, subaddress 0, newer: not compared
-if "$cmpd" "$TEST_TMP/ccs-back.tsv" "$dep" > "$TEST_TMP/cmp.out" && grep -q '^OK' "$TEST_TMP/cmp.out" \
-    && grep -q 'time-locked: ccs-back skipped it while locked' "$TEST_TMP/cmp.out"; then
-    cp "$TEST_TMP/ccs-back.tsv" "$TEST_TMP/ccs-back-more.tsv"
-    printf '%064d\t2\t70000\t3099000\n' 9 >> "$TEST_TMP/ccs-back-more.tsv"
-    sed -i '1s/\t[0-9]*\t/\t1\t/; 1s/\t\([0-9]*\)\t\([0-9]*\)$/\t1\1\t\2/' "$TEST_TMP/ccs-back-more.tsv"
-    if ! "$cmpd" "$TEST_TMP/ccs-back-more.tsv" "$dep" > "$TEST_TMP/cmp.out" && grep -q "NOT OK: 1 deposit(s) ccs-back recorded that the wallet doesn't have" "$TEST_TMP/cmp.out" \
-        && grep -q 'NOT OK: 1 deposit(s) with another amount' "$TEST_TMP/cmp.out"; then
-        echo "ok   compare-deposits: ccs-back's deposits are the wallet's: OK; one it lacks, or another amount: NOT OK"
-    else cat "$TEST_TMP/cmp.out"; echo "FAIL compare-deposits: differences"; status=1; fi
-else cat "$TEST_TMP/cmp.out"; echo "FAIL compare-deposits: the same deposits"; status=1; fi
+# (a host script, like ccs-backup-receive: skipped in the image, which lacks its tools)
+if ! type -P sort comm join head tail > /dev/null; then
+    echo "ok   compare-deposits: skipped (a host script, its tools are not in the image)"
+else
+    cmpd=$here/../contrib/migrate/compare-deposits dep=$TEST_TMP/dep-a/state/deposits.csv
+    tail -n +2 "$dep" | awk -F, '$5 == 0 { printf "%s\t%s\t%s\t%s\n", $2, $3, $4, $1 }' > "$TEST_TMP/ccs-back.tsv"
+    printf '%064d\t1\t5\t0\n%064d\t0\t5\t3099900\n%064d\t1\t5\t3100000\n' 1 2 3 >> "$TEST_TMP/ccs-back.tsv"   # pool, subaddress 0, newer: not compared
+    if "$cmpd" "$TEST_TMP/ccs-back.tsv" "$dep" > "$TEST_TMP/cmp.out" && grep -q '^OK' "$TEST_TMP/cmp.out" \
+        && grep -q 'time-locked: ccs-back skipped it while locked' "$TEST_TMP/cmp.out"; then
+        cp "$TEST_TMP/ccs-back.tsv" "$TEST_TMP/ccs-back-more.tsv"
+        printf '%064d\t2\t70000\t3099000\n' 9 >> "$TEST_TMP/ccs-back-more.tsv"
+        sed -i '1s/\t[0-9]*\t/\t1\t/; 1s/\t\([0-9]*\)\t\([0-9]*\)$/\t1\1\t\2/' "$TEST_TMP/ccs-back-more.tsv"
+        if ! "$cmpd" "$TEST_TMP/ccs-back-more.tsv" "$dep" > "$TEST_TMP/cmp.out" && grep -q "NOT OK: 1 deposit(s) ccs-back recorded that the wallet doesn't have" "$TEST_TMP/cmp.out" \
+            && grep -q 'NOT OK: 1 deposit(s) with another amount' "$TEST_TMP/cmp.out"; then
+            echo "ok   compare-deposits: ccs-back's deposits are the wallet's: OK; one it lacks, or another amount: NOT OK"
+        else cat "$TEST_TMP/cmp.out"; echo "FAIL compare-deposits: differences"; status=1; fi
+    else cat "$TEST_TMP/cmp.out"; echo "FAIL compare-deposits: the same deposits"; status=1; fi
+fi
 
 # reactions that can't be read: the idea stays, without counts
 got=$(
