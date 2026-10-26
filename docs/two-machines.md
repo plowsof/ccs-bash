@@ -329,12 +329,15 @@ address), `WATCH_SAMPLE` (10) other pages at random (any page could get a donati
 page and any address not on the list; so does a page answering anything else three checks in a
 row while the site answers.
 
-So the web server can't serve it the right pages and visitors others, it asks as Tor Browser does
-(Firefox 128's headers, `Sec-Fetch-*` by what is fetched, a page typed in, clicked on the site or
-from another at random), in no fixed order, under `/`, `/dark/` or `/light/` at random
-(`WATCH_THEMES=1`), through a proxy picked at random each fetch. Tor alone isn't enough (its exits
-are public): add a clearnet proxy on another network (`ssh -D 1080 <machine>`, kept up by a
-service), and if you can, a second ccs-watch elsewhere.
+To make it harder for the web server to serve it the right pages and visitors others, it asks
+as Tor Browser does (Firefox 128's headers, `Sec-Fetch-*` by what is fetched, a page typed in,
+clicked on the site or from another at random), in no fixed order, each page and each file the
+pages use under `/`, `/dark/` or `/light/` at random (`WATCH_THEMES=1`), through a proxy picked
+at random each fetch. A web server can still tell it apart: one browser only (a rule for every
+other one is never seen), a page fetched without its stylesheets and fonts, curl's TLS handshake,
+fetches right after each push. Tor alone isn't enough (its exits are public): add a clearnet proxy
+on another network (`ssh -D 1080 <machine>`, kept up by a service), and if you can, a second
+ccs-watch elsewhere.
 
 Alerts go to one URL as a plain-text POST: an IRC bot (CptHook's `simple` module,
 `https://<host>/<endpoint>?channel=%23<channel>`), ntfy, or anything that takes a POST; or wmb's

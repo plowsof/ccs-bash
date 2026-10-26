@@ -182,14 +182,20 @@ uses() {
               | while IFS= read -r ref; do local_ref "$d" "$ref"; done
       done; } | grep . | sort -u
 }
-# each check "address<TAB>local file"; a page under one of the theme prefixes at random
+# each check "address<TAB>local file"; a page, and each file the pages use, under one of the theme
+# prefixes at random: a visitor on /dark/ loads /dark/assets/... (the links are relative), which a
+# web server could serve otherwise than /assets/...
 checks=()
 prefixes=('')
 [[ $WATCH_THEMES ]] && prefixes+=(dark/ light/)
 for p in "${pages[@]}"; do
     [[ -f $local_site/$p ]] && checks+=("${prefixes[RANDOM % ${#prefixes[@]}]}${p%index.html}"$'\t'"$p")
 done
-while IFS= read -r f; do checks+=("$f"$'\t'"$f"); done < <(uses)
+# (theme.css is another file under each: theme-dark.css and theme-light.css, checked below)
+while IFS= read -r f; do
+    if [[ $f == assets/theme.css ]]; then checks+=("$f"$'\t'"$f"); continue; fi
+    checks+=("${prefixes[RANDOM % ${#prefixes[@]}]}$f"$'\t'"$f")
+done < <(uses)
 if [[ $WATCH_THEMES ]]; then
     for t in dark light; do
         [[ -f $local_site/assets/theme-$t.css ]] && checks+=("$t/assets/theme.css"$'\t'"assets/theme-$t.css")
@@ -211,7 +217,10 @@ bad=0 failed=0 answered=()
 for c in "${checks[@]}"; do
     remote=${c%%$'\t'*} p=${c#*$'\t'}
     url=$site_url/$(jq -rn --arg p "$remote" '$p | split("/") | map(@uri) | join("/")')
-    seen=$state/differs-${p//[^A-Za-z0-9._-]/_}   # by the pushed file: the same under any prefix
+    # seen: by the pushed file (differing under any prefix, then any other: the next run alerts),
+    # and by the address, prefix and all (differing only under /dark/: the next time /dark/ is the
+    # prefix picked for it alerts, whatever the others showed in between)
+    seen=$state/differs-${p//[^A-Za-z0-9._-]/_} seen_at=$state/differs-at-${remote//[^A-Za-z0-9._-]/_}
     other=$state/answers-${p//[^A-Za-z0-9._-]/_}
     rc=0; fetch "$url" "$tmp/page" || rc=$?
     if ((rc)); then
@@ -224,17 +233,17 @@ for c in "${checks[@]}"; do
         continue
     fi
     rm -f "$other"
-    if cmp -s "$tmp/page" "$local_site/$p"; then rm -f "$seen"; continue; fi
+    if cmp -s "$tmp/page" "$local_site/$p"; then rm -f "$seen" "$seen_at"; continue; fi
     rc=0; differs "$url" "$local_site/$p" || rc=$?
     case $rc in
-        1) rm -f "$seen"; continue ;;
+        1) rm -f "$seen" "$seen_at"; continue ;;
         2) failed=$((failed + 1)); log "could not fetch $url again"; continue ;;
     esac
     # It differed on three whole fetches over 40s. Only the second run in a row that sees it
     # (about two minutes later) alerts: no single moment, push or glitch, raises an alarm.
     bad=$((bad + 1))
-    if [[ ! -f $seen ]]; then
-        touch "$seen"; log "$url differs from what was pushed; alerting if it still does next run"; continue
+    if [[ ! -f $seen && ! -f $seen_at ]]; then
+        touch "$seen" "$seen_at"; log "$url differs from what was pushed; alerting if it still does next run"; continue
     fi
     # n1oc's style: "<what> @ <link>"; an address shortened to its first 6 and last 4
     what="the page differs from what was pushed"
