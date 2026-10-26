@@ -267,7 +267,8 @@ if [[ $got == 'Pay naïve me: 44AFFq…EP3A!' ]]; then echo "ok   an address in 
 # ... and when drawn with other characters (the web server's gate holds back the same): its halves
 # in bidi embeddings, shown in another order than written; mathematical letters and digits;
 # Cyrillic letters for some of its own; in groups of four, split by spaces or dashes. What is left
-# has no bidi control, and no run of 90 characters each base58 or not ASCII, grouped or not.
+# has no bidi control, and no run of 90 characters each base58 or not ASCII; the groups are
+# shortened (the bidi halves, shown without their controls, read in the wrong order: no address)
 for how in bidi math cyrillic groups dashes; do
     # (jq, not python: the tests also run inside the pinned image, which has none)
     t=$(jq -rn --arg a "$addr" --arg how "$how" '
@@ -283,12 +284,34 @@ for how in bidi math cyrillic groups dashes; do
         WORK=$(mktemp -d) FIXTURES=$fx PROPOSALS_DIR=$here/fixtures/proposals ideas 2> /dev/null | jq -r '.[] | select(."gitlab-url" | endswith("/11")) | .name'
     )
     if [[ $got == Pay* || $got == Moved* ]] && jq -en --arg s "$got" '$s | (test("[\u202a-\u202e\u2066-\u2069]")
-        or test("(?:[1-9A-HJ-NP-Za-km-z]|[^\\x00-\\x7F])(?:(?: +|[._:-])?(?:[1-9A-HJ-NP-Za-km-z]|[^\\x00-\\x7F])){89}")) | not' > /dev/null; then
+        or test("(?:[1-9A-HJ-NP-Za-km-z]|[^\\x00-\\x7F]){90}")) | not' > /dev/null \
+        && [[ $how != groups && $how != dashes || $got == *…* ]]; then
         echo "ok   an address in an idea's title, drawn with other characters ($how), is shortened or broken up"
     else
         echo "FAIL an address in an idea's title ($how): '$got'"; status=1
     fi
 done
+# A long title of plain words, no comma and none of l I O 0, joins like an address in groups but
+# holds none: left as it is with openssl's Keccak (the image's: its checksum says no); without one
+# (openssl before 3.2) shortened, and said so
+long="Keep running the monero seed nodes for the next twenty four months starting in March and then a few more years"
+jq --arg t "$long" 'map(if .iid == 11 then .title = $t else . end)' "$FIXTURES/gitlab/opened.json" > "$fx/gitlab/opened.json"
+got=$(
+    # shellcheck source=tests/stubs.sh
+    source "$here/stubs.sh"
+    WORK=$(mktemp -d) FIXTURES=$fx PROPOSALS_DIR=$here/fixtures/proposals ideas 2> "$fx/ideas.log" | jq -r '.[] | select(."gitlab-url" | endswith("/11")) | .name'
+)
+if printf '' | openssl dgst -keccak-256 > /dev/null 2>&1; then
+    if [[ $got == "$long" ]] && is_address "$addr" && ! is_address "${addr:0:94}B"; then
+        echo "ok   a long title of plain words is left as it is (no address by its checksum); is_address reads one, not one changed"
+    else
+        echo "FAIL a long title of plain words: '$got'"; status=1
+    fi
+elif [[ $got == 'Keep r…ears' ]] && grep -q 'openssl has no Keccak-256' "$fx/ideas.log"; then
+    echo "ok   a long title of plain words, without openssl's Keccak: shortened, and said so"
+else
+    echo "FAIL a long title of plain words, no Keccak: '$got'"; status=1
+fi
 cp "$FIXTURES/gitlab/opened.json" "$fx/gitlab/opened.json"
 # an idea's file over 1 MB isn't kept, nor read: that idea is left out (13 stays)
 awk 'BEGIN { for (i = 0; i < 1048576; i += 64) printf "%63s\n", "" }' >> "$fx/gitlab/raw/sha-11"
