@@ -18,8 +18,11 @@ apt install bash coreutils findutils grep sed diffutils mawk util-linux curl ca-
 | `logrotate` | the log | optional |
 | `rsync`, `openssh-client` | pushing the site to the web server, and the state to the backup machine | |
 
-**B) The container:** Docker with buildx, `git`, optionally `logrotate`, and `rsync` +
-`openssh-client`. Where the image is built, also `gpg` and `jq`. Everything
+**B) The container:** Docker with buildx (on Debian, Docker's own packages: bookworm's `docker.io`
+has no buildx), `git`, optionally `logrotate`, and `rsync` + `openssh-client`. Docker's own image
+store, not its containerd one (a fresh Docker 29's default, where an image ID isn't the attested
+one): `{"features": {"containerd-snapshotter": false}}` in `/etc/docker/daemon.json`, before
+building. Where the image is built, also `gpg` and `jq`. Everything
 ccs-bash runs is inside the image ([The pinned image](image.md)).
 
 Either way: `monero-wallet-rpc` from [getmonero.org](https://www.getmonero.org/downloads/).
