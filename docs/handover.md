@@ -172,11 +172,34 @@ ccs-front-hugo's release zip, sha256 checked, unpacked on the backend: ccs-front
 
 Every donation address shown must be one of the wallet's: a list of its first 15,000
 subaddresses, checked by the backend each run, by the web server's gate on each push, and on the
-site's Verify page by anyone. A **Core Team member** makes it on the offline machine and signs it;
-contributors can make it from the same public address and view key and confirm its sha256.
-ccs-front-bash's [docs/setup.md](https://github.com/plowsof/ccs-front-bash/blob/master/docs/setup.md),
-step 5. Its files go to the backend's `/etc/ccs-front/` here, and to the web server in step 6, by
-hand: never pushed, so a taken-over backend can't swap it.
+site's Verify page by anyone. ccs-front-bash's
+[docs/setup.md](https://github.com/plowsof/ccs-front-bash/blob/master/docs/setup.md), step 5, in
+full; in short:
+
+1. **Made** by a Core Team member on the offline machine (`tools/make-subaddresses.sh`), from the
+   wallet's address and view key (public, meta #935), and checked: line 0 is `WALLET_ADDRESS`,
+   its first lines the subaddresses the wallet has already made.
+2. **Signed with their own key**, the one the Monero repository publishes for them
+   (`utils/gpg_keys/`): binaryFate `81AC591FE9C4B65C5806AFC3F0AF4D462A0BDF92` or luigi1111
+   `8777AB8F778EE89487A2F8E7F4ACA0183641E010`
+   (`SIGNING_KEY=<fingerprint> tools/sign-subaddresses.sh subaddresses.txt`). So the signature
+   says who stands behind the list, against keys Monero already vouches for.
+3. **Published and reproduced:** the signer posts the list's sha256 and their fingerprint on
+   meta #935, beside luigi1111's view key; two contributors make the list themselves from the same
+   address and view key and post the same sha256. The list is the wallet's because anyone gets the
+   same file from public data.
+4. **Checked, then installed** on the backend, root-owned, 644, in `/etc/ccs-front/`: the four
+   files, and `list-signers`, the fingerprints of the keys that may sign it (the two above, as
+   `gpg --show-keys` shows them for the Monero repository's `binaryfate.asc` and `luigi1111.asc`).
+   `tools/verify-subaddresses.sh /etc/ccs-front/subaddresses.txt /etc/ccs-front/list-signers <WALLET_ADDRESS>`
+   must say OK: the list is the one its `.pin` names, signed by a key in `list-signers`, its lines
+   in order, line 0 `WALLET_ADDRESS`; and its sha256 the published one.
+5. The same four files go to the web server in step 6, **by hand**: never pushed, so a taken-over
+   backend can't swap them.
+
+From then on the `.pin` is what both machines trust: ccs-front-bash checks the list against it each
+run, the gate each push (where each address is checked: [reviewing](reviewing.md#where-an-address-is-checked-against-the-signed-list)).
+Changing the pin, or `list-signers`, needs root on that machine.
 
 The view key file beside it, `/etc/ccs-front/subaddresses.txt.viewkey` (the Verify page shows it,
 with the commands to ask a copy of the wallet about an address):
@@ -365,7 +388,8 @@ in these files, root-owned, never in a repository or on a command line.
 | | `MIN_CONFIRMATIONS` | `10` | 2 |
 | the proposals checkout | its remote | `https://repo.getmonero.org/monero-project/ccs-proposals.git` | 2 |
 | `/opt/ccs-front-hugo/public` | the design | the release zip of [the releases](#the-releases), its sha256 checked | 3 |
-| `/etc/ccs-front/` | `subaddresses.txt` and its `.asc`, `.key.asc`, `.pin` | made and signed by a Core Team member | 4 |
+| `/etc/ccs-front/` | `subaddresses.txt` and its `.asc`, `.key.asc`, `.pin` | made by a Core Team member, signed with their own key (binaryFate's or luigi1111's), checked with `tools/verify-subaddresses.sh` | 4 |
+| | `list-signers` | `81AC591FE9C4B65C5806AFC3F0AF4D462A0BDF92  # binaryFate` and `8777AB8F778EE89487A2F8E7F4ACA0183641E010  # luigi1111`, from the Monero repository's `utils/gpg_keys/` | 4 |
 | | `subaddresses.txt.viewkey` | as in step 4 | 4 |
 | `/var/lib/ccs/.ssh/` | `id_ed25519` (the push key), `known_hosts` | the web server's host key, from its `/etc/ssh/ssh_host_ed25519_key.pub` | 6 |
 | `/root/.ssh/` | `ccs-backup_ed25519`, `known_hosts` | the backup machine's host key | 7 |
@@ -384,7 +408,7 @@ in these files, root-owned, never in a repository or on a command line.
 | | `design.sha256` | the design release's files, from its zip (two-machines, "The gate"); `apt install zbar-tools` | 6 |
 | | `design/<release>/` | the design's release zip, unpacked (the same as the backend's); `design.sha256` from it | 6 |
 | | `markdown.awk` | `lib/markdown.awk` of the ccs-front-bash release the backend runs | 6 |
-| | `proposals.conf` | `PROPOSALS_GIT=https://repo.getmonero.org/monero-project/ccs-proposals.git`, `PROPOSALS_BRANCH=master` (and `LINK_HOSTS`, other forges a proposal's merge request link may be on) | 6 |
+| | `proposals.conf` | `PROPOSALS_GIT=https://repo.getmonero.org/monero-project/ccs-proposals.git`, `PROPOSALS_BRANCH=master` (and `LINK_HOSTS`, other repositories a proposal's merge request link may be in, as host/path) | 6 |
 | | `subaddresses.txt.viewkey` | the same as the backend's (the Verify page is then checked word for word) | 6 |
 | | `allowed` | the General Fund, `888tNkZrPN6JsEgekjMnABU4TBzc2Dt29EPAvkRxbANsAnjyPbb3iQ1YBRk1UXcdRsiKc9dhwMVgN5S9cQUiyoogDavup3H`, and any address a proposal's text quotes (the gate's refusal names it) | 6 |
 | | `alert.conf` | `ALERT_URL` (the bot), `SITE_URL=https://ccs.getmonero.org` | 8 |
@@ -406,7 +430,7 @@ them is a new design release.
 **Where the testnet differs** (don't copy these): `testnet=1`, monerod on `28081`, wallet-rpc on
 `18182`; `MIN_CONFIRMATIONS=1`; the proposals on Forgejo
 (`https://git.disroot.org/api/v1/repos/plowsof/ccs-proposals`; the gate's `proposals.conf`:
-`PROPOSALS_GIT=https://git.disroot.org/plowsof/ccs-proposals.git`, `LINK_HOSTS=repo.getmonero.org`,
+`PROPOSALS_GIT=https://git.disroot.org/plowsof/ccs-proposals.git`, `LINK_HOSTS=repo.getmonero.org/monero-project/ccs-proposals`,
 where the older proposals' merge requests are); its own wallet and list; the IRC
 bot on the backend machine itself (the backend's alerts reach it on 127.0.0.1, the web server's
 over HTTPS through that machine's proxy); and a Forgejo Actions runner on the backend, for every
