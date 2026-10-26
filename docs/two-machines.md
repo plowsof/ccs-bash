@@ -44,7 +44,8 @@ add_header Permissions-Policy "accelerometer=(), ambient-light-sensor=(), autopl
 add_header X-XSS-Protection "0" always;
 ```
 
-and the site:
+and the site, in `/etc/nginx/sites-available/ccs`, linked into `sites-enabled/` in place of
+Debian's `default` (also a `default_server`: `nginx -t` refuses both):
 
 ```
 map $uri $ccs_cache {                               # in the http context, e.g. at the top of the file
@@ -229,7 +230,7 @@ The list's files are the backend's (`/etc/ccs-front/`, checked there:
 **The design**, the release zip the backend runs, unpacked, and the sums of every file but the pages:
 
 ```
-v=v0.1.17
+v=v0.1.18                                                            # the handover's releases table
 sha256sum ccs-front-hugo-$v.zip                                      # the attested one
 unzip -q ccs-front-hugo-$v.zip -d /etc/ccs-gate/design/$v
 (cd /etc/ccs-gate/design/$v && find . -type f ! -name '*.html' -exec sha256sum {} +) > /etc/ccs-gate/design.sha256

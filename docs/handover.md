@@ -66,8 +66,9 @@ far, so nothing is rescanned).
    A wallet that can spend: don't use it; make a view-only one.
 
 Without the cache, wallet-rpc rescans from the restore height; without either file, make the
-wallet from the address and view key (`monero-wallet-cli --generate-from-view-key`, a restore
-height before the first donation). Before it scans, raise the subaddress lookahead past the
+wallet from the address and view key (`monero-wallet-cli --generate-from-view-key`, which asks
+for each in turn, or wallet-rpc's `generate_from_keys` with `address`, `viewkey`, `password` and
+`restore_height`), the restore height before the first donation. Before it scans, raise the subaddress lookahead past the
 highest index in `proposals.csv`, or it misses donations beyond a gap of 200:
 `rpc set_subaddress_lookahead '{"password":"<wallet password>","major_idx":1,"minor_idx":20000}'`
 (already scanned: `rpc rescan_blockchain` after).
