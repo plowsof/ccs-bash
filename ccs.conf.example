@@ -26,3 +26,7 @@ OUTPUT_DIR=/var/lib/ccs/out
 
 # Confirmations before a donation is counted. 0 also counts txes in the pool.
 MIN_CONFIRMATIONS=10
+
+# Ideas: at most this many open MRs, the most recently updated, are looked at each run (anyone
+# can open them). Optional, default 100.
+#IDEAS_MAX=100
