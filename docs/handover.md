@@ -378,7 +378,13 @@ over HTTPS through that machine's proxy); and a Forgejo Actions runner on the ba
 repository of its owner on disroot, the testnet proposals' pre-parser among them: anyone opening a
 pull request there starts a job on the wallet's machine (master's script, in an unprivileged
 container with no Docker socket and no route to the wallet's RPC). A risk the testnet takes; the
-CCS's backend runs nothing but the CCS. The testnet also shows the real CCS's totals: a local
+CCS's backend runs nothing but the CCS. **The testnet's machines aren't separate:** the backend
+is a shared host (other people's services open to the internet, more CI runners, some running
+jobs on the host itself, and Coolify building ccs-front-hugo's branches in its Docker), and its root
+has a key that logs in, with sudo, on the web server and the backup machine (other projects' tools
+use it). So on the testnet, root on the backend is root on all three, and the two-machine
+guarantees above ([who can do what](#who-can-do-what)) don't hold there; the web server and the
+backup machine run other services too. The testnet also shows the real CCS's totals: a local
 patch of `lib/wallet.sh` adds each proposal's real raised amount and count, as numbers only
 (`STATE_DIR/historic.tsv`), to what its testnet wallet receives; every address it shows is the
 testnet wallet's. Its alerts go to `#montero-ccs-emojis`.
