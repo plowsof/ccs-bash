@@ -208,25 +208,34 @@ what it is sent; it knows what a page may be. Each push, one at a time, it
    `<!-- ccs:… -->` regions, each region filled with the design's parts and each `{{slot}}` with a
    value of its kind:
    - a number, an amount or a date as ccs-bash writes them;
-   - a name, author, tag or milestone: escaped text (no markup), with no run of 90 base58
-     characters in it, joined by characters that aren't ASCII or not (so not an address, padded
-     or split by a zero-width space);
-   - a link to a proposal: the site's own page, or the proposals' forge (`proposals.conf`'s
-     host, and `LINK_HOSTS`);
-   - a proposal's text: exactly what ccs-front-bash's `markdown.awk`, installed here, makes of its
-     file in the **proposals repository**, which the gate fetches itself each push (its last two
-     commits, so a merge landing between the backend's pull and the push doesn't hold the page
-     back; can't be fetched, the last fetch is used). Reviewed and merged: a backend can't change
-     what a proposal says;
-   - the donation box: an address, its QR code, the Verify link, the design's markup around them.
+   - a name, author or tag: escaped text (no markup), 1000 characters at most, no bidi controls
+     (they can show an address's halves in another order than written), and no run of 90
+     characters an address could be drawn with: base58, or any letter or digit that isn't ASCII
+     (a mathematical or fullwidth `9`, a Cyrillic `А`), joined by characters that aren't ASCII
+     (a zero-width space, a mark) or by nothing. So not an address, padded, split or drawn with
+     look-alikes; ccs-bash shortens an idea's title by the same rule;
+   - a link to a proposal: the site's own page, or a page under the proposals repository itself
+     (`proposals.conf`'s address, host and path, and `LINK_HOSTS`): not another repository on its
+     forge, which anyone can make, and no `..` step, `%` or backslash to leave it by;
+   - a proposal's text, milestones and payouts: exactly what ccs-front-bash's `markdown.awk`,
+     installed here, makes of its file in the **proposals repository**, which the gate fetches
+     itself each push (its last two commits, so a merge landing between the backend's pull and
+     the push doesn't hold the page back; can't be fetched, the last fetch is used). Reviewed and
+     merged: a backend can't change what a proposal says, or what it is paid for;
+   - the donation box: **one address of the signed list** (not the `allowed` file's: the General
+     Fund or an address a proposal quotes is no proposal's), the same in its text and its
+     `monero:` link, its QR code that address's, the Verify link, the design's markup around them.
 
    So nothing else can be on a page: no markup the design doesn't have, no text where it puts
    none, no `<br>` or image or class inside an address, no QR code drawn as text, no link to
-   another site except in a proposal's own reviewed text;
+   another site except in a proposal's own reviewed text. A page the gate couldn't finish checking
+   (out of its 5 minutes, or larger than 8 MB) is held back as one that failed: what isn't known
+   good doesn't go live;
 3. checks **every address** (95 base58 characters, or 106 for an integrated one) in its pages and
    JSON against the wallet's signed list and an `allowed` file, as written (tags and attributes
    included, entities read as a browser reads them; a character that isn't ASCII read both as
-   nothing and as a space), the JSON as JSON (its `\u` escapes read, a key twice both times), and
+   nothing and as a space; in one pass, so a page costs time in proportion to its size, and one
+   not read within 2 minutes is held back), the JSON as JSON (its `\u` escapes read, a key twice both times), and
    **every QR code**: each `data:image/png;base64,` image must be, pixel for pixel, the QR code
    `qrencode -s 10` makes of such an address, as ccs-front-bash makes it (a good QR code with
    something drawn beside it, which zbarimg would read past, is held back). Pages and JSON must
@@ -238,7 +247,8 @@ what it is sent; it knows what a page may be. Each push, one at a time, it
    it is funded, so the backend can't add an image of its own, such as a QR code cut into pieces
    shown side by side, none of which zbarimg reads; any QR code in it of such an address;
    inverted codes too), `projects.json`, or the signed list, its signature and key, the same
-   files as installed here;
+   files as installed here. Each is a plain file where the live site has one: a symlink (which
+   `-munge` makes point nowhere) or a folder in a page's place would take the live page away;
 5. copies staging into the live site, except a file that fails: that one keeps its last good
    copy (a new one stays out), so one bad page doesn't stop the site updating, and the gate never
    rewrites a file. The push then exits 7 (the backend's log shows it, and its ccs-watch still
@@ -249,8 +259,10 @@ what it is sent; it knows what a page may be. Each push, one at a time, it
    `design.sha256`, design release, `markdown.awk` or `proposals.conf`, or no `zbarimg`,
    `qrencode`, `python3` or `git` (it can't check then).
 
-With `/etc/ccs-gate/alert.conf` it also tells IRC itself, once an hour per address or file: the
-one alarm that still sounds when the backend is the one lying.
+With `/etc/ccs-gate/alert.conf` it also tells IRC itself, once an hour per address or file, three
+a push at most, a foreign address before anything else (a backend can't hide one behind files
+it had held back on purpose): the one alarm that still sounds when the backend is the one lying,
+also when it hangs up before the gate is done.
 
 ```
 [CCS-watch] the web server held back a page: donation address 9yQXrj…4Kd2 is not in the signed list (its last good copy stays) @ https://<site>/proposals/<page>
@@ -275,7 +287,9 @@ cat > /etc/ccs-gate/allowed <<'LIST'                                # other addr
 888tNkZrPN6JsEgekjMnABU4TBzc2Dt29EPAvkRxbANsAnjyPbb3iQ1YBRk1UXcdRsiKc9dhwMVgN5S9cQUiyoogDavup3H  # the General Fund
 LIST
 # the proposals repository the backend reads (its checkout's origin), and its branch; LINK_HOSTS:
-# other hosts a proposal's link may go to (an older forge its merge requests were on)
+# other places a proposal's link may go to, as host/path of a repository (an older forge its merge
+# requests were on: repo.getmonero.org/monero-project/ccs-proposals). A host alone allows its
+# every page, anyone's repository there too
 printf 'PROPOSALS_GIT=https://repo.getmonero.org/monero-project/ccs-proposals.git\nPROPOSALS_BRANCH=master\n' > /etc/ccs-gate/proposals.conf
 # the markdown.awk of the ccs-front-bash release the backend runs (its lib/markdown.awk)
 install -m 644 <ccs-front-bash checkout at that tag>/lib/markdown.awk /etc/ccs-gate/markdown.awk
@@ -321,12 +335,19 @@ or other bytes) are held back and the live file kept; ideas titled with "data:",
 `▶` or `🟢` go live; the repository down, the last fetch is used; two pushes at once go one
 after the other; the next good push goes through; no design or `markdown.awk`, or a list that
 isn't the pinned one, refuses everything; no deleting and nothing outside the folder, as with
-rrsync alone.
+rrsync alone. Since the second security review, also held back: an
+address drawn in bidi embeddings or mathematical letters, a donation box with an `allowed`
+address (the General Fund), a milestone the proposal doesn't have, a link to another repository
+on the forge or out of it by `..`, a page too costly to check, a page made a folder; a page check
+that stops holds back every page, and a backend that hangs up mid-check still gets an alert sent.
 
 **What it can't see:** what only the backend knows, in the shape it has: a total, a count or a
 percentage that is wrong but a number, an idea that is no merge request (its title still
-escaped text, its link still to the forge), one of the wallet's own subaddresses on another
-proposal's page (the money stays in the CCS wallet). ccs-watch (below) and visitors comparing
+escaped text, its link still to the proposals repository), one of the wallet's own subaddresses
+on another proposal's page (the money stays in the CCS wallet). Nor, yet, a proposal's name,
+author, dates, goal or stage as its front matter has them: those are ccs-bash's reading of it
+(`frontmatter.awk`), not checked here, so a taken-over backend can rename a proposal, or show a
+completed one with a donation box (a listed address still). ccs-watch (below) and visitors comparing
 what their wallet shows are what catch a web server that lies; the forge's own pages, an idea
 list that lies. zbarimg reads images the backend sends, as ccs-data: keep zbar-tools (and the
 ImageMagick it uses) updated (`unattended-upgrades`).
