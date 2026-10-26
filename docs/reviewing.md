@@ -52,6 +52,8 @@ Pinned container, read-only, no capabilities, `--network host` only to reach wal
   `assign_addresses` labels new ones. `check_known_subaddresses`: donations at a labelled index
   the state doesn't have stop the run (a lost state); at an unlabelled one, which anyone can send
   to from the signed list, they are logged and counted for no proposal.
+- `check_never_lower` (`ccs-back.sh`): a proposal's raised total may not go below what the last
+  run published (`OUTPUT_DIR/projects.json`): the run stops; `STATE_DIR/allow-lower` lets one through.
 - `retired_totals` (`lib/wallet.sh`): the donations to wallets the CCS used before, per proposal
   file, from `STATE_DIR/retired/*.csv` (written once by [`contrib/retire-wallet`](../contrib/retire-wallet),
   which asks that wallet which state addresses are its own, and refuses one still receiving); every
