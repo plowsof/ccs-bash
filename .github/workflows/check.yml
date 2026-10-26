@@ -19,8 +19,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, pinned by commit
-      - name: install qrencode, and zbarimg to read its codes back (tests only)
-        run: sudo apt-get update -q && sudo apt-get install -y -q qrencode zbar-tools
       - name: shellcheck
         run: shellcheck -x ccs-back.sh notify-loop.sh lib/*.sh tests/*.sh container/*.sh contrib/ccs-receive contrib/ccs-watch contrib/ccs-backup-receive contrib/migrate/compare-deposits
       - name: tests (Ubuntu's awk is mawk)
@@ -31,7 +29,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/gawk" && ln -s "$(command -v gawk)" "$RUNNER_TEMP/gawk/awk"
           PATH="$RUNNER_TEMP/gawk:$PATH" tests/run.sh
   image:
-    # The pinned image: StageX images by digest + qrencode built from a sha256-checked source,
+    # The pinned image: StageX images by digest + busybox built from a sha256-checked source,
     # built with --network none, then the tests run inside it, also without network.
     runs-on: ubuntu-24.04
     outputs:
