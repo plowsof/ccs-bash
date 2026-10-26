@@ -10,5 +10,9 @@ destroyed after signing), until a Core Team member signs it with their own key
 ([handover](../../docs/handover.md#4-the-signed-subaddress-list), step 4): then `.asc`, `.key.asc`,
 `.pin` and `list-signers` are replaced, the list itself stays the same.
 
+`wallet.txt` states the wallet's address and view key, **unsigned for now**: for luigi1111 (or
+another Core Team member) to sign with his key from the Monero repository's `utils/gpg_keys/`
+(`gpg --clearsign wallet.txt`, giving `wallet.txt.asc`); the Verify page will then link to it.
+
 Installed on the backend (`/etc/ccs-front/`) and the web server (`/etc/ccs-gate/`) after
 `tools/verify-subaddresses.sh subaddresses.txt list-signers <WALLET_ADDRESS>` says OK.
