@@ -256,15 +256,3 @@ proposal_funds() {
             amount: .[1], raised: .[2], pending: (.[3] | tonumber), count: (.[4] | tonumber), percentage: (.[5] | tonumber)
         }}) | from_entries'
 }
-
-# Print {"<index>": "<base64 png>"} for every address in the state, made fresh each run and
-# never stored, so there is no image to swap.
-qr_codes() {
-    local idx addr
-    mkdir -p "$WORK/qr"
-    jq -r '.[] | select(.address) | [.subaddr_index, .address] | @tsv' "$WORK/state.json" |
-        while IFS=$'\t' read -r idx addr; do
-            qrencode -s 10 -o "$WORK/qr/$idx.png" "monero:$addr"
-            printf '%s\t%s\n' "$idx" "$(base64 -w0 "$WORK/qr/$idx.png")"
-        done | jq -R -s 'split("\n") | map(select(. != "") | split("\t") | {key: .[0], value: .[1]}) | from_entries'
-}

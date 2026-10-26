@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# End-to-end test: runs ccs-back.sh against tests/fixtures with the wallet, GitLab
-# and qrencode replaced by tests/stubs.sh, then compares with tests/expected.
+# End-to-end test: runs ccs-back.sh against tests/fixtures, with the wallet and GitLab
+# replaced by tests/stubs.sh, then compares with tests/expected.
 # UPDATE=1 tests/run.sh rewrites the expected files (check the diff!).
 set -euo pipefail
 here=$(dirname "$(readlink -f "$0")")
@@ -394,21 +394,6 @@ else
     echo "FAIL notify-loop: $spam runs during the flood, $quiet after"; status=1
 fi
 rm -rf "$nl"
-
-# The real qrencode, read back with a real decoder (zbarimg, only needed here): a QR code
-# made for an address must read back as exactly that. CI must not skip this.
-if command -v qrencode > /dev/null && command -v zbarimg > /dev/null; then
-    uri=monero:$(printf '8%094d' 1)
-    if qrencode -s 10 -o "$TEST_TMP/qr.png" "$uri" && [[ $(zbarimg --quiet --raw "$TEST_TMP/qr.png" 2> /dev/null) == "$uri" ]]; then
-        echo "ok   real qrencode + zbarimg round trip"
-    else
-        echo "FAIL real qrencode + zbarimg round trip"; status=1
-    fi
-elif [[ ${CI:-} == true ]]; then
-    echo "FAIL qrencode or zbarimg not installed"; status=1
-else
-    echo "skip real qrencode + zbarimg round trip (not installed)"
-fi
 
 # The same proposals and MRs on Forgejo (git.disroot.org, codeberg.org...): REPOSITORY_URL
 # .../api/v1/repos/<owner>/<repo>, the stubs answer as Forgejo does (pull requests, times with

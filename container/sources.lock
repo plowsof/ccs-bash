@@ -1,6 +1,4 @@
-# sha256 size url... -- source tarballs built here: qrencode (StageX builds its own without
-# PNG support) and busybox (with only the applets in busybox-applets). fetch.sh tries the
-# urls in order and keeps a file only if its sha256 matches.
-# The sums are the ones StageX pins for the same tarballs (packages/user/libqrencode, core/busybox).
-5385bc1b8c2f20f3b91d258bf8ccc8cf62023935df2d2676b5b67049f31a049c 190419 https://github.com/fukuchi/libqrencode/archive/refs/tags/v4.1.1.tar.gz https://codeload.github.com/fukuchi/libqrencode/tar.gz/refs/tags/v4.1.1
+# sha256 size url... -- source tarballs built here: busybox (with only the applets in
+# busybox-applets). fetch.sh tries the urls in order and keeps a file only if its sha256 matches.
+# The sum is the one StageX pins for the same tarball (core/busybox).
 34f9ea6ff8636f2c9241153b9114eefa9e65674a45318ae1ef95bb5f31c53bb2 2695723 https://busybox.net/downloads/busybox-1.38.0.tar.bz2 https://www.busybox.net/downloads/busybox-1.38.0.tar.bz2
