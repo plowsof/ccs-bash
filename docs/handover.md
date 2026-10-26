@@ -250,19 +250,20 @@ if [ "$sum" != "$(cat /var/lib/ccs/backup-sent 2>/dev/null)" ] \
 fi
 
 # ccs-front-bash makes the site; it goes to the web server, which must then serve exactly that.
-# The push exits 7 when the gate held a file back but the rest went live: a failed run, and the
-# live pages are still checked (a web server that lies must not hide behind a held-back page)
-if ccs-front-run >> $L 2>&1; then
-    rc=0
-    timeout -k 5 120 runuser -u ccs -- rsync -a --delay-updates \
-        -e "ssh -p 22 -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15" \
-        /var/lib/ccs/www/site/ ccs-data@<web server>: >> $L 2>&1 || rc=$?
-    [ "$rc" = 7 ] && failed="${failed:+$failed, }the push (the web server held a file back)"
-    [ "$rc" = 0 ] || [ "$rc" = 7 ] || failed="${failed:+$failed, }the push"
-    if [ "$rc" = 0 ] || [ "$rc" = 7 ]; then
-        runuser -u ccs -- $W https://ccs.getmonero.org /var/lib/ccs/www/site >> $L 2>&1
-    fi
-else failed="${failed:+$failed, }ccs-front-bash"; fi
+ccs-front-run >> $L 2>&1 || failed="${failed:+$failed, }ccs-front-bash"
+# Pushed every run, the last good site if none was made: the push is this machine's heartbeat,
+# so the web server's alarm only sounds when this machine can't reach it (its own alerts cover
+# a failed run). The push exits 7 when the gate held a file back but the rest went live: a failed
+# run, and the live pages are still checked (a web server that lies must not hide behind it)
+rc=0
+timeout -k 5 120 runuser -u ccs -- rsync -a --delay-updates \
+    -e "ssh -p 22 -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15" \
+    /var/lib/ccs/www/site/ ccs-data@<web server>: >> $L 2>&1 || rc=$?
+[ "$rc" = 7 ] && failed="${failed:+$failed, }the push (the web server held a file back)"
+[ "$rc" = 0 ] || [ "$rc" = 7 ] || failed="${failed:+$failed, }the push"
+if [ "$rc" = 0 ] || [ "$rc" = 7 ]; then
+    runuser -u ccs -- $W https://ccs.getmonero.org /var/lib/ccs/www/site >> $L 2>&1
+fi
 
 # how the run went: three failed runs in a row alert, so a stopped backend can't go unnoticed
 runuser -u ccs -- $W --run "${failed:-ok}" >> $L 2>&1
