@@ -9,7 +9,8 @@
 **A blazingly fast, memory-safe CCS backend. Written in shell.**
 
 - **Blazingly fast:** a full run takes about 3 seconds, once every 2 minutes.
-- **Memory safe:** it has no memory. Everything is recomputed on each run, except one CSV file.
+- **Memory safe:** it has no memory. Everything is recomputed on each run, except one CSV file
+  (and two caches it can rebuild).
 - **Fearless concurrency:** `flock -n`.
 - **Zero-cost abstractions:** there are no abstractions.
 - **A strong type system:** everything is a string, the money too. That's how the amounts stay exact.
@@ -122,6 +123,12 @@ filename,gitlab_url,subaddr_index,address,funding_required_date
 It maps proposals to subaddresses and can't be recreated, so **back it up**: each new version
 to another machine, which only adds copies ([setup](docs/setup.md#backing-up-the-state)). If it is
 lost or wrong, runs stop rather than hand out new addresses ([troubleshooting](docs/troubleshooting.md)).
+
+Two caches sit beside it, so a run doesn't redo work: `deposits.csv`, the wallet's deposits 30
+blocks deep (each run then asks the wallet only for newer ones; a wallet that knows less stops the
+run, so totals never go down), and `ideas.cache`, what each idea's merge request adds at a commit.
+Deleted, either is made again on the next run. `deposits.csv` is backed up too, one copy that is
+only replaced by one with every deposit it has.
 
 ## Two ways to run it
 
