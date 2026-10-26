@@ -4,21 +4,24 @@
 # into a staging folder, one push at a time; then
 #   - every page must be one of the design's own (the release zips unpacked in design/, installed
 #     here by hand), each region filled with the design's parts and each {{slot}} with a value of
-#     its kind (a number, escaped text that can't hold an address, a link to the proposals'
-#     forge...), and a proposal's text exactly what markdown.awk (ccs-front-bash's, installed here)
-#     makes of its file in the proposals repository (proposals.conf), fetched here: nothing else
-#     can be on a page, whatever a browser would make of it;
+#     its kind (a number, escaped text that can't hold an address, a link into the proposals
+#     repository...), a proposal's text, milestones and payouts exactly what markdown.awk
+#     (ccs-front-bash's, installed here) makes of its file in the proposals repository
+#     (proposals.conf), fetched here, and a donation box one address of the signed list, in its
+#     text, link and QR code: nothing else can be on a page, whatever a browser would make of it.
+#     A page it couldn't check (in time, or at all) is held back like one that failed;
 #   - every Monero address in the pages and JSON must be one of the wallet's (the signed list and
 #     its .pin, installed here by hand) or in the allowed file, and every data: image, pixel for
 #     pixel, the QR code qrencode makes of such an address; the JSON read as JSON;
 #   - every other file it changes must be the design's (design.sha256, from the release zip), a
 #     proposal's image that the proposals repository has at that path (any QR code in it holding
 #     only such addresses), projects.json, or the signed list's own files, the same as the ones
-#     installed here.
+#     installed here; and a plain file where the site has one (no symlink, no folder for a page).
 # The push goes live, except a file that fails: that one keeps its last good copy (a new one stays
-# out), IRC is told (alert.conf), and it exits 7 (the backend's rsync exits 7 too). A list that isn't the pinned one, or no design.sha256,
-# design or markdown.awk, refuses the whole push. Needs bash, awk, grep, rsync (rrsync),
-# coreutils, curl, zbarimg (zbar-tools), qrencode, git, python3 (as rrsync). Root-owned, 755.
+# out), IRC is told (alert.conf), and it exits 7 (the backend's rsync exits 7 too). A list that
+# isn't the pinned one, or no design.sha256, design or markdown.awk, refuses the whole push. Needs
+# bash, awk, grep, rsync (rrsync), coreutils, curl, zbarimg (zbar-tools), qrencode, git, python3
+# (as rrsync). Root-owned, 755.
 set -euo pipefail
 export LC_ALL=C
 staging=/var/lib/ccs-staging live=/var/lib/ccs-data conf=/etc/ccs-gate state=/var/lib/ccs-gate
@@ -27,9 +30,10 @@ staging=/var/lib/ccs-staging live=/var/lib/ccs-data conf=/etc/ccs-gate state=/va
 # it), and to the backend: that last one only if ssh relays it before the rsync client exits.
 # alert KEY MESSAGE: also to IRC (/etc/ccs-gate/alert.conf: ALERT_URL, SITE_URL), at most once an
 # hour per KEY: a taken-over backend retrying every two minutes mustn't flood the channel. Here
-# is where a bad push is seen even when the backend is the one lying.
+# is where a bad push is seen even when the backend is the one lying. Sets sent=1 when it posts.
 alert() {
     local url='' site='' k v stamp=$state/alert-${1//[^A-Za-z0-9._-]/_}
+    sent=''
     [[ -r $conf/alert.conf ]] || return 0
     while IFS='=' read -r k v; do
         case $k in ALERT_URL) url=$v ;; SITE_URL) site=$v ;; esac
@@ -37,6 +41,7 @@ alert() {
     [[ $url ]] || return 0
     if [[ -f $stamp && $(($(date +%s) - $(stat -c %Y "$stamp"))) -lt 3600 ]]; then return 0; fi
     touch "$stamp" 2> /dev/null || true
+    sent=1
     curl -fsS --max-time 10 --data-binary "[${blue}CCS-watch${off}] ${2//@SITE@/${site:-}}" -H 'Content-Type: text/plain' "$url" > /dev/null 2>&1 \
         || say "could not send the alert"
 }
@@ -46,7 +51,9 @@ blue=$'\x0312' red=$'\x0304' off=$'\x03'   # IRC colours, as ccs-watch's
 say() {
     logger -t ccs-gate -- "$*" 2> /dev/null || true
     printf '%s %s\n' "$(date -u '+%F %T')" "$*" 2> /dev/null >> /var/log/ccs-gate.log || true   # 2> first: it also hides a log it can't open
-    printf 'ccs-gate: %s\n' "$*" >&2
+    # stderr is the backend's ssh channel: if the backend hung up, writing to it kills the writer
+    # (SIGPIPE), so a subshell writes it, and the gate goes on to alert
+    (printf 'ccs-gate: %s\n' "$*" >&2) || true
 }
 
 # refuse WHY KEY [WHY_FOR_IRC]: the whole push stays out
@@ -60,51 +67,42 @@ refuse() {
 # "file<TAB>address" lines; "file<TAB>!reason" for what the gate can't accept; "file<TAB>?qr<TAB>
 # base64" for each data: image, for zbarimg (below). An address is a run of 95 (standard) or 106
 # (integrated) base58 characters, tags and attributes included (a monero: link, an alt text),
-# entities read as a browser reads them (&#56; is 8). A character that isn't ASCII, or a control
+# entities read as a browser reads them (&#56; is 8). A byte that isn't ASCII, or a control
 # character, is read twice: dropped (a zero-width space mustn't split an address) and as a space
 # (a no-break space mustn't join one to the word beside it). A page or JSON must start with <, [
 # or {: no image format does, and a browser shows an <img> of any file whose bytes are an image's.
-# No interval expressions ({95}): mawk 1.3.3 has none.
-scan_awk='
-function hexval(h,    i, v) { v = 0; h = tolower(h); for (i = 1; i <= length(h); i++) v = v * 16 + index("0123456789abcdef", substr(h, i, 1)) - 1; return v }
-# a character: printable ASCII as itself, a space as one, anything else \001 (see tokens)
-function chr(n) {
-    if (n > 32 && n < 127) return sprintf("%c", n)
-    return (n == 9 || n == 10 || n == 12 || n == 13 || n == 32) ? " " : "\001"
-}
-function decode(s,    out, e, n) {
-    out = ""
-    while (match(s, /&#[0-9]+;?|&#[xX][0-9A-Fa-f]+;?|&[A-Za-z][A-Za-z0-9]*;/)) {
-        e = substr(s, RSTART, RLENGTH); out = out substr(s, 1, RSTART - 1); s = substr(s, RSTART + RLENGTH)
-        sub(/;$/, "", e)
-        if (e ~ /^&#[xX]/) n = hexval(substr(e, 4))
-        else if (e ~ /^&#/) n = substr(e, 3) + 0
-        else { e = substr(e, 2); n = (e == "amp") ? 38 : (e == "lt") ? 60 : (e == "gt") ? 62 : (e == "quot") ? 34 : (e == "apos") ? 39 : -1 }
-        out = out chr(n)
-    }
-    return out s
-}
-function run(f, s,    t) {
-    while (match(s, /[0-9A-Za-z]+/)) {
-        t = substr(s, RSTART, RLENGTH); s = substr(s, RSTART + RLENGTH)
-        if ((length(t) == 95 || length(t) == 106) && t !~ /[0OIl]/) print f "\t" t
-    }
-}
-# both readings of \001: dropped, and a space
-function tokens(f, s,    d) { d = s; gsub(/\001/, "", d); run(f, d); gsub(/\001/, " ", s); run(f, s) }
-function check(f, d,    a, m) {
-    if (d !~ /^[ \t\n\r]*[<[{]/) print f "\t!not text that starts as a page or JSON does (<, [ or {): a browser would show it as an image"
-    gsub(/[\200-\377]|[\001-\010\013\016-\037\177]/, "\001", d)
-    a = decode(d)
+# Python, read as bytes, in one pass each: time linear in the file (awk's took minutes for 1 MB).
+scan_py='
+import os, re, sys
+MAX = int(os.environ.get("CCS_GATE_MAX", 8 << 20))
+ENT = re.compile(r"&#[0-9]+;?|&#[xX][0-9A-Fa-f]+;?|&[A-Za-z][A-Za-z0-9]*;")
+NAMED = {"amp": 38, "lt": 60, "gt": 62, "quot": 34, "apos": 39}
+QR = re.compile(r"data:image/png;base64,[A-Za-z0-9+/]+=*")
+TOK = re.compile(r"[0-9A-Za-z]+")
+def char(n):   # printable ASCII as itself, a space as one, anything else \x01 (read both ways)
+    if 32 < n < 127: return chr(n)
+    return " " if n in (9, 10, 12, 13, 32) else "\x01"
+def entity(m):
+    e = m.group(0)
+    e = e[:-1] if e.endswith(";") else e
+    if e[:3] in ("&#x", "&#X"): return char(int(e[3:], 16))
+    if e[:2] == "&#": return char(int(e[2:]))
+    return char(NAMED.get(e[1:], -1))
+for f in sys.argv[1:]:
+    if os.path.getsize(f) > MAX:
+        print(f + "\t!over %d MB: not read" % (MAX >> 20)); continue
+    with open(f, "rb") as h: d = h.read().decode("latin-1")
+    out = set()
+    if not re.match(r"[ \t\n\r]*[<\[{]", d):
+        out.add(f + "\t!not text that starts as a page or JSON does (<, [ or {): a browser would show it as an image")
+    d = ENT.sub(entity, re.sub(r"[\x80-\xff\x00-\x08\x0b\x0e-\x1f\x7f]", "\x01", d))
     # each data: image (the QR codes: pages() allows them nowhere else) to zbarimg; not text
-    m = a
-    while (match(m, /data:image\/png;base64,[A-Za-z0-9+\/]+=*/)) { print f "\t?qr\t" substr(m, RSTART + 22, RLENGTH - 22); m = substr(m, RSTART + RLENGTH) }
-    gsub(/data:image\/png;base64,[A-Za-z0-9+\/]+=*/, " ", a)
-    tokens(f, a)
-}
-FNR == 1 && NR > 1 { check(prev, doc); doc = "" }
-{ doc = doc $0 "\n"; prev = FILENAME }
-END { if (NR) check(prev, doc) }'
+    for m in QR.finditer(d): print(f + "\t?qr\t" + m.group(0)[22:])
+    d = QR.sub(" ", d)
+    for t in (d.replace("\x01", ""), d.replace("\x01", " ")):
+        out.update(f + "\t" + w for w in TOK.findall(t) if len(w) in (95, 106) and not re.search("[0OIl]", w))
+    for l in sorted(out): print(l)
+'
 
 # qr FILE IMAGE: the addresses in every QR code in IMAGE as "FILE<TAB>address" lines (none if it
 # has no QR code). zbarimg reads it, as ccs-data, with a time limit; inverted codes (light on dark)
@@ -211,24 +209,38 @@ for f in sys.argv[1:]:
 
 # pages SITE DESIGNS BODIES LIST VIEWKEY HOSTS < pages (NUL-separated, relative to SITE): each must
 # be one of the design's own, every region filled with the design's parts and every {{slot}} with a
-# value of its kind, as ccs-front-bash fills them; a proposal's text exactly what markdown.awk makes
-# of its file. DESIGNS: unpacked release zips, ":"-separated (any one will do); BODIES: markdown.awk's
-# lines, ":"-separated (one file per commit of the proposals, and markdown.awk); LIST: the signed list
-# (its .pin beside it); VIEWKEY: its .viewkey or ""; HOSTS: where a link to a proposal may go.
-# Prints "page<TAB>!reason". Python's standard library only.
+# value of its kind, as ccs-front-bash fills them; a proposal's text, milestones and payouts exactly
+# what markdown.awk makes of its file; a donation box one address of the signed list. DESIGNS:
+# unpacked release zips, ":"-separated (any one will do); BODIES: markdown.awk's lines,
+# ":"-separated (one file per commit of the proposals, and markdown.awk); LIST: the signed list (its
+# .pin beside it); VIEWKEY: its .viewkey or ""; HOSTS: where a link to a proposal may go (a host, or
+# a host and the path under it). Prints "page<TAB>=ok" for each page that passes (a page without
+# one is held back: one it never got to, in time or at all, too), after "page<TAB>=box<TAB>address
+# <TAB>QR code base64" for its donation box; else "page<TAB>!reason". Python's standard library only.
 pages_py='
 import json, os, re, sys
 
 site, designs, bodies, lst, viewkey, hosts = sys.argv[1:7]
+MAX = int(os.environ.get("CCS_GATE_MAX", 8 << 20))   # a page larger is not read (nor checked)
 B58 = "[1-9A-HJ-NP-Za-km-z]"
-# escaped text (as ccs-bash and markdown.awk escape it): no markup, and no run of 90 base58
-# characters, joined by characters that are not ASCII or not: it could be an address
-TEXT = "(?:(?!(?:" + B58 + "[^\\x00-\\x7f]*){90})(?:[^<>\"\x27&\\x00-\\x1f\\x7f]|&(?:amp|lt|gt|quot|#39|apos);))*"
-NAME = "(?:[^\"<>/&\\n]|&(?:amp|lt|gt|quot|#39|apos);)+"
-NUM = "[0-9]+"
-XMR = "[0-9]+(?:\\.[0-9]+)?"
-DATE = "[A-Za-z0-9, ]*"
-LINK = "https://(?:" + "|".join(re.escape(h) for h in hosts.split()) + ")/[^\\s\"\x27<>\\\\]*"
+# escaped text (as ccs-bash and markdown.awk escape it): no markup, no bidi controls (they can
+# show the halves of an address in another order than written), at most 1000 characters, and no
+# run of 90 characters each base58 or not ASCII: an address padded or split by invisible
+# characters, or drawn with look-alikes (a mathematical or fullwidth 9, a Cyrillic A). Any
+# character that is not ASCII counts, not only letters: Unicode tables differ between Python and
+# the jq that shortens idea titles by the same rule (gitlab.sh), and must agree with it
+RUN = "(?:" + B58 + "|[^\\x00-\\x7f])"
+TEXT = "(?:(?!" + RUN + "{90})(?:[^<>\"\x27&\\x00-\\x1f\\x7f\\u202a-\\u202e\\u2066-\\u2069]|&(?:amp|lt|gt|quot|#39|apos);)){0,1000}"
+# a milestone or payout: anything escaped, compared afterwards with the repository
+LOOSE = "[^<>\\n]{0,4000}"
+NAME = "(?:[^\"<>/&\\n]|&(?:amp|lt|gt|quot|#39|apos);){1,300}"
+NUM = "[0-9]{1,30}"
+XMR = "[0-9]{1,30}(?:\\.[0-9]{1,30})?"
+DATE = "[A-Za-z0-9, ]{0,100}"
+# a link to a proposal: under one of HOSTS (the proposals repository, by its path), then a path
+# with no "." or ".." step (a browser would follow it out), no "%" (%2e is a dot to it), no backslash
+PATH = "(?:(?=[/?#])(?:(?!/\\.\\.?(?:[/?#\"]|$))[A-Za-z0-9/_.~+=?&;#:@!,-]){1,500})?"
+LINK = ("https://(?:" + "|".join(re.escape(h.strip("/")) for h in hosts.split()) + ")" + PATH) if hosts.split() else "(?!)"
 
 def read(p):
     with open(p, "rb") as f: return f.read().decode("utf-8")
@@ -237,30 +249,46 @@ def strip(t): return t.rstrip("\n")                         # $(cat FILE)
 def prefix(depth): return "./" if depth == 0 else "../" * depth
 def rel(t, depth):   # as relative_links in ccs-front-bash, a line at a time as sed
     return re.sub("((?:href|src)=\")/([^/\\n])", lambda m: m.group(1) + prefix(depth) + m.group(2), t)
+def esc(s):          # as jq @html (1.6 writes \x27 as &#39;, later ones as &apos;: same() reads both)
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\x27", "&#39;").replace("\"", "&quot;")
+def same(a, b): return a.replace("&apos;", "&#39;") == b.replace("&apos;", "&#39;")
+def put(t, v):       # as common.jq fill: every {{slot}}, in one pass
+    return re.sub("\\{\\{([a-z_]+)\\}\\}", lambda m: v[m.group(1)], t)
 
-# the main address and fingerprint of the signed list, as check_addresses shows them on Verify
-main = next(l.split()[1] for l in read(lst).splitlines() if l.split()[:1] == ["0"])
+# the signed list: its addresses (the only ones a donation box may show), its main address and
+# fingerprint, as check_addresses shows them on Verify
+rows = [l.split() for l in read(lst).splitlines()]
+listed = {r[1] for r in rows if len(r) >= 2}
+main = next(r[1] for r in rows if r[:1] == ["0"])
 fpr = next(l[4:].strip() for l in read(lst + ".pin").splitlines() if l.startswith("key "))
 fpr = re.sub("^((.{4} ){5})", "\\1 ", re.sub(" $", "", re.sub("(.{4})", "\\1 ", fpr)))
 net = " --testnet" if main[0] in "9A" else " --stagenet" if main[0] in "57" else ""
 
-# the body of each proposal as markdown.awk renders it, from each commit: any of them will do
+# each proposal as markdown.awk renders it, from each commit (any of them will do): its text, and
+# its milestones and payouts (as JSON)
 md = {}
 for f in bodies.split(":"):
     if f and os.path.exists(f):
         for l in read(f).splitlines():
-            if l: j = json.loads(l); md.setdefault(j["file"], set()).add(j["body"].replace("\x01", ""))
+            if l:
+                j = json.loads(l)
+                md.setdefault(j["file"], set()).add((j["body"].replace("\x01", ""), json.dumps(j.get("milestones", [])), json.dumps(j.get("payouts", []))))
 
 class Design:
     def __init__(self, d):
         self.d = d
         self.p = {f[:-5]: read(os.path.join(d, "parts", f)) for f in os.listdir(os.path.join(d, "parts")) if f.endswith(".html")}
-    # the regex of a part: its literal text as it is, each {{slot}} by SLOTS (name: regex)
-    def fill(self, text, slots):
-        out, i = "", 0
+    # the regex of a part: its literal text as it is, each {{slot}} by SLOTS (name: regex); a slot
+    # in SAME is one value however often the part has it (a group, then a backreference)
+    def fill(self, text, slots, same=()):
+        out, i, seen = "", 0, set()
         for m in re.finditer("\\{\\{([a-z_]+)\\}\\}", text):
-            if m.group(1) not in slots: raise KeyError(m.group(1))
-            out += re.escape(text[i:m.start()]) + "(?:" + slots[m.group(1)] + ")"; i = m.end()
+            k = m.group(1)
+            if k not in slots: raise KeyError(k)
+            if k in same and k in seen: rx = "(?P=" + k + ")"
+            elif k in same: rx = "(?P<" + k + ">" + slots[k] + ")"; seen.add(k)
+            else: rx = "(?:" + slots[k] + ")"
+            out += re.escape(text[i:m.start()]) + rx; i = m.end()
         return out + re.escape(text[i:])
     def card(self, stage, depth, tagpage):
         c = part(self.p["card-" + stage])
@@ -279,8 +307,9 @@ class Design:
         return "(?:" + self.fill(part(self.p["filters"]), {"filters": "(?:" + f + ")*"}) + ")?"
     def verify(self):
         f = strip(self.p["verify"])
+        # without the view key file, nothing for the slots that show it (ccs-front-bash needs it too)
         slots = {"address": re.escape(main), "fingerprint": re.escape(fpr), "network": re.escape(net),
-                 "viewkey": "[0-9a-f]{64}", "wallet_source": "published by this site|<a href=\"https://[^\"<>\\s]+\">[A-Za-z0-9 .,:_&#;-]*</a>"}
+                 "viewkey": "(?!)", "wallet_source": "(?!)"}
         if viewkey:
             v = read(viewkey).splitlines()
             src = next((l.split(None, 1)[1].strip() for l in v if l.startswith("source ")), "")
@@ -288,8 +317,16 @@ class Design:
             slots["viewkey"] = re.escape(v[0].replace(" ", ""))
             slots["wallet_source"] = re.escape("<a href=\"" + src.replace("&", "&amp;") + "\">" + (txt or "where they were published") + "</a>") if src else "published by this site"
         return self.fill(f, slots)
-    # what region NAME may hold on a page DEPTH folders down
-    def region(self, name, depth, tagpage, stage=None):
+    # the milestones and payouts of a proposal (JSON from markdown.awk) as pages.jq makes them
+    def milestones(self, ms, depth):
+        r = "\n".join(put(part(self.p["milestone-done" if x[2] != "" else "milestone-todo"]), {"name": esc(x[0]), "funds": esc(x[1]), "date": esc(x[2])}) for x in json.loads(ms))
+        return rel(r or part(self.p["no-milestones"]), depth)
+    def payouts(self, ps, depth):
+        r = "\n".join(put(part(self.p["payout"]), {"date": esc(x[0]), "amount": esc(x[1])}) for x in json.loads(ps))
+        return rel(r or part(self.p["no-payouts"]), depth)
+    # what region NAME may hold on a page DEPTH folders down; on a proposal page (BODY) the
+    # milestones and payouts are kept (groups), to compare with the repository after
+    def region(self, name, depth, tagpage, body=False):
         kind, _, arg = name.partition(" ")
         if kind in ("count", "number"): return NUM
         if kind == "title": return TEXT
@@ -298,15 +335,18 @@ class Design:
         if kind == "list":
             c = self.card(arg, depth, tagpage)
             return "(?:" + c + "(?:\\n" + c + ")*|" + re.escape(part(self.p["empty"])) + ")?"
-        if kind in ("donate", "funded"): return self.fill(part(self.p[kind]), self.slots(depth))
+        # the donation box: one address, in its text, its monero: link and its QR code (checked after)
+        if kind in ("donate", "funded"): return self.fill(part(self.p[kind]), self.slots(depth), ("address", "qr"))
+        t = LOOSE if body else TEXT
         if kind == "milestones":
-            m = "(?:" + self.fill(part(self.p["milestone-done"]), {"name": TEXT, "funds": TEXT, "date": TEXT}) + "|" \
-                + self.fill(part(self.p["milestone-todo"]), {"name": TEXT, "funds": TEXT}) + ")"
-            return m + "(?:\\n" + m + ")*|" + re.escape(part(self.p["no-milestones"]))
-        if kind == "payouts":
-            m = self.fill(part(self.p["payout"]), {"amount": TEXT, "date": TEXT})
-            return m + "(?:\\n" + m + ")*|" + re.escape(part(self.p["no-payouts"]))
-        raise KeyError(name)
+            m = "(?:" + self.fill(part(self.p["milestone-done"]), {"name": t, "funds": t, "date": t}) + "|" \
+                + self.fill(part(self.p["milestone-todo"]), {"name": t, "funds": t}) + ")"
+            r = m + "(?:\\n" + m + ")*|" + re.escape(part(self.p["no-milestones"]))
+        elif kind == "payouts":
+            m = self.fill(part(self.p["payout"]), {"amount": t, "date": t})
+            r = m + "(?:\\n" + m + ")*|" + re.escape(part(self.p["no-payouts"]))
+        else: raise KeyError(name)
+        return "(?P<" + kind + ">" + r + ")" if body else r
     def slots(self, depth, body=None):
         seg = "(?:" + re.escape(part(self.p["segment-done"])) + "|" + re.escape(part(self.p["segment-todo"])) + ")*"
         href = re.escape(prefix(depth)) + "explore/tag/[A-Za-z0-9%._~-]+/"
@@ -325,7 +365,7 @@ class Design:
             end = "<!-- /ccs:" + m.group(1) + " -->"
             j = text.index(end, m.end())
             out.append(self.fill(rel(text[i:m.start()], depth), self.slots(depth, body)) if body else re.escape(rel(text[i:m.start()], depth)))
-            out.append(re.escape(m.group(0)) + "\\n*(?:" + self.region(m.group(1), depth, tagpage) + ")\\n*" + re.escape(end))
+            out.append(re.escape(m.group(0)) + "\\n*(?:" + self.region(m.group(1), depth, tagpage, body) + ")\\n*" + re.escape(end))
             i = j + len(end)
         rest = rel(text[i:], depth)
         out.append(self.fill(rest, self.slots(depth, body)) if body else re.escape(rest))
@@ -339,51 +379,66 @@ def compiled(d, key, text, depth, tagpage, body=False):
         cache[k] = (re.compile("".join(segs), re.S), segs)
     return cache[k]
 
+# check: (None, donation box or None) if the page passes, else (reason, None)
 def check(rp, got, d):
     depth, want = rp.count("/"), None
     if rp.startswith("proposals/"):
         name = rp[len("proposals/"):-len(".html")]
-        if "/" in name: return "a page the design does not have"
-        if name not in md: return "a proposal page with no proposal (" + name + ".md) in the proposals repository"
+        if "/" in name: return "a page the design does not have", None
+        if name not in md: return "a proposal page with no proposal (" + name + ".md) in the proposals repository", None
+        want = md[name]
         # pages.jq prints the page, jq -r a newline after it, which the split keeps
-        want = {rel(b, depth) for b in md[name]}
         tries = [compiled(d, "proposal-" + s, d.p["proposal-" + s] + "\n", depth, False, True) for s in ("fr", "wip", "cp")]
     elif re.match("explore/tag/[^/]+/index\\.html$", rp):
         tries = [compiled(d, "tag", read(os.path.join(d.d, "explore/tag/example/index.html")), depth, True)]
     elif not rp.startswith(("parts/", "explore/tag/")) and os.path.isfile(os.path.join(d.d, rp)):
         tries = [compiled(d, rp, read(os.path.join(d.d, rp)), depth, False)]
-    else: return "a page the design does not have"
+    else: return "a page the design does not have", None
     best, why = 0, "not a page of the design as ccs-front-bash fills it"
     for rx, segs in tries:
         m = rx.fullmatch(got)
-        if m and (m.groupdict().get("body") is None or m.group("body") in want): return None
-        if m:   # the page of the design, but another text than the proposal has in the repository
-            best, why = m.start("body"), "not the text of its proposal as the proposals repository has it"; continue
+        if m and want is not None:
+            g = m.groupdict()
+            if not any(g["body"] == rel(b, depth) and (g.get("milestones") is None or same(g["milestones"], d.milestones(ms, depth)))
+                       and (g.get("payouts") is None or same(g["payouts"], d.payouts(ps, depth))) for b, ms, ps in want):
+                # the page of the design, but another text than the proposal has in the repository
+                best, why = m.start("body"), "not the text, milestones or payouts of its proposal as the proposals repository has them"; continue
+        if m:
+            a = m.groupdict().get("address")
+            if a is None: return None, None
+            if a not in listed: return "a donation box with an address that is not in the signed list (" + a + ")", None
+            return None, (a, m.group("qr").split(",", 1)[1])   # its base64
         if diag[0] <= 0: continue
         for k in range(len(segs), 0, -1):   # how far it is the design, for the reason (10 pages)
             m = re.match("".join(segs[:k]), got, re.S)
             if m: best = max(best, m.end()); break
     diag[0] -= 1
-    return why + (" (it differs at character %d: %s)" % (best, json.dumps(got[best:best + 60])) if diag[0] >= 0 else "")
+    return why + (" (it differs at character %d: %s)" % (best, json.dumps(got[best:best + 60])) if diag[0] >= 0 else ""), None
 
 ds = [Design(d) for d in designs.split(":") if d]
 for rp in sys.stdin.read().split("\0"):
     if not rp: continue
-    try: got = read(os.path.join(site, rp))
-    except Exception: print(os.path.join(site, rp) + "\t!a page that is not UTF-8"); continue
-    why = None
+    p = os.path.join(site, rp)
+    try:
+        if os.path.getsize(p) > MAX: print(p + "\t!a page over %d MB" % (MAX >> 20)); continue
+        got = read(p)
+    except Exception: print(p + "\t!a page that is not UTF-8"); continue
+    why = box = None
     for d in ds:
-        try: why = check(rp, got, d)
+        try: why, box = check(rp, got, d)
         except KeyError as e: why = "the design has no part or slot " + str(e)
+        except Exception as e: why = "a page that could not be checked (" + type(e).__name__ + ")"
         if why is None: break
-    if why: print(os.path.join(site, rp) + "\t!" + why)
+    if why: print(p + "\t!" + why); continue
+    if box: print(p + "\t=box\t" + box[0] + "\t" + box[1])
+    print(p + "\t=ok")
 '
 
 # scan FILE...: the addresses (and reasons) of the pages and JSON among FILEs; every data:
 # image exactly the QR code of an address
 scan() {
-    local file tag payload png jsons=()
-    png=$(mktemp)
+    local file tag payload png out jsons=() texts=()
+    png=$(mktemp) out=$(mktemp)
     # a NUL byte: HTML drops it from the text, so it could split an address
     printf '%s\0' "$@" | grep -zE '\.(html|json)$' | xargs -0 -r grep -laP '\x00' -- | sed 's/$/\t!a NUL byte (a browser drops it from the text)/'
     # the JSON, as JSON (its \u escapes are an address's characters to whoever reads it)
@@ -391,14 +446,19 @@ scan() {
     if ((${#jsons[@]})); then
         timeout 60 python3 -I -c "$json_py" "${jsons[@]}" || printf '%s\t!the JSON could not be read in time\n' "${jsons[@]}"
     fi
-    printf '%s\0' "$@" | grep -zE '\.(html|json)$' | xargs -0 -r awk "$scan_awk" \
-        | while IFS=$'\t' read -r file tag payload; do
-            if [[ $tag != '?qr' ]]; then printf '%s\t%s\n' "$file" "$tag"; continue; fi
-            if ! base64 -d <<<"$payload" > "$png" 2> /dev/null || ! qrdata "$file" "$png"; then
-                printf '%s\t%s\n' "$file" "!an image that is not exactly qrencode's QR code of one address"
-            fi
-        done
-    rm -f "$png"
+    # the pages and JSON as written; one that couldn't be read in time is held back (what it has
+    # in it is unknown)
+    mapfile -d '' texts < <(printf '%s\0' "$@" | grep -zE '\.(html|json)$')
+    if ((${#texts[@]})) && ! timeout 120 python3 -I -c "$scan_py" "${texts[@]}" > "$out" 2> /dev/null; then
+        printf '%s\t!its addresses could not be read in time\n' "${texts[@]}" >> "$out"
+    fi
+    while IFS=$'\t' read -r file tag payload; do
+        if [[ $tag != '?qr' ]]; then printf '%s\t%s\n' "$file" "$tag"; continue; fi
+        if ! base64 -d <<<"$payload" > "$png" 2> /dev/null || ! qrdata "$file" "$png"; then
+            printf '%s\t%s\n' "$file" "!an image that is not exactly qrencode's QR code of one address"
+        fi
+    done < "$out"
+    rm -f "$png" "$out"
 }
 
 # fetch: the proposals repository (/etc/ccs-gate/proposals.conf: PROPOSALS_GIT, its URL;
@@ -406,7 +466,8 @@ scan() {
 # checkout may be one behind or ahead). Reviewed and merged: what a page says a proposal says, and
 # the images it may show, come from here, not from the backend. Can't be fetched (disroot's Forgejo
 # breaks off now and then): the last fetch is used, and said so. Sets hosts: where a link to a
-# proposal may go (the repository's host, and proposals.conf's LINK_HOSTS: the old forge's, say).
+# proposal may go: under the repository's own address (host and path: the forge's other users'
+# pages are anyone's), and proposals.conf's LINK_HOSTS (the old forge's repository, host/path).
 git=$state/proposals.git hosts=''
 fetch() {
     local url='' branch=master k v h
@@ -415,7 +476,11 @@ fetch() {
         case $k in PROPOSALS_GIT) url=$v ;; PROPOSALS_BRANCH) branch=$v ;; LINK_HOSTS) hosts=$v ;; esac
     done < <(grep -E '^(PROPOSALS_GIT|PROPOSALS_BRANCH|LINK_HOSTS)=' "$conf/proposals.conf")
     [[ $url ]] || return 1
-    if [[ $url == https://* ]]; then h=${url#https://}; h=${h%%/*}; hosts="${h##*@} $hosts"; fi
+    if [[ $url == https://* ]]; then
+        h=${url#https://}; h=${h%/}; h=${h%.git}
+        if [[ $h == */* ]]; then k=${h%%/*}; h=${k##*@}/${h#*/}; else h=${h##*@}; fi
+        hosts="$h $hosts"
+    fi
     [[ -d $git ]] || git init -q --bare "$git" || return 1
     GIT_TERMINAL_PROMPT=0 timeout 60 git -C "$git" fetch -q --no-tags --depth=2 "$url" "+refs/heads/$branch:refs/heads/ccs" 2> /dev/null \
         || say "could not fetch the proposals repository (proposals.conf): checking against the last fetch"
@@ -465,15 +530,47 @@ bodies() {
     printf '%s' "$list"
 }
 
-# pages: every page in staging as pages_py checks it ("page<TAB>!reason")
+# pages: every page in staging as pages_py checks it ("page<TAB>!reason"). Only a page it passed
+# goes live: one it didn't get to (out of time, or stopped) is held back too. A donation box's QR
+# code must be, pixel for pixel, qrencode's of the address the box shows.
 pages() {
-    local designs='' d b vk=''
+    local designs='' d b vk='' out png file tag a q
+    local -A ok=()
     for d in "$conf"/design/*/; do [[ -d $d/parts ]] && designs+=${designs:+:}${d%/}; done
     b=$(bodies)
     [[ -f $list.viewkey ]] && vk=$list.viewkey
+    out=$(mktemp) png=$(mktemp)
     (cd "$staging" && find . -type f -name '*.html' -printf '%P\0') \
-        | timeout 300 python3 -I -c "$pages_py" "$staging" "$designs" "$b" "$list" "$vk" "$hosts" \
-        || printf '%s\t%s\n' "$staging/index.html" "!the pages could not be checked in time"
+        | timeout 300 python3 -I -c "$pages_py" "$staging" "$designs" "$b" "$list" "$vk" "$hosts" > "$out" 2> /dev/null || true
+    while IFS=$'\t' read -r file tag a q; do
+        case $tag in
+            =ok) [[ ${ok[$file]:-} == no ]] || ok[$file]=1 ;;
+            =box)
+                if ! base64 -d <<<"$q" > "$png" 2> /dev/null || [[ $(qrdata "$file" "$png") != "$file"$'\t'"$a" ]]; then
+                    printf '%s\t%s\n' "$file" "!a donation box whose QR code is not exactly qrencode's of its address"
+                    ok[$file]=no
+                fi ;;
+            *) printf '%s\t%s\n' "$file" "$tag" ;;
+        esac
+    done < "$out"
+    rm -f "$out" "$png"
+    while IFS= read -r -d '' file; do
+        [[ ${ok[$file]:-} ]] || printf '%s\t%s\n' "$file" "!a page the gate could not check (in time)"
+    done < <(find "$staging" -type f -name '*.html' -print0)
+}
+
+# kinds: anything in the push that is neither a plain file nor a folder (a symlink: -munge makes
+# it point nowhere, but it still replaces the live file of its name), a folder where the site has
+# a file, or a file where it has a folder: each would take a live page away
+kinds() {
+    local f rel
+    while IFS= read -r -d '' f; do
+        rel=${f#"$staging"/}
+        if [[ -L $f || ( ! -f $f && ! -d $f ) ]]; then printf '%s\t%s\n' "$f" "!not a plain file or folder"
+        elif [[ -d $f && -e $live/$rel && ! -d $live/$rel ]]; then printf '%s\t%s\n' "$f" "!a folder where the site has a file"
+        elif [[ -f $f && -d $live/$rel ]]; then printf '%s\t%s\n' "$f" "!a file where the site has a folder"
+        fi
+    done < <(find "$staging" -mindepth 1 -print0)
 }
 
 # changes: every file the push brings that isn't already live, byte for byte, as "file<TAB>!reason"
@@ -569,13 +666,13 @@ design=$(mktemp)
 trap 'rm -f "$design"' EXIT
 sed -nE 's#^([0-9a-f]{64}) [ *](\./)?(.+)$#\1 \3#p' "$conf/design.sha256" > "$design"
 # the checks below list files one a line, tab-separated: a name with a newline or tab can't be held back
-if find "$staging" -name '*[[:cntrl:]]*' | grep -q .; then refuse "a file name with a control character in it" names; fi
+if find "$staging" -name '*[[:cntrl:]]*' -print -quit | grep -q .; then refuse "a file name with a control character in it" names; fi
 fetched=''
 fetch && fetched=1
 
 # the list's addresses, then the allowed file's (first word of each line; # comments)
 mapfile -d '' files < <(find "$staging" -type f \( -name '*.html' -o -name '*.json' \) -print0)
-bad=$( { scan "${files[@]}"; pages; changes; } | awk -F '\t' 'NR == FNR { if ($1 !~ /^#/ && NF) ok[$1] = 1; next } !($2 in ok)' \
+bad=$( { kinds; scan "${files[@]}"; pages; changes; } | awk -F '\t' 'NR == FNR { if ($1 !~ /^#/ && NF) ok[$1] = 1; next } !($2 in ok)' \
     <(cut -d' ' -f2 "$list"; awk '{ print $1 }' "$conf/allowed" 2> /dev/null) - | sort -u)
 # The rest of the push goes live; a file that fails keeps its last good copy (a new one stays
 # out): one bad page doesn't stop the site updating, and nothing here rewrites a file. The push
@@ -586,20 +683,29 @@ if [[ $bad ]]; then
     nheld=0
     while IFS= read -r file; do
         [[ $file == "$staging"/* ]] || continue
-        rm -f -- "$file"
+        rm -rf -- "$file"   # a folder too (kinds)
         nheld=$((nheld + 1))
     done < <(cut -f1 <<<"$bad" | sort -u)
     say "held back $nheld file(s), with an address that isn't the wallet's nor allowed, or not allowed here; the rest goes live"
     while IFS=$'\t' read -r file addr; do say "  ${file#"$staging"/}: $addr"; done < <(head -n 10 <<<"$bad")
+    # three alerts at most, one a file, of those not already sent this hour: a foreign address on
+    # a page first, then elsewhere, then a page's other reason, then the rest's (decoys sent once
+    # can't hide what comes after them)
     n=0
+    declare -A told=()
     while IFS=$'\t' read -r file addr; do
-        ((n++ < 3)) || break
+        ((n < 3)) || break
+        [[ ! ${told[$file]:-} ]] || continue
+        told[$file]=1
         if [[ $addr == '!'* ]]; then
             alert "file-${file#"$staging"/}" "the web server held back a file: ${addr#!} (its last good copy stays) @ @SITE@/${file#"$staging"/}"
         else
             alert "addr-$addr" "the web server held back a page: donation address $red${addr:0:6}…${addr: -4}$off is not in the signed list (its last good copy stays) @ @SITE@/${file#"$staging"/}"
         fi
-    done < <(awk -F '\t' '$1 ~ /\.html$/' <<<"$bad"; awk -F '\t' '$1 !~ /\.html$/' <<<"$bad")   # a page before the rest
+        [[ ! $sent ]] || n=$((n + 1))
+    done < <(for k in '$2 !~ /^!/ && $1 ~ /\.html$/' '$2 !~ /^!/ && $1 !~ /\.html$/' '$2 ~ /^!/ && $1 ~ /\.html$/' '$2 ~ /^!/ && $1 !~ /\.html$/'; do
+        awk -F '\t' "$k" <<<"$bad"
+    done)
 fi
 rsync -a --delay-updates "$staging/" "$live/"
 # 7 (which rsync never uses, and passes on): it went live but for the files held back, so the
