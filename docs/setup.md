@@ -70,10 +70,8 @@ push: [the handover](handover.md), steps 3–9.
    WantedBy=multi-user.target
    ```
 
-   `rpc-login` is `RPC_USER`/`RPC_PASSWORD` in ccs-bash's config (with `disable-rpc-login=1`,
-   leave `RPC_USER` empty). It can't spend; a leak costs donation privacy. Keep it on the same machine: plain HTTP over a network can be
-   tampered with (else use an SSH tunnel). Don't make `tx-notify` start ccs-bash; that needs
-   wallet-rpc as root. Step 7 does it safely.
+   `rpc-login` is `RPC_USER`/`RPC_PASSWORD` in ccs-bash's config. Keep wallet-rpc on the same
+   machine (plain HTTP can be tampered with). Its `tx-notify` only touches a file: step 5.
 
 2. **User, folders, config:**
 
@@ -118,16 +116,11 @@ push: [the handover](handover.md), steps 3–9.
    docker tag ghcr.io/plowsof/ccs-bash@sha256:<digest> ccs-bash
    ```
 
-   **Before the first run**, check `docker image inspect ccs-bash --format '{{.Id}}'`. The same
-   commit always gives the same ID, and the same ID means the same files, so compare it with
-   one taken elsewhere: ideally two of your own build on another machine, CI's
-   `pinned: commit ... builds to sha256:...` line, the release notes. Then the transport
-   doesn't need trusting. Loading or pulling runs nothing.
-
-   It runs that image by its ID, never pulled: a tag can be removed (a nightly Docker cleanup,
-   Coolify's say, does), then `docker run ccs-bash` would try Docker Hub instead; an ID can't be
-   moved, and is exactly the one you checked. Keep one stopped container on it, so no cleanup
-   removes the image itself: `docker create --name ccs-bash-keep --network none <ID>`.
+   **Before the first run**, compare `docker image inspect ccs-bash --format '{{.Id}}'` with the
+   attested one ([upgrading](handover.md#upgrading)): the same commit gives the same ID anywhere.
+   The run script names that ID, never a tag (a Docker cleanup can remove a tag, and `docker run`
+   would then try Docker Hub), and a stopped container keeps the image itself:
+   `docker create --name ccs-bash-keep --network none <ID>`.
 
    ```
    #!/bin/sh
@@ -193,13 +186,11 @@ The first run looks up the merged MR of every proposal, which takes a few minute
 
 ## Backing up the state
 
-`STATE_DIR/proposals.csv` maps each proposal to its subaddress and can't be made again. Send it
-to another machine whenever it changes, to an account that can only add copies: the key runs
-only `contrib/ccs-backup-receive`, which keeps each new version as `proposals-<UTC time>.csv`
-and never overwrites or deletes one, so a taken-over backend can't destroy the backups either.
-`STATE_DIR/deposits.csv` (the wallet's deposits, a cache the wallet can make again) goes the
-same way: there it is one copy, replaced only by one that has every deposit it has, so a restored
-wallet that knows less can be checked against it.
+The state (`proposals.csv`, and each retired wallet's file) can't be made again: each new version
+goes to another machine, to an account whose key runs only `contrib/ccs-backup-receive`. It keeps
+every version (`proposals-<UTC time>.csv`), never overwriting or deleting one, so a taken-over
+backend can't destroy them; `deposits.csv`, a cache, as one copy replaced only by one with every
+deposit it has.
 
 On the **backup machine** (any one; the file is a few KB):
 
@@ -223,15 +214,14 @@ Match User ccs-backup
     AuthorizedKeysFile /etc/ssh/authorized_keys/%u
 ```
 
-On the **backend**, a key for it (`ssh-keygen -t ed25519 -N '' -f /root/.ssh/ccs-backup_ed25519`,
-its `.pub` goes in the line above), the backup machine's host key in `known_hosts` (checked
-against the machine's own `/etc/ssh/ssh_host_ed25519_key.pub`); `ccs-bash-update` then sends
-each new version ("the state" block in [the handover](handover.md#9-the-update)). The log then shows `ccs-backup: kept proposals-<time>.csv` when a version is added. To restore,
-copy the newest `proposals-*.csv` back to `STATE_DIR/proposals.csv` (owner `ccs`).
+On the **backend**: a key (`ssh-keygen -t ed25519 -N '' -f /root/.ssh/ccs-backup_ed25519`, its
+`.pub` in the line above) and the backup machine's host key in `known_hosts`. [The update
+script](handover.md#9-the-update) sends each new version (`ccs-backup: kept …` in the log).
+Restoring: [troubleshooting](troubleshooting.md#restore-the-state).
 
 ## Proposals on Forgejo (disroot, Codeberg) instead of GitLab
 
-Two changes, both on this machine; nothing else in ccs-bash knows the difference:
+Two changes on the backend:
 
 1. **The API**, in `/etc/ccs/ccs.conf`:
 
@@ -239,8 +229,7 @@ Two changes, both on this machine; nothing else in ccs-bash knows the difference
    REPOSITORY_URL=https://git.disroot.org/api/v1/repos/<owner>/<repo>
    ```
 
-   `.../api/v1/repos/...` is what makes it Forgejo (or Gitea). The repository must be public:
-   ccs-bash reads it without a token.
+   (`/api/v1/repos/` is what makes it Forgejo or Gitea; public, read without a token.)
 
 2. **The checkout**, so `ccs-bash-update` pulls from there:
 
@@ -249,15 +238,10 @@ Two changes, both on this machine; nothing else in ccs-bash knows the difference
        remote set-url origin https://git.disroot.org/<owner>/<repo>.git
    ```
 
-   If the new repository was pushed from the GitLab one (same history), the next pull just
-   carries on. If not, clone it afresh as in step 2.
+   Pushed from the GitLab one (the same history), the next pull carries on; else clone it afresh.
 
-What changes on the site: Ideas are the open pull requests there, and a proposal merged from
-now on links to its pull request. Proposals already known keep the GitLab link stored in
-`proposals.csv`; if the merge requests were imported with their numbers, rewrite them, e.g.
-`sed -i 's#https://repo.getmonero.org/monero-project/ccs-proposals/-/merge_requests/#https://git.disroot.org/<owner>/<repo>/pulls/#'`
-(stop the service first, keep a copy). Addresses, totals and the state are untouched.
-The front end's own words ("GitLab", the Submit Idea link, the how-to page) are
-ccs-front-hugo's.
-
-Going back: the old `REPOSITORY_URL` and `remote set-url` to the GitLab URL.
+Ideas become its open pull requests, and newly merged proposals link to theirs; known ones keep
+their GitLab link in `proposals.csv` (imported with their numbers: rewrite them with
+`sed -i 's#https://repo.getmonero.org/monero-project/ccs-proposals/-/merge_requests/#https://git.disroot.org/<owner>/<repo>/pulls/#'`,
+the loop paused, a copy kept). The site's words ("GitLab", Submit Idea) are ccs-front-hugo's.
+Going back: the old `REPOSITORY_URL` and remote.

@@ -1,117 +1,83 @@
 # Recommended design
 
-A proposal for how the CCS should run: **no Jekyll, Astro or other front-end framework on any
-live machine, and no application code on the public web server.** Bash, awk and jq on a backend machine that
-accepts no connections turn the proposals and the wallet into finished HTML; the web server
-only receives the files and serves them.
+**No front-end framework on any live machine, and no application code on the public web
+server.** Bash, awk and jq on a backend that accepts no connections turn the proposals and the
+wallet into finished HTML; the web server only receives the files and serves them.
 
 ![Bash on the backend renders the whole site and pushes it; the web server only serves files](design.svg)
 
 ## Why not a live front end
 
-The proposed new ccs-front is a Node application served live. Compared with static files:
-
-| | Live Node front | This design |
+| | A live Node front (the proposed new ccs-front) | This design |
 |---|---|---|
-| Code reachable from the internet | the app and its npm dependency tree | nginx serving files |
-| Supply chain on live machines | npm (and for today's ccs-front, Ruby gems) | bash, awk, jq, qrencode |
+| Code reachable from the internet | the app and its npm tree | nginx serving files |
+| Supply chain on live machines | npm (today's ccs-front: Ruby gems) | bash, awk, jq, qrencode |
 | Proposal Markdown rendered by | the framework, on the public server | a small awk renderer that escapes everything first, on the backend |
 | A compromised web server | can change any page until noticed | can too, but every page is pushed again each run, and ccs-watch alerts IRC within minutes |
 
-The donation addresses are what an attacker wants, and the web server is where they are shown,
-so that is the machine to keep smallest.
+The donation addresses are what an attacker wants, and the web server shows them: keep it smallest.
 
 ## The parts
 
-**Front-end build** (offline, never live): ccs-front-hugo, the only place a framework (Hugo)
-runs. It builds the site once per design change, with markers where content goes; the built
-site is carried to the backend (a signed git commit, or a copy whose sha256 is checked there)
-and is "the original". Nothing here runs while the CCS does.
+**The design** (offline, never live): ccs-front-hugo, the only place a framework (Hugo) runs. It
+builds the site once per design change, with markers where content goes: "the original",
+carried to the backend as a release zip whose sha256 is checked there.
 
-**Backend** (no inbound connections; only outgoing to GitLab or Forgejo, and monerod):
+**Backend** (no inbound connections; out only to the forge, monerod, the web server, the backup
+machine and the IRC bot):
 
 - **monero-wallet-rpc**, view-only, its own user, on 127.0.0.1.
-- **ccs-bash**: data only, the JSON and the state file, every 2 minutes or on a new tx. It is the
-  part that reads the network (GitLab or Forgejo), so nothing it writes is trusted further on:
-  ccs-front-bash checks its addresses and makes the QR codes itself.
-- **ccs-front-bash**: every run, fills a fresh copy of the original from the proposals' `.md`
-  files and ccs-bash's JSON: every proposal page (its Markdown as HTML, its milestones and
-  payouts), the Ideas, Funding Required, Work in Progress and Completed lists, and each
-  donation box (raised, goal, percentage, contributors, pending, address, and its QR code, made
-  here from the address once that is checked). All of it,
-  every run: about 1.5 seconds for 316 proposals. With a signed list of the wallet's
-  subaddresses (made once offline from a view-only copy, signed by a Core Team member's own key),
-  a funding-required proposal whose address isn't in it is left off the site (the run then counts
-  as failed), and the list goes out with the site so visitors can check an address themselves.
-- **ccs-watch**, right after each push: fetches the live donation pages, and every file they use
-  (stylesheets, fonts, icons, QR codes, images), ten of the other pages at random and `/projects`,
-  over HTTPS as Tor Browser asks for them (a page as typed in, clicked on the site or from
-  another, at random), through Tor and a clearnet proxy at random, so the web server can't easily
-  tell it from a visitor (its TLS handshake and its timing, right after each push, still can), and
-  checks they are what was pushed; if one isn't (three whole fetches and the next run
-  agreeing, so a slow or down web server is never mistaken for it; or a page that keeps answering
-  anything but the page, while the site answers), an alert goes to IRC
-  (`#irc-room`). It catches what the gate can't: the web server itself taken over
-  ([two machines](two-machines.md#watching-the-web-server-the-backend-raises-the-alarm)).
-- **The state's backup**: `proposals.csv`, the one file that can't be made again, goes to another
-  machine whenever it changes, to an account that can only add copies (every version kept, none
-  overwritten or deleted, even by a taken-over backend): [setup](setup.md#backing-up-the-state).
-  `deposits.csv`, the wallet's deposits 30 blocks deep, is a cache (a run makes it again from the
-  wallet), but goes there too, as one copy that is only replaced by one with every deposit it has:
-  a restored wallet that knows less is caught against it, never shown as lower totals.
-- **Both from pinned images:** ccs-bash and ccs-front-bash each run in their own
-  [StageX](https://stagex.tools) image ([the pinned image](image.md)): source-built parts
-  signed by two or more StageX maintainers, the same image ID from the same commit anywhere.
-  Read-only, no capabilities; ccs-front-bash also without network.
-- **Attested releases:** anyone can rebuild a release from its tag (the same image IDs and zip,
-  byte for byte) and sign what they got into [ccs-sigs](https://github.com/plowsof/ccs-sigs), as
-  Feather Wallet's releases are attested; a release is checked against those signatures
-  (`contrib/release/verify`) before it is installed ([contrib/release](../contrib/release/README.md)).
-- **Push:** the complete `site/` to the web server, as in [two machines](two-machines.md) but
-  with HTML instead of JSON (`rsync --checksum --delay-updates`).
+- **ccs-bash**: the JSON and the state, every 2 minutes or on a new tx. It reads the network (the
+  forge), so nothing it writes is trusted further on.
+- **ccs-front-bash**: fills a fresh copy of the original each run (about 1.5 s for 316
+  proposals): every proposal page, the stage lists, each donation box. Every donation address is
+  checked against the wallet's signed list (below); a proposal whose address isn't on it is left
+  off and the run counts as failed. It makes the QR codes itself, from checked addresses.
+- **ccs-watch**, after each push: fetches the live donation pages, the files they use, ten other
+  pages at random and `/projects`, as Tor Browser would and through Tor and a clearnet proxy, and
+  alerts IRC if any differs from what was pushed. It catches what the gate can't: a taken-over
+  web server ([details](two-machines.md#watching-the-web-server-the-backend-raises-the-alarm)).
+- **Backups** to another machine, whose account can only add copies: `proposals.csv` (which
+  proposal has which subaddress; nothing can make it again) and each retired wallet's record,
+  every version; `deposits.csv`, a cache, as one copy that only grows, so a restored wallet that
+  knows less is caught ([setup](setup.md#backing-up-the-state)).
+- **Pinned images:** ccs-bash and ccs-front-bash run in [StageX](https://stagex.tools) images
+  ([details](image.md)), read-only, no capabilities, ccs-front-bash without network.
+- **Attested releases:** anyone can rebuild a release from its tag, byte for byte, and sign the
+  result into [ccs-sigs](https://github.com/plowsof/ccs-sigs), as Feather Wallet does; a release is
+  verified against those signatures before it is installed ([contrib/release](../contrib/release/README.md)).
+- **The push:** the whole `site/` to the web server (`rsync --delay-updates`).
 
-**Web server:** nginx serving `/var/lib/ccs-data`, and the write-only `ccs-data` account
-(`rrsync -wo -no-del -munge`). Nothing else: no checkout, no cron, no Jekyll, Node, Ruby or PHP.
-Its nginx is the distribution's, not StageX's: StageX has no nginx, and builds for amd64 only.
-One script of ours runs there, and only when a push comes in: the gate (`contrib/ccs-receive`),
-which holds back any page that isn't one of the design release's, filled as ccs-front-bash fills
-it (a proposal's text as the proposals repository has it, fetched there), any file with an
-address that isn't the wallet's (in its text, a `monero:` link or a QR code) and any other file
-that isn't the design release's
-([two machines](two-machines.md#the-gate-the-web-server-checks-every-page)).
+**Web server:** the distribution's nginx (StageX has none, and builds for amd64 only) serving
+`/var/lib/ccs-data`, and a write-only push account whose key runs only the gate
+(`contrib/ccs-receive`). The gate holds back any page that isn't the design's own, filled as
+ccs-front-bash fills it (a proposal's text as the proposals repository has it), any file with an
+address that isn't the wallet's (as text, link or QR code), and any other file that isn't the
+design release's ([details](two-machines.md#the-gate-the-web-server-checks-every-page)). Nothing
+else runs there.
 
-ccs-front-bash runs on the backend, not on its own machine or the web server: whatever writes
-the addresses into the pages can redirect donations, so it belongs with ccs-bash, and pushing
-finished pages means a page changed on the web server is overwritten on the next run.
+ccs-front-bash runs on the backend: whatever writes the addresses into pages can redirect
+donations, so it belongs with ccs-bash, and pushing finished pages overwrites a page changed on
+the web server on the next run.
 
 ## ccs-front-bash
 
-**The original:** ccs-front-hugo's built site, with markers where content goes, and "parts"
-(the card, the donation box, a milestone…) whose `{{slots}}` ccs-front-bash fills: every piece
-of HTML comes from the original. It is never modified: each run starts again from it,
-so the output depends only on the original and today's data, a bad run can't build on a bad
-one, and a new proposal's page is a copy of the original's proposal page.
+**The original** is the built design, with markers where content goes and "parts" (a card, the
+donation box, a milestone…) whose `{{slots}}` are filled; all HTML comes from it. It is never
+modified: each run starts again from it, so a bad run can't build on a bad one.
 
 ```html
 <!-- ccs:list fr -->…<!-- /ccs:list fr -->
 <!-- ccs:donate -->…<!-- /ccs:donate -->
 ```
 
-jq renders each fragment from the JSON (every value HTML-escaped, links https-only, as
-`lib/site.jq` does now) and awk swaps it in. A missing, unmatched or repeated marker fails the
-run, and no new site is made. Output goes to a new directory, so a failed run leaves the last good
-site in place (and that is what the run pushes).
+jq renders each fragment (every value HTML-escaped, links https only) and awk swaps it in. A
+missing, unmatched or repeated marker fails the run; the last good site stays and is pushed again.
 
-**QR codes:** made here (qrencode), from the address once it is checked against the list, and
-inlined into the page: what ccs-bash's account writes can't put another address in a QR code.
-ccs-bash makes none.
-
-**Markdown:** a strict subset in awk, in the spirit of `lib/frontmatter.awk`. Safe by
-construction: all text is HTML-escaped first, and only tags the renderer writes itself ever
-appear. Raw HTML in a proposal is shown as text, link URLs must be `https:`, images become links
-(nothing on a page loads from another site), except a proposal's own images in the repository's
-`images/<proposal>/`, which the site shows from its own copy, and
-anything not understood stays plain text. In the 268 proposals checked:
+**Markdown:** a strict subset in awk. Everything is HTML-escaped first, so only tags the renderer
+writes appear; raw HTML shows as text, links must be `https:`, images become links (nothing loads
+from another site) except a proposal's own, in the repository's `images/<proposal>/`, which the
+site serves from its copy. What the 268 proposals checked use:
 
 | Used by | Feature |
 |---|---|
@@ -120,30 +86,23 @@ anything not understood stays plain text. In the 268 proposals checked:
 | a few | fenced code, `~~strike~~`, images (12), tables (5), quotes (5), reference links (5), footnotes (4) |
 | 2 | raw HTML (shown as text) |
 
-Before switching over, every proposal's page is compared with today's site once, on a
-development machine.
+## The signed subaddress list
 
-## The signed subaddress list: one list, checked three times
+The wallet's subaddresses are listed once, in advance, and every address shown is checked
+against that list, in four places (the same four files each time: the list, `.asc` its
+signature, `.key.asc` the key, `.pin` its sha256 and fingerprint):
 
-The donation addresses are what an attacker wants, so the wallet's subaddresses are listed once,
-in advance, and every address shown is checked against that list. It turns up in several places
-on purpose; each copy has its own job, and they are all the same file:
+| Where | Its job |
+|---|---|
+| the offline machine | made from a view-only wallet and signed by a Core Team member's own key (the one the Monero repository publishes); its sha256 published beside the wallet's view key and reproduced by others |
+| backend, `/etc/ccs-front/` | ccs-front-bash checks the list against its pin, then every donation address, and makes the QR codes from them: what ccs-bash's account writes can't change one |
+| web server, `/etc/ccs-gate/` (installed by hand) | the gate checks every address on every pushed page, however written and in every QR code: a taken-over backend can't get a wrong one live |
+| the site, `/subaddresses.txt` and the Verify page | visitors check the address their wallet shows themselves: the defence left if the web server is taken over |
 
-| Where | What | Its job |
-|---|---|---|
-| the offline machine | made from a view-only wallet, signed by a Core Team member with their own key (the one the Monero repository publishes), its sha256 posted beside the wallet's view key and reproduced by others | the only place the list is made or signed; it writes the four files: the list, `.asc` (signature), `.key.asc` (public key), `.pin` (sha256 and fingerprint) |
-| backend, `/etc/ccs-front/` | the four files | ccs-front-bash checks the list against its pin, then every donation address, before each push, and makes the QR codes from those addresses; a proposal with an address not on the list is left off the site, and the run counts as failed: what ccs-bash's account writes can't change one |
-| web server, `/etc/ccs-gate/` | the four files (installed by hand, root-owned) | the gate checks every pushed page against the design's (nothing but its parts, each slot a value of its kind, a proposal's text the repository's), every address on it against the list, however it is written and in every QR code, and every other file against the design release: a taken-over backend can't get a wrong address live as text, link or QR code |
-| the site, `/subaddresses.txt(.asc, .key.asc)` | the list, signature and key, pushed with the pages (the gate lets through only its own copies); the Verify page with the fingerprint | visitors check the address their wallet shows, after scanning or pasting, themselves (`gpg --verify`, `grep`, or a copy of the wallet): the defence left if the web server itself is taken over |
+So a wrong address has to get past the backend, the web server, ccs-watch and anyone who looks.
+When the wallet nears index 15,000, a longer list is made and signed the same way.
 
-So a wrong address has to get past the backend's check, then the web server's, then the
-backend's watcher (ccs-watch, which raises the alarm on IRC), then anyone who looks; and in a QR
-code, past the same checks, each of which reads it. Nothing about the list is in the design
-(ccs-front-hugo only has the Verify page's words, and the fingerprint in its README for people to
-check against): a new list, when the wallet nears index 15,000, is made and signed the same way
-and its files copied to both machines.
+## Setting it up
 
-## Setting it all up
-
-From today's ccs-back and Jekyll to this, step by step along the diagram above: [the
-handover](handover.md). The testnet CCS, https://ccs.monerodevs.org, runs it on two machines.
+From ccs-back and Jekyll to this, step by step: [the handover](handover.md). The testnet CCS,
+https://ccs.monerodevs.org, runs it on two machines.
