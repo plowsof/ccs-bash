@@ -88,7 +88,7 @@ def region(t, name, html_):
 def write(p, t):
     os.makedirs(os.path.dirname(out + "/" + p), exist_ok=True); open(out + "/" + p, "w", encoding="utf-8").write(t)
 write("index.html", region(region(read(design + "/index.html"), "count fr", n), "filters", ""))
-cards = [fill(part("card-idea"), {"url": "https://forge.test/pr/%d" % i, "name": html.escape(t), "author": "someone",
+cards = [fill(part("card-idea"), {"url": "https://forge.test/ccs-proposals/pulls/%d" % i, "name": html.escape(t), "author": "someone",
          "date": "October 1, 2026", "funding_note": "", "tags": "", "upvotes": "1", "downvotes": "0"}) for i, t in enumerate(sys.argv[6:])]
 write("ideas/index.html", region(read(design + "/ideas/index.html"), "list idea", "\n".join(cards) or part("empty")))
 page = fill(read(design + "/parts/proposal-fr.html"), {"name": "A proposal", "author": "someone", "tag_links": "",
@@ -127,7 +127,7 @@ on web "
     qrencode -s 4 -o images/p/ok.png 'monero:$(addr 2)'
     git add -A && git -c user.name=t -c user.email=t@t commit -q -m proposal && cd /
     chown -R ccs-data /srv/proposals   # git reads a local repository only as its owner
-    printf 'PROPOSALS_GIT=file:///srv/proposals\nLINK_HOSTS=forge.test\n' > /etc/ccs-gate/proposals.conf
+    printf 'PROPOSALS_GIT=file:///srv/proposals\nLINK_HOSTS=forge.test/ccs-proposals\n' > /etc/ccs-gate/proposals.conf
     chmod -R a+rX /etc/ccs-gate && chmod 644 /etc/ccs-gate/*.* /etc/ccs-gate/allowed
     install -d -m 755 /etc/ssh/authorized_keys
     echo 'from=\"$backend\",command=\"/usr/local/bin/ccs-receive\",restrict $key' > /etc/ssh/authorized_keys/ccs-data
@@ -219,6 +219,11 @@ passes() {
     if ((!rc)) && [[ $(live) == "$1" && $(livefile "$2") == *"$4"* ]]; then ok "goes live: $3"; else echo "push exit $rc, live $(live)"; on web 'tail -n 3 /var/log/ccs-gate.log'; fail "$3"; fi
 }
 v=10
+# an address drawn without its own characters, in a name: its two halves in bidi embeddings, a
+# space between them shown first (logically "half2 half1", seen as " half1half2"); in
+# mathematical sans-serif letters and digits (NFKC turns them into the address)
+bidi=$(python3 -c 'import sys; a = sys.argv[1]; print("\u202b\u202a" + a[48:] + "\u202c\u202a " + a[:48] + "\u202c\u202c", end="")' "$fake")
+math=$(python3 -c 'import sys; print("".join(chr(0x1D7E2 + int(c)) if c.isdigit() else chr(0x1D5A0 + ord(c) - 65) if c.isupper() else chr(0x1D5BA + ord(c) - 97) for c in sys.argv[1]), end="")' "$fake")
 # The ways around it: each a change to a page that is otherwise the design's, filled. That page
 # keeps its last good copy, the rest of the push goes live, the push fails.
 p=proposals/p.html
@@ -238,17 +243,24 @@ for attack in \
     "integrated|$p|<h1>A proposal</h1>|<h1>$integrated</h1>|an integrated address (106 characters)" \
     "qr|$p|$box|$box|the right address, the QR code of another" \
     "small|$p|$box|$box|the wallet's QR code, but not as qrencode -s 10 makes it" \
-    "link|ideas/index.html|https://forge.test/pr/0|https://evil.example/pr/0|a link to another site than the proposals' forge" \
+    "link|ideas/index.html|https://forge.test/ccs-proposals/pulls/0|https://evil.example/pr/0|a link to another site than the proposals' forge" \
+    "otherrepo|ideas/index.html|https://forge.test/ccs-proposals/pulls/0|https://forge.test/someone/else/pulls/0|a link to another repository on the proposals' forge" \
+    "dotdot|ideas/index.html|https://forge.test/ccs-proposals/pulls/0|https://forge.test/ccs-proposals/../someone/else|a link that steps out of the proposals repository (..)" \
     "style|$p|<h1>A proposal</h1>|<h1 style=\"display:none\">A proposal</h1>|a style attribute" \
     "svg|$p|<h1>A proposal</h1>|<h1>A proposal</h1><svg><text>x</text></svg>|an <svg>" \
     "art|$p|<div class=\"body\">|<pre>"$'\xe2\x96\x88\xe2\x96\x80'"</pre><div class=\"body\">|a QR code drawn as text" \
-    "monerolink|$p|href=\"monero:$good\"|href=\"monero:${good}x\"|a monero: link with more than an address"; do
+    "monerolink|$p|href=\"monero:$good\"|href=\"monero:${good}x\"|a monero: link with more than an address" \
+    "bidi|$p|<h1>A proposal</h1>|<h1>Pay $bidi</h1>|an address in bidi embeddings, a space between its halves shown before them, in a name" \
+    "math|$p|<h1>A proposal</h1>|<h1>Pay $math</h1>|an address in mathematical letters, in a name" \
+    "allowedbox|$p|href=\"monero:$fund\"|href=\"monero:$fund\"|a donation box with an allowed address that isn't the wallet's (the General Fund)" \
+    "milestone|$p|<p class=\"empty\">No milestones.</p>|<div class=\"milestone\"><h3>Donations moved: see the Verify page</h3><p>10 XMR</p></div>|a milestone the proposal's front matter doesn't have"; do
     IFS='|' read -r what file old new why <<<"$attack"
     v=$((v + 1))
     case $what in
         qr) site "$v" "$good" "$fake" ;;
         small) site "$v" "$good"; change "$file" "$(qr64 "$good")" "$(qr64 "$good" 4)" ;;
-        link) site "$v" "$good" "$good" "An idea" ;;
+        link | otherrepo | dotdot) site "$v" "$good" "$good" "An idea" ;;
+        allowedbox) site "$v" "$fund" ;;
         *) site "$v" "$good" ;;
     esac
     case $what in
@@ -399,5 +411,40 @@ if bot | grep -qF '[CCS-watch] pushes from the backend arrive again @ https://cc
 on web 'rm -f /var/lib/ccs-gate/last-push /var/lib/ccs-gate/alert-heartbeat'
 hb
 if [[ $(late) == 1 ]]; then ok "heartbeat: before any push, nothing is known: no alert"; else fail "heartbeat without a push"; fi
+
+# a page made to be costly to check: a name of 4 million spaces (unbounded, it cost the page check
+# 600 MB; padded otherwise, more than its 300 s), the web server given 400 MB. Held back, its
+# address split by markup after the name too.
+docker update --memory 400m --memory-swap 400m "$name-web" > /dev/null
+v=$((v + 1)); site "$v" "$good"
+docker exec "$name-backend" python3 -c '
+import sys; p = "/out/proposals/p.html"; s = open(p, encoding="utf-8").read()
+s = s.replace("<h1>A proposal</h1>", "<h1>A proposal" + " " * 4000000 + "</h1>" + sys.argv[1], 1)
+open(p, "w", encoding="utf-8").write(s)' "<p>${fake:0:40}<span></span>${fake:40}</p>"
+held "$v" "$p" "a page too big to check, with an address split by markup" "${fake:0:40}<span></span>"
+docker update --memory 8g --memory-swap 8g "$name-web" > /dev/null
+# a page made a folder: the live page must keep its last good copy (rrsync -no-del)
+v=$((v + 1)); site "$v" "$good"
+on backend 'rm /out/ideas/index.html && mkdir /out/ideas/index.html && touch /out/ideas/index.html/.keep'
+push > /dev/null || true
+if on web 'test -f /var/lib/ccs-data/ideas/index.html'; then ok "held back: a page made a folder (its last good copy stays)"; else fail "a page made a folder: the live page is gone"; fi
+# the page check stopping (here: its cache of the proposals' texts broken) holds back every page,
+# not only the ones it got to: what isn't known good doesn't go live
+v=$((v + 1)); site "$v" "$good"
+on web 'for f in /var/lib/ccs-gate/bodies-*.jsonl; do echo "{not json" > "$f"; done'
+rc=0; push > /dev/null || rc=$?
+if ((rc == 7)) && [[ $(live) != "$v" ]] && on web "grep -q 'a page the gate could not check' /var/log/ccs-gate.log"; then ok "the page check stopping: every page held back"; else echo "push exit $rc, live $(live)"; fail "the page check stopping: pages went live unchecked"; fi
+on web 'rm -f /var/lib/ccs-gate/bodies-*.jsonl'
+# a backend that hangs up while the gate checks its push: the gate must still tell IRC what it held back
+v=$((v + 1)); site "$v" "$good"
+put proposals/probe.html <<<"<p>$(addr 5 C)</p>"
+alerts=$(bot | grep -c . || true)
+before=$(on web 'stat -c %Y /var/lib/ccs-gate/last-push 2> /dev/null || echo 0')
+on backend "rsync -a --delay-updates -e 'ssh -o BatchMode=yes' /out/ ccs-data@$web: > /dev/null 2>&1 &"
+# received (the gate stamps last-push once rrsync is done): hang up while it checks
+for _ in $(seq 100); do [[ $(on web 'stat -c %Y /var/lib/ccs-gate/last-push 2> /dev/null || echo 0') != "$before" ]] && break; sleep 0.1; done
+on backend 'pkill -x ssh || true'
+for _ in $(seq 100); do on web 'pgrep -f ccs-receive > /dev/null' || break; sleep 0.2; done
+if (($(bot | grep -c . || true) > alerts)); then ok "a backend that hangs up mid-check: the gate still alerts"; else on web 'tail -n 3 /var/log/ccs-gate.log'; fail "a backend that hangs up mid-check: no alert from the gate"; fi
 
 exit "$status"

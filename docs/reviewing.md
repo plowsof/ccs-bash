@@ -59,8 +59,9 @@ Pinned container, read-only, no capabilities, `--network host` only to reach wal
   `images/<its name>/`. `ideas`: open MRs whose file reads as a proposal, the `IDEAS_MAX` (100) most recently updated,
   what each adds at its commit, and whether its file reads, kept in `STATE_DIR/ideas.cache`
   (anyone can open MRs: each is fetched once, not every run); title and author
-  HTML-escaped, any run of 90 or more base58 characters shortened, invisible characters in it or
-  not (an MR title can't carry an address to the gate), links `https:` only; its file 1 MB at most.
+  HTML-escaped, bidi controls dropped, any run of 90 or more characters each base58 or not ASCII
+  (invisible characters, look-alike letters) shortened, as the gate's `TEXT` rule (an MR title can't carry an address to the gate), links
+  `https:` only; its file 1 MB at most.
 - [`lib/images.sh`](../lib/images.sh): copies the images a proposal's Markdown shows from
   `images/<proposal>/` (plain files, PNG, JPEG or GIF by their first bytes, 2 MB at most) and writes
   `images.json`. No network.
@@ -102,7 +103,9 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
 - The push: `rsync --delay-updates` as `ccs` to the web server's key, which runs only the gate.
 - [`contrib/ccs-watch`](../contrib/ccs-watch), as `ccs`: fetches the donation pages (each under `/`,
   `/dark/` or `/light/` at random), every file they use, `WATCH_SAMPLE` other pages at random and
-  `/projects`, asking as Tor Browser does (its headers, `Sec-Fetch-*` by what is fetched), through
+  `/projects`, and the fonts and icons the stylesheets use (`url()`), asking as Tor Browser does
+  (its headers, `Sec-Fetch-*` by what is fetched, a page typed in, clicked on the site or from
+  another at random), through
   a proxy picked at random, and compares each byte for byte with what was pushed. A difference must
   last three fetches over 40 s and two runs before it alerts; a page answering anything else than
   200 with a body, three checks in a row while the rest of the site answers, alerts too; `--run`
@@ -127,10 +130,13 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
   `pages` (`pages_py`, Python's standard library only): every page must be one of the design's
   (`design/<release>/`, its zip unpacked), byte for byte outside its regions; each region a
   sequence of the design's parts and each `{{slot}}` a value of its kind, one regex per page
-  built from the parts (`Design.fill`, `region`, `slots`); a proposal's text what `markdown.awk`
-  makes of its file at one of those commits (`bodies`, kept by commit). `scan` (awk) reads every
-  page and JSON as written (entities decoded, a non-ASCII or control character both dropped and a
-  space) for addresses, the JSON as JSON too (`json_py`), and every `data:` image (`qrdata`:
+  built from the parts (`Design.fill`, `region`, `slots`); a proposal's text, milestones and
+  payouts what `markdown.awk` makes of its file at one of those commits (`bodies`, kept by
+  commit); a donation box one address of the signed list, its QR code that address's. A page it
+  doesn't pass (`=ok`), whatever the reason, out of time included, is held back. `kinds`: no
+  symlink, no folder in a file's place or file in a folder's. `scan` (`scan_py`, one pass) reads
+  every page and JSON as written (entities decoded, a non-ASCII or control character both
+  dropped and a space) for addresses, the JSON as JSON too (`json_py`), and every `data:` image (`qrdata`:
   zbarimg reads one listed address, and its pixels, read by `pixels_py`, are those of
   `qrencode -s 10` of it). A page or JSON must start with `<`, `[` or `{`. `changes`: any other
   file the push changes must be the design's (`design.sha256`), a proposal image the proposals
@@ -140,9 +146,33 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
   push fails, IRC is told. `--heartbeat` (a timer): alerts when no push has come for 15 minutes.
 - nginx: static files, the security headers, the theme map ([two machines](two-machines.md)).
 
+## Where an address is checked against the signed list
+
+The rule everything serves, step by step, from a new proposal's subaddress to the visitor's
+wallet. The list is the wallet's first 15,000 subaddresses, signed by a Core Team member's own
+key; its `.pin` (sha256 and key) is what each machine trusts, installed by hand once
+`tools/verify-subaddresses.sh` (ccs-front-bash) has checked who signed it ([handover](handover.md#4-the-signed-subaddress-list), step 4).
+
+| Step | Where | What is checked | If not |
+|---|---|---|---|
+| 1. The wallet is the CCS wallet | `lib/common.sh:17` `load_config`; `lib/wallet.sh:23` `check_wallet_addresses` | `WALLET_ADDRESS` (root's config, which ccs-bash can't write) is the wallet's main address; every subaddress in the state is the wallet's at its index | the run stops |
+| 2. A new proposal gets a subaddress | `lib/wallet.sh:47` `assign_addresses` (`:50`, `:53`, `:56`) | made by the wallet itself (`create_address`, labelled with the proposal), 95 characters, its index above every index in the state (never one already given) | the run stops. Not checked against the list here: ccs-bash doesn't read it; step 3 does, before anything is shown |
+| 3. Every donation address is on the list | ccs-front-bash `ccs-front-bash.sh:92` `check_addresses` (`:102`, `:105`) | the list is the one its `.pin` names (sha256); every funding-required proposal's address is a line of it | the run stops, no site is made (an address past index 15,000 too: make a longer list) |
+| 4. Its QR code is made from it | ccs-front-bash `ccs-front-bash.sh:140` `qr_codes` (`:143`, `:144`) | made here, from the checked address (`qrencode -s 10 "monero:<address>"`); ccs-bash's own QR codes are never used | the run stops |
+| 5. The page holds them | ccs-front-bash `lib/pages.jq:43`, `:44` | the donation box gets that address and that QR code, else the run stops | the run stops |
+| 6. The web server's list is the pinned one | `contrib/ccs-receive:553`, `:555` | the gate's own copy (installed by hand) is the one its `.pin` names | every push refused, IRC told |
+| 7. Every address on every page is on the list | `contrib/ccs-receive:578`, `:579` (`scan`, `:384`; `json_py`) | every 95- or 106-character address in a page or JSON, as written (entities read, a non-ASCII character as nothing and as a space), is a line of the list or in `allowed` | that file held back, its last good copy stays, IRC told |
+| 8. Every QR code is of a listed address | `contrib/ccs-receive:174` `qrdata` | each `data:` image is, pixel for pixel, `qrencode -s 10` of the `monero:` address zbarimg reads in it, and that address goes through step 7 | held back |
+| 9. Addresses only where the design puts them | `contrib/ccs-receive:316` (`pages_py`, the `address` and `qr` slots), `pages`, `:469` | a page is the design's, filled: an address can only be in the donation box's slots, each one address | held back |
+| 10. What is live is what was pushed | `contrib/ccs-watch:228`, `:231` | the live donation pages (and others at random) byte for byte; a live address not on the list is named in the alert | IRC told |
+| 11. The visitor | the Verify page (`parts/verify.html`, filled by `check_addresses`) | the list, its signature and key, the signer's fingerprint; the commands to ask a copy of the wallet whether an address is its own (`get_address_index`) | the visitor doesn't pay |
+
+Steps 3–5 stop a wrong address on the backend (whatever changes ccs-bash's JSON); 6–9 on the web
+server (whatever the backend pushes); 10–11 catch a web server that serves something else.
+
 ## The dense parts
 
 Where to slow down: `markdown.awk`'s `hold`/`unhold`; `ccs-receive`'s `pages_py` (the slot
-rules: `TEXT`'s lookahead is what keeps an address out of a name) and `decode` (entity decoding by
-hand, no interval expressions for old mawk); `load_state`'s CSV regex
+rules: `TEXT`'s lookahead is what keeps an address out of a name, matched by `noaddress` in
+`gitlab.sh`) and `scan_py`'s `entity` (entity decoding by hand); `load_state`'s CSV regex
 (`proposals.sh`); `forgejo_prs`' time-zone conversion (`gitlab.sh`).
