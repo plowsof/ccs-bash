@@ -303,6 +303,12 @@ only password, so keep them in the root-owned files above.
 On every machine: SSH by key only (`PasswordAuthentication no` in `/etc/ssh/sshd_config`), and
 security updates installed automatically (`unattended-upgrades` on Debian).
 
+**Root on the backend and on the web server: not one key.** Each machine checks the other (the gate
+the backend's pushes, ccs-watch the web server's pages); whoever has root on both can get past both,
+leaving only visitors who check an address in a view-only wallet. So log in to each with its own
+SSH key, ideally on its own device (a hardware key), and if you can, let a second person hold the
+web server's root and install its list and design.
+
 ## What you fill in
 
 Everything that is yours to set, by machine. Values for ccs.getmonero.org are given where they are
