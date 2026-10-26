@@ -54,6 +54,19 @@ export CCS_WATCH_WAITS="0.2 0.2"
 page=$tmp/remote/proposals/a\ b.html
 if watch && [[ $(alerts) == 0 ]] && grep -q "the 5 pages on .*, and the 6 other pages and files, are what was pushed" "$tmp/log"; then ok "nothing changed: no alert (5 pages: 4 fixed, 1 with a donation box; 6 others: the page without one, theme.css and its dark and light ones, the QR code, the icon)"; else cat "$tmp/log"; fail "unchanged site"; fi
 
+# The files a page uses, under /dark/ and /light/ too (a visitor who picked a theme loads them
+# there: the links are relative): another General Fund QR code served only there alerts, within a
+# few runs (each file under one prefix a run, at random)
+for t in dark light; do rm "$tmp/remote/$t/assets/general-fund-qr.png"; echo "another address's QR code" > "$tmp/remote/$t/assets/general-fund-qr.png"; done
+for _ in $(seq 20); do watch || true; [[ $(alerts) == 0 ]] || break; done
+if [[ $(alerts) == 1 ]] && grep -qE "the file differs from what was pushed .* @ http://127.0.0.1:$web/(dark|light)/assets/general-fund-qr.png" "$tmp/bot.txt"; then
+    ok "a QR code changed only under /dark/ and /light/: an alert naming it there"
+else
+    cat "$tmp/bot.txt" 2> /dev/null; fail "a file changed only under a theme prefix"
+fi
+for t in dark light; do rm "$tmp/remote/$t/assets/general-fund-qr.png"; ln -s ../../assets/general-fund-qr.png "$tmp/remote/$t/assets/general-fund-qr.png"; done
+: > "$tmp/bot.txt"; rm -f "$tmp/state"/alert-* "$tmp/state"/differs-*
+
 # Never an alert for the web server being slow, down or answering nothing: those are failed
 # fetches, not "differs".
 cp "$page" "$tmp/page.good"
@@ -95,7 +108,9 @@ for f in assets/theme.css dark/assets/theme.css assets/general-fund-qr.png asset
     cp --remove-destination "$tmp/remote/$f" "$tmp/changed" && echo '.address { display: none }' >> "$tmp/changed"
     cp "$tmp/remote/$f" "$tmp/good" && cp --remove-destination "$tmp/changed" "$tmp/remote/$f"
     watch || true; watch || true
-    if [[ $(alerts) == 1 ]] && grep -qF "the file differs from what was pushed (a page's stylesheet, font or image) @ http://127.0.0.1:$web/$f" "$tmp/bot.txt"; then
+    # (fetched under /, /dark/ or /light/ at random, but theme.css: each prefix has its own)
+    strip() { if [[ $f == *theme.css ]]; then cat "$@"; else sed -E 's#/(dark|light)/#/#' "$@"; fi; }
+    if [[ $(alerts) == 1 ]] && strip "$tmp/bot.txt" | grep -qF "the file differs from what was pushed (a page's stylesheet, font or image) @ http://127.0.0.1:$web/$f"; then
         ok "a file a page uses changed: $f"
     else
         cat "$tmp/log" "$tmp/bot.txt"; fail "a changed $f"

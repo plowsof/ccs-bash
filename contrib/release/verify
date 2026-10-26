@@ -89,46 +89,20 @@ key_of() {
         | awk -F: '$1 == "pub" { want = 1; next } want && $1 == "fpr" { print $10; want = 0 }')
     [[ $fprs =~ ^[0-9A-F]{40}$ ]] && echo "$fprs"
 }
-# signed MANIFEST: good signature (.asc) by the key of the signer whose folder it is in; prints
-# that key's fingerprint
+# signed MANIFEST: good signature (.asc) by the key of the signer whose folder it is in, not
+# revoked (gpg still says VALIDSIG for a revoked key's signature); prints that key's fingerprint.
+# An expired key's still counts: its attestations were made before it expired.
 signed() {
-    local signer key by
+    local signer key status by
     signer=$(basename "$(dirname "$1")")
     key=$(key_of "$signer") || return 1
-    by=$(gpg --batch --status-fd 1 --verify "$1.asc" "$1" 2> /dev/null | awk '$2 == "VALIDSIG" { print $NF }') || return 1
+    status=$(gpg --batch --status-fd 1 --verify "$1.asc" "$1" 2> /dev/null) || return 1
+    grep -qE '^\[GNUPG:\] (REVKEYSIG|KEYREVOKED|BADSIG|ERRSIG) ' <<<"$status" && return 1
+    by=$(awk '$2 == "VALIDSIG" { print $NF }' <<<"$status")
     [[ $by == "$key" ]] && echo "$key"
 }
 # counts KEY: it counts, unless TRUSTED_KEYS is set and doesn't have it
 counts() { [[ -z ${TRUSTED_KEYS:-} ]] || grep -qxF "$1" <<<"$trusted"; }
-
-# Usage: verify compare_manifest current_manifest
-verify() {
-    local compare_manifest="$1"
-    local current_manifest="$2"
-    local signer
-    signer=$(basename "$(dirname "$current_manifest")")
-    if [ ! -e "$CCS_SIGS_REPO/builder-keys/$signer.asc" ]; then
-        echo "ERR: there is no builder-keys/$signer.asc for '${current_manifest}'"
-        failure=1
-    elif ! signed "$current_manifest" > /dev/null; then
-        echo "ERR: '${current_manifest}' is not signed by builder-keys/$signer.asc (one key)"
-        echo ""
-        echo "Hint: Either the signature is invalid, or made by another key than $signer's"
-        echo ""
-        failure=1
-    elif ! diff --report-identical "$compare_manifest" "$current_manifest" 1>&2; then
-        echo "ERR: The SHA256SUMS attestation in these two directories differ:"
-        echo "    '${compare_manifest}'"
-        echo "    '${current_manifest}'"
-        echo ""
-        failure=1
-    else
-        echo "Verified: '${current_manifest}'"
-        echo ""
-        return 0
-    fi
-    return 1
-}
 
 if (( $# )); then names=( "$@" ); else
     names=()
@@ -137,25 +111,28 @@ if (( $# )); then names=( "$@" ); else
 fi
 
 # release NAME: one release, in every set (folder) that has it: each signature checked, and its
-# line the same for every signer, whichever set they attested
+# whole line (the hash, and the name with the commit it was built from) the same for every signer
+# who counts, whichever set they attested. Only those who count are compared: one who doesn't
+# can't change what is printed, nor stop the others agreeing.
 release() {
-    local name=$1 set m line key first='' firstfrom='' n=0 seen=0 commit counted=' '
+    local name=$1 set m line key base='' basefrom='' n=0 seen=0 commit counted=' '
     for set in "$CCS_SIGS_REPO"/*/; do
         set=$(basename "$set")
         [[ +$set+ == *"+$name+"* ]] || continue
         for m in "$CCS_SIGS_REPO/$set"/*/all.SHA256SUMS; do
             if ! key=$(signed "$m"); then
-                echo "ERR: '$m' is not signed by its signer's key (builder-keys/$(basename "$(dirname "$m")").asc)"; failure=1; continue
+                echo "ERR: '$m' is not signed by its signer's key (builder-keys/$(basename "$(dirname "$m")").asc), or that key is revoked"; failure=1; continue
             fi
-            line=$(grep -E "^[0-9a-f]{64}  $name([-.]|\$)" "$m" | head -n 1 || true)
+            line=$(grep -E "^[0-9a-f]{64}  $name([-.]|\$)" "$m" || true)
             [ -n "$line" ] || { echo "ERR: '$m' has no line for $name"; failure=1; continue; }
-            if [ -z "$first" ]; then first=$line firstfrom=$m
-            elif [ "${line%% *}" != "${first%% *}" ]; then
-                echo "ERR: $name differs: '$firstfrom' has ${first%% *}, '$m' has ${line%% *}"; failure=1; continue
-            fi
+            [[ $line != *$'\n'* ]] || { echo "ERR: '$m' has more than one line for $name"; failure=1; continue; }
             seen=$((seen + 1))
             if ! counts "$key"; then echo "Not counted: '$m' (key $key is not in TRUSTED_KEYS)"; continue; fi
             if [[ $counted == *" $key "* ]]; then echo "Not counted again: '$m' (key $key already counted)"; continue; fi
+            if [ -z "$base" ]; then base=$line basefrom=$m
+            elif [ "$line" != "$base" ]; then
+                echo "ERR: $name differs: '$basefrom' has '$base', '$m' has '$line'"; failure=1; continue
+            fi
             counted+="$key "
             n=$((n + 1))
             echo "Verified: $name in '$m'"
@@ -164,9 +141,9 @@ release() {
     (( seen )) && checked=1
     echo ""
     if (( n )); then
-        echo "$name: ${first%% *} (${n} signer(s) agree)"
+        echo "$name: ${base%% *} (${n} signer(s) agree)"
         # the commit it was built from, when the attestation names it (contrib/release/build)
-        commit=${first##*  "$name"-}; commit=${commit%.image-id}
+        commit=${base##*  "$name"-}; commit=${commit%.image-id}
         [[ $commit =~ ^[0-9a-f]{12,40}$ ]] && echo "$name: from commit $commit (check the tag is it before building)"
         if (( n < min_signers )); then echo "ERR: $name: $n signer(s) agree, $min_signers needed (--min-signers)"; failure=1; fi
     elif (( seen )); then
@@ -190,22 +167,44 @@ for name in "${names[@]}"; do
     echo "--------------------  $name  (${#all_all[@]} signer(s))"
     echo ""
     if (( ${#all_all[@]} )); then
-        compare_all="${all_all[0]}"
-        if [[ -n "$SIGNER" && -f "$OUTSIGDIR_BASE/$SIGNER/all.SHA256SUMS" ]]; then
+        # SIGNER's manifest first, as the base to compare against (if it counts)
+        if [[ -n ${SIGNER:-} && -f $OUTSIGDIR_BASE/$SIGNER/all.SHA256SUMS ]]; then
             echo "Using $SIGNER's manifest as the base to compare against"
-            compare_all="$OUTSIGDIR_BASE/$SIGNER/all.SHA256SUMS"
+            all_all=( "$OUTSIGDIR_BASE/$SIGNER/all.SHA256SUMS" "${all_all[@]/"$OUTSIGDIR_BASE/$SIGNER/all.SHA256SUMS"}" )
         fi
-        # as for one release: only signers who agree count, each key once, TRUSTED_KEYS' only
-        n=0 counted=' '
-        for current_manifest in "${all_all[@]}"; do
-            verify "$compare_all" "$current_manifest" || continue
-            key=$(signed "$current_manifest")
-            if ! counts "$key"; then echo "Not counted: '$current_manifest' (key $key is not in TRUSTED_KEYS)"; continue; fi
-            if [[ $counted == *" $key "* ]]; then echo "Not counted again: '$current_manifest' (key $key already counted)"; continue; fi
+        # as for one release: only signers who count are compared, each key once, TRUSTED_KEYS'
+        # only; and the base must have one line for each release the folder's name lists and no
+        # other (an old set's manifests copied under a new set's name don't)
+        n=0 counted=' ' base=''
+        for m in "${all_all[@]}"; do
+            [ -n "$m" ] || continue
+            if ! key=$(signed "$m"); then
+                echo "ERR: '$m' is not signed by its signer's key (builder-keys/$(basename "$(dirname "$m")").asc), or that key is revoked"; failure=1; continue
+            fi
+            if ! counts "$key"; then echo "Not counted: '$m' (key $key is not in TRUSTED_KEYS)"; continue; fi
+            if [[ $counted == *" $key "* ]]; then echo "Not counted again: '$m' (key $key already counted)"; continue; fi
+            if [ -z "$base" ]; then
+                ok=1 parts=0
+                for part in ${name//+/ }; do
+                    parts=$((parts + 1))
+                    [[ $(grep -cE "^[0-9a-f]{64}  $part([-.]|\$)" "$m") == 1 ]] || { echo "ERR: '$m' has no line, or several, for $part"; ok=''; }
+                done
+                [[ $(grep -c . "$m") == "$parts" ]] || { echo "ERR: '$m' has other lines than the $parts release(s) in '$name'"; ok=''; }
+                [ -n "$ok" ] || { failure=1; continue; }
+                base=$m
+            elif ! diff --report-identical "$base" "$m" 1>&2; then
+                echo "ERR: The SHA256SUMS attestation in these two directories differ:"
+                echo "    '$base'"
+                echo "    '$m'"
+                failure=1; continue
+            fi
             counted+="$key "
             n=$((n + 1))
+            echo "Verified: '$m'"
         done
+        echo ""
         echo "$name: ${n} signer(s) agree"
+        [ -z "$base" ] || sed 's/^/    /' "$base"
         if (( n < min_signers )); then echo "ERR: $name: $n signer(s) agree, $min_signers needed (--min-signers)"; failure=1; fi
         echo ""
         checked=1
