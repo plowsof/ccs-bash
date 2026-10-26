@@ -284,12 +284,14 @@ got=$(
 if [[ $got == 'Pay naïve me: 44AFFq…EP3A!' ]]; then echo "ok   an address in an idea's title is shortened, invisible characters in it or not"; else echo "FAIL an address in an idea's title: '$got'"; status=1; fi
 # ... and when drawn with other characters (the web server's gate holds back the same): its halves
 # in bidi embeddings, shown in another order than written; mathematical letters and digits;
-# Cyrillic letters for some of its own. What is left has no bidi control, and no run of 90
-# characters each base58 or not ASCII.
-for how in bidi math cyrillic; do
+# Cyrillic letters for some of its own; in groups of four, split by spaces or dashes. What is left
+# has no bidi control, and no run of 90 characters each base58 or not ASCII, grouped or not.
+for how in bidi math cyrillic groups dashes; do
     # (jq, not python: the tests also run inside the pinned image, which has none)
     t=$(jq -rn --arg a "$addr" --arg how "$how" '
         if $how == "bidi" then "Moved: \u202b\u202a" + $a[48:] + "\u202c\u202a " + $a[:48] + "\u202c\u202c"
+        elif $how == "groups" then "Pay: " + ([range(0; 95; 4) as $i | $a[$i:$i + 4]] | join(" "))
+        elif $how == "dashes" then "Pay: " + ([range(0; 95; 4) as $i | $a[$i:$i + 4]] | join("-"))
         elif $how == "math" then "Pay: " + ($a | explode | map(if . >= 48 and . <= 57 then . + 120754 elif . >= 65 and . <= 90 then . + 120727 else . + 120729 end) | implode)
         else "Pay: " + ($a | gsub("A"; "\u0410") | gsub("B"; "\u0412") | gsub("E"; "\u0415")) end')
     jq --arg t "$t" 'map(if .iid == 11 then .title = $t else . end)' "$FIXTURES/gitlab/opened.json" > "$fx/gitlab/opened.json"
@@ -299,7 +301,7 @@ for how in bidi math cyrillic; do
         WORK=$(mktemp -d) FIXTURES=$fx PROPOSALS_DIR=$here/fixtures/proposals ideas 2> /dev/null | jq -r '.[] | select(."gitlab-url" | endswith("/11")) | .name'
     )
     if [[ $got == Pay* || $got == Moved* ]] && jq -en --arg s "$got" '$s | (test("[\u202a-\u202e\u2066-\u2069]")
-        or test("(?:[1-9A-HJ-NP-Za-km-z]|[^\\x00-\\x7F]){90}")) | not' > /dev/null; then
+        or test("(?:[1-9A-HJ-NP-Za-km-z]|[^\\x00-\\x7F])(?:(?: +|[._:-])?(?:[1-9A-HJ-NP-Za-km-z]|[^\\x00-\\x7F])){89}")) | not' > /dev/null; then
         echo "ok   an address in an idea's title, drawn with other characters ($how), is shortened or broken up"
     else
         echo "FAIL an address in an idea's title ($how): '$got'"; status=1
@@ -715,6 +717,42 @@ if command -v gpg > /dev/null && command -v gpgconf > /dev/null; then
     else
         cat "$TEST_TMP/v.out"; echo "FAIL release/verify and TRUSTED_KEYS"; status=1
     fi
+    # Signers who count must agree on the whole line, the commit too, and only they are compared:
+    # one not in TRUSTED_KEYS (aaa, read first) can't change the commit printed, nor stop them
+    # agreeing. A set's manifests must list exactly its releases (an old set copied under a new
+    # name doesn't), and a revoked key doesn't count.
+    key() { # NAME: a test key, its builder-keys/NAME.asc; prints its fingerprint
+        GNUPGHOME=$k gpg --batch --quiet --passphrase '' --quick-gen-key "$1 <$1@test>" ed25519 sign 1d 2> /dev/null
+        GNUPGHOME=$k gpg --with-colons -k "$1@test" 2> /dev/null | awk -F: '$1 == "fpr" { print $10; exit }'
+        GNUPGHOME=$k gpg --batch --armor --export "$1@test" > "$sigs/builder-keys/$1.asc"
+    }
+    attest() { # DIR SIGNER LINE...: SIGNER's signed all.SHA256SUMS in DIR
+        mkdir -p "$sigs/$1/$2" && printf '%s\n' "${@:3}" > "$sigs/$1/$2/all.SHA256SUMS"
+        GNUPGHOME=$k gpg --batch --quiet --yes --armor --local-user "$2@test" --detach-sign "$sigs/$1/$2/all.SHA256SUMS"
+    }
+    bob=$(key bob); key aaa > /dev/null
+    echo "$bob  # bob" >> "$TEST_TMP/verify-trusted"
+    good=$(printf '%064d  ccs-bash-v9.9.9-%040d.image-id' 1 2) evil=$(printf '%064d  ccs-bash-v9.9.9-%040d.image-id' 1 3)
+    attest ccs-bash-v9.9.9 bob "$good"; attest ccs-bash-v9.9.9 aaa "$evil"
+    v2() { env CCS_SIGS_REPO="$sigs" TRUSTED_KEYS="$TEST_TMP/verify-trusted" "$here/../contrib/release/verify" "$@" > "$TEST_TMP/v.out" 2>&1; }
+    vok=1
+    if ! { v2 ccs-bash-v9.9.9 && grep -q '(2 signer(s) agree)' "$TEST_TMP/v.out" && grep -q "from commit $(printf '%040d' 2) " "$TEST_TMP/v.out" \
+        && grep -q "Not counted: '.*/aaa/" "$TEST_TMP/v.out"; }; then cat "$TEST_TMP/v.out"; echo "FAIL release/verify: an untrusted signer's commit"; vok=''; fi
+    attest ccs-bash-v9.9.9 bob "$evil"
+    if ! { ! v2 ccs-bash-v9.9.9 && grep -q 'ERR: ccs-bash-v9.9.9 differs' "$TEST_TMP/v.out"; }; then cat "$TEST_TMP/v.out"; echo "FAIL release/verify: two trusted signers, two commits"; vok=''; fi
+    attest ccs-bash-v9.9.9 bob "$good"
+    set2=ccs-bash-v9.9.9+ccs-front-bash-v9.9.9
+    attest "$set2" alice "$good"; attest "$set2" bob "$good"
+    if ! { ! v2 "$set2" && grep -q 'has no line, or several, for ccs-front-bash-v9.9.9' "$TEST_TMP/v.out"; }; then cat "$TEST_TMP/v.out"; echo "FAIL release/verify: a set without a line for each of its releases"; vok=''; fi
+    front=$(printf '%064d  ccs-front-bash-v9.9.9-%040d.image-id' 4 5)
+    attest "$set2" alice "$good" "$front"; attest "$set2" bob "$good" "$front"; attest "$set2" aaa "$evil" "$front"
+    if ! { v2 "$set2" && grep -q "$set2: 2 signer(s) agree" "$TEST_TMP/v.out" && grep -qF "    $front" "$TEST_TMP/v.out"; }; then cat "$TEST_TMP/v.out"; echo "FAIL release/verify: a set, an untrusted signer read first"; vok=''; fi
+    # (gpg keeps a revocation for each key it makes, its first line's ":" stopping a careless import)
+    sed 's/^:-----BEGIN/-----BEGIN/' "$k/openpgp-revocs.d/$bob.rev" | GNUPGHOME=$k gpg --batch --quiet --import 2> /dev/null
+    GNUPGHOME=$k gpg --batch --armor --export "$bob" > "$sigs/builder-keys/bob.asc"
+    if ! { ! v2 ccs-bash-v9.9.9 && grep -q "bob/all.SHA256SUMS' is not signed .*or that key is revoked" "$TEST_TMP/v.out" && grep -q '(1 signer(s) agree)' "$TEST_TMP/v.out"; }; then cat "$TEST_TMP/v.out"; echo "FAIL release/verify: a revoked key"; vok=''; fi
+    GNUPGHOME=$k gpgconf --kill all 2> /dev/null || true
+    if [[ $vok ]]; then echo "ok   release/verify: trusted signers agree on the commit too; an untrusted one changes nothing; a set lists exactly its releases; a revoked key doesn't count"; else status=1; fi
 else
     echo "ok   release/verify: skipped (no gpg here)"
 fi
