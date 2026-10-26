@@ -1,15 +1,137 @@
 {
   "in": [
-    {"txid": "t1", "amount": 1000000000000, "confirmations": 50, "unlock_time": 0, "subaddr_index": {"major": 0, "minor": 1}},
-    {"txid": "t1", "amount": 1000000000000, "confirmations": 50, "unlock_time": 0, "subaddr_index": {"major": 0, "minor": 1}},
-    {"txid": "t2", "amount": 250000000000, "confirmations": 10, "unlock_time": 0, "subaddr_index": {"major": 0, "minor": 1}},
-    {"txid": "t3", "amount": 5000000000000, "confirmations": 9, "unlock_time": 0, "subaddr_index": {"major": 0, "minor": 1}},
-    {"txid": "t4", "amount": 7000000000000, "confirmations": 99, "unlock_time": 3000000, "subaddr_index": {"major": 0, "minor": 1}},
-    {"txid": "t5", "amount": 123456789012, "confirmations": 20, "unlock_time": 0, "subaddr_index": {"major": 0, "minor": 2}},
-    {"txid": "t7", "amount": 99999960000000, "confirmations": 30, "unlock_time": 0, "subaddr_index": {"major": 0, "minor": 3}},
-    {"txid": "t8", "amount": 18000000000000000000, "confirmations": 30, "unlock_time": 0, "subaddr_index": {"major": 0, "minor": 0}}
+    {
+      "txid": "7431000000000000000000000000000000000000000000000000000000000000",
+      "amount": 1000000000000,
+      "confirmations": 50,
+      "unlock_time": 0,
+      "subaddr_index": {
+        "major": 0,
+        "minor": 1
+      },
+      "height": 3099950
+    },
+    {
+      "txid": "7431000000000000000000000000000000000000000000000000000000000000",
+      "amount": 1000000000000,
+      "confirmations": 50,
+      "unlock_time": 0,
+      "subaddr_index": {
+        "major": 0,
+        "minor": 1
+      },
+      "height": 3099950
+    },
+    {
+      "txid": "7432000000000000000000000000000000000000000000000000000000000000",
+      "amount": 250000000000,
+      "confirmations": 10,
+      "unlock_time": 0,
+      "subaddr_index": {
+        "major": 0,
+        "minor": 1
+      },
+      "height": 3099990
+    },
+    {
+      "txid": "7433000000000000000000000000000000000000000000000000000000000000",
+      "amount": 5000000000000,
+      "confirmations": 9,
+      "unlock_time": 0,
+      "subaddr_index": {
+        "major": 0,
+        "minor": 1
+      },
+      "height": 3099991
+    },
+    {
+      "txid": "7434000000000000000000000000000000000000000000000000000000000000",
+      "amount": 7000000000000,
+      "confirmations": 99,
+      "unlock_time": 3000000,
+      "subaddr_index": {
+        "major": 0,
+        "minor": 1
+      },
+      "height": 3099901
+    },
+    {
+      "txid": "7435000000000000000000000000000000000000000000000000000000000000",
+      "amount": 123456789012,
+      "confirmations": 20,
+      "unlock_time": 0,
+      "subaddr_index": {
+        "major": 0,
+        "minor": 2
+      },
+      "height": 3099980
+    },
+    {
+      "txid": "7437000000000000000000000000000000000000000000000000000000000000",
+      "amount": 99999960000000,
+      "confirmations": 30,
+      "unlock_time": 0,
+      "subaddr_index": {
+        "major": 0,
+        "minor": 3
+      },
+      "height": 3099970
+    },
+    {
+      "txid": "7438000000000000000000000000000000000000000000000000000000000000",
+      "amount": 18000000000000000000,
+      "confirmations": 30,
+      "unlock_time": 0,
+      "subaddr_index": {
+        "major": 0,
+        "minor": 0
+      },
+      "height": 3099970
+    },
+    {
+      "txid": "7439000000000000000000000000000000000000000000000000000000000000",
+      "amount": 4000000000000,
+      "confirmations": 60,
+      "unlock_time": 3200000,
+      "subaddr_index": {
+        "major": 0,
+        "minor": 2
+      },
+      "height": 3099940
+    },
+    {
+      "txid": "7461000000000000000000000000000000000000000000000000000000000000",
+      "amount": 500000000000,
+      "confirmations": 40,
+      "unlock_time": 0,
+      "subaddr_index": {
+        "major": 0,
+        "minor": 2
+      },
+      "height": 3099960
+    },
+    {
+      "txid": "7461000000000000000000000000000000000000000000000000000000000000",
+      "amount": 600000000000,
+      "confirmations": 40,
+      "unlock_time": 0,
+      "subaddr_index": {
+        "major": 0,
+        "minor": 1
+      },
+      "height": 3099960
+    }
   ],
   "pool": [
-    {"txid": "t6", "amount": 9000000000000, "unlock_time": 0, "subaddr_index": {"major": 0, "minor": 1}}
+    {
+      "txid": "7436000000000000000000000000000000000000000000000000000000000000",
+      "amount": 9000000000000,
+      "unlock_time": 0,
+      "subaddr_index": {
+        "major": 0,
+        "minor": 1
+      },
+      "height": 0
+    }
   ]
 }

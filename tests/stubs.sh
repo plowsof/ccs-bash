@@ -24,9 +24,14 @@ rpc() {
             printf '{"address_index": %d, "address": "%s"}\n' "$n" "$(fake_address "$n")" ;;
         label_address)
             jq -r '"\(.index.minor) \(.label)"' <<<"$2" >> "$TEST_TMP/wallet-labels"; echo '{}' ;;
-        get_transfers) # like the real one: only the subaddresses asked for
-            jq --argjson want "$(jq -c '.subaddr_indices // []' <<<"$2")" \
-                'map_values(map(select(.subaddr_index.minor | IN($want[]))))' "$FIXTURES/rpc/get_transfers.json" ;;
+        get_height) printf '{"height": %d}\n' "${TEST_HEIGHT:-3100000}" ;;
+        get_transfers) # (what was asked, for the tests of deposits.csv)
+            echo "$2" >> "$TEST_TMP/get_transfers-calls"
+            # like the real one: only the subaddresses asked for; with filter_by_height,
+            # only confirmed ones above min_height (the pool always)
+            jq --argjson want "$(jq -c '.subaddr_indices // []' <<<"$2")" --argjson p "$2" \
+                'map_values(map(select(.subaddr_index.minor | IN($want[]))))
+                 | if $p.filter_by_height then .in |= map(select(.height > $p.min_height)) else . end' "${TEST_TRANSFERS:-$FIXTURES/rpc/get_transfers.json}" ;;
         *) return 1 ;;
     esac
 }
