@@ -86,38 +86,134 @@ to_atomic() {
 }
 
 # Print donations per subaddress in atomic units: index TAB confirmed TAB pending TAB count.
-# Confirmed at MIN_CONFIRMATIONS, pending before (pool too); time-locked txes never count.
+# Confirmed at MIN_CONFIRMATIONS, pending before (pool too). A time-locked one counts once its
+# lock has passed (a block height below 500,000,000, else a time), and not at all before.
+#
+# The deposits are kept in STATE_DIR/deposits.csv (DEPOSITS), a cache: deleted, the next run
+# makes it again from the wallet. A deposit goes in once its block is DEPOSITS_FINAL (30, and at
+# least MIN_CONFIRMATIONS) deep; each run then asks the wallet only for what came after ("final")
+# and the pool, so its cost doesn't grow with every donation ever made (anyone can send dust).
+#   # final <height> checked <unix time>
+#   <height>,<txid>,<subaddress>,<amount>,<unlock_time>       one a (tx, subaddress), atomic units
+# Once a day (or with no file) everything is fetched and compared: deposits the wallet knows that
+# the file lacks are added; ones the file has that the wallet lacks stop the run (a reorg deeper
+# than that, or a wallet rescanning: the site keeps its last totals). A wallet below the file's
+# height (rescanning, restored) stops it too: never a total lower than the wallet once knew.
 donation_totals() {
-    local transfers lines idx confs amount n indexes
+    local file=${DEPOSITS:-} n indexes wh depth final kept='' H=0 T=0 now full=1 params transfers new=''
+    local kind height txid idx amount unlock confs
     local -A confirmed=() pending=() count=()
     # subaddresses 1+, never 0: it receives other things (payout change looks incoming)
     n=$(rpc get_address '{"account_index": 0}' | jq '.addresses | length') || return 1
     ((n > 1)) || return 0
     indexes=$(jq -nc --argjson n "$n" '[range(1; $n)]')
-    transfers=$(rpc get_transfers "{\"in\": true, \"pool\": true, \"account_index\": 0, \"subaddr_indices\": $indexes}") || return 1
-    # jq only passes amounts through, and stops above 2^53, where it can't read them exactly
-    lines=$(jq -r '
-        (.in // []) + (.pool // [])
-        | map(select((.unlock_time // 0) == 0))
+    wh=$(rpc get_height | jq -r .height) || return 1
+    [[ $wh =~ ^[0-9]+$ ]] || die "unexpected get_height result: '$wh'"
+    depth=${DEPOSITS_FINAL:-30}
+    [[ $depth =~ ^[0-9]+$ ]] || depth=30
+    ((depth >= MIN_CONFIRMATIONS)) || depth=$MIN_CONFIRMATIONS
+    final=$((wh > depth ? wh - depth : 0))
+    now=$(date +%s)
+    if [[ -n $file && -s $file ]]; then
+        read -r _ _ H _ T < "$file" || true
+        local first=''
+        IFS= read -r first < "$file" || true
+        [[ $first =~ ^#\ final\ [0-9]+\ checked\ [0-9]+$ ]] || die "$file: not a deposits file (delete it: the next run makes it again)"
+        kept=$(awk 'NR > 1' "$file")
+        if [[ -n $kept ]] && grep -qvE '^[0-9]+,[0-9a-f]{64},[0-9]+,[0-9]+,[0-9]+$' <<<"$kept"; then
+            die "$file: a line that isn't a deposit (delete it: the next run makes it again)"
+        fi
+        ((wh >= H)) || die "the wallet is at height $wh, below the $H its kept deposits go to: rescanning or restored? (the site keeps its last totals until it has caught up)"
+        ((now - T < 86400)) && full=''
+    fi
+    if [[ $full ]]; then
+        params="{\"in\": true, \"pool\": true, \"account_index\": 0, \"subaddr_indices\": $indexes}"
+    else
+        params="{\"in\": true, \"pool\": true, \"account_index\": 0, \"subaddr_indices\": $indexes, \"filter_by_height\": true, \"min_height\": $H}"
+    fi
+    transfers=$(rpc get_transfers "$params") || return 1
+    # kind height txid subaddress amount unlock_time confirmations; jq only passes amounts
+    # through, and stops above 2^53, where it can't read them exactly
+    transfers=$(jq -r '
+        ((.in // []) | map(. + {kind: "in"})) + ((.pool // []) | map(. + {kind: "pool"}))
         | unique_by([.txid, .subaddr_index.minor])
         | .[]
         | if .amount > 9007199254740992 then error("amount \(.amount) is too large for jq to read exactly") else . end
-        | "\(.subaddr_index.minor) \(.confirmations // 0) \(.amount)"' <<<"$transfers") || return 1
-    while read -r idx confs amount; do
-        [[ -n $idx ]] || continue # no transfers at all
-        # plain numbers only: bash arithmetic runs commands hidden in subscripts ("x[$(cmd)]")
-        [[ $idx =~ ^[0-9]+$ && $confs =~ ^[0-9]+$ && $amount =~ ^[0-9]+$ ]] \
-            || die "unexpected transfer from wallet: index '$idx' confirmations '$confs' amount '$amount'"
+        | "\(.kind) \(.height // 0) \(.txid) \(.subaddr_index.minor) \(.amount) \(.unlock_time // 0) \(.confirmations // 0)"' <<<"$transfers") || return 1
+    # every field checked before bash arithmetic (a subscript can run commands), and the txid
+    # before it goes in the file
+    while read -r kind height txid idx amount unlock confs; do
+        [[ -n $kind ]] || continue
+        [[ $kind =~ ^(in|pool)$ && $height =~ ^[0-9]+$ && $txid =~ ^[0-9a-f]{64}$ && $idx =~ ^[0-9]+$ && $amount =~ ^[0-9]+$ \
+            && $unlock =~ ^[0-9]+$ && $confs =~ ^[0-9]+$ ]] \
+            || die "unexpected transfer from wallet: '$kind $height $txid $idx $amount $unlock $confs'"
+    done <<<"$transfers"
+    if [[ $full && -n $kept ]]; then
+        # everything compared, up to the file's height: the wallet must know every kept deposit
+        local wallet missing extra
+        wallet=$(awk -v h="$H" '$1 == "in" && $2 > 0 && $2 <= h { print $2 "," $3 "," $4 "," $5 "," $6 }' <<<"$transfers")
+        missing=$(only_in "$kept" "$wallet" | grep -c . || true)
+        ((missing == 0)) || die "the wallet lacks $missing of the deposits kept in $file: a reorg deeper than $depth blocks, or a wallet rescanning; check, then delete $file to make it again from the wallet"
+        extra=$(only_in "$wallet" "$kept")
+        if [[ -n $extra ]]; then
+            log "warning: the wallet knows $(grep -c . <<<"$extra") deposit(s) below height $H that $file lacked: added"
+            kept=$(printf '%s\n%s\n' "$kept" "$extra" | sort_deposits)
+        fi
+    fi
+    # deposits now final: into the file, and its height up to final
+    new=$(awk -v lo="$H" -v hi="$final" -v full="$full" '$1 == "in" && $2 > 0 && $2 <= hi && (full != "" ? $2 > 0 : $2 > lo) { print $2 "," $3 "," $4 "," $5 "," $6 }' <<<"$transfers")
+    [[ $full && -n $kept ]] && new=$(awk -F, -v h="$H" '$1 > h' <<<"$new")   # (those up to H were compared above)
+    if [[ -n $file ]]; then
+        local all
+        all=$(printf '%s\n%s\n' "$kept" "$new" | sort_deposits)
+        ((final > H)) || final=$H
+        atomic_write "$file" printf '# final %s checked %s\n%s' "$final" "$([[ $full ]] && echo "$now" || echo "$T")" "${all:+$all$'\n'}" || return 1
+        kept=$all
+    else
+        kept=$(printf '%s\n%s\n' "$kept" "$new" | grep . || true)
+    fi
+    # the totals: the kept deposits, then what isn't final yet (and the pool)
+    while IFS=, read -r height txid idx amount unlock; do
+        [[ -n $height ]] || continue
+        [[ $height =~ ^[0-9]+$ && $txid =~ ^[0-9a-f]{64}$ && $idx =~ ^[0-9]+$ && $amount =~ ^[0-9]+$ && $unlock =~ ^[0-9]+$ ]] \
+            || die "$file: a line that isn't a deposit (delete it: the next run makes it again)"
+        locked "$unlock" && continue
+        confirmed[$idx]=$((${confirmed[$idx]:-0} + amount))
+        count[$idx]=$((${count[$idx]:-0} + 1))
+    done <<<"$kept"
+    while read -r kind height txid idx amount unlock confs; do
+        [[ -n $kind ]] || continue
+        if [[ $kind == in ]] && ((height > 0 && height <= final)); then continue; fi   # kept, counted above
+        locked "$unlock" && continue
         if ((confs >= MIN_CONFIRMATIONS)); then
             confirmed[$idx]=$((${confirmed[$idx]:-0} + amount))
         else
             pending[$idx]=$((${pending[$idx]:-0} + amount))
         fi
         count[$idx]=$((${count[$idx]:-0} + 1))
-    done <<<"$lines"
+    done <<<"$transfers"
     for idx in "${!count[@]}"; do
         printf '%s\t%s\t%s\t%s\n' "$idx" "${confirmed[$idx]:-0}" "${pending[$idx]:-0}" "${count[$idx]}"
     done
+}
+
+# only_in A B: the lines of A that B lacks (the image has no comm or sort)
+only_in() {
+    awk 'NR == FNR { b[$0] = 1; next } $0 != "" && !($0 in b)' <(printf '%s\n' "$2") <(printf '%s\n' "$1")
+}
+
+# Deposit lines on stdin, once each, by height, txid, subaddress (jq: the image has no sort;
+# the amounts stay text)
+sort_deposits() {
+    jq -R -r -s 'split("\n") | map(select(. != "")) | unique
+        | sort_by(split(",") | [(.[0] | tonumber), .[1], (.[2] | tonumber)]) | .[]'
+}
+
+# locked UNLOCK_TIME: still time-locked (a block height below 500,000,000, else a unix time), with
+# the wallet at height wh and the time now (donation_totals')
+locked() {
+    (($1 == 0)) && return 1
+    if (($1 < 500000000)); then ((wh < $1)); else ((now < $1)); fi
 }
 
 # Stop if donations sit at a subaddress this wallet gave a proposal (assign_addresses labels each
