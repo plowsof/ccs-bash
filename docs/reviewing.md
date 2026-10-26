@@ -53,7 +53,9 @@ Pinned container, read-only, no capabilities, `--network host` only to reach wal
 - [`lib/gitlab.sh`](../lib/gitlab.sh): the public API of GitLab or Forgejo (Forgejo's pull requests
   mapped to GitLab's shape). `merged_mr_url`: the merged MR that added a file. `mr_proposal_file`:
   an MR is an idea only if it adds exactly one `.md` at the root, and besides it only files in
-  `images/<its name>/`. `ideas`: open MRs whose file reads as a proposal; title and author
+  `images/<its name>/`. `ideas`: open MRs whose file reads as a proposal, the `IDEAS_MAX` (100) most recently updated,
+  what each adds at its commit, and whether its file reads, kept in `STATE_DIR/ideas.cache`
+  (anyone can open MRs: each is fetched once, not every run); title and author
   HTML-escaped, any run of 90 or more base58 characters shortened, invisible characters in it or
   not (an MR title can't carry an address to the gate), links `https:` only; its file 1 MB at most.
 - [`lib/images.sh`](../lib/images.sh): copies the images a proposal's Markdown shows from

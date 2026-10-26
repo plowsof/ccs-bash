@@ -50,7 +50,8 @@ testnet CCS. A row is added with each release.
 Each is reproducible: anyone who builds a tag gets the same image ID or zip sha256, and those who
 did sign what they got in [ccs-sigs](https://github.com/plowsof/ccs-sigs) (the box at the top left
 of the picture). Before installing, check them: `contrib/release/verify <release>` (two signers who
-agree, by default), then that the ID or sha256 you install is the attested one
+agree, by default, counting only the attesters whose keys you list in `TRUSTED_KEYS`), then that
+the ID or sha256 you install is the attested one
 ([contrib/release](../contrib/release/README.md)).
 
 ## 1. monerod and monero-wallet-rpc (the backend)
@@ -431,9 +432,11 @@ the release's zip, checked by its sha256. For each new release, in this order:
    beside the old in `/etc/ccs-gate/design/` and its lines added to `design.sha256`; a new
    ccs-front-bash whose `lib/markdown.awk` changed, that file beside the old as
    `/etc/ccs-gate/markdown-<release>.awk` ([two machines](two-machines.md), "The gate"). Then
-   tag the new image as the one the run scripts use (`ccs-bash`, `ccs-front-bash`);
+   put the new image's ID in the run scripts (`ccs-bash-run`, `ccs-front-run`: they run an image
+   by its ID, `--pull never`, so no cleanup can take it from under them) and create a stopped
+   container on it (`docker create --name ccs-bash-keep --network none <ID>`, the old one renamed);
    unzip the design into a new folder and swap it with `/opt/ccs-front-hugo/public`, between runs.
-   Keep the previous images (a stopped container on each, so nothing prunes them) to go back to.
+   Keep the previous images (their stopped containers) to go back to.
 5. **Watched and noted.** The next run fills the site and ccs-watch confirms the pages; then add a
    row to [the releases](#the-releases). If anything else on the backend prunes Docker images, keep
    a stopped container on each image ([troubleshooting](troubleshooting.md)).

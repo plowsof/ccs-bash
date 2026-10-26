@@ -9,6 +9,8 @@
 #
 #   TRUSTED_KEYS=FILE   only signers whose key's fingerprint is in FILE (one a line, # comments)
 #                       count; the others are shown, not counted. Keep FILE yourself, not in ccs-sigs.
+#                       Needed: without it nothing counts, unless --any-key (anyone can add a key
+#                       to ccs-sigs, so every key there counting is for seeing who agrees, not trust)
 #   --min-signers N     a release needs N signers who agree: 2 by default, so that one stolen or
 #                       careless key isn't enough; 1 relaxes it (a release only you have attested)
 export LC_ALL=C
@@ -30,10 +32,11 @@ cat <<EOF
 Synopsis:
 
     env [ CCS_SIGS_REPO=<path/to/ccs-sigs> ] [ SIGNER=<signer> ] [ TRUSTED_KEYS=<file> ] \
-        ./contrib/release/verify [ --min-signers N ] [ NAME... ]
+        ./contrib/release/verify [ --min-signers N ] [ --any-key ] [ NAME... ]
 
 A release needs --min-signers signers who agree (default 2), each signature by the key of the
-signer whose folder it is in; with TRUSTED_KEYS, only keys listed there count.
+signer whose folder it is in, and only keys listed in TRUSTED_KEYS count. --any-key instead counts
+every key in ccs-sigs, which anyone can send a key to: to see who agrees, not to trust a release.
 
 NAME is a release (ccs-bash-v0.2.7): its folder, and every older set folder it is in
 (ccs-bash-v0.2.7+ccs-front-bash-v0.1.9+ccs-front-hugo-v0.1.8, from before attest made one folder
@@ -47,10 +50,21 @@ Example overriding signer's manifest to use as base
 EOF
 }
 
-if [ "$1" = -h ] || [ "$1" = --help ]; then cmd_usage; exit 0; fi
-min_signers=2
-if [ "$1" = --min-signers ]; then min_signers=$2; shift 2 || { cmd_usage; exit 1; }; fi
+min_signers=2 any_key=''
+while [[ ${1:-} == -* ]]; do
+    case $1 in
+        -h | --help) cmd_usage; exit 0 ;;
+        --min-signers) min_signers=${2:-}; shift 2 || { cmd_usage; exit 1; } ;;
+        --any-key) any_key=1; shift ;;
+        *) echo "ERR: unknown option '$1'"; cmd_usage; exit 1 ;;
+    esac
+done
 [[ $min_signers =~ ^[1-9][0-9]*$ ]] || { echo "ERR: --min-signers takes a number, 1 or more"; exit 1; }
+if [[ -z ${TRUSTED_KEYS:-} && -z $any_key ]]; then
+    echo "ERR: set TRUSTED_KEYS=<file> to the fingerprints of the attesters you trust, one a line;"
+    echo "     or --any-key to count every key in ccs-sigs (anyone can add one: not for trusting a release)"
+    exit 1
+fi
 
 CCS_SIGS_REPO=${CCS_SIGS_REPO:-external/ccs-sigs}
 [ -d "$CCS_SIGS_REPO/builder-keys" ] || { echo "ERR: '$CCS_SIGS_REPO' isn't a ccs-sigs checkout"; exit 1; }
@@ -125,7 +139,7 @@ fi
 # release NAME: one release, in its folder and every older set folder that has it: each signature
 # checked, and its line the same for every signer, whichever folder they attested in
 release() {
-    local name=$1 set m line key first='' firstfrom='' n=0 commit counted=' '
+    local name=$1 set m line key first='' firstfrom='' n=0 seen=0 commit counted=' '
     for set in "$CCS_SIGS_REPO"/*/; do
         set=$(basename "$set")
         [[ +$set+ == *"+$name+"* ]] || continue
@@ -139,6 +153,7 @@ release() {
             elif [ "${line%% *}" != "${first%% *}" ]; then
                 echo "ERR: $name differs: '$firstfrom' has ${first%% *}, '$m' has ${line%% *}"; failure=1; continue
             fi
+            seen=$((seen + 1))
             if ! counts "$key"; then echo "Not counted: '$m' (key $key is not in TRUSTED_KEYS)"; continue; fi
             if [[ $counted == *" $key "* ]]; then echo "Not counted again: '$m' (key $key already counted)"; continue; fi
             counted+="$key "
@@ -146,7 +161,7 @@ release() {
             echo "Verified: $name in '$m'"
         done
     done
-    (( n )) && checked=1
+    (( seen )) && checked=1
     echo ""
     if (( n )); then
         echo "$name: ${first%% *} (${n} signer(s) agree)"
@@ -154,6 +169,8 @@ release() {
         commit=${first##*  "$name"-}; commit=${commit%.image-id}
         [[ $commit =~ ^[0-9a-f]{12,40}$ ]] && echo "$name: from commit $commit (check the tag is it before building)"
         if (( n < min_signers )); then echo "ERR: $name: $n signer(s) agree, $min_signers needed (--min-signers)"; failure=1; fi
+    elif (( seen )); then
+        echo "ERR: $name: attested $seen time(s), by no one in TRUSTED_KEYS"; failure=1
     else
         echo "WARN: no attestation of $name"
     fi
