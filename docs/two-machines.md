@@ -390,7 +390,7 @@ second, not again within the hour, a line when pushes return, and none before an
 The gate can't help if the web server itself is taken over. `contrib/ccs-watch`, run on the
 backend right after each push, fetches the pages where donations are asked for (home, Funding
 Required, Donate, Verify, every funding-required proposal) from the site as a visitor's browser
-would, and every file they use (the stylesheets with `theme.css`, the fonts, the icons, the General
+would, and every file they use (the stylesheets with `theme.css`, the fonts and icons the stylesheets use, the General
 Fund's QR code, the proposals' images: a changed stylesheet can hide an address and show another
 while the page stays the same), and `WATCH_SAMPLE` (10) of the other pages at random, so that
 every page is seen within a few runs (a web server could add a donation box to any page), and
@@ -402,7 +402,10 @@ rsync skips a file whose size and time were kept.)
 
 So that the web server can't serve it the right pages and visitors others, it asks as Tor Browser
 asks (its user agent and the headers Firefox 128 sends: `Sec-Fetch-*` for a page as a page and a
-stylesheet as one, `Upgrade-Insecure-Requests`, its compression), in no fixed order, each page under `/`, `/dark/` or
+stylesheet as one, `Upgrade-Insecure-Requests`, its compression), each page as a visitor arrives
+at it, at random (typed in, a click on the site itself or on another: `Sec-Fetch-Site` `none`,
+`same-origin` or `cross-site`, so a web server can't change a page only for visitors who click
+through to it), in no fixed order, each page under `/`, `/dark/` or
 `/light/` at random (`WATCH_THEMES=1`, with the theme lines above), through a proxy picked at
 random for each fetch. Tor alone isn't enough: its exits are a public list a web server can check.
 Give it Tor and a clearnet one on another network (`ssh -D 1080 <a machine elsewhere>`, kept up by
