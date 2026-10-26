@@ -42,9 +42,12 @@ Pinned container, read-only, no capabilities, `--network host` only to reach wal
   `check_wallet_addresses`: the main address is `WALLET_ADDRESS` and every subaddress in the state
   is the wallet's (a restored wallet gets them re-created). `assign_addresses`: a new subaddress per
   funding-required proposal, its index above every index in the state. `donation_totals`:
-  `get_transfers` (in and pool), time-locked ones left out, deduplicated by txid and index; every number checked
-  to be digits before bash arithmetic (a subscript can run commands); sums in 64-bit bash, not
-  jq's doubles. `check_wallet_addresses` also labels each subaddress in the state with its
+  the deposits 30 blocks deep kept in `STATE_DIR/deposits.csv` (a cache), then `get_transfers`
+  (in and pool) from that height only (`filter_by_height`); everything once a day, compared: a
+  wallet without a kept deposit, or below the file's height, stops the run (never lower totals).
+  Deduplicated by txid and index; a time-locked one counted once its lock has passed (`locked`),
+  ignored before; every field checked (digits, a 64-hex txid) before bash arithmetic (a subscript
+  can run commands) and before it goes in the file; sums in 64-bit bash, not jq's doubles. `check_wallet_addresses` also labels each subaddress in the state with its
   proposal's file (`label_address`; a wallet from ccs-back or restored has none), as
   `assign_addresses` labels new ones. `check_known_subaddresses`: donations at a labelled index
   the state doesn't have stop the run (a lost state); at an unlabelled one, which anyone can send
@@ -108,9 +111,10 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
   200 with a body, three checks in a row while the rest of the site answers, alerts too; `--run`
   alerts after three failed runs. Its config is read key by key, never sourced.
 - [`contrib/ccs-backup-receive`](../contrib/ccs-backup-receive), on the backup machine, the
-  backend's key's forced command: reads at most 1 MB (nothing once its folder holds 256 MB),
-  which must look like `proposals.csv`, and keeps it as a new dated file; never overwrites or
-  deletes one.
+  backend's key's forced command: a `proposals.csv` (at most 1 MB, its rows' shape) is kept as a
+  new dated file, never overwriting or deleting one; a `deposits.csv` (at most 64 MB, its first
+  line `# final`) replaces the one copy only if it has every deposit that copy has. Nothing once
+  its folder holds 256 MB.
 
 ## Web server
 
