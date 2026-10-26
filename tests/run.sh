@@ -614,7 +614,8 @@ else
     rf=$TEST_TMP/dep-retire/state/retired/old.csv
     if [[ -f $rf ]] && head -n 2 "$rf" | recv && [[ $(find "$bk" -name 'retired-old-*.csv' | wc -l) == 1 ]] \
         && head -n 2 "$rf" | recv && grep -q 'retired old unchanged' "$TEST_TMP/recv.out" \
-        && ! { head -n 1 "$rf"; printf '1,%064d,1,5,0,8%094d.md\n' 7 1; } | recv; then
+        && ! { head -n 1 "$rf"; printf '1,%064d,1,5,0,8%s.md\n' 7 "$(printf '%094d' 0 | tr 0 Z)"; } | recv && grep -q "not a retired wallet's file" "$TEST_TMP/recv.out" \
+        && [[ $(find "$bk" -name 'retired-old-*.csv' | wc -l) == 1 ]]; then
         echo "ok   backup: a retired wallet's file kept as a new copy, each version; anything else refused"
     else
         cat "$TEST_TMP/recv.out"; ls -la "$bk"; echo "FAIL backup receiver, retired"; status=1
