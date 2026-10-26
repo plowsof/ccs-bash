@@ -41,8 +41,32 @@ check() {
         if [[ ${SPEND_WALLET_OK:-} ]]; then ok "the wallet can spend (SPEND_WALLET_OK: a testnet's)"
         else nok "the wallet can spend: use a view-only one (handover step 1)"; fi
     else ok "the wallet is view-only"; fi
-    # ccs-back's subaddresses: the wallet's, at those indices
-    want=$(jq -rR -s 'split("\n") | map(select(. != "") | [("," + .) | match(",(\"(?:[^\"]|\"\")*\"|[^,]*)"; "g") | (.captures[0].string // "") | if startswith("\"") then .[1:-1] | gsub("\"\""; "\"") else . end]) | map(select(.[2] != "")) | .[] | "\(.[2])\t\(.[3])\t\(.[0])"' "$out/proposals.csv")
+    # ccs-back's subaddresses: those this wallet says are its own (older wallets' are recorded by
+    # retire-wallet and cleared in the state: handover step 2, "Older wallets")
+    local all older='' a i f
+    all=$(jq -rR -s 'split("\n") | map(select(. != "") | [("," + .) | match(",(\"(?:[^\"]|\"\")*\"|[^,]*)"; "g") | (.captures[0].string // "") | if startswith("\"") then .[1:-1] | gsub("\"\""; "\"") else . end]) | map(select(.[3] != "")) | .[] | "\(.[2])\u001f\(.[3])\u001f\(.[0])"' "$out/proposals.csv")
+    want=''
+    # (split on \x1f, not a tab: read drops a leading tab, and an older wallet's row may have no index)
+    while IFS=$'\x1f' read -r i a f; do
+        [[ -n $a ]] || continue
+        if rpc get_address_index "$(jq -nc --arg a "$a" '{address: $a}')" 2> /dev/null | jq -e '.index.major == 0' > /dev/null; then
+            want+="$i"$'\t'"$a"$'\t'"$f"$'\n'
+        else
+            older+="$f"$'\n'
+        fi
+    done <<<"$all"
+    want=${want%$'\n'}
+    if [[ -n $older ]]; then
+        local kept
+        # those still with an index in ccs-bash's state (a run would stop on them)
+        kept=$(jq -r -n --rawfile b "$state/proposals.csv" --arg older "$older" '
+            def csvrow: [("," + .) | match(",(\"(?:[^\"]|\"\")*\"|[^,]*)"; "g") | (.captures[0].string // "")
+                         | if startswith("\"") then .[1:-1] | gsub("\"\""; "\"") else . end];
+            ($b | split("\n") | map(select(. != "") | csvrow | {key: .[0], value: .[2]}) | from_entries) as $B
+            | $older | split("\n") | .[] | select(. != "" and ($B[.] // "") != "")')
+        if [[ -z $kept ]]; then ok "$(grep -c . <<<"$older") proposals have an older wallet's address: cleared in the state (recorded in $state/retired/, or cleared by hand)"
+        else nok "proposals with an address this wallet doesn't have, still in the state (record their wallet with retire-wallet, or clear them: handover step 2):"; printf '%s\n' "$kept" | head -n 10 | indent; fi
+    fi
     n=$(grep -c . <<<"$want" || true)
     if ((n)); then
         addrs=$(rpc get_address "$(jq -nc --argjson i "$(cut -f1 <<<"$want" | jq -s .)" '{account_index: 0, address_index: $i}')") || { nok "get_address failed"; return; }
@@ -56,14 +80,23 @@ check() {
     # ccs-bash's state: every row ccs-back had, the same index and address
     # (parsed: ccs-back's export quotes the index, ccs-bash writes it bare)
     csv=$state/proposals.csv
-    bad=$(jq -r -n --rawfile a "$out/proposals.csv" --rawfile b "$csv" '
+    bad=$(jq -r -n --rawfile a "$out/proposals.csv" --rawfile b "$csv" --arg older "$older" '
         def csvrow: [("," + .) | match(",(\"(?:[^\"]|\"\")*\"|[^,]*)"; "g") | (.captures[0].string // "")
                      | if startswith("\"") then .[1:-1] | gsub("\"\""; "\"") else . end];
         def rows($s): $s | split("\n") | map(select(. != "") | csvrow | {key: .[0], value: "\(.[2]) \(.[3][0:6])"}) | from_entries;
         rows($a) as $A | rows($b) as $B
-        | $A | to_entries[] | select($B[.key] != .value) | "\(.key): ccs-back \(.value), ccs-bash \($B[.key] // "(missing)")"')
+        | ($older | split("\n")) as $O
+        | ([$A[] | split(" ")[0] | select(. != "") | tonumber] | max // 0) as $top
+        | $A | to_entries[] | select(.key | IN($O[]) | not) | select($B[.key] != .value)
+        # one with no subaddress in the export, given one since above every exported index: a
+        # funding-required proposal, at its first run: expected
+        | if .value == " " and (($B[.key] // "" | split(" ")[0]) as $i | $i != "" and ($i | tonumber) > $top)
+          then "new\t\(.key): subaddress \($B[.key] | split(" ")[0])" else "bad\t\(.key): ccs-back \(.value), ccs-bash \($B[.key] // "(missing)")" end')
+    local new
+    new=$(grep $'^new\t' <<<"$bad" | cut -f2- || true); bad=$(grep $'^bad\t' <<<"$bad" | cut -f2- || true)
     if [[ -z $bad ]]; then ok "ccs-bash's state has every proposal ccs-back had, with its index and address"
     else nok "the state differs from ccs-back's:"; printf '%s\n' "$bad" | head -n 10 | indent; fi
+    [[ -z $new ]] || { ok "funding-required proposals given a subaddress since the export (above its highest):"; printf '%s\n' "$new" | indent; }
     # the log: donations at an index the export lacks
     local idx top gaps='' newer=''
     idx=$(grep 'which no proposal was given (no label)' "${LOG:-/var/log/ccs-bash.log}" 2> /dev/null | tail -n 1 | grep -o 'subaddress [0-9 ]*' | cut -d' ' -f2- || true)
