@@ -169,6 +169,13 @@ them while locked, and never looked back), and ones ccs-back's scan missed (it o
 back from its newest deposit). Only blocks at least 30 deep are compared; run it again later for
 the newest.
 
+**Older wallets.** The CCS has used more than one wallet (CCS1, then CCS2), and ccs-back keeps the
+older ones' donations in its database. ccs-bash reads only the live wallet, so record each older
+one first, from a synced view-only copy of it, or a proposal funded through it would show 0 raised
+(below, "Retiring a wallet", step 2, with that copy's wallet-rpc as `RPC_URL`). An address left that
+no wallet claims stops every run (`wallet subaddresses do not match`): without its wallet, clear it
+in `proposals.csv`, and that proposal shows only what the live wallet received.
+
 While ccs-back still runs, don't let both hand out addresses: if a funding-required proposal has
 none yet, stop ccs-back's cron first.
 
@@ -277,9 +284,11 @@ ccs-bash-run >> $L 2>&1 || failed="ccs-bash"
 # the state, to the backup machine when it changed (it keeps every version), and deposits.csv
 # (it keeps one copy, which only grows); read as ccs, whose files they are: root never opens a
 # file another account controls (it could be a link to any file)
-for S in /var/lib/ccs/state/proposals.csv /var/lib/ccs/state/deposits.csv; do
+# (and each retired wallet's file, state like proposals.csv: "Retiring a wallet")
+for S in /var/lib/ccs/state/proposals.csv /var/lib/ccs/state/deposits.csv /var/lib/ccs/state/retired/*.csv; do
 [ -f "$S" ] || continue
 sent=/var/lib/ccs/backup-sent-${S##*/}; [ "$S" = /var/lib/ccs/state/proposals.csv ] && sent=/var/lib/ccs/backup-sent
+case $S in */retired/*) sent=/var/lib/ccs/backup-sent-retired-${S##*/} ;; esac
 # (deposits.csv: its deposits, not its first line, whose height changes every run)
 sum=$(runuser -u ccs -- sed '/^# final /d' "$S" | sha256sum | cut -c1-64)
 if [ "$sum" != "$(cat "$sent" 2>/dev/null)" ]; then
@@ -455,6 +464,30 @@ CCS's backend runs nothing but the CCS. The testnet also shows the real CCS's to
 patch of `lib/wallet.sh` adds each proposal's real raised amount and count, as numbers only
 (`STATE_DIR/historic.tsv`), to what its testnet wallet receives; every address it shows is the
 testnet wallet's. Its alerts go to `#montero-ccs-emojis`.
+
+## Retiring a wallet
+
+When the CCS moves to a new wallet (CCS2 to CCS3), the old one's donations keep counting: they are
+recorded once, by proposal, in `STATE_DIR/retired/<name>.csv` (no addresses; backed up, every
+version), which every run adds to the new wallet's. Funding-required proposals get new addresses.
+
+1. **Take its addresses off the site** and let it go quiet: no deposit in the pool or under
+   `MIN_CONFIRMATIONS` (the script refuses until then). Pause the loop: `systemctl stop ccs-bash`.
+2. **Record it** (as ccs; `RPC_URL` and `RETIRE_RPC_USER`/`RETIRE_RPC_PASSWORD` for another
+   wallet-rpc than the config's):
+   ```
+   runuser -u ccs -- /opt/ccs-bash/contrib/retire-wallet ccs2 /etc/ccs/ccs.conf [RPC_URL]
+   ```
+   It writes `retired/ccs2.csv`, clears those proposals' index and address in `proposals.csv`
+   (the old one kept beside it), and, for the live wallet, moves `deposits.csv` aside.
+3. **The new wallet:** its files and `wallet-rpc.conf` (step 1), `WALLET_ADDRESS` (step 2), its
+   signed list on both machines (step 4), and on the backup machine, as root, move the old
+   `deposits.csv` aside (it only takes a file with every deposit it has).
+4. **One run by hand**, then `systemctl start ccs-bash`: the totals are the same as before, and
+   each funding-required proposal shows a new address.
+
+A proposal renamed later keeps its retired donations only if its line in `retired/*.csv` is renamed
+too (the file is state: change it as the state, [troubleshooting](troubleshooting.md#edit-the-state)).
 
 ## Upgrading
 

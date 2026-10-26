@@ -50,6 +50,7 @@ lost_state() {
     local name=$1 d=$TEST_TMP/lost-$1 before
     mkdir -p "$d"
     cp -r "$TEST_TMP/state" "$d/state" && cp -r "$TEST_TMP/out" "$d/out"
+    [[ ! -f $d/ccs.conf ]] || chmod 644 "$d/ccs.conf"
     sed "s|$TEST_TMP/state|$d/state|; s|$TEST_TMP/out|$d/out|" "$TEST_TMP/ccs.conf" > "$d/ccs.conf" && chmod 444 "$d/ccs.conf"
     case $name in
         missing) rm "$d/state/proposals.csv" ;;
@@ -490,6 +491,7 @@ dep() {   # dep NAME [ENV...]: a run on a copy of the state, its own deposits.cs
     local name=$1; shift
     d=$TEST_TMP/dep-$name; mkdir -p "$d/state" "$d/out"
     [[ -f $d/state/proposals.csv ]] || cp "$TEST_TMP/state/proposals.csv" "$d/state/"
+    [[ ! -f $d/ccs.conf ]] || chmod 644 "$d/ccs.conf"   # (read-only below: ccs-bash refuses a config it can write)
     sed "s|$TEST_TMP/state|$d/state|; s|$TEST_TMP/out|$d/out|" "$TEST_TMP/ccs.conf" > "$d/ccs.conf" && chmod 444 "$d/ccs.conf"
     : > "$TEST_TMP/get_transfers-calls"
     # shellcheck disable=SC2016
@@ -522,6 +524,42 @@ if dep a && grep -q 'the wallet knows 1 deposit(s) below height 3099970' "$TEST_
 else cat "$TEST_TMP/dep-a/log"; echo "FAIL deposits.csv: a deposit the file lacked"; deposits_ok=0; fi
 ((deposits_ok)) || status=1
 
+# Retiring a wallet (contrib/retire-wallet): its donations recorded by proposal, the state cleared of
+# its subaddresses, then a new wallet with none yet: every total and count the same as before
+rw=$TEST_TMP/dep-retire; rm -rf "$rw"; had=$(cat "$TEST_TMP/wallet-count")
+cp "$TEST_TMP/wallet-labels" "$TEST_TMP/wallet-labels.had"
+# (a wallet still receiving isn't retired: the fixture has a deposit under MIN_CONFIRMATIONS and one in the pool)
+if dep retire && ! bash -c 'source "$1/../contrib/retire-wallet" && source "$1/stubs.sh" && retire_main old "$2"' _ "$here" "$rw/ccs.conf" > "$rw/retire.out" 2>&1 \
+    && grep -q 'retire a wallet once it is quiet' "$rw/retire.out" && [[ ! -e $rw/state/retired/old.csv ]]; then
+    echo "ok   retire-wallet: not while deposits are in the pool or under MIN_CONFIRMATIONS"
+else echo "FAIL retire-wallet: a wallet still receiving"; cat "$rw/retire.out"; status=1; fi
+jq --argjson m 10 '.pool = [] | .in |= map(select(.confirmations >= $m))' "${TEST_TRANSFERS:-$FIXTURES/rpc/get_transfers.json}" > "$TEST_TMP/quiet.json"
+rm -rf "$rw"
+if dep retire TEST_TRANSFERS="$TEST_TMP/quiet.json" && cp "$rw/out/projects.json" "$TEST_TMP/retire-before.json" && before=$(jq -c 'map({filename, raised_amount, contributions})' "$rw/out/projects.json") \
+    && TEST_TRANSFERS="$TEST_TMP/quiet.json" bash -c 'source "$1/../contrib/retire-wallet" && source "$1/stubs.sh" && retire_main old "$2"' _ "$here" "$rw/ccs.conf" > "$rw/retire.out" 2>&1; then
+    r=$rw/state/retired/old.csv
+    if [[ $(awk 'NR == 1' "$r") =~ ^#\ retired\ old\ wallet\ 8[0-9]{94}\ height\ [0-9]+\ time\ [0-9]+$ ]] \
+        && ! grep -qE '[0-9A-Za-z]{95}' <(awk 'NR > 1' "$r") \
+        && ! grep -qE ',[0-9]+,"[0-9A-Za-z]{95}",' "$rw/state/proposals.csv" \
+        && [[ -f $rw/state/deposits.csv.retired-old && ! -e $rw/state/deposits.csv ]]; then
+        # the new wallet: nothing received yet, subaddresses from 1 again
+        echo '{"in": [], "pool": []}' > "$TEST_TMP/no-transfers.json"; echo 1 > "$TEST_TMP/wallet-count"; : > "$TEST_TMP/wallet-labels"
+        if dep retire TEST_TRANSFERS="$TEST_TMP/no-transfers.json" \
+            && [[ $(jq -c 'map({filename, raised_amount, contributions})' "$rw/out/projects.json") == "$before" ]] \
+            && [[ $(jq -r '[.[] | select(.address)] | length' "$rw/out/projects.json") -gt 0 ]]; then
+            echo "ok   retire-wallet: its donations kept by proposal (no addresses), the state cleared; a new wallet shows the same totals"
+        else echo "FAIL retire-wallet: the totals after"; diff <(jq -c '.[] | {filename, raised_amount, contributions, address}' "$TEST_TMP/retire-before.json") <(jq -c '.[] | {filename, raised_amount, contributions, address}' "$rw/out/projects.json") | head; grep -E "error|warning" "$rw/log" | head -5; status=1; fi
+    else echo "FAIL retire-wallet: what it wrote"; cat "$rw/retire.out"; status=1; fi
+    # a retired file with a line that isn't a deposit stops the run (it is state: restore it)
+    printf '1,%064d,1,BASH_VERSINFO[$(touch${IFS}%s)],0,x.md\n' 5 "$TEST_TMP/pwned-r" >> "$r"
+    if ! dep retire TEST_TRANSFERS="$TEST_TMP/no-transfers.json" && grep -q "a line that isn't a deposit" "$rw/log" && [[ ! -e $TEST_TMP/pwned-r ]]; then
+        echo "ok   retire-wallet: a damaged retired file stops the run, nothing in it run"
+    else echo "FAIL retire-wallet: a damaged retired file"; status=1; fi
+else
+    echo "FAIL retire-wallet: it didn't run"; cat "$rw/retire.out" "$rw/log" 2> /dev/null; status=1
+fi
+echo "$had" > "$TEST_TMP/wallet-count"; cp "$TEST_TMP/wallet-labels.had" "$TEST_TMP/wallet-labels"
+
 # ccs-backup-receive (the backup machine): proposals.csv, every version kept; deposits.csv, one
 # copy, replaced only by one that has all its deposits; anything else refused
 # (a host script: not in the image, which has no du, head, comm or sort; skipped there)
@@ -539,6 +577,15 @@ else
         echo "ok   backup: proposals.csv kept as a new copy; deposits.csv one copy, replaced only by one with all its deposits; anything else refused"
     else
         cat "$TEST_TMP/recv.out"; ls -la "$bk"; echo "FAIL backup receiver"; status=1
+    fi
+    # a retired wallet's file: every version kept, as the state; one with an address in it refused
+    rf=$TEST_TMP/dep-retire/state/retired/old.csv
+    if [[ -f $rf ]] && head -n 2 "$rf" | recv && [[ $(find "$bk" -name 'retired-old-*.csv' | wc -l) == 1 ]] \
+        && head -n 2 "$rf" | recv && grep -q 'retired old unchanged' "$TEST_TMP/recv.out" \
+        && ! { head -n 1 "$rf"; printf '1,%064d,1,5,0,8%094d.md\n' 7 1; } | recv; then
+        echo "ok   backup: a retired wallet's file kept as a new copy, each version; anything else refused"
+    else
+        cat "$TEST_TMP/recv.out"; ls -la "$bk"; echo "FAIL backup receiver, retired"; status=1
     fi
 fi
 

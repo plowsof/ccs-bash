@@ -85,6 +85,8 @@ rpc get_height; head -n 1 /var/lib/ccs/state/deposits.csv     # the wallet's hei
 | `donations at subaddress N, which this wallet gave a proposal but proposals.csv doesn't have` | the state lacks a proposal that has donations: a lost or wrong state file | [restore the state](#restore-the-state) |
 | `the wallet's main address is not WALLET_ADDRESS`, `wallet subaddresses do not match proposals.csv` | another wallet is running | the right `wallet-file` in `wallet-rpc.conf`; nothing was written |
 | `deposits.csv: not a deposits file`, `a line that isn't a deposit` | the cache is damaged | [make deposits.csv again](#make-depositscsv-again) |
+| `retired/<name>.csv: not a retired wallet's file`, `a line that isn't a deposit` | a retired wallet's record is damaged: state, not a cache | copy its newest `retired-<name>-*.csv` back from the backup machine (as [restore the state](#restore-the-state)) |
+| a proposal funded through an older wallet shows 0 raised | it was renamed: its retired donations are under the old name | rename it in `retired/*.csv` too ([edit the state](#edit-the-state)) |
 
 A **time-locked** donation counts only once its lock has passed, and isn't shown as pending
 before. A donation counts as **confirmed** at `MIN_CONFIRMATIONS` (10).
