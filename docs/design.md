@@ -45,8 +45,9 @@ and is "the original". Nothing here runs while the CCS does.
   site so visitors can check an address themselves.
 - **ccs-watch**, right after each push: fetches the live donation pages, and every file they use
   (stylesheets, fonts, icons, QR codes, images), ten of the other pages at random and `/projects`,
-  over HTTPS as Tor Browser asks for them, through
-  Tor and a clearnet proxy at random, so the web server can't easily tell it from a visitor, and
+  over HTTPS as Tor Browser asks for them (a page as typed in, clicked on the site or from
+  another, at random), through Tor and a clearnet proxy at random, so the web server can't easily
+  tell it from a visitor (its TLS handshake and its timing, right after each push, still can), and
   checks they are what was pushed; if one isn't (three whole fetches and the next run
   agreeing, so a slow or down web server is never mistaken for it; or a page that keeps answering
   anything but the page, while the site answers), an alert goes to IRC
@@ -129,7 +130,7 @@ on purpose; each copy has its own job, and they are all the same file:
 
 | Where | What | Its job |
 |---|---|---|
-| the offline machine | made from a view-only wallet, signed with a key destroyed right after | the only place the list is made or signed; it writes the four files: the list, `.asc` (signature), `.key.asc` (public key), `.pin` (sha256 and fingerprint) |
+| the offline machine | made from a view-only wallet, signed by a Core Team member with their own key (the one the Monero repository publishes), its sha256 posted beside the wallet's view key and reproduced by others | the only place the list is made or signed; it writes the four files: the list, `.asc` (signature), `.key.asc` (public key), `.pin` (sha256 and fingerprint) |
 | backend, `/etc/ccs-front/` | the four files | ccs-front-bash checks the list against its pin, then every donation address, before each push, and makes the QR codes from those addresses; a run with a wrong address makes no site: what ccs-bash's account writes can't change one |
 | web server, `/etc/ccs-gate/` | the four files (installed by hand, root-owned) | the gate checks every pushed page against the design's (nothing but its parts, each slot a value of its kind, a proposal's text the repository's), every address on it against the list, however it is written and in every QR code, and every other file against the design release: a taken-over backend can't get a wrong address live as text, link or QR code |
 | the site, `/subaddresses.txt(.asc, .key.asc)` | the list, signature and key, pushed with the pages (the gate lets through only its own copies); the Verify page with the fingerprint | visitors check the address their wallet shows, after scanning or pasting, themselves (`gpg --verify`, `grep`, or a copy of the wallet): the defence left if the web server itself is taken over |
