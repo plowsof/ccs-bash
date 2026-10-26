@@ -80,6 +80,7 @@ rpc get_height; head -n 1 /var/lib/ccs/state/deposits.csv     # the wallet's hei
 | `donations at subaddress N, which this wallet gave a proposal but proposals.csv doesn't have` | the state lacks a proposal that has donations: a lost or wrong state file | [restore the state](#restore-the-state) |
 | `the wallet's main address is not WALLET_ADDRESS`, `wallet subaddresses do not match proposals.csv` | another wallet is running | the right `wallet-file` in `wallet-rpc.conf`; nothing was written |
 | `deposits.csv: not a deposits file`, `a line that isn't a deposit` | the cache is damaged | [make deposits.csv again](#make-depositscsv-again) |
+| `would show less raised than before (N proposals: …)` | a proposal's total would go down: a retired wallet's record missing or damaged, a state row cleared, a wallet rescanning | find which (the line names them) and restore it; the site keeps its last totals meanwhile. Meant (a donation that was never real): `runuser -u ccs -- touch /var/lib/ccs/state/allow-lower` lets one run through |
 | `retired/<name>.csv: not a retired wallet's file`, `a line that isn't a deposit` | a retired wallet's record is damaged: state, not a cache | copy its newest `retired-<name>-*.csv` back from the backup machine (as [restore the state](#restore-the-state)) |
 | a proposal funded through an older wallet shows 0 raised | it was renamed: its retired donations are under the old name | rename it in `retired/*.csv` too ([edit the state](#edit-the-state)) |
 
