@@ -233,25 +233,65 @@ check_known_subaddresses() {
     log "warning: donations at subaddress $(jq -r 'join(" ")' <<<"$unknown"), which no proposal was given (no label): someone sent to an address of the wallet's that isn't on the site; not counted"
 }
 
+# Print each proposal's donations to the wallets the CCS used before this one, file TAB atomic units
+# TAB count, from RETIRED_DIR (STATE_DIR/retired), one file per retired wallet, written once by
+# contrib/retire-wallet and never changed (state, backed up: the old wallet may be gone):
+#   # retired <name> wallet <main address> height <h> time <unix time>
+#   <height>,<txid>,<subaddress>,<amount>,<unlock_time>,<proposal file>
+# No addresses: nothing in it can reach a page. A deposit still time-locked when its wallet was
+# retired counts once its lock has passed: a time, or a height taken as two minutes a block from
+# then (the old wallet isn't asked again). Every field checked before bash arithmetic.
+retired_totals() {
+    local f head h t height txid idx amount unlock file now est
+    local -A sum=() cnt=()
+    [[ -d ${RETIRED_DIR:-} ]] || return 0
+    now=$(date +%s)
+    for f in "$RETIRED_DIR"/*.csv; do
+        [[ -f $f ]] || continue
+        head=''
+        IFS= read -r head < "$f" || true
+        [[ $head =~ ^#\ retired\ [a-z0-9-]+\ wallet\ [0-9A-Za-z]{95}\ height\ ([0-9]+)\ time\ ([0-9]+)$ ]] \
+            || die "$f: not a retired wallet's file (restore it from the backup machine)"
+        h=${BASH_REMATCH[1]} t=${BASH_REMATCH[2]}
+        while IFS=, read -r height txid idx amount unlock file; do
+            [[ $height =~ ^[0-9]+$ && $txid =~ ^[0-9a-f]{64}$ && $idx =~ ^[0-9]+$ && $amount =~ ^[0-9]+$ \
+                && $unlock =~ ^[0-9]+$ && $file == *.md && $file != */* && $file != *[[:cntrl:]]* ]] \
+                || die "$f: a line that isn't a deposit (restore it from the backup machine)"
+            if ((unlock != 0)); then
+                if ((unlock < 500000000)); then est=$((t + (unlock > h ? unlock - h : 0) * 120)); else est=$unlock; fi
+                ((now >= est)) || continue
+            fi
+            sum[$file]=$((${sum[$file]:-0} + amount))
+            cnt[$file]=$((${cnt[$file]:-0} + 1))
+        done < <(awk 'NR > 1' "$f")
+    done
+    for file in "${!sum[@]}"; do printf '%s\t%s\t%s\n' "$file" "${sum[$file]}" "${cnt[$file]}"; done
+}
+
 # Print {"file.md": {amount, raised, pending, count, percentage}}, ready to show: amount and
 # raised "0.0000" strings, pending a number (ccs-front compares it with 0), percentage
 # rounded down (100% means really reached).
 proposal_funds() {
     local idx c p n file amount target raised pct
-    local -A conf=() pend=() cnt=()
+    local -A conf=() pend=() cnt=() rconf=() rcnt=()
     while IFS=$'\t' read -r idx c p n; do
         conf[$idx]=$c pend[$idx]=$p cnt[$idx]=$n
     done < "$WORK/totals.tsv"
+    # donations to wallets the CCS used before this one, per proposal file
+    retired_totals > "$WORK/retired.tsv" || return 1
+    while IFS=$'\t' read -r file c n; do
+        rconf[$file]=$c rcnt[$file]=$n
+    done < "$WORK/retired.tsv"
     jq -r --slurpfile state "$WORK/state.json" \
         '.[] | [.file, .amount, ($state[0][.file].subaddr_index // -1)] | @tsv' "$WORK/props.json" |
         while IFS=$'\t' read -r file amount idx; do
             target=$(to_atomic "$amount")
-            raised=${conf[$idx]:-0}
+            raised=$((${conf[$idx]:-0} + ${rconf[$file]:-0}))
             pct=0
             ((target > 0)) && pct=$((raised * 100 / target))
             ((pct > 100)) && pct=100
             printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$file" "$(xmr4 "$target")" "$(xmr4 "$raised")" \
-                "$(xmr4_number "${pend[$idx]:-0}")" "${cnt[$idx]:-0}" "$pct"
+                "$(xmr4_number "${pend[$idx]:-0}")" "$((${cnt[$idx]:-0} + ${rcnt[$file]:-0}))" "$pct"
         done | jq -R -s 'split("\n") | map(select(. != "") | split("\t") | {key: .[0], value: {
             amount: .[1], raised: .[2], pending: (.[3] | tonumber), count: (.[4] | tonumber), percentage: (.[5] | tonumber)
         }}) | from_entries'

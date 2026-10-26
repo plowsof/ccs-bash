@@ -4,6 +4,8 @@
 #   - proposals.csv (the state, which nothing can make again): kept as proposals-<UTC time>.csv,
 #     unless it is the same as the newest copy. Never overwritten or deleted, so even a taken-over
 #     backend can only add copies, not destroy the old ones; 1 MB each.
+#   - a retired wallet's file (contrib/retire-wallet, its first line "# retired <name> ..."): state,
+#     kept as retired-<name>-<UTC time>.csv, every version, as proposals.csv; 64 MB each.
 #   - deposits.csv (a cache of the wallet's deposits, its first line "# final ..."): one copy,
 #     deposits.csv, replaced only by one that has every deposit it has (it only ever grows; a taken-
 #     over backend can add lines, never take one away). 64 MB at most. A real shrink (a reorg deeper
@@ -16,7 +18,22 @@ dir=${CCS_BACKUP_DIR:-/var/lib/ccs-backup}   # (the tests'; an ssh forced comman
 tmp=$(mktemp "$dir/.incoming.XXXXXX")
 trap 'rm -f "$tmp"' EXIT
 head -c $(((64 << 20) + 1)) > "$tmp"
-if head -n 1 "$tmp" | grep -qE '^# final [0-9]+ checked [0-9]+$'; then
+first=$(head -n 1 "$tmp")
+if [[ $first =~ ^#\ retired\ ([a-z0-9-]+)\ wallet\ [0-9A-Za-z]{95}\ height\ [0-9]+\ time\ [0-9]+$ ]]; then
+    name=${BASH_REMATCH[1]}
+    (($(wc -c < "$tmp") <= 64 << 20)) || { echo "ccs-backup: retired wallet's file over 64 MB, not kept" >&2; exit 1; }
+    if grep -qvE '^[0-9]+,[0-9a-f]{64},[0-9]+,[0-9]+,[0-9]+,[^/[:cntrl:]]+\.md$' < <(tail -n +2 "$tmp"); then
+        echo "ccs-backup: not a retired wallet's file, not kept" >&2; exit 1
+    fi
+    last=$(find "$dir" -maxdepth 1 -name "retired-$name-*.csv" | sort | tail -n 1)
+    if [[ $last ]] && cmp -s "$tmp" "$last"; then echo "ccs-backup: retired $name unchanged"; exit 0; fi
+    dest=$dir/retired-$name-$(date -u +%Y%m%dT%H%M%SZ).csv
+    [[ -e $dest ]] && { echo "ccs-backup: $dest exists" >&2; exit 1; }
+    chmod 440 "$tmp" && mv -n "$tmp" "$dest"
+    echo "ccs-backup: kept $(basename "$dest") ($(($(wc -l < "$dest") - 1)) deposits)"
+    exit 0
+fi
+if [[ $first =~ ^#\ final\ [0-9]+\ checked\ [0-9]+$ ]]; then
     (($(wc -c < "$tmp") <= 64 << 20)) || { echo "ccs-backup: deposits over 64 MB, not kept" >&2; exit 1; }
     # (no pipe into grep -q: with pipefail, tail killed early would hide what grep found)
     if grep -qvE '^[0-9]+,[0-9a-f]{64},[0-9]+,[0-9]+,[0-9]+$' < <(tail -n +2 "$tmp"); then
