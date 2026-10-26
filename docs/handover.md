@@ -93,8 +93,16 @@ command line; `docker exec -i <db> mysql …` works too.) It only reads, and che
 **Older wallets.** The CCS has used more than one wallet (CCS1, then CCS2); ccs-back keeps the
 older ones' donations in its database, ccs-bash doesn't read it. Record each older wallet from a
 synced view-only copy of it ([retiring a wallet](#retiring-a-wallet), step 2, with that copy's
-wallet-rpc as `RPC_URL`), or its proposals show 0 raised. An address no wallet claims stops every
-run (`wallet subaddresses do not match`): without its wallet, clear it in `proposals.csv`.
+wallet-rpc as `RPC_URL`). For an address no wallet you have claims (an older wallet whose view key
+is gone), record its donations from ccs-back's own table instead:
+
+```
+runuser -u ccs -- /opt/ccs-bash/contrib/migrate/retire-from-ccs-back ccs0 /etc/ccs/ccs.conf /root/ccs-export
+```
+
+(It refuses an index two of ccs-back's proposals share: then that wallet's view key is needed.)
+No total may go down: ccs-bash stops a run that would show less raised than before, and
+`check-migration` says NOT OK for any proposal below ccs-back's.
 
 Then `ccs-bash-run` once, and check before going on (it says OK or NOT OK for each):
 
