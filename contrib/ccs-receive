@@ -225,12 +225,12 @@ MAX = int(os.environ.get("CCS_GATE_MAX", 8 << 20))   # a page larger is not read
 B58 = "[1-9A-HJ-NP-Za-km-z]"
 # escaped text (as ccs-bash and markdown.awk escape it): no markup, no bidi controls (they can
 # show the halves of an address in another order than written), at most 1000 characters, and no
-# run of 90 characters an address could be drawn with: base58, or any letter or digit that is not
-# ASCII (a mathematical or fullwidth 9, a Cyrillic A), joined by characters that are not ASCII and
-# not letters or digits (a zero-width space, a mark), or by nothing
-RUN = "(?:" + B58 + "|[^\\W\\x00-\\x7f])"
-JOIN = "[^\\w\\x00-\\x7f]"
-TEXT = "(?:(?!(?:" + RUN + JOIN + "*){90})(?:[^<>\"\x27&\\x00-\\x1f\\x7f\\u202a-\\u202e\\u2066-\\u2069]|&(?:amp|lt|gt|quot|#39|apos);)){0,1000}"
+# run of 90 characters each base58 or not ASCII: an address padded or split by invisible
+# characters, or drawn with look-alikes (a mathematical or fullwidth 9, a Cyrillic A). Any
+# character that is not ASCII counts, not only letters: Unicode tables differ between Python and
+# the jq that shortens idea titles by the same rule (gitlab.sh), and must agree with it
+RUN = "(?:" + B58 + "|[^\\x00-\\x7f])"
+TEXT = "(?:(?!" + RUN + "{90})(?:[^<>\"\x27&\\x00-\\x1f\\x7f\\u202a-\\u202e\\u2066-\\u2069]|&(?:amp|lt|gt|quot|#39|apos);)){0,1000}"
 # a milestone or payout: anything escaped, compared afterwards with the repository
 LOOSE = "[^<>\\n]{0,4000}"
 NAME = "(?:[^\"<>/&\\n]|&(?:amp|lt|gt|quot|#39|apos);){1,300}"

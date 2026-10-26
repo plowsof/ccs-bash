@@ -250,8 +250,8 @@ got=$(
 if [[ $got == 'Pay naïve me: 44AFFq…EP3A!' ]]; then echo "ok   an address in an idea's title is shortened, invisible characters in it or not"; else echo "FAIL an address in an idea's title: '$got'"; status=1; fi
 # ... and when drawn with other characters (the web server's gate holds back the same): its halves
 # in bidi embeddings, shown in another order than written; mathematical letters and digits;
-# Cyrillic letters for some of its own. What is left has no bidi control, and no run of 90 base58
-# characters or letters and digits that aren't ASCII.
+# Cyrillic letters for some of its own. What is left has no bidi control, and no run of 90
+# characters each base58 or not ASCII.
 for how in bidi math cyrillic; do
     # (jq, not python: the tests also run inside the pinned image, which has none)
     t=$(jq -rn --arg a "$addr" --arg how "$how" '
@@ -265,7 +265,7 @@ for how in bidi math cyrillic; do
         WORK=$(mktemp -d) FIXTURES=$fx PROPOSALS_DIR=$here/fixtures/proposals ideas 2> /dev/null | jq -r '.[] | select(."gitlab-url" | endswith("/11")) | .name'
     )
     if [[ $got == Pay* || $got == Moved* ]] && jq -en --arg s "$got" '$s | (test("[\u202a-\u202e\u2066-\u2069]")
-        or test("(?:(?:[1-9A-HJ-NP-Za-km-z]|(?![\\x00-\\x7F])[\\p{L}\\p{N}])(?:(?![\\x00-\\x7F])[^\\p{L}\\p{N}])*){90}")) | not' > /dev/null; then
+        or test("(?:[1-9A-HJ-NP-Za-km-z]|[^\\x00-\\x7F]){90}")) | not' > /dev/null; then
         echo "ok   an address in an idea's title, drawn with other characters ($how), is shortened or broken up"
     else
         echo "FAIL an address in an idea's title ($how): '$got'"; status=1
