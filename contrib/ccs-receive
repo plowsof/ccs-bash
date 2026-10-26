@@ -550,10 +550,11 @@ pages() {
                     printf '%s\t%s\n' "$file" "!a donation box whose QR code is not exactly qrencode's of its address"
                     ok[$file]=no
                 fi ;;
-            *) printf '%s\t%s\n' "$file" "$tag" ;;
+            *) printf '%s\t%s\n' "$file" "$tag"; ok[$file]=no ;;
         esac
     done < "$out"
     rm -f "$out" "$png"
+    # (a page held back for a reason already says why; only one never checked gets this)
     while IFS= read -r -d '' file; do
         [[ ${ok[$file]:-} ]] || printf '%s\t%s\n' "$file" "!a page the gate could not check (in time)"
     done < <(find "$staging" -type f -name '*.html' -print0)
