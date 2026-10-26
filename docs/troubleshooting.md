@@ -124,6 +124,8 @@ the lines above it say why.
 | `the web server held back a page: donation address … is not in the signed list` / `held back a file: <reason>` | web server | [a page isn't updating](#a-proposals-page-isnt-updating-old-text-old-totals) |
 | `the web server refuses every push: <reason>` | web server | the gate lacks something (its list isn't its pin's, no design, no `markdown.awk`, …): fix it on the web server |
 | `no push from the backend for N minutes` / `pushes from the backend arrive again` | web server | the backend can't reach it (off, its network, the push key); the backend's own alerts cover a backend that runs but fails |
+| `GitLab/Forgejo hasn't answered for over Nh: …` / `answers again` | backend | the proposals' forge is down (or its URL changed): the site keeps its last proposals and Ideas; after `FORGE_HOURS` (`/etc/ccs/alert.conf`, default 6). Check `REPOSITORY_URL` and the checkout's remote by hand |
+| `the web server can't fetch the proposals repository since …` / `fetches … again` | web server | the same seen from the gate (or its `proposals.conf` is wrong): pages are checked against its last fetch, so a proposal merged or changed since is held back |
 
 ## Doing things by hand
 

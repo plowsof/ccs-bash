@@ -482,9 +482,34 @@ fetch() {
         hosts="$h $hosts"
     fi
     [[ -d $git ]] || git init -q --bare "$git" || return 1
-    GIT_TERMINAL_PROMPT=0 timeout 60 git -C "$git" fetch -q --no-tags --depth=2 "$url" "+refs/heads/$branch:refs/heads/ccs" 2> /dev/null \
-        || say "could not fetch the proposals repository (proposals.conf): checking against the last fetch"
+    if GIT_TERMINAL_PROMPT=0 timeout 60 git -C "$git" fetch -q --no-tags --depth=2 "$url" "+refs/heads/$branch:refs/heads/ccs" 2> /dev/null; then
+        forge_up
+    else
+        say "could not fetch the proposals repository (proposals.conf): checking against the last fetch"
+        forge_down
+    fi
     git -C "$git" rev-parse -q --verify refs/heads/ccs > /dev/null
+}
+
+# forge_down: no good fetch ($state/fetch-ok, from forge_up: git rewrites FETCH_HEAD even when a
+# fetch fails) for FORGE_HOURS (alert.conf, default 6) is an alert: a proposal merged or changed
+# since can't go live. Once an hour while it lasts; forge_up says when it answers again. No
+# fetch-ok yet: nothing known.
+forge_down() {
+    local hours t
+    hours=$(sed -n 's/^FORGE_HOURS=\([1-9][0-9]*\)$/\1/p' "$conf/alert.conf" 2> /dev/null | tail -n 1)
+    hours=${hours:-6}
+    t=$(stat -c %Y "$state/fetch-ok" 2> /dev/null) || return 0
+    (($(date +%s) - t >= hours * 3600)) || return 0
+    touch "$state/forge-down" 2> /dev/null || true
+    alert forge "the web server can't fetch the proposals repository since $(date -u -d "@$t" '+%F %H:%M UTC') (proposals.conf): a proposal merged or changed since can't go live @ @SITE@"
+}
+forge_up() {
+    touch "$state/fetch-ok" 2> /dev/null || true
+    [[ -f $state/forge-down ]] || return 0
+    rm -f "$state/forge-down"
+    say "the proposals repository can be fetched again"
+    alert forge-ok "the web server fetches the proposals repository again @ @SITE@"
 }
 
 # repo_images: "blob path" for each proposal image in the fetched repository, as git ls-tree has

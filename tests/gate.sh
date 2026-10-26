@@ -318,8 +318,22 @@ on backend 'rm -rf /out/images'
 # the repository can't be fetched: the last fetch is checked against, so the site goes on
 on web "sed -i 's#=file:///srv/proposals#=file:///nowhere#' /etc/ccs-gate/proposals.conf"
 v=$((v + 1)); site "$v" "$good"
-if push > /dev/null && [[ $(live) == "$v" ]] && on web "grep -q 'checking against the last fetch' /var/log/ccs-gate.log"; then ok "the proposals repository can't be fetched: checked against the last fetch, the site goes on"; else fail "the repository down"; fi
+if push > /dev/null && [[ $(live) == "$v" ]] && on web "grep -q 'checking against the last fetch' /var/log/ccs-gate.log" \
+    && ! bot | grep -q 'fetch the proposals repository'; then ok "the proposals repository can't be fetched: checked against the last fetch, the site goes on (no alert yet)"; else fail "the repository down"; fi
+# and for FORGE_HOURS (default 6) since the last good fetch: one alert an hour; fetched again, says so
+on web 'touch -d "-7 hours" /var/lib/ccs-gate/fetch-ok'
+v=$((v + 1)); site "$v" "$good"; push > /dev/null || true
+v=$((v + 1)); site "$v" "$good"; push > /dev/null || true
+if [[ $(bot | grep -c "the web server can't fetch the proposals repository since" || true) == 1 ]] \
+    && bot | grep -qE "^\[CCS-watch\] the web server can't fetch the proposals repository since [0-9-]+ [0-9:]+ UTC \(proposals.conf\): a proposal merged or changed since can't go live @ https://ccs.test$"; then
+    ok "the repository down for 7 hours: one alert, not one a push"
+else
+    bot; fail "the repository down for long"
+fi
 on web "sed -i 's#=file:///nowhere#=file:///srv/proposals#' /etc/ccs-gate/proposals.conf"
+v=$((v + 1)); site "$v" "$good"; push > /dev/null || true
+v=$((v + 1)); site "$v" "$good"; push > /dev/null || true
+if [[ $(bot | grep -c 'the web server fetches the proposals repository again @ https://ccs.test' || true) == 1 ]]; then ok "the repository fetched again: says so, once"; else bot; fail "the repository back"; fi
 # a NUL byte, which HTML drops from the text
 v=$((v + 1)); site "$v" "$good"; on backend "printf '<p>%s\\000%s</p>\\n' '${fake:0:40}' '${fake:40}' > /out/proposals/nul.html"
 held "$v" proposals/nul.html "an address split by a NUL byte" "${fake:40}"

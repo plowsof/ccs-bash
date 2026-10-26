@@ -132,7 +132,7 @@ fi
 
 # The backend stopping: ccs-bash-update reports each run (--run). Nothing for one or two failed
 # runs; the third alerts, once; the first good run after it says so; a good run before that, nothing.
-run() { CCS_WATCH_STATE=$tmp/runstate "$here/../contrib/ccs-watch" --run "$1" "$tmp/alert.conf" 2>> "$tmp/log"; }
+run() { CCS_WATCH_STATE=$tmp/runstate CCS_WATCH_PULL=$tmp/pull-ok CCS_WATCH_FORGE=$tmp/forge-ok "$here/../contrib/ccs-watch" --run "$1" "$tmp/alert.conf" 2>> "$tmp/log"; }
 before=$(alerts)
 run ccs-bash; run ccs-bash
 if [[ $(alerts) == "$before" ]]; then ok "the backend failing twice in a row: no alert"; else fail "two failed runs"; fi
@@ -148,6 +148,33 @@ run ok
 if [[ $(alerts) == $((before + 2)) ]] && tail -n 1 "$tmp/bot.txt" | grep -qF "[CCS-watch] the backend runs again, after 5 failed runs"; then ok "the first good run after the alert: says so"; else tail -n 1 "$tmp/bot.txt"; fail "recovery"; fi
 run ccs-front-bash; run ok; run ok
 if [[ $(alerts) == $((before + 2)) ]]; then ok "one failed run, then good ones: nothing"; else fail "a blip"; fi
+
+# GitLab or Forgejo down: not a failed run, nothing at first; a pull or API answer FORGE_HOURS (6)
+# ago alerts, naming which, once an hour; both answering again says so. Never answered yet: nothing.
+before=$(alerts)
+run ok
+if [[ $(alerts) == "$before" ]]; then ok "forge: no pull-ok or forge-ok yet: nothing known, no alert"; else fail "forge before any answer"; fi
+touch "$tmp/pull-ok" && touch -d '-5 hours' "$tmp/forge-ok"
+run ok
+if [[ $(alerts) == "$before" ]]; then ok "forge: the API down for 5 hours: no alert yet"; else fail "forge within FORGE_HOURS"; fi
+touch -d '-7 hours' "$tmp/forge-ok"
+run ok; run ok
+if [[ $(alerts) == $((before + 1)) ]] && tail -n 1 "$tmp/bot.txt" | grep -qE "\[CCS-watch\] GitLab/Forgejo hasn't answered for over 6h: its API \(Ideas, merge requests\) since [0-9-]+ [0-9:]+ UTC\. New merged proposals and Ideas aren't on the site" \
+    && ! tail -n 1 "$tmp/bot.txt" | grep -q 'git pull'; then
+    ok "forge: the API down for 7 hours: one alert, naming it (not the pull, which works), not repeated within the hour"
+else
+    tail -n 2 "$tmp/bot.txt"; fail "forge down"
+fi
+touch "$tmp/forge-ok"
+run ok
+if [[ $(alerts) == $((before + 2)) ]] && tail -n 1 "$tmp/bot.txt" | grep -qF "[CCS-watch] GitLab/Forgejo answers again"; then ok "forge: answering again: says so"; else tail -n 1 "$tmp/bot.txt"; fail "forge recovery"; fi
+run ok
+if [[ $(alerts) == $((before + 2)) ]]; then ok "forge: up, then up: nothing more"; else fail "forge: a repeated recovery"; fi
+rm -f "$tmp/runstate"/alert-forge*
+touch -d '-3 hours' "$tmp/pull-ok"; printf 'FORGE_HOURS=2\n' >> "$tmp/alert.conf"
+run ok
+if [[ $(alerts) == $((before + 3)) ]] && tail -n 1 "$tmp/bot.txt" | grep -qF "over 2h: the proposals repository (git pull) since"; then ok "forge: FORGE_HOURS=2, the pull failing for 3 hours: alert"; else tail -n 1 "$tmp/bot.txt"; fail "FORGE_HOURS"; fi
+sed -i '/^FORGE_HOURS=/d' "$tmp/alert.conf"
 
 # wmb's /directedMessage: JSON with the target, the message and the password (on stdin, so not
 # in any command line ps shows), and --test sends one message to check the setup
