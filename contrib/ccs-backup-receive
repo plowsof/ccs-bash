@@ -1,20 +1,42 @@
 #!/bin/bash
 # ccs-backup-receive: the backup node's side of ccs-bash's state backup. The backend's key runs
-# only this (command= in authorized_keys). It reads proposals.csv on stdin and keeps it as
-# proposals-<UTC time>.csv, unless it is the same as the newest copy. It never overwrites or
-# deletes, so even a taken-over backend can only add copies, not destroy the old ones; and 1 MB
-# each, 256 MB in all, so it can't fill the disk either (the newest copy kept stays the last good).
-# Root-owned, 755. Copies in /var/lib/ccs-backup (the ccs-backup user's, 700).
+# only this (command= in authorized_keys). It reads one file on stdin:
+#   - proposals.csv (the state, which nothing can make again): kept as proposals-<UTC time>.csv,
+#     unless it is the same as the newest copy. Never overwritten or deleted, so even a taken-over
+#     backend can only add copies, not destroy the old ones; 1 MB each.
+#   - deposits.csv (a cache of the wallet's deposits, its first line "# final ..."): one copy,
+#     deposits.csv, replaced only by one that has every deposit it has (it only ever grows; a taken-
+#     over backend can add lines, never take one away). 64 MB at most. A real shrink (a reorg deeper
+#     than its depth) is reset here by hand, as root.
+# Nothing once the folder holds 256 MB, so it can't fill the disk either. Root-owned, 755. Copies in
+# /var/lib/ccs-backup (the ccs-backup user's, 700).
 set -euo pipefail
-dir=/var/lib/ccs-backup
+dir=${CCS_BACKUP_DIR:-/var/lib/ccs-backup}   # (the tests'; an ssh forced command gets no environment from the client)
 (($(du -sm "$dir" | cut -f1) < 256)) || { echo "ccs-backup: $dir holds 256 MB already, not kept (look at what is in it)" >&2; exit 1; }
 tmp=$(mktemp "$dir/.incoming.XXXXXX")
 trap 'rm -f "$tmp"' EXIT
-head -c 1048577 > "$tmp"                       # a few hundred KB at most in practice
+head -c $(((64 << 20) + 1)) > "$tmp"
+if head -n 1 "$tmp" | grep -qE '^# final [0-9]+ checked [0-9]+$'; then
+    (($(wc -c < "$tmp") <= 64 << 20)) || { echo "ccs-backup: deposits over 64 MB, not kept" >&2; exit 1; }
+    # (no pipe into grep -q: with pipefail, tail killed early would hide what grep found)
+    if grep -qvE '^[0-9]+,[0-9a-f]{64},[0-9]+,[0-9]+,[0-9]+$' < <(tail -n +2 "$tmp"); then
+        echo "ccs-backup: not a deposits.csv, not kept" >&2; exit 1
+    fi
+    old=$dir/deposits.csv
+    if [[ -f $old ]]; then
+        if cmp -s "$tmp" "$old"; then echo "ccs-backup: deposits unchanged"; exit 0; fi
+        lost=$(comm -23 <(tail -n +2 "$old" | sort) <(tail -n +2 "$tmp" | sort) | grep -c . || true)
+        ((lost == 0)) || { echo "ccs-backup: the new deposits.csv lacks $lost deposit(s) the kept one has, not kept (it only grows; reset it here by hand if it must)" >&2; exit 1; }
+    fi
+    chmod 440 "$tmp" && mv -f "$tmp" "$old"
+    echo "ccs-backup: kept deposits.csv ($(($(wc -l < "$old") - 1)) deposits)"
+    exit 0
+fi
 (($(wc -c < "$tmp") <= 1048576)) || { echo "ccs-backup: over 1 MB, not kept" >&2; exit 1; }
 # proposals.csv's rows: "file","link",index,"address","date" (the index a number, or "")
-[[ -s $tmp ]] && awk '!/^"[^"]*","[^"]*",("[^"]*"|[0-9]+),"[^"]*","[^"]*"$/ { bad = 1 } END { exit bad }' "$tmp" \
-    || { echo "ccs-backup: not a proposals.csv, not kept" >&2; exit 1; }
+if [[ ! -s $tmp ]] || ! awk '!/^"[^"]*","[^"]*",("[^"]*"|[0-9]+),"[^"]*","[^"]*"$/ { bad = 1 } END { exit bad }' "$tmp"; then
+    echo "ccs-backup: not a proposals.csv, not kept" >&2; exit 1
+fi
 last=$(find "$dir" -maxdepth 1 -name 'proposals-*.csv' | sort | tail -n 1)
 if [[ $last ]] && cmp -s "$tmp" "$last"; then echo "ccs-backup: unchanged"; exit 0; fi
 dest=$dir/proposals-$(date -u +%Y%m%dT%H%M%SZ).csv

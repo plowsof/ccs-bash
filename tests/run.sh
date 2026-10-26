@@ -461,7 +461,7 @@ rm -rf "$img"
 d=$TEST_TMP/stranger
 mkdir -p "$d/state" "$d/out"
 cp -r "$FIXTURES" "$d/fx" && cp "$TEST_TMP/state/proposals.csv" "$d/state/"
-jq '.in += [{txid: "dust", amount: 1, confirmations: 50, unlock_time: 0, subaddr_index: {major: 0, minor: 14999}}]' \
+jq '.in += [{txid: ("d" * 64), height: 3099950, amount: 1, confirmations: 50, unlock_time: 0, subaddr_index: {major: 0, minor: 14999}}]' \
     "$FIXTURES/rpc/get_transfers.json" > "$d/fx/rpc/get_transfers.json"
 sed "s|$TEST_TMP/state|$d/state|; s|$TEST_TMP/out|$d/out|" "$TEST_TMP/ccs.conf" > "$d/ccs.conf" && chmod 444 "$d/ccs.conf"
 had=$(cat "$TEST_TMP/wallet-count"); echo 15000 > "$TEST_TMP/wallet-count"
@@ -472,6 +472,61 @@ else
     echo "FAIL a stranger's donation to a subaddress no proposal has stops every run: $(grep -o 'error: .*' "$d/log" | cut -c8-80)"; status=1
 fi
 echo "$had" > "$TEST_TMP/wallet-count"
+
+# deposits.csv: deposits 30+ blocks deep are kept, and a run asks the wallet only for what came
+# after them; the totals are the same either way. A wallet below the file's height (rescanning)
+# stops the run; so does, at the daily full recount, a wallet that lacks a kept deposit, while one
+# it knows that the file lacks is added.
+dep() {   # dep NAME [ENV...]: a run on a copy of the state, its own deposits.csv; its log in $d/log
+    local name=$1; shift
+    d=$TEST_TMP/dep-$name; mkdir -p "$d/state" "$d/out"
+    [[ -f $d/state/proposals.csv ]] || cp "$TEST_TMP/state/proposals.csv" "$d/state/"
+    sed "s|$TEST_TMP/state|$d/state|; s|$TEST_TMP/out|$d/out|" "$TEST_TMP/ccs.conf" > "$d/ccs.conf" && chmod 444 "$d/ccs.conf"
+    : > "$TEST_TMP/get_transfers-calls"
+    # shellcheck disable=SC2016
+    env "$@" bash -c 'source "$1/../ccs-back.sh" && source "$1/stubs.sh" && main "$2"' _ "$here" "$d/ccs.conf" 2> "$d/log"
+}
+deposits_ok=1
+if dep a && f=$TEST_TMP/dep-a/state/deposits.csv && [[ $(head -n 1 "$f") =~ ^#\ final\ 3099970\ checked\ [0-9]+$ ]] \
+    && [[ $(tail -n +2 "$f" | cut -d, -f1 | tr '\n' ' ') == "3099901 3099940 3099950 3099960 3099960 3099970 " ]] \
+    && ! grep -q filter_by_height "$TEST_TMP/get_transfers-calls"; then
+    first=$(jq -c . "$TEST_TMP/dep-a/out/projects.json")
+    if dep a && grep -q '"filter_by_height":true,"min_height":3099970' <(jq -c . "$TEST_TMP/get_transfers-calls") \
+        && [[ $(jq -c . "$TEST_TMP/dep-a/out/projects.json") == "$first" && $first == "$(jq -c . "$TEST_TMP/out/projects.json")" ]]; then
+        echo "ok   deposits.csv: the deposits 30 deep kept; the next run asks only for what came after them, the same totals"
+    else cat "$TEST_TMP/get_transfers-calls" "$TEST_TMP/dep-a/log"; echo "FAIL deposits.csv: the incremental run"; deposits_ok=0; fi
+else cat "$TEST_TMP/dep-a/log"; cat "$TEST_TMP/dep-a/state/deposits.csv" 2> /dev/null; echo "FAIL deposits.csv: the first run"; deposits_ok=0; fi
+if ! dep a TEST_HEIGHT=3000000 && grep -q 'the wallet is at height 3000000, below the 3099970' "$TEST_TMP/dep-a/log"; then
+    echo "ok   deposits.csv: a wallet below the kept deposits' height (rescanning) stops the run"
+else cat "$TEST_TMP/dep-a/log"; echo "FAIL deposits.csv: a rescanning wallet"; deposits_ok=0; fi
+# the daily recount: a wallet without a kept deposit (t1's) stops the run; one with a deposit the
+# file lacks (taken out of it here) adds it
+sed -i '1s/checked [0-9]*/checked 0/' "$TEST_TMP/dep-a/state/deposits.csv"
+jq '.in |= map(select(.txid | startswith("7431") | not))' "$FIXTURES/rpc/get_transfers.json" > "$TEST_TMP/without-t1.json"
+if ! dep a TEST_TRANSFERS="$TEST_TMP/without-t1.json" && grep -q 'the wallet lacks 1 of the deposits kept' "$TEST_TMP/dep-a/log"; then
+    echo "ok   deposits.csv: the daily recount, a wallet that lacks a kept deposit: the run stops"
+else cat "$TEST_TMP/dep-a/log"; echo "FAIL deposits.csv: a deposit the wallet lost"; deposits_ok=0; fi
+sed -i '/^3099950,/d' "$TEST_TMP/dep-a/state/deposits.csv"
+if dep a && grep -q 'the wallet knows 1 deposit(s) below height 3099970' "$TEST_TMP/dep-a/log" \
+    && grep -q '^3099950,' "$TEST_TMP/dep-a/state/deposits.csv" && [[ $(jq -c . "$TEST_TMP/dep-a/out/projects.json") == "$first" ]]; then
+    echo "ok   deposits.csv: the daily recount, a deposit the wallet knows and the file lacked: added, the same totals"
+else cat "$TEST_TMP/dep-a/log"; echo "FAIL deposits.csv: a deposit the file lacked"; deposits_ok=0; fi
+((deposits_ok)) || status=1
+
+# ccs-backup-receive (the backup machine): proposals.csv, every version kept; deposits.csv, one
+# copy, replaced only by one that has all its deposits; anything else refused
+bk=$TEST_TMP/backup; mkdir -p "$bk"
+recv() { CCS_BACKUP_DIR=$bk "$here/../contrib/ccs-backup-receive" > "$TEST_TMP/recv.out" 2>&1; }
+d1=$TEST_TMP/dep-a/state/deposits.csv
+if recv < "$TEST_TMP/state/proposals.csv" && recv < "$d1" && [[ $(find "$bk" -name 'proposals-*.csv' | wc -l) == 1 ]] && cmp -s "$d1" "$bk/deposits.csv" \
+    && { sed '1s/checked [0-9]*/checked 1/' "$d1"; printf '3099999,%064d,1,5,0\n' 7; } | recv && [[ $(wc -l < "$bk/deposits.csv") == $(($(wc -l < "$d1") + 1)) ]] \
+    && ! sed '$d' "$d1" | recv && grep -q 'lacks 2 deposit' "$TEST_TMP/recv.out" \
+    && ! printf '# final 1 checked 1\n1,zz,1,1,0\n' | recv && grep -q 'not a deposits.csv' "$TEST_TMP/recv.out" \
+    && ! printf 'hello\n' | recv && [[ $(find "$bk" -name 'proposals-*.csv' | wc -l) == 1 ]]; then
+    echo "ok   backup: proposals.csv kept as a new copy; deposits.csv one copy, replaced only by one with all its deposits; anything else refused"
+else
+    cat "$TEST_TMP/recv.out"; ls -la "$bk"; echo "FAIL backup receiver"; status=1
+fi
 
 # reactions that can't be read: the idea stays, without counts
 got=$(

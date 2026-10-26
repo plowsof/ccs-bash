@@ -208,6 +208,8 @@ heartbeat timer (step 8).
 
 The state file, `proposals.csv`, is the one thing that can't be made again. Each new version goes
 to an account on the backup machine that can only add copies: [setup](setup.md#backing-up-the-state).
+`deposits.csv` goes there too, one copy that may only grow (the wallet can make it again, but
+slowly: a rescan).
 
 ## 8. The alerts (ccs-watch and IRC)
 
@@ -240,15 +242,20 @@ timeout -k 5 40 runuser -u ccs-git -- env HOME=/ git -C /var/lib/ccs/proposals p
 # ccs-bash: totals, addresses, the JSON
 ccs-bash-run >> $L 2>&1 || failed="ccs-bash"
 
-# the state, to the backup machine when it changed (it keeps every version); read as ccs, whose
-# file it is: root never opens a file another account controls (it could be a link to any file)
-S=/var/lib/ccs/state/proposals.csv
-sum=$(runuser -u ccs -- sha256sum "$S" | cut -c1-64)
-if [ "$sum" != "$(cat /var/lib/ccs/backup-sent 2>/dev/null)" ] \
+# the state, to the backup machine when it changed (it keeps every version), and deposits.csv
+# (it keeps one copy, which only grows); read as ccs, whose files they are: root never opens a
+# file another account controls (it could be a link to any file)
+for S in /var/lib/ccs/state/proposals.csv /var/lib/ccs/state/deposits.csv; do
+[ -f "$S" ] || continue
+sent=/var/lib/ccs/backup-sent-${S##*/}; [ "$S" = /var/lib/ccs/state/proposals.csv ] && sent=/var/lib/ccs/backup-sent
+# (deposits.csv: its deposits, not its first line, whose height changes every run)
+sum=$(runuser -u ccs -- sed '/^# final /d' "$S" | sha256sum | cut -c1-64)
+if [ "$sum" != "$(cat "$sent" 2>/dev/null)" ] \
     && runuser -u ccs -- cat "$S" | timeout -k 5 30 ssh -T -i /root/.ssh/ccs-backup_ed25519 -o BatchMode=yes \
         -o IdentitiesOnly=yes -o ConnectTimeout=15 ccs-backup@<backup machine> >> $L 2>&1; then
-    echo "$sum" > /var/lib/ccs/backup-sent
+    echo "$sum" > "$sent"
 fi
+done
 
 # ccs-front-bash makes the site; it goes to the web server, which must then serve exactly that.
 ccs-front-run >> $L 2>&1 || failed="${failed:+$failed, }ccs-front-bash"
@@ -286,8 +293,13 @@ With steps 1–9 running, the new site is complete on the web server before anyo
 
 **Differences from ccs-back** (what may look different, and why):
 
-- **Totals** are recomputed from the wallet each run, so a dropped or reorged tx stops counting.
-- **Funded** at `MIN_CONFIRMATIONS`, not at unlock; pending before. Time-locked txes don't count.
+- **Totals** come from the wallet: its deposits 30 blocks deep kept in `deposits.csv` (a cache: the
+  wallet's, made again when deleted), and newer ones asked for each run; once a day everything is
+  compared with the wallet. A wallet that knows less than before (rescanning, restored, a reorg
+  deeper than 30 blocks) stops the run: the site keeps its last totals, never lower ones.
+- **Funded** at `MIN_CONFIRMATIONS`, not at unlock; pending before. A time-locked tx counts once its
+  lock has passed, whenever that is (ccs-back only if it unlocked within 50 blocks of its newest
+  deposit), and not at all before, not even as pending.
 - **Amounts:** `1,500` is 1500 (ccs-back: 1.5). Shown as strings with 4 decimals, cut off, not
   rounded; percentages round down (99.99996 of 100 shows `99.9999`, 99%). Sums are exact.
 - **Authors:** `0xfffc` stays text (ccs-back made it 65532).
@@ -326,7 +338,7 @@ server, the backup machine, the IRC bot, Tor).
 
 | Account | Does | Can't |
 |---|---|---|
-| `ccs-backup` | adds a dated copy of the state: its key works only from the backend's address and only runs `ccs-backup-receive` | read, change or delete a copy |
+| `ccs-backup` | adds a dated copy of the state, and keeps one copy of `deposits.csv` that only grows: its key works only from the backend's address and only runs `ccs-backup-receive` | read, change or delete a copy of the state; take a deposit out of `deposits.csv` |
 
 **The IRC bot's machine:** HTTPS in from the backend and the web server; their alert URLs are its
 only password, so keep them in the root-owned files above.
