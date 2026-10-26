@@ -372,7 +372,7 @@ in these files, root-owned, never in a repository or on a command line.
 | | `design.sha256` | the design release's files, from its zip (two-machines, "The gate"); `apt install zbar-tools` | 6 |
 | | `design/<release>/` | the design's release zip, unpacked (the same as the backend's); `design.sha256` from it | 6 |
 | | `markdown.awk` | `lib/markdown.awk` of the ccs-front-bash release the backend runs | 6 |
-| | `proposals.conf` | `PROPOSALS_GIT=https://repo.getmonero.org/monero-project/ccs-proposals.git`, `PROPOSALS_BRANCH=master` (and `LINK_HOSTS`, other forges a proposal's merge request link may be on) | 6 |
+| | `proposals.conf` | `PROPOSALS_GIT=https://repo.getmonero.org/monero-project/ccs-proposals.git`, `PROPOSALS_BRANCH=master` (and `LINK_HOSTS`, other repositories a proposal's merge request link may be in, as host/path) | 6 |
 | | `subaddresses.txt.viewkey` | the same as the backend's (the Verify page is then checked word for word) | 6 |
 | | `allowed` | the General Fund, `888tNkZrPN6JsEgekjMnABU4TBzc2Dt29EPAvkRxbANsAnjyPbb3iQ1YBRk1UXcdRsiKc9dhwMVgN5S9cQUiyoogDavup3H`, and any address a proposal's text quotes (the gate's refusal names it) | 6 |
 | | `alert.conf` | `ALERT_URL` (the bot), `SITE_URL=https://ccs.getmonero.org` | 8 |
@@ -394,7 +394,7 @@ them is a new design release.
 **Where the testnet differs** (don't copy these): `testnet=1`, monerod on `28081`, wallet-rpc on
 `18182`; `MIN_CONFIRMATIONS=1`; the proposals on Forgejo
 (`https://git.disroot.org/api/v1/repos/plowsof/ccs-proposals`; the gate's `proposals.conf`:
-`PROPOSALS_GIT=https://git.disroot.org/plowsof/ccs-proposals.git`, `LINK_HOSTS=repo.getmonero.org`,
+`PROPOSALS_GIT=https://git.disroot.org/plowsof/ccs-proposals.git`, `LINK_HOSTS=repo.getmonero.org/monero-project/ccs-proposals`,
 where the older proposals' merge requests are); its own wallet and list; the IRC
 bot on the backend machine itself (the backend's alerts reach it on 127.0.0.1, the web server's
 over HTTPS through that machine's proxy); and a Forgejo Actions runner on the backend, for every
