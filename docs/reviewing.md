@@ -107,6 +107,9 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
   last three fetches over 40 s and two runs before it alerts; a page answering anything else than
   200 with a body, three checks in a row while the rest of the site answers, alerts too; `--run`
   alerts after three failed runs. Its config is read key by key, never sourced.
+- [`contrib/migrate/compare-deposits`](../contrib/migrate/compare-deposits), once, moving from
+  ccs-back: its `deposits` table against the first run's `deposits.csv`, by txid and subaddress;
+  exits 1 if ccs-back has a deposit the wallet lacks, or another amount. Reads files only.
 - [`contrib/ccs-backup-receive`](../contrib/ccs-backup-receive), on the backup machine, the
   backend's key's forced command: a `proposals.csv` (at most 1 MB, its rows' shape) is kept as a
   new dated file, never overwriting or deleting one; a `deposits.csv` (at most 64 MB, its first

@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# compare-deposits CCS_BACK_DEPOSITS DEPOSITS_CSV: moving from ccs-back (handover step 2), are the
+# donations the wallet gives ccs-bash the ones ccs-back recorded? CCS_BACK_DEPOSITS is ccs-back's
+# deposits table, exported as tab-separated "tx_id subaddr_index amount block_received":
+#   mysql -B -N -e "SELECT tx_id, subaddr_index, amount, block_received FROM deposits" <ccs_db> > ccs-back-deposits.tsv
+# DEPOSITS_CSV is ccs-bash's STATE_DIR/deposits.csv after its first run. Only blocks up to its
+# "final" height are compared (newer ones aren't in it yet), subaddresses 1 and up (as ccs-bash
+# counts them). It prints the differences and the totals per subaddress both ways, and exits 1 if
+# ccs-back has a deposit the wallet doesn't, or another amount: the wallet knows less than ccs-back
+# did (restored with a restore height too late, a lookahead too small, not synced), so ccs-bash's
+# totals would be lower. Deposits only the wallet has are listed with their likely reason. Amounts
+# in atomic units, summed in bash (exact).
+set -euo pipefail
+export LC_ALL=C
+old=${1:?CCS_BACK_DEPOSITS (tab-separated: tx_id subaddr_index amount block_received)} new=${2:?DEPOSITS_CSV}
+head -n 1 "$new" | grep -qE '^# final [0-9]+ checked [0-9]+$' || { echo "$new: not a deposits.csv" >&2; exit 2; }
+H=$(head -n 1 "$new" | cut -d' ' -f3)
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+# "txid,subaddress amount block unlock" lines, sorted, of the deposits both sides consider final
+awk -F '\t' -v h="$H" -v bad="$tmp/bad" '
+    NF != 4 || $1 !~ /^[0-9a-f]+$/ || length($1) != 64 || $2 !~ /^[0-9]+$/ || $3 !~ /^[0-9]+$/ || $4 !~ /^[0-9]+$/ { print NR ": " $0 > bad; next }
+    $2 == 0 { zero++; next }
+    $4 == 0 || $4 > h { later++; next }
+    { print $1 "," $2 " " $3 " " $4 " -" }
+    END { print zero + 0 > "'"$tmp/zero"'"; print later + 0 > "'"$tmp/later"'" }' "$old" | sort > "$tmp/old"
+if [[ -s $tmp/bad ]]; then echo "$old: lines that aren't 'tx_id subaddr_index amount block_received' (tab-separated):" >&2; head -n 5 "$tmp/bad" >&2; exit 2; fi
+tail -n +2 "$new" | awk -F, '{ print $2 "," $3 " " $4 " " $1 " " $5 }' | sort > "$tmp/new"
+cut -d' ' -f1 "$tmp/old" | sort -u > "$tmp/ok"; cut -d' ' -f1 "$tmp/new" | sort -u > "$tmp/nk"
+comm -23 "$tmp/ok" "$tmp/nk" > "$tmp/only-old"
+comm -13 "$tmp/ok" "$tmp/nk" > "$tmp/only-new"
+join -j1 <(cut -d' ' -f1,2 "$tmp/old") <(cut -d' ' -f1,2 "$tmp/new") | awk '$2 != $3' > "$tmp/differ"
+status=0
+echo "compared: blocks up to $H (deposits.csv's final height), subaddresses 1 and up"
+echo "  ccs-back: $(wc -l < "$tmp/old") deposits ($(cat "$tmp/later") newer or in the pool, $(cat "$tmp/zero") at subaddress 0: not compared)"
+echo "  wallet:   $(wc -l < "$tmp/new") deposits"
+if [[ -s $tmp/only-old ]]; then
+    status=1
+    echo; echo "NOT OK: $(wc -l < "$tmp/only-old") deposit(s) ccs-back recorded that the wallet doesn't have (block, txid, subaddress, amount):"
+    join -t' ' -j1 "$tmp/only-old" "$tmp/old" | awk '{ split($1, k, ","); print "  " $3 " " k[1] " " k[2] " " $2 }' | sort -n | head -n 20
+    echo "  The wallet knows less than ccs-back did: a restore height too late, a subaddress lookahead too"
+    echo "  small (the handover, step 1), or not synced. Fix the wallet, then delete deposits.csv and run again."
+fi
+if [[ -s $tmp/differ ]]; then
+    status=1
+    echo; echo "NOT OK: $(wc -l < "$tmp/differ") deposit(s) with another amount (txid,subaddress ccs-back wallet):"
+    sed 's/^/  /' "$tmp/differ" | head -n 20
+fi
+if [[ -s $tmp/only-new ]]; then
+    echo; echo "$(wc -l < "$tmp/only-new") deposit(s) only the wallet has (block, txid, subaddress, amount, why likely):"
+    join -t' ' -j1 "$tmp/only-new" "$tmp/new" | awk '{ split($1, k, ","); why = ($4 != "0") ? "time-locked: ccs-back skipped it while locked" : "missed by ccs-back (its scan only looked 50 blocks back from its newest deposit)"; print "  " $3 " " k[1] " " k[2] " " $2 "  " why }' | sort -n | head -n 20
+fi
+# the totals per subaddress, both ways (bash: exact)
+declare -A a=() b=()
+while read -r k amount _; do i=${k#*,}; a[$i]=$((${a[$i]:-0} + amount)); done < "$tmp/old"
+while read -r k amount _; do i=${k#*,}; b[$i]=$((${b[$i]:-0} + amount)); done < "$tmp/new"
+echo; echo "totals per subaddress that differ (atomic units: ccs-back, wallet):"
+n=0
+for i in $(printf '%s\n' "${!a[@]}" "${!b[@]}" | sort -nu); do
+    [[ ${a[$i]:-0} == "${b[$i]:-0}" ]] && continue
+    printf '  %s: %s, %s\n' "$i" "${a[$i]:-0}" "${b[$i]:-0}"; n=$((n + 1))
+done
+((n)) || echo "  none"
+echo; ((status)) && echo "NOT OK: see above" || echo "OK: every deposit ccs-back recorded is the wallet's, with the same amount"
+exit "$status"
