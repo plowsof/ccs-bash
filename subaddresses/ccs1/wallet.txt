@@ -1,0 +1,9 @@
+The Monero Community Crowdfunding System (CCS) wallet, CCS1, used until 2023-12 for donations to
+CCS proposals (https://ccs.getmonero.org), then retired for CCS2:
+
+address  43H2k6iDgyfNo4HzgQKF8ABALWGpRz9Ez6uexXLGFyuC32SevoaGUiKWbebSkqy5EzdkviwJ4NQwDHkxVxHceUtLBzBjoTV
+view key 645936bdbb2e13830f587351b73b226c7c107ff94e5db0e0dd19c661cd657b0a
+
+Its donation addresses are subaddresses of this wallet: a view-only wallet made from the address
+and view key above (both are needed) says whether an address is one of them (get_address_index),
+and shows the donations recorded in a retired/ccs1.csv.
