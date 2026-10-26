@@ -26,7 +26,6 @@
             {
                 "name": "Nearly funded",
                 "donate-address": "80000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003",
-                "donate-qr-code": "data:image/png;base64,UVIgZm9yIG1vbmVybzo4MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMw==",
                 "gitlab-url": "https://example.org/mr/5",
                 "local-url": "/proposals/near-funded.html",
                 "contributions": 1,
@@ -45,7 +44,6 @@
             {
                 "name": "Brand new",
                 "donate-address": "80000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005",
-                "donate-qr-code": "data:image/png;base64,UVIgZm9yIG1vbmVybzo4MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwNQ==",
                 "gitlab-url": "https://example.org/mr/8",
                 "local-url": "/proposals/new-fund.html",
                 "contributions": 0,
@@ -64,7 +62,6 @@
             {
                 "name": "Name starts with a space",
                 "donate-address": "80000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004",
-                "donate-qr-code": "data:image/png;base64,UVIgZm9yIG1vbmVybzo4MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwNA==",
                 "gitlab-url": null,
                 "local-url": "/proposals/ leading-space.html",
                 "contributions": 0,
@@ -83,7 +80,6 @@
             {
                 "name": "Fund &lt;b&gt;this&lt;/b&gt; &amp; that",
                 "donate-address": "80000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001",
-                "donate-qr-code": "data:image/png;base64,UVIgZm9yIG1vbmVybzo4MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMQ==",
                 "gitlab-url": "https://example.org/mr/1",
                 "local-url": "/proposals/a-fund.html",
                 "contributions": 6,
@@ -107,7 +103,6 @@
             {
                 "name": "Work in progress",
                 "donate-address": "80000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002",
-                "donate-qr-code": "data:image/png;base64,UVIgZm9yIG1vbmVybzo4MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMg==",
                 "gitlab-url": "https://example.org/mr/2",
                 "local-url": "/proposals/b-wip.html",
                 "contributions": 2,

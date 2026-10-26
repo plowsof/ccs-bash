@@ -9,7 +9,6 @@ curl                       stagex/core-curl@sha256:937996bec550ef05ddb573fbcd368
 openssl                    stagex/core-openssl@sha256:0ea25b654c044622a62c0a8707123a9ca5c87b6ef39dc178e3fe6d972c7e690d
 libzstd                    stagex/core-libzstd@sha256:84c78c0000a4134df8a45661ab7e8ecb91dead720ff6b46c315380fb33cd0607
 zlib                       stagex/core-zlib@sha256:6b843e1875989a330d0b2051ddd1ab0178f01c9f476fb64727c8bd388eda9839
-libpng                     stagex/core-libpng@sha256:60ad8b2685cdc0766fa476b63855a22a0dc6f69998fb697f9d3a783e957e4785
 jq                         stagex/user-jq@sha256:4148299a2beb46fa5f0494ea456f1968500ca99c7fd96298be766195cf716855
 # the builder (builder.Dockerfile): BuildKit, and runc with its library for the RUN steps
 buildkit                   stagex/user-buildkit@sha256:91bff9810facddaa795fe3173d190b25b1919bd4eb21dc8e81ce4d632161faa7
