@@ -20,16 +20,14 @@
 Not a crustacean. A mollusc.
 
 A small replacement for [ccs-back](https://repo.getmonero.org/monero-project/ccs-back), the
-backend of the Monero Community Crowdfunding System: a bash script run from cron (or a loop
-that also runs it when a donation arrives), with a view-only `monero-wallet-rpc`. No web
-server, database or PHP. It writes the JSON (`proposals.json`, `completed-proposals.json`, and
-`projects.json` for `/projects`, where each proposal also has its `filename` and `gitlab_url`, the
-link to its merge request wherever the proposals are) that the site is made from.
+backend of the Monero Community Crowdfunding System: a bash script, every 2 minutes and on each
+donation, with a view-only `monero-wallet-rpc`. No web server, database or PHP. It writes the
+JSON the site is made from (`proposals.json`, `completed-proposals.json`, and `projects.json` for
+`/projects`).
 
 ## The project
 
-The CCS website is made by three repositories, with no framework, database or JavaScript on
-any live machine:
+Three repositories, and no framework, database or JavaScript on any live machine:
 
 | Repository | What it is |
 |---|---|
@@ -39,9 +37,8 @@ any live machine:
 
 <p align="center"><img src="docs/design.svg" width="760" alt="The recommended architecture: the backend makes the site and pushes it to a web server that only serves files"></p>
 
-**Start here: [the handover](docs/handover.md)**, moving ccs.getmonero.org from ccs-back and
-Jekyll to this, step by step along the diagram above. Why it's built this way: [the
-design](docs/design.md).
+**Start here: [the handover](docs/handover.md)**, from ccs-back and Jekyll to this, step by step.
+Why it's built this way: [the design](docs/design.md).
 
 ## Security
 
@@ -55,26 +52,22 @@ is why visitors can check an address against the signed list themselves.
 
 `ccs-back.sh`, top to bottom:
 
-1. **Read proposals:** the frontmatter of every `.md` (`lib/frontmatter.awk`); bad files are logged and skipped.
-   Optional `tags:` (a list, any text, e.g. `Abandoned`) go into the JSON as `tags`, escaped.
-2. **Check the wallet:** main address is `WALLET_ADDRESS`, every subaddress in the state file
-   matches. A restored wallet gets them re-created; a wrong one stops the run.
-3. **Count donations** per subaddress: `amount-funded` at `MIN_CONFIRMATIONS`, newer (and pool)
-   `amount-pending`. Donations at a subaddress this wallet gave a proposal that the state file
-   doesn't have stop the run; at one never handed out (anyone can send to the signed list's),
-   they are logged and counted for no proposal.
+1. **Read proposals:** every `.md`'s front matter (`lib/frontmatter.awk`); a bad file is logged and
+   skipped. Optional `tags:` (a list, e.g. `Abandoned`) go into the JSON, escaped.
+2. **Check the wallet:** its main address is `WALLET_ADDRESS`, every subaddress in the state is
+   its own (a restored wallet gets them made again); another wallet stops the run.
+3. **Count donations** per subaddress (funded at `MIN_CONFIRMATIONS`, pending before), plus each
+   proposal's donations to [retired wallets](docs/handover.md#retiring-a-wallet). Donations at a
+   subaddress given to a proposal the state lacks stop the run; at one never handed out, they are
+   logged and counted for no proposal.
 4. **Record new proposals:** the merged MR that added each new file, and when funding started.
 5. **Assign addresses:** a new subaddress for each `fr` proposal without one, after every index used.
-6. **Fetch ideas:** open MRs that add exactly one new proposal file (editing files doesn't count), and
-   besides it only its images, inside an images folder (`images/<its name>/`), whose text reads as a
-   proposal (the same parser as step 1): a stray or junk `.md` is not an idea. GitLab down keeps the
-   previous list.
-7. **Copy images:** a proposal's images are files in the repository, inside an images folder named
-   after it (`images/my-proposal/chart.png` for `my-proposal.md`). Those its `.md` shows as
-   `![…](images/my-proposal/chart.png)`, real PNG, JPEG or GIF files up to 2 MB, are copied into the
-   output (`images/`, listed in `images.json`) for ccs-front-bash to show; any other image stays a link.
-   GitLab or Forgejo/Gitea (e.g. git.disroot.org): `REPOSITORY_URL` says which (`ccs.conf.example`).
-8. **Write the JSON:** fresh QR codes, `lib/site.jq`, swapped in atomically.
+6. **Fetch ideas:** open MRs (GitLab, or Forgejo pull requests: `REPOSITORY_URL`) adding exactly
+   one new proposal file that reads as one, and only its images in `images/<its name>/`. The forge
+   down: the previous list.
+7. **Copy images** a proposal shows from its `images/<name>/` (PNG, JPEG or GIF, 2 MB at most) into
+   the output, for ccs-front-bash; any other image stays a link.
+8. **Write the JSON** (`lib/site.jq`), swapped in atomically.
 
 | File | Does |
 |---|---|

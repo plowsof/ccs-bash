@@ -105,49 +105,45 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
 ### Push, watcher, backup
 
 - The push: `rsync --delay-updates` as `ccs` to the web server's key, which runs only the gate.
-- [`contrib/ccs-watch`](../contrib/ccs-watch), as `ccs`: fetches the donation pages (each under `/`,
-  `/dark/` or `/light/` at random), every file they use, `WATCH_SAMPLE` other pages at random and
-  `/projects`, and the fonts and icons the stylesheets use (`url()`), asking as Tor Browser does
-  (its headers, `Sec-Fetch-*` by what is fetched, a page typed in, clicked on the site or from
-  another at random), through
-  a proxy picked at random, and compares each byte for byte with what was pushed. A difference must
-  last three fetches over 40 s and two runs before it alerts; a page answering anything else than
-  200 with a body, three checks in a row while the rest of the site answers, alerts too; `--run`
-  alerts after three failed runs. Its config is read key by key, never sourced.
-- [`contrib/migrate/compare-deposits`](../contrib/migrate/compare-deposits), once, moving from
-  ccs-back: its `deposits` table against the first run's `deposits.csv`, by txid and subaddress;
-  exits 1 if ccs-back has a deposit the wallet lacks, or another amount. Reads files only.
-- [`contrib/ccs-backup-receive`](../contrib/ccs-backup-receive), on the backup machine, the
-  backend's key's forced command: a `proposals.csv` (at most 1 MB, its rows' shape) is kept as a
-  new dated file, never overwriting or deleting one; a `deposits.csv` (at most 64 MB, its first
-  line `# final`) replaces the one copy only if it has every deposit that copy has. Nothing once
-  its folder holds 256 MB.
+- [`contrib/ccs-watch`](../contrib/ccs-watch), as `ccs`: fetches the donation pages, the files
+  they use (the stylesheets' `url()`s too), `WATCH_SAMPLE` other pages and `/projects`, as Tor
+  Browser asks (`Sec-Fetch-*` by what is fetched, under `/`, `/dark/` or `/light/`, through a
+  random proxy), and compares each byte for byte with what was pushed. A difference alerts after
+  three fetches over 40 s and two runs; so does a page answering anything but 200 three checks in
+  a row; `--run`, three failed runs. Its config is read key by key, never sourced.
+- [`contrib/migrate/compare-deposits`](../contrib/migrate/compare-deposits), as root, once:
+  ccs-back's `deposits` table against the first run's `deposits.csv` (every line of which is
+  checked first: it is `ccs`'s file); exits 1 if ccs-back has a deposit the wallet lacks, or
+  another amount.
+- [`contrib/ccs-backup-receive`](../contrib/ccs-backup-receive), the backup machine's forced
+  command: `proposals.csv` (1 MB, its rows' shape) and a retired wallet's file (64 MB) each kept as a
+  new dated copy, never overwritten or deleted; `deposits.csv` (64 MB) replaces its one copy only
+  if it has every deposit that copy has. Nothing once the folder holds 256 MB.
 
 ## Web server
 
-- [`contrib/ccs-receive`](../contrib/ccs-receive), the push key's forced command, as `ccs-data`:
-  one push at a time (`flock`); staging starts as a copy of the live site; rrsync
-  (`-wo -no-del -munge`) receives into it. The whole push is refused if the list isn't its `.pin`'s,
-  or there is no `zbarimg`, `qrencode`, `python3`, `git`, `design.sha256`, design release,
-  `markdown.awk` or `proposals.conf`, or a file name has a control character. `fetch`: the
-  proposals repository's last two commits, each push (the last fetch if it can't be).
-  `pages` (`pages_py`, Python's standard library only): every page must be one of the design's
-  (`design/<release>/`, its zip unpacked), byte for byte outside its regions; each region a
-  sequence of the design's parts and each `{{slot}}` a value of its kind, one regex per page
-  built from the parts (`Design.fill`, `region`, `slots`); a proposal's text, milestones and
-  payouts what `markdown.awk` makes of its file at one of those commits (`bodies`, kept by
-  commit); a donation box one address of the signed list, its QR code that address's. A page it
-  doesn't pass (`=ok`), whatever the reason, out of time included, is held back. `kinds`: no
-  symlink, no folder in a file's place or file in a folder's. `scan` (`scan_py`, one pass) reads
-  every page and JSON as written (entities decoded, a non-ASCII or control character both
-  dropped and a space) for addresses, the JSON as JSON too (`json_py`), and every `data:` image (`qrdata`:
-  zbarimg reads one listed address, and its pixels, read by `pixels_py`, are those of
-  `qrencode -s 10` of it). A page or JSON must start with `<`, `[` or `{`. `changes`: any other
-  file the push changes must be the design's (`design.sha256`), a proposal image the proposals
-  repository has at that path (`repo_images`: `git hash-object` compared with `ls-tree`; its QR
-  codes checked too), `projects.json`, or the list's files as installed in `/etc/ccs-gate`. A
-  failing file is deleted from staging, so it keeps its last good copy; the rest goes live, the
-  push fails, IRC is told. `--heartbeat` (a timer): alerts when no push has come for 15 minutes.
+- [`contrib/ccs-receive`](../contrib/ccs-receive), the push key's forced command, as `ccs-data`,
+  one push at a time (`flock`), into staging, a copy of the live site (rrsync `-wo -no-del -munge`).
+  Refuses the whole push without its pinned list, `zbarimg`, `qrencode`, `python3`, `git`,
+  `design.sha256`, the design, `markdown.awk` or `proposals.conf`, or for a control character in a
+  file name. Then, per file:
+  - `fetch`: the proposals repository's last two commits (the last fetch if it can't);
+  - `pages` (`pages_py`, Python's standard library): a page is one of the design's
+    (`design/<release>/`), byte for byte outside its regions, each region the design's parts and
+    each `{{slot}}` a value of its kind, one regex per page (`Design.fill`, `region`, `slots`); a
+    proposal's text what `markdown.awk` makes of its file at one of those commits (`bodies`); a
+    donation box one listed address and its QR code. Anything not passed (`=ok`), a timeout too,
+    is held back;
+  - `kinds`: no symlink, no folder in a file's place or file in a folder's;
+  - `scan` (`scan_py`, one pass): every address in pages and JSON as written (entities decoded, a
+    non-ASCII or control character read both as nothing and as a space), the JSON as JSON too
+    (`json_py`); every `data:` image (`qrdata`: zbarimg reads one listed address, and its pixels,
+    `pixels_py`, are `qrencode -s 10`'s of it); pages and JSON start with `<`, `[` or `{`;
+  - `changes`: any other file is the design's (`design.sha256`), a proposal image the repository
+    has at that path (`repo_images`: `git hash-object` against `ls-tree`; its QR codes checked),
+    `projects.json`, or the list's files as installed;
+  - a failing file is removed from staging (its last good copy stays), the rest goes live, the
+    push fails and IRC is told. `--heartbeat` (a timer): no push for 15 minutes.
 - nginx: static files, the security headers, the theme map ([two machines](two-machines.md)).
 
 ## Where an address is checked against the signed list
