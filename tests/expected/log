@@ -11,4 +11,3 @@ not an idea: MR !15's junk.md doesn't read as a proposal: no frontmatter between
 skipping broken.md: missing title
 skipping dup-key.md: key title appears twice
 ignoring gitlab_url of o'quote.md: not an https link
-not an idea: MR !15's junk.md doesn't read as a proposal: no frontmatter between --- lines
