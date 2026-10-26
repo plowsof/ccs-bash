@@ -77,6 +77,7 @@ push: [the handover](handover.md), steps 3–9.
 
    ```
    git clone https://github.com/plowsof/ccs-bash /opt/ccs-bash
+   git -C /opt/ccs-bash checkout v0.2.20     # the release you run (the handover's releases table), not master
    useradd --system --home-dir /var/lib/ccs --shell /usr/sbin/nologin ccs
    useradd --system --no-create-home --shell /usr/sbin/nologin ccs-git   # owns the proposals checkout
    install -d -m 755 /var/lib/ccs
