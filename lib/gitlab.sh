@@ -180,12 +180,16 @@ ideas() {
     [[ -z ${IDEAS_CACHE:-} ]] || atomic_write "$IDEAS_CACHE" printf '%s' "${fresh:-$'\n'}" || true
 
     # Anyone can open one, so a title or name can't hold a whole address (the web server's gate
-    # would hold back every page listing it): a run of 90 or more base58 characters is shortened,
-    # as alerts show addresses, to its first 6 and last 4. Characters that aren't printable ASCII
-    # don't break a run (a left-to-right mark shows nothing, and the gate reads it as a space).
+    # would hold back every page listing it, as it does with the same rule): a run of 90 or more
+    # characters each base58 or not ASCII (an address padded or split by invisible characters, or
+    # drawn with look-alikes: a mathematical 9, a fullwidth or Cyrillic A; any character that isn't
+    # ASCII, not only letters: jq's Unicode tables miss some) is shortened, as alerts show
+    # addresses, to its first 6 and last 4. Bidi controls go first (they could show an address's halves, a space
+    # between them, in another order than written), and control characters become spaces.
     jq --argjson keep "$(printf '%s\n' "${keep[@]}" | jq -s .)" --argjson votes "$votes" '
-        def noaddress: gsub("(?<r>[1-9A-HJ-NP-Za-km-z](?:[^\\x20-\\x7E]*[1-9A-HJ-NP-Za-km-z]){89,})";
-            .r | gsub("[^\\x20-\\x7E]"; "") | "\(.[0:6])…\(.[-4:])");
+        def noaddress: gsub("[\u202a-\u202e\u2066-\u2069]"; "") | gsub("[\\x00-\\x1F\\x7F]"; " ")
+            | gsub("(?<r>(?:[1-9A-HJ-NP-Za-km-z]|[^\\x00-\\x7F]){90,})";
+                .r | gsub("[^\\x20-\\x7E]"; "") | "\(.[0:6])…\(.[-4:])");
         map(select(.iid | IN($keep[])) | ($votes[.iid | tostring] // {upvotes, downvotes}) as $v | {
             name: (.title | sub("^\\s+"; "") | sub("\\s+$"; "") | noaddress | @html),
             "gitlab-url": (.web_url | if type == "string" and test("^https://[^\\s\"\\x27<>\\\\]+$") then @html else null end),

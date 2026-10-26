@@ -248,6 +248,30 @@ got=$(
     WORK=$(mktemp -d) FIXTURES=$fx PROPOSALS_DIR=$here/fixtures/proposals ideas 2> /dev/null | jq -r '.[] | select(."gitlab-url" | endswith("/11")) | .name'
 )
 if [[ $got == 'Pay naïve me: 44AFFq…EP3A!' ]]; then echo "ok   an address in an idea's title is shortened, invisible characters in it or not"; else echo "FAIL an address in an idea's title: '$got'"; status=1; fi
+# ... and when drawn with other characters (the web server's gate holds back the same): its halves
+# in bidi embeddings, shown in another order than written; mathematical letters and digits;
+# Cyrillic letters for some of its own. What is left has no bidi control, and no run of 90
+# characters each base58 or not ASCII.
+for how in bidi math cyrillic; do
+    # (jq, not python: the tests also run inside the pinned image, which has none)
+    t=$(jq -rn --arg a "$addr" --arg how "$how" '
+        if $how == "bidi" then "Moved: \u202b\u202a" + $a[48:] + "\u202c\u202a " + $a[:48] + "\u202c\u202c"
+        elif $how == "math" then "Pay: " + ($a | explode | map(if . >= 48 and . <= 57 then . + 120754 elif . >= 65 and . <= 90 then . + 120727 else . + 120729 end) | implode)
+        else "Pay: " + ($a | gsub("A"; "\u0410") | gsub("B"; "\u0412") | gsub("E"; "\u0415")) end')
+    jq --arg t "$t" 'map(if .iid == 11 then .title = $t else . end)' "$FIXTURES/gitlab/opened.json" > "$fx/gitlab/opened.json"
+    got=$(
+        # shellcheck source=tests/stubs.sh
+        source "$here/stubs.sh"
+        WORK=$(mktemp -d) FIXTURES=$fx PROPOSALS_DIR=$here/fixtures/proposals ideas 2> /dev/null | jq -r '.[] | select(."gitlab-url" | endswith("/11")) | .name'
+    )
+    if [[ $got == Pay* || $got == Moved* ]] && jq -en --arg s "$got" '$s | (test("[\u202a-\u202e\u2066-\u2069]")
+        or test("(?:[1-9A-HJ-NP-Za-km-z]|[^\\x00-\\x7F]){90}")) | not' > /dev/null; then
+        echo "ok   an address in an idea's title, drawn with other characters ($how), is shortened or broken up"
+    else
+        echo "FAIL an address in an idea's title ($how): '$got'"; status=1
+    fi
+done
+cp "$FIXTURES/gitlab/opened.json" "$fx/gitlab/opened.json"
 # an idea's file over 1 MB isn't kept, nor read: that idea is left out (13 stays)
 awk 'BEGIN { for (i = 0; i < 1048576; i += 64) printf "%63s\n", "" }' >> "$fx/gitlab/raw/sha-11"
 got=$(
@@ -487,8 +511,8 @@ dep() {   # dep NAME [ENV...]: a run on a copy of the state, its own deposits.cs
     env "$@" bash -c 'source "$1/../ccs-back.sh" && source "$1/stubs.sh" && main "$2"' _ "$here" "$d/ccs.conf" 2> "$d/log"
 }
 deposits_ok=1
-if dep a && f=$TEST_TMP/dep-a/state/deposits.csv && [[ $(head -n 1 "$f") =~ ^#\ final\ 3099970\ checked\ [0-9]+$ ]] \
-    && [[ $(tail -n +2 "$f" | cut -d, -f1 | tr '\n' ' ') == "3099901 3099940 3099950 3099960 3099960 3099970 " ]] \
+if dep a && f=$TEST_TMP/dep-a/state/deposits.csv && [[ $(awk "NR == 1" "$f") =~ ^#\ final\ 3099970\ checked\ [0-9]+$ ]] \
+    && [[ $(awk "NR > 1" "$f" | cut -d, -f1 | tr '\n' ' ') == "3099901 3099940 3099950 3099960 3099960 3099970 " ]] \
     && ! grep -q filter_by_height "$TEST_TMP/get_transfers-calls"; then
     first=$(jq -c . "$TEST_TMP/dep-a/out/projects.json")
     if dep a && grep -q '"filter_by_height":true,"min_height":3099970' <(jq -c . "$TEST_TMP/get_transfers-calls") \
@@ -515,17 +539,22 @@ else cat "$TEST_TMP/dep-a/log"; echo "FAIL deposits.csv: a deposit the file lack
 
 # ccs-backup-receive (the backup machine): proposals.csv, every version kept; deposits.csv, one
 # copy, replaced only by one that has all its deposits; anything else refused
-bk=$TEST_TMP/backup; mkdir -p "$bk"
-recv() { CCS_BACKUP_DIR=$bk "$here/../contrib/ccs-backup-receive" > "$TEST_TMP/recv.out" 2>&1; }
-d1=$TEST_TMP/dep-a/state/deposits.csv
-if recv < "$TEST_TMP/state/proposals.csv" && recv < "$d1" && [[ $(find "$bk" -name 'proposals-*.csv' | wc -l) == 1 ]] && cmp -s "$d1" "$bk/deposits.csv" \
-    && { sed '1s/checked [0-9]*/checked 1/' "$d1"; printf '3099999,%064d,1,5,0\n' 7; } | recv && [[ $(wc -l < "$bk/deposits.csv") == $(($(wc -l < "$d1") + 1)) ]] \
-    && ! sed '$d' "$d1" | recv && grep -q 'lacks 2 deposit' "$TEST_TMP/recv.out" \
-    && ! printf '# final 1 checked 1\n1,zz,1,1,0\n' | recv && grep -q 'not a deposits.csv' "$TEST_TMP/recv.out" \
-    && ! printf 'hello\n' | recv && [[ $(find "$bk" -name 'proposals-*.csv' | wc -l) == 1 ]]; then
-    echo "ok   backup: proposals.csv kept as a new copy; deposits.csv one copy, replaced only by one with all its deposits; anything else refused"
+# (a host script: not in the image, which has no du, head, comm or sort; skipped there)
+if ! type -P du head comm sort > /dev/null; then
+    echo "ok   backup receiver: skipped (a host script, its tools are not in the image)"
 else
-    cat "$TEST_TMP/recv.out"; ls -la "$bk"; echo "FAIL backup receiver"; status=1
+    bk=$TEST_TMP/backup; mkdir -p "$bk"
+    recv() { CCS_BACKUP_DIR=$bk "$here/../contrib/ccs-backup-receive" > "$TEST_TMP/recv.out" 2>&1; }
+    d1=$TEST_TMP/dep-a/state/deposits.csv
+    if recv < "$TEST_TMP/state/proposals.csv" && recv < "$d1" && [[ $(find "$bk" -name 'proposals-*.csv' | wc -l) == 1 ]] && cmp -s "$d1" "$bk/deposits.csv" \
+        && { sed '1s/checked [0-9]*/checked 1/' "$d1"; printf '3099999,%064d,1,5,0\n' 7; } | recv && [[ $(wc -l < "$bk/deposits.csv") == $(($(wc -l < "$d1") + 1)) ]] \
+        && ! sed '$d' "$d1" | recv && grep -q 'lacks 2 deposit' "$TEST_TMP/recv.out" \
+        && ! printf '# final 1 checked 1\n1,zz,1,1,0\n' | recv && grep -q 'not a deposits.csv' "$TEST_TMP/recv.out" \
+        && ! printf 'hello\n' | recv && [[ $(find "$bk" -name 'proposals-*.csv' | wc -l) == 1 ]]; then
+        echo "ok   backup: proposals.csv kept as a new copy; deposits.csv one copy, replaced only by one with all its deposits; anything else refused"
+    else
+        cat "$TEST_TMP/recv.out"; ls -la "$bk"; echo "FAIL backup receiver"; status=1
+    fi
 fi
 
 # contrib/migrate/compare-deposits: ccs-back's deposits table against the first run's deposits.csv.
