@@ -28,7 +28,9 @@ machine and the IRC bot):
 
 - **monero-wallet-rpc**, view-only, its own user, on 127.0.0.1.
 - **ccs-bash**: the JSON and the state, every 2 minutes or on a new tx. It reads the network (the
-  forge), so nothing it writes is trusted further on.
+  forge), so nothing it writes is trusted further on. A proposal's total counts the live wallet
+  and every retired one (each recorded once, in the state); no total can go down from one run to
+  the next unless allowed by hand ([retiring a wallet](handover.md#retiring-a-wallet)).
 - **ccs-front-bash**: fills a fresh copy of the original each run (about 1.5 s for 316
   proposals): every proposal page, the stage lists, each donation box. Every donation address is
   checked against the wallet's signed list (below); a proposal whose address isn't on it is left
@@ -94,13 +96,14 @@ against it on both machines (the same four files on each: the list, `.asc` its s
 
 | Where | Its job |
 |---|---|
-| the offline machine | made from a view-only wallet and signed by a Core Team member's own key (the one the Monero repository publishes); its sha256 published beside the wallet's view key and reproduced by others |
+| the offline machine | made from a view-only wallet and signed by a Core Team member's own key (the one the Monero repository publishes); kept in ccs-bash's `subaddresses/<wallet>/` with `wallet.txt` (the wallet's address and view key), where others reproduce its sha256 |
 | backend, `/etc/ccs-front/` | ccs-front-bash checks the list against its pin, then every donation address, and makes the QR codes from them: what ccs-bash's account writes can't change one |
 | web server, `/etc/ccs-gate/` (installed by hand) | the gate checks every address on every pushed page, however written and in every QR code: a taken-over backend can't get a wrong one live |
 | the Verify page | visitors check the address their wallet shows in a view-only copy of the CCS wallet, from its published address and view key: the defence left if the web server is taken over |
 
 So a wrong address has to get past the backend, the web server, ccs-watch and anyone who looks.
-When the wallet nears index 15,000, a longer list is made and signed the same way.
+When the wallet nears index 15,000, a longer list is made and signed the same way; a new wallet
+gets a list of its own, and the old one's addresses leave the site when it is retired.
 
 ## Setting it up
 
