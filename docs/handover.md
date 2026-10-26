@@ -254,8 +254,8 @@ heartbeat timer (step 8).
 
 The state file, `proposals.csv`, is the one thing that can't be made again. Each new version goes
 to an account on the backup machine that can only add copies: [setup](setup.md#backing-up-the-state).
-`deposits.csv` goes there too, one copy that may only grow (the wallet can make it again, but
-slowly: a rescan).
+`deposits.csv` goes there too, one copy that may only grow: the wallet can make it again, but the
+copy is what a restored wallet that knows less is checked against.
 
 ## 8. The alerts (ccs-watch and IRC)
 
@@ -460,7 +460,10 @@ over HTTPS through that machine's proxy); and a Forgejo Actions runner on the ba
 repository of its owner on disroot, the testnet proposals' pre-parser among them: anyone opening a
 pull request there starts a job on the wallet's machine (master's script, in an unprivileged
 container with no Docker socket and no route to the wallet's RPC). A risk the testnet takes; the
-CCS's backend runs nothing but the CCS.
+CCS's backend runs nothing but the CCS. The testnet also shows the real CCS's totals: a local
+patch of `lib/wallet.sh` adds each proposal's real raised amount and count, as numbers only
+(`STATE_DIR/historic.tsv`), to what its testnet wallet receives; every address it shows is the
+testnet wallet's. Its alerts go to `#montero-ccs-emojis`.
 
 ## Upgrading
 
@@ -474,7 +477,7 @@ the release's zip, checked by its sha256. For each new release, in this order:
    ```
    git clone -q https://github.com/plowsof/ccs-sigs /opt/ccs-sigs      # once; then: git -C /opt/ccs-sigs pull -q
    cd /opt/ccs-bash && env CCS_SIGS_REPO=/opt/ccs-sigs TRUSTED_KEYS=/etc/ccs/trusted-signers \
-       contrib/release/verify ccs-bash-v0.2.11
+       contrib/release/verify ccs-bash-v0.2.18
    ```
    It prints the release's image ID (or zip sha256), how many signers agree, and the commit it was
    built from. It needs two, each signature by the key of the signer whose folder it is in;
@@ -482,9 +485,11 @@ the release's zip, checked by its sha256. For each new release, in this order:
    person have attested. Too few: wait for more, or attest it yourself
    ([contrib/release](../contrib/release/README.md)).
 2. **Built from its tag, once the tag is the attested commit.** `git -C /opt/ccs-bash fetch --tags
-   && git -C /opt/ccs-bash checkout v0.2.11`, then `git -C /opt/ccs-bash rev-parse HEAD` must be the
+   && git -C /opt/ccs-bash checkout v0.2.18`, then `git -C /opt/ccs-bash rev-parse HEAD` must be the
    commit `verify` printed (a tag can be moved; build.sh runs as root, and starts a privileged
-   BuildKit builder, before any ID can be compared); then `container/build.sh ccs-bash:v0.2.11`
+   BuildKit builder, before any ID can be compared); then `container/build.sh ccs-bash:v0.2.18`
+   (`contrib/release/build`, for attesting, records the ID but doesn't keep the image: build with
+   `container/build.sh` to install)
    ([the pinned image](image.md)); the same for ccs-front-bash. Or build on another machine and
    `docker save … | ssh <backend> docker load`: loading runs nothing, and step 3 checks the ID.
    The design: download the zip from its release and `sha256sum` it.
