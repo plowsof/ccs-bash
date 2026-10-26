@@ -45,8 +45,9 @@ and is "the original". Nothing here runs while the CCS does.
   site so visitors can check an address themselves.
 - **ccs-watch**, right after each push: fetches the live donation pages, and every file they use
   (stylesheets, fonts, icons, QR codes, images), ten of the other pages at random and `/projects`,
-  over HTTPS as Tor Browser asks for them, through
-  Tor and a clearnet proxy at random, so the web server can't easily tell it from a visitor, and
+  over HTTPS as Tor Browser asks for them (a page as typed in, clicked on the site or from
+  another, at random), through Tor and a clearnet proxy at random, so the web server can't easily
+  tell it from a visitor (its TLS handshake and its timing, right after each push, still can), and
   checks they are what was pushed; if one isn't (three whole fetches and the next run
   agreeing, so a slow or down web server is never mistaken for it; or a page that keeps answering
   anything but the page, while the site answers), an alert goes to IRC
