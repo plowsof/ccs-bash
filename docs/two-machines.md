@@ -338,7 +338,8 @@ there, ccs-watch and visitors checking an address against the signed list are th
 
 Every alert the backend sends runs on the backend, so a backend that is off, whose cron stopped,
 or whose key or network broke, says nothing. Its pushes, one every run (2 minutes), are its
-heartbeat: the gate notes each one that arrives, and a timer on the web server, every 5 minutes,
+heartbeat (a failed run still pushes the last good site, so a backend that runs but fails, and
+says so itself, doesn't set this one off too; one alarm, not two): the gate notes each one that arrives, and a timer on the web server, every 5 minutes,
 alerts when none has for 15 minutes (`HEARTBEAT_MINUTES` in `alert.conf` to change it). To keep
 false alarms out, it stays quiet
 
