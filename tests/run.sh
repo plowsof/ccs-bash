@@ -228,6 +228,21 @@ rm -rf "$yaml"
 if [[ $(read_proposals "$(mktemp -d)" 2> /dev/null) == '[]' ]]; then echo "ok   no proposals at all is an empty list"; else echo "FAIL no proposals"; status=1; fi
 rm -rf "$odd" "$odd.log"
 
+# The forge down: one failed lookup a run, not one per new proposal (a fresh install has hundreds,
+# each waiting for curl's timeout); all of them tried again next run
+got=$(
+    # shellcheck source=ccs-back.sh
+    source "$here/../ccs-back.sh"
+    WORK=$(mktemp -d)
+    jq -n '[{file: "a.md", layout: "fr"}, {file: "b.md", layout: "wip"}, {file: "c.md", layout: "cp"}]' > "$WORK/props.json"
+    echo '{}' > "$WORK/state.json"
+    merged_mr_url() { echo "$1" >> "$WORK/calls"; return 1; }
+    record_new_proposals 2> "$WORK/log"
+    echo "$(grep -c . "$WORK/calls") $(grep -c 'and 2 more new proposals' "$WORK/log") $(jq length "$WORK/state.json")"
+    rm -rf "$WORK"
+)
+if [[ $got == '1 1 0' ]]; then echo "ok   the forge down: one failed lookup a run, the other new proposals wait for the next"; else echo "FAIL the forge down: '$got' (lookups, the log line, state rows)"; status=1; fi
+
 # One MR that can't be read leaves out only that MR from the ideas (13 here; 11 stays).
 # shellcheck source=lib/gitlab.sh
 source "$here/../lib/gitlab.sh"
