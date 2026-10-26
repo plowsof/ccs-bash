@@ -32,7 +32,8 @@ testnet CCS. A row is added with each release.
 
 | Set | ccs-bash | ccs-front-bash | ccs-front-hugo | Running on |
 |---|---|---|---|---|
-| 2026-10-25 | v0.2.16 | v0.1.16 | v0.1.17 | testnet ([ccs.monerodevs.org](https://ccs.monerodevs.org)) |
+| 2026-10-26 | v0.2.17 | v0.1.16 | v0.1.17 | testnet ([ccs.monerodevs.org](https://ccs.monerodevs.org)) |
+| 2026-10-25 | v0.2.16 | v0.1.16 | v0.1.17 | testnet, before |
 | 2026-10-25 | v0.2.15 | v0.1.16 | v0.1.16 | testnet, before |
 | 2026-10-25 | v0.2.14 | v0.1.16 | v0.1.15 | testnet, before |
 | 2026-10-25 | v0.2.13 | v0.1.16 | v0.1.15 | testnet, before |
@@ -358,6 +359,7 @@ in these files, root-owned, never in a repository or on a command line.
 | `/etc/ccs/alert.conf` | `ALERT_URL` | the IRC bot's URL (below) | 8 |
 | | `SUBADDRESSES`, `WATCH_PROXY`, `WATCH_THEMES`, `WATCH_SAMPLE` | `/etc/ccs-front/subaddresses.txt`; `socks5h://127.0.0.1:9050` (Tor) and a clearnet proxy elsewhere; `1`; `10` (other pages checked each run, at random) | 8 |
 | `/etc/ccs/trusted-signers` | the attesters you trust | their keys' fingerprints, one a line | upgrading |
+| `/usr/local/bin/ccs-bash-run`, `ccs-front-run` | the image they run | its ID, `--pull never`, the attested one of [the releases](#the-releases) | 2, 5, upgrading |
 | `/usr/local/bin/ccs-bash-update` | `<web server>`, `<backup machine>` | their addresses | 9 |
 
 **The web server**
