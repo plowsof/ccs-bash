@@ -236,7 +236,7 @@ check_known_subaddresses() {
 # Print each proposal's donations to the wallets the CCS used before this one, file TAB atomic units
 # TAB count, from RETIRED_DIR (STATE_DIR/retired), one file per retired wallet, written once by
 # contrib/retire-wallet and never changed (state, backed up: the old wallet may be gone):
-#   # retired <name> wallet <main address> height <h> time <unix time>
+#   # retired <name> wallet <main address, or ccs-back-database> height <h> time <unix time>
 #   <height>,<txid>,<subaddress>,<amount>,<unlock_time>,<proposal file>
 # No addresses: nothing in it can reach a page. A deposit still time-locked when its wallet was
 # retired counts once its lock has passed: a time, or a height taken as two minutes a block from
@@ -250,9 +250,9 @@ retired_totals() {
         [[ -f $f ]] || continue
         head=''
         IFS= read -r head < "$f" || true
-        [[ $head =~ ^#\ retired\ [a-z0-9-]+\ wallet\ [0-9A-Za-z]{95}\ height\ ([0-9]+)\ time\ ([0-9]+)$ ]] \
+        [[ $head =~ ^#\ retired\ [a-z0-9-]+\ wallet\ ([0-9A-Za-z]{95}|ccs-back-database)\ height\ ([0-9]+)\ time\ ([0-9]+)$ ]] \
             || die "$f: not a retired wallet's file (restore it from the backup machine)"
-        h=${BASH_REMATCH[1]} t=${BASH_REMATCH[2]}
+        h=${BASH_REMATCH[2]} t=${BASH_REMATCH[3]}
         while IFS=, read -r height txid idx amount unlock file; do
             [[ $height =~ ^[0-9]+$ && $txid =~ ^[0-9a-f]{64}$ && $idx =~ ^[0-9]+$ && $amount =~ ^[0-9]+$ \
                 && $unlock =~ ^[0-9]+$ && $file == *.md && $file != */* && $file != *[[:cntrl:]]* ]] \
