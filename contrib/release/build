@@ -10,7 +10,8 @@
 #   contrib/release/build ccs-bash            or the newest release of one
 #
 # The newest is the highest vX.Y.Z tag in its repository. Writes OUTDIR/<name>/SHA256SUMS.part
-# (OUTDIR default ./output), <name> being the release's folder in ccs-sigs, like ccs-bash-v0.2.8.
+# (OUTDIR default ./output), <name> being the release, like ccs-bash-v0.2.8; attest signs the three
+# together, as one set.
 # A version of the CCS is the three together, attested in one folder per set in ccs-sigs (as
 # feather-sigs has one per version): after a release of any one, all three are built and signed
 # again. By default nothing is built if your ccs-sigs checkout (CCS_SIGS_REPO, default

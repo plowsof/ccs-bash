@@ -164,6 +164,12 @@ EOF
 names=()
 for fragment in "${sha256sum_fragments[@]}"; do names+=( "$(basename "$(dirname "$fragment")")" ); done
 name=$(printf '%s\n' "${names[@]}" | sort -u | paste -sd+)
+# a version of the CCS is the three together: one release of each, never a part of a set
+if [[ ! $name =~ ^ccs-bash-v[0-9]+\.[0-9]+\.[0-9]+\+ccs-front-bash-v[0-9]+\.[0-9]+\.[0-9]+\+ccs-front-hugo-v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "ERR: a set is one release of each of ccs-bash, ccs-front-bash and ccs-front-hugo, built together"
+    echo "     (contrib/release/build with no arguments builds the newest set); in $LOGDIR_BASE: $name"
+    exit 1
+fi
 fragment_paths=()
 for fragment in "${sha256sum_fragments[@]}"; do fragment_paths+=( "$(readlink -f "$fragment")" ); done
 echo "Attesting to build outputs for: '${name}'"
