@@ -1,11 +1,11 @@
-# Builds the files ccs-front reads, same layout as the old ccs-back:
+# Builds the files ccs-front-bash reads, the old ccs-back's layout:
 #   $out == "proposals": [Ideas, Funding Required, Work in Progress]
 #   $out == "completed-proposals": [Completed Proposals]
 #   $out == "projects":  every proposal, in the order first seen (the /projects API)
-# Inputs (--slurpfile, each wrapped in an array): props, state, funds, qr, ideas.
+# Inputs (--slurpfile, each wrapped in an array): props, state, funds, ideas.
 # Amounts arrive ready to show (lib/wallet.sh): no money arithmetic in jq's doubles.
 
-$props[0] as $props | $state[0] as $state | $funds[0] as $funds | $qr[0] as $qr
+$props[0] as $props | $state[0] as $state | $funds[0] as $funds
 
 # Links on the site: only plain https urls (not javascript: and the like), HTML-escaped.
 | def link: if type == "string" and test("^https://[^\\s\"'<>\\\\]+$") then @html else null end;
@@ -25,7 +25,6 @@ $props[0] as $props | $state[0] as $state | $funds[0] as $funds | $qr[0] as $qr
     | {
         name: (.title | nobidi | @html),
         "donate-address": $s.address,
-        "donate-qr-code": (if $s.address then "data:image/png;base64,\($qr[$s.subaddr_index | tostring])" else null end),
         "gitlab-url": ((.gitlab_url // $s.gitlab_url) | link),
         "local-url": ("/proposals/\(.file | sub("\\.md$"; "")).html" | liquid_escape),
         contributions: $f.count,

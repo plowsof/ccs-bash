@@ -51,8 +51,7 @@ Pinned container, read-only, no capabilities, `--network host` only to reach wal
   proposal's file (`label_address`; a wallet from ccs-back or restored has none), as
   `assign_addresses` labels new ones. `check_known_subaddresses`: donations at a labelled index
   the state doesn't have stop the run (a lost state); at an unlabelled one, which anyone can send
-  to from the signed list, they are logged and counted for no proposal. `qr_codes`: for the old
-  Jekyll front only; ccs-front-bash makes its own.
+  to from the signed list, they are logged and counted for no proposal.
 - [`lib/gitlab.sh`](../lib/gitlab.sh): the public API of GitLab or Forgejo (Forgejo's pull requests
   mapped to GitLab's shape). `merged_mr_url`: the merged MR that added a file. `mr_proposal_file`:
   an MR is an idea only if it adds exactly one `.md` at the root, and besides it only files in
@@ -79,7 +78,7 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
   `check_addresses`: the list's sha256 is its `.pin`'s (else the run stops) and every donation
   address is in the list: a funding-required proposal whose address isn't is left off the site
   (its page, its cards, the counts) and the run exits 3; fills the Verify page. `qr_codes`: one QR code per checked address
-  (qrencode); ccs-bash's are never used. `relative_links`: the data's absolute links made relative,
+  (qrencode); ccs-bash makes none. `relative_links`: the data's absolute links made relative,
   so `/dark/` and `/light/` stay while browsing.
 - `lib/fill.sh`: `fill_page` replaces each `<!-- ccs:x -->…<!-- /ccs:x -->` region in one pass,
   left to right (what goes in is never searched again); a missing, repeated or nested marker stops

@@ -5,7 +5,6 @@
             {
                 "name": "Ends with dots",
                 "donate-address": null,
-                "donate-qr-code": null,
                 "gitlab-url": null,
                 "local-url": "/proposals/dots-end.html",
                 "contributions": 0,
@@ -24,7 +23,6 @@
             {
                 "name": "Name with a quote",
                 "donate-address": null,
-                "donate-qr-code": null,
                 "gitlab-url": null,
                 "local-url": "/proposals/o&#39;quote.html",
                 "contributions": 0,
@@ -43,7 +41,6 @@
             {
                 "name": "Finished thing",
                 "donate-address": null,
-                "donate-qr-code": null,
                 "gitlab-url": "https://example.org/mr/3",
                 "local-url": "/proposals/c done, (old).html",
                 "contributions": 0,
