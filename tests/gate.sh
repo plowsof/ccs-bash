@@ -207,6 +207,21 @@ push > /dev/null || true
 if [[ $(bot | grep -c .) == 1 ]]; then ok "the same address refused again within the hour: no second alert"; else bot; fail "a repeated alert"; fi
 
 good=$(addr 2) fake=$(addr 9 B)
+# a foreign address its checksum says is one (testnet's prefix, random keys), with the gate's own
+# Keccak (checked against Keccak-256's of nothing), and it in groups of four
+grouped=$(python3 - "$here/../contrib/ccs-receive" <<'PY'
+import os, sys
+src = open(sys.argv[1]).read().split("scan_py='", 1)[1].split("\n'\n", 1)[0]
+ns = {}; exec(src[src.index("M = (1 << 64)"):src.index("def valid(")], ns)
+assert ns["keccak"](b"").hex() == "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"
+d = bytes([53]) + os.urandom(64); d += ns["keccak"](d)[:4]; a = ""
+for i in range(0, len(d), 8):
+    n, t = int.from_bytes(d[i:i + 8], "big"), ""
+    for _ in range({8: 11, 5: 7}[len(d[i:i + 8])]): n, r = divmod(n, 58); t = ns["B58"][r] + t
+    a += t
+print(" ".join(a[i:i + 4] for i in range(0, len(a), 4)), end="")
+PY
+)
 integrated=$(printf '4%0105d' 7 | tr 0 1)
 held() {
     local rc=0
@@ -252,6 +267,9 @@ for attack in \
     "monerolink|$p|href=\"monero:$good\"|href=\"monero:${good}x\"|a monero: link with more than an address" \
     "bidi|$p|<h1>A proposal</h1>|<h1>Pay $bidi</h1>|an address in bidi embeddings, a space between its halves shown before them, in a name" \
     "math|$p|<h1>A proposal</h1>|<h1>Pay $math</h1>|an address in mathematical letters, in a name" \
+    "grouped|$p|<h1>A proposal</h1>|<h1>Send to $grouped</h1>|an address in groups of four, in a name" \
+    "groupedidea|ideas/index.html|An idea|Send to ${grouped// /-}|an address in groups split by -, in an idea's title" \
+    "date|ideas/index.html|October 1, 2026|October 1, 2026 and see the new address on the forum|text in a date" \
     "allowedbox|$p|href=\"monero:$fund\"|href=\"monero:$fund\"|a donation box with an allowed address that isn't the wallet's (the General Fund)" \
     "milestone|$p|<p class=\"empty\">No milestones.</p>|<div class=\"milestone\"><h3>Donations moved: see the Verify page</h3><p>10 XMR</p></div>|a milestone the proposal's front matter doesn't have"; do
     IFS='|' read -r what file old new why <<<"$attack"
@@ -259,7 +277,7 @@ for attack in \
     case $what in
         qr) site "$v" "$good" "$fake" ;;
         small) site "$v" "$good"; change "$file" "$(qr64 "$good")" "$(qr64 "$good" 4)" ;;
-        link | otherrepo | dotdot) site "$v" "$good" "$good" "An idea" ;;
+        link | otherrepo | dotdot | groupedidea | date) site "$v" "$good" "$good" "An idea" ;;
         allowedbox) site "$v" "$fund" ;;
         *) site "$v" "$good" ;;
     esac
@@ -271,7 +289,7 @@ for attack in \
     esac
 done
 # what only a gate that reads too much would hold back: these go live
-for title in "Research data: an analysis" "Fix charset=latin1 in the docs" $'\xf0\x9f\x9f\xa2 Green light for X' $'\xe2\x96\xb6 Video tutorials' "R&D, <b>bold</b> and a=monero: in a title"; do
+for title in "Keep running the monero seed nodes for the next twenty four months starting in March and then a few more years" "Research data: an analysis" "Fix charset=latin1 in the docs" $'\xf0\x9f\x9f\xa2 Green light for X' $'\xe2\x96\xb6 Video tutorials' "R&D, <b>bold</b> and a=monero: in a title"; do
     v=$((v + 1)); site "$v" "$good" "$good" "$title"
     passes "$v" ideas/index.html "an idea titled \"$title\" (anyone can open one)" "$(python3 -c 'import html, sys; print(html.escape(sys.argv[1]))' "$title")"
 done
