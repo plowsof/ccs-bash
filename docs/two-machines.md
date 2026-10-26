@@ -5,7 +5,7 @@ site to the web server, which can only receive those files into one folder.
 
 | | backend | web server |
 |---|---|---|
-| Has | the wallet, ccs-bash, ccs-front-bash, the proposals checkout, the state | nginx, `ccs-data` and its gate (way A); or Jekyll (way B, the old ccs-front) |
+| Has | the wallet, ccs-bash, ccs-front-bash, the proposals checkout, the state | nginx, `ccs-data` and its gate |
 | Setup | [the handover](handover.md), steps 1–5 and 9 | below, and the handover's steps 6 and 8 |
 | The images | here only, IDs checked here | no Docker needed |
 
@@ -17,7 +17,7 @@ useradd --system --create-home --shell /bin/sh ccs-data   # no password; only th
 install -d -o ccs-data -m 755 /var/lib/ccs-data           # ideally its own small filesystem or a quota
 install -d -m 755 /etc/ssh/authorized_keys                # root-owned, outside the account's home
 # /etc/ssh/authorized_keys/ccs-data (root, 644):
-from="<wallet machine IP>",command="rrsync -wo -no-del -munge /var/lib/ccs-data",restrict ssh-ed25519 AAAA... ccs-bash
+from="<backend IP>",command="rrsync -wo -no-del -munge /var/lib/ccs-data",restrict ssh-ed25519 AAAA... ccs-bash
 ```
 
 and in `/etc/ssh/sshd_config` (at the end: a `Match` lasts to the next one), then `systemctl reload ssh`:
@@ -40,10 +40,8 @@ is one it could replace; this one it can't, and sshd reads no other for it.
 | key file root-owned, outside its home | loosening the key line, adding a key |
 | own filesystem / quota | filling the disk |
 
-Then either of two ways:
-
-**A) With ccs-front-bash** (the site is made on the ccs-bash machine, see [the design](design.md)):
-the web server only serves what arrives, nothing else is installed or run there. nginx:
+The site is made on the backend ([the design](design.md)): the web server only serves what
+arrives, and runs nothing else but the gate below. nginx:
 
 The security headers, in a file of their own, `/etc/nginx/snippets/ccs-headers.conf` (as
 beta.getmonero.org sends them, with a stricter CSP; an A+ on securityheaders.com):
@@ -149,16 +147,7 @@ HTTPS: point a DNS A record at the web server, set `server_name` to that name, t
 the 443 server with the certificate and a redirect from 80, keeps the headers above, and
 renews itself (`certbot.timer`).
 
-**B) With Jekyll:** use `/var/lib/ccs-data` as ccs-front's `_data` (setup steps 4–5; add
-`disable_symlinks on;` to the `/projects` block). ccs-front pulls its own proposals, cloned with
-`git clone -c core.symlinks=false`, from the crontab of a user that owns `/opt/ccs-front`, not
-root's (`crontab -u ccs-front -e`, see [setup](setup.md) step 6):
-
-```
-*/2 * * * * git -C /opt/ccs-front/proposals pull -q --ff-only ; cd /opt/ccs-front && jekyll build -q
-```
-
-**ccs-bash machine:** a key for `ccs`, and the web server's host key from its
+**The backend:** a key for `ccs`, and the web server's host key from its
 `/etc/ssh/ssh_host_ed25519_key.pub` (not accepted on first connect):
 
 ```
@@ -167,20 +156,10 @@ runuser -u ccs -- ssh-keygen -t ed25519 -N '' -f /var/lib/ccs/.ssh/id_ed25519
 echo "<web server> ssh-ed25519 AAAA..." > /var/lib/ccs/.ssh/known_hosts
 ```
 
-`ccs-bash-update` pushes; `--delay-updates` swaps the files in only once all have arrived.
-**A)** push the site ccs-front-bash made: the `rsync` in [the handover](handover.md#9-the-update).
+`ccs-bash-update` pushes the site ccs-front-bash made (the `rsync` in [the
+handover](handover.md#9-the-update)); `--delay-updates` swaps the files in only once all have arrived.
 
-**B)** push the JSON for the web server's Jekyll:
-
-```
-#!/bin/sh
-# /usr/local/bin/ccs-bash-update (chmod 755)
-timeout -k 5 40 runuser -u ccs-git -- env HOME=/ git -C /var/lib/ccs/proposals pull -q --ff-only
-{ ccs-bash-run && runuser -u ccs -- rsync -a --delay-updates \
-    -e "ssh -p 22 -o BatchMode=yes -o StrictHostKeyChecking=yes" /var/lib/ccs/out/ ccs-data@<web server>: ; } >> /var/log/ccs-bash.log 2>&1
-```
-
-`-p 22`: the web server's ssh port, given in full, because the ccs-bash machine's own
+`-p 22`: the web server's ssh port, given in full, because the backend's own
 `ssh_config` may default to another (a hung push that times out is the sign). The web server
 needs 22 open to this machine, and 80/443 to everyone: in its own firewall *and*, on a cloud
 VM, in the provider's (an Oracle security list, an AWS security group).
@@ -190,11 +169,11 @@ machine's key (commands, forwarding, reading back, `..`, `--temp-dir`, `--backup
 `--link-dest` and friends, deleting, symlinks, another machine): all refused. With rrsync
 alone (`--loose`) they get through, so the test does catch them.
 
-A taken-over wallet machine can still push false pages or JSON: the gate below makes the web
+A taken-over backend can still push false pages or JSON: the gate below makes the web
 server refuse any page that isn't the design's, filled as ccs-front-bash fills it, and any with an
-address that isn't the wallet's ([Security](../README.md#security)).
+address that isn't the wallet's ([the design](design.md)).
 
-## The gate (way A, recommended): the web server checks every page
+## The gate: the web server checks every page
 
 The web server's last check, so a bad page has to get past two machines: `contrib/ccs-receive`,
 a bash script, run by the push key instead of rrsync. It doesn't guess how a browser would show
@@ -323,25 +302,31 @@ A proposal whose text quotes some other address stops its page updating until yo
 address to `allowed` (the refusal names it): the safe way to fail. On the testnet that was two
 (`utxobr-monero-k8s-operator`, `el00ruobuob-oct-dec-2018`). A new list: install its four files
 the same way. `tests/gate.sh` builds this in containers, with a small design in the release
-zip's shape: a good push goes live; a page changed anywhere the design doesn't fill, an address
-split by markup, an invisible image's alt text, a `<br>`, a class or a zero-width space, padded
-by a no-break space, an entity in an address, another proposal text than the repository's, text
-the design's classes could hide, a `style` attribute, an `<svg>`, a QR code drawn as text, a link
-to another site, a `monero:` link with more than an address, a foreign address in the donation
-box, a QR code of another address or not exactly qrencode's (another size, more drawn beside
-it), a `\u` escape or a key twice in `projects.json`, a page the design doesn't have, a page
-named with a backslash or wildcard, a PNG named `.html` or `projects.json`, a NUL byte, a
-stylesheet or design file that isn't the design's, a swapped list, a proposal image that is
-another QR code, inverted or not, or that the repository doesn't have (or has at another path,
-or other bytes) are held back and the live file kept; ideas titled with "data:", "charset=",
-`▶` or `🟢` go live; the repository down, the last fetch is used; two pushes at once go one
-after the other; the next good push goes through; no design or `markdown.awk`, or a list that
-isn't the pinned one, refuses everything; no deleting and nothing outside the folder, as with
-rrsync alone. Since the second security review, also held back: an
-address drawn in bidi embeddings or mathematical letters, a donation box with an `allowed`
-address (the General Fund), a milestone the proposal doesn't have, a link to another repository
-on the forge or out of it by `..`, a page too costly to check, a page made a folder; a page check
-that stops holds back every page, and a backend that hangs up mid-check still gets an alert sent.
+zip's shape, and checks:
+
+- **held back, the live file kept:**
+  - a page changed anywhere the design doesn't fill, a page the design doesn't have, a page made
+    a folder, a page too costly to check;
+  - an address split by markup, an entity, a zero-width or no-break space, drawn in bidi
+    embeddings or mathematical letters, or in an invisible image's alt text;
+  - a `<br>`, a class, a `style` attribute, an `<svg>`, text the design's classes could hide;
+  - another proposal text than the repository's, a milestone the proposal doesn't have;
+  - a link to another site, to another repository on the forge, or out of it by `..`; a
+    `monero:` link with more than an address;
+  - a foreign address in the donation box, or an `allowed` one (the General Fund);
+  - a QR code of another address, not exactly qrencode's (another size, more drawn beside it),
+    or drawn as text; a proposal image that is another QR code (inverted or not), or that the
+    repository doesn't have (or has at another path, or other bytes);
+  - a `\u` escape or a key twice in `projects.json`; a PNG named `.html` or `projects.json`; a
+    NUL byte; a page named with a backslash or wildcard;
+  - a stylesheet or design file that isn't the design's, a swapped list;
+- **refused, every push:** no design or `markdown.awk`, or a list that isn't the pinned one;
+  deleting, and anything outside the folder, as with rrsync alone;
+- **through:** a good push, and the next good push after a held-back one; ideas titled with
+  "data:", "charset=", `▶` or `🟢`; the repository down (the last fetch is used); two pushes at
+  once (one after the other);
+- **alerts:** a page check that stops holds back every page; a backend that hangs up mid-check
+  still gets an alert sent.
 
 **What it can't see:** what only the backend knows, in the shape it has: a total, a count or a
 percentage that is wrong but a number, an idea that is no merge request (its title still
@@ -408,7 +393,7 @@ systemctl daemon-reload && systemctl enable --now ccs-heartbeat.timer
 `tests/gate.sh` checks it: no alert after a recent push, none on the first late check, one on the
 second, not again within the hour, a line when pushes return, and none before any push.
 
-## Watching the web server (way A): the backend raises the alarm
+## Watching the web server: the backend raises the alarm
 
 The gate can't help if the web server itself is taken over. `contrib/ccs-watch`, run on the
 backend right after each push, fetches the pages where donations are asked for (home, Funding

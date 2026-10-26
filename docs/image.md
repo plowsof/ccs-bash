@@ -5,9 +5,8 @@ Option B's image holds only pinned, source-built parts (about 28 MB):
 - **[StageX](https://stagex.tools) packages**, pinned by digest in `container/images`: bash, curl,
   jq, ca-certificates and their libraries. StageX builds everything from source from a tiny
   bootstrap; two or more maintainers reproduce and sign each release, which every build checks.
-- **busybox and qrencode, built here** from upstream source pinned by sha256 in
-  `container/sources.lock` (StageX's sums). busybox has only the applets in
-  `container/busybox-applets` (no shell, `nc`, `wget`...); qrencode gets PNG output.
+- **busybox, built here** from upstream source pinned by sha256 in `container/sources.lock`
+  (StageX's sum), with only the applets in `container/busybox-applets` (no shell, `nc`, `wget`...).
 - **Built by StageX's BuildKit** (and runc), pinned and checked like the rest, not by the
   host Docker's.
 
@@ -19,7 +18,7 @@ Option B's image holds only pinned, source-built parts (about 28 MB):
    buildx builder `stagex-buildkit-<id>` (privileged, like any buildx builder), the same one
    ccs-front-bash's and ccs-front-hugo's builds use while their pins are the same.
 4. **Builds** with `--network none`: BuildKit fetches the pins by digest, the steps get no
-   network. It rechecks the sources, compiles busybox and qrencode with StageX's toolchain, and
+   network. It rechecks the sources, compiles busybox with StageX's toolchain, and
    sets every file time to the commit's.
 
 So the same commit always builds to the same image ID, anywhere; `build.sh` prints it.
@@ -52,7 +51,7 @@ This proves StageX's maintainers reproduced and signed what we pin, not that we 
 
 `container/update-images.sh` pins every image to StageX's current release, stores its
 signatures in `container/sigs/` and checks them; review the diff, commit, rebuild. A new builder pin makes a new builder; remove old
-ones with `docker buildx rm stagex-buildkit-<id>`. For a newer busybox or qrencode, change its
+ones with `docker buildx rm stagex-buildkit-<id>`. For a newer busybox, change its
 line in `container/sources.lock` and the version in the Dockerfile. More applets go in
 `container/busybox-applets`.
 

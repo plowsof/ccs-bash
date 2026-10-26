@@ -5,7 +5,7 @@
 **A) Packages on the host:**
 
 ```
-apt install bash coreutils findutils grep sed diffutils mawk util-linux curl ca-certificates jq qrencode git logrotate
+apt install bash coreutils findutils grep sed diffutils mawk util-linux curl ca-certificates jq git logrotate
 ```
 
 | Package | Used for | Notes |
@@ -14,22 +14,20 @@ apt install bash coreutils findutils grep sed diffutils mawk util-linux curl ca-
 | `mawk` or `gawk` | `lib/frontmatter.awk` | either works |
 | `curl`, `ca-certificates` | wallet RPC, GitLab API | curl only recommends `ca-certificates` |
 | `jq` | all JSON | 1.6 or newer |
-| `qrencode` | QR codes | often not installed |
 | `git` | the proposals checkout | |
 | `logrotate` | the log | optional |
-| `rsync`, `openssh-client` | pushing to ccs-front | [two machines](two-machines.md) only |
+| `rsync`, `openssh-client` | pushing the site to the web server, and the state to the backup machine | |
 
 **B) The container:** Docker with buildx, `git`, optionally `logrotate`, and `rsync` +
-`openssh-client` for two machines. Where the image is built, also `gpg` and `jq`. Everything
+`openssh-client`. Where the image is built, also `gpg` and `jq`. Everything
 ccs-bash runs is inside the image ([The pinned image](image.md)).
 
 Either way: `monero-wallet-rpc` from [getmonero.org](https://www.getmonero.org/downloads/).
-The tests also want `zbar-tools` (skipped without it, required in CI).
 
 ## Steps
 
-The same for A and B except where marked. With two machines, steps 4 and 5 happen on the web
-server and step 6 pushes there ([two machines](two-machines.md)).
+The same for A and B except where marked. The site itself (ccs-front-bash), the web server and the
+push: [the handover](handover.md), steps 3–9.
 
 1. **The wallet:** monero-wallet-rpc, view-only, as its own user, on localhost, with a login.
    Options go in a file so the password isn't in `ps`:
@@ -143,54 +141,9 @@ server and step 6 pushes there ([two machines](two-machines.md)).
        --pull never sha256:<the image ID you checked>
    ```
 
-4. **Point ccs-front at the output.** Link or mount the **directories**, never the single JSON
-   files (they are replaced with `mv`, and a file bind mount keeps the old one):
-
-   ```
-   rm -rf ccs-front/_data ccs-front/proposals
-   ln -s /var/lib/ccs/out       ccs-front/_data
-   ln -s /var/lib/ccs/proposals ccs-front/proposals
-   ```
-
-   ```
-   # or, with Docker:
-   - /var/lib/ccs/out:/workspace/ccs-front/_data:ro
-   - /var/lib/ccs/proposals:/workspace/ccs-front/proposals:ro
-   ```
-
-   Then match pages by `local-url` instead of by title, which misses titles with `&`, `<` or
-   quotes and lets two proposals with one title share a box (optional; without it, as now):
-
-   ```
-   git -C ccs-front apply /opt/ccs-bash/contrib/ccs-front-local-url.patch
-   ```
-
-5. **Optional `/projects`**, nginx:
-
-   ```
-   location = /projects {
-       alias /var/lib/ccs/out/projects.json;
-       default_type application/json;
-   }
-   ```
-
-6. **One update** (pull, run, build the site), from root's cron. Root only starts the steps:
-   git and the site builder read merged proposals, so they run as their own users. With
-   ccs-front-bash (recommended), the script is the one in [the handover](handover.md#9-the-update).
-   With Jekyll (the old ccs-front):
-
-   ```
-   #!/bin/sh
-   # /usr/local/bin/ccs-bash-update (chmod 755)
-   timeout -k 5 40 runuser -u ccs-git -- env HOME=/ \
-       git -C /var/lib/ccs/proposals pull -q --ff-only   # GitLab down: give up
-   ccs-bash-run >> /var/log/ccs-bash.log 2>&1
-   runuser -u ccs-front -- env HOME=/ jekyll build -q -s /opt/ccs-front -d /opt/ccs-front/_site
-   ```
-
-   `ccs-front` owns the ccs-front checkout:
-   `useradd --system --no-create-home --shell /usr/sbin/nologin ccs-front` and
-   `chown -R ccs-front: /opt/ccs-front`. With Docker, run the Jekyll container as such a user.
+4. **One update** (pull, run, build the site, push it), from root's cron. Root only starts the
+   steps: git and the site builder read merged proposals, so they run as their own users. The
+   script: [the handover](handover.md#9-the-update), step 9.
 
    ```
    */2 * * * * /usr/local/bin/ccs-bash-update
@@ -208,8 +161,7 @@ server and step 6 pushes there ([two machines](two-machines.md)).
    }
    ```
 
-
-7. **Optional, instant updates.** wallet-rpc's hook only touches a file; `notify-loop.sh`
+5. **Optional, instant updates.** wallet-rpc's hook only touches a file; `notify-loop.sh`
    (root, instead of the cron line) runs `ccs-bash-update` every 2 minutes, or sooner when the
    file appears, but at most once per 30 seconds however many notifications come.
 

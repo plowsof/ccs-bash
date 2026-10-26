@@ -3,23 +3,6 @@
 # Same commit, same hash: every file gets the commit's time (SOURCE_DATE_EPOCH) and the
 # result is one layer in an empty image. No user account: it runs as a numeric user.
 
-# qrencode, built from source with PNG output: StageX's own is built without libpng.
-FROM toolchain AS qrencode
-COPY --from=libpng / /
-COPY --from=zlib / /
-# bash for verify.sh (the toolchain only has busybox sh)
-COPY --from=bash / /
-COPY --from=ncurses / /
-RUN --mount=type=bind,source=container,target=/pin \
-    bash /pin/verify.sh /pin/sources.lock /pin/sources \
-    && tar -xzf /pin/sources/v4.1.1.tar.gz -C / \
-    && cd /libqrencode-4.1.1 \
-    && autoreconf -fi \
-    && ./configure --prefix=/usr --with-tools \
-    && make \
-    && make DESTDIR=/rootfs install \
-    && rm -rf /rootfs/usr/include /rootfs/usr/lib/pkgconfig /rootfs/usr/share /rootfs/usr/lib/*.a /rootfs/usr/lib/*.la
-
 # busybox with only the applets in busybox-applets (and their options, like readlink -f).
 # The toolchain's cc is clang.
 FROM toolchain AS busybox
@@ -59,9 +42,7 @@ COPY --from=curl / /
 COPY --from=openssl / /
 COPY --from=libzstd / /
 COPY --from=zlib / /
-COPY --from=libpng / /
 COPY --from=jq / /
-COPY --from=qrencode /rootfs/ /
 COPY ccs-back.sh /opt/ccs-bash/
 COPY lib/ /opt/ccs-bash/lib/
 

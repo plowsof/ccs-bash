@@ -52,7 +52,7 @@ and is "the original". Nothing here runs while the CCS does.
   agreeing, so a slow or down web server is never mistaken for it; or a page that keeps answering
   anything but the page, while the site answers), an alert goes to IRC
   (`#irc-room`). It catches what the gate can't: the web server itself taken over
-  ([two machines](two-machines.md#watching-the-web-server-way-a-the-backend-raises-the-alarm)).
+  ([two machines](two-machines.md#watching-the-web-server-the-backend-raises-the-alarm)).
 - **The state's backup**: `proposals.csv`, the one file that can't be made again, goes to another
   machine whenever it changes, to an account that can only add copies (every version kept, none
   overwritten or deleted, even by a taken-over backend): [setup](setup.md#backing-up-the-state).
@@ -78,7 +78,7 @@ which holds back any page that isn't one of the design release's, filled as ccs-
 it (a proposal's text as the proposals repository has it, fetched there), any file with an
 address that isn't the wallet's (in its text, a `monero:` link or a QR code) and any other file
 that isn't the design release's
-([two machines](two-machines.md#the-gate-way-a-recommended-the-web-server-checks-every-page)).
+([two machines](two-machines.md#the-gate-the-web-server-checks-every-page)).
 
 ccs-front-bash runs on the backend, not on its own machine or the web server: whatever writes
 the addresses into the pages can redirect donations, so it belongs with ccs-bash, and pushing
@@ -104,9 +104,7 @@ site in place (and that is what the run pushes).
 
 **QR codes:** made here (qrencode), from the address once it is checked against the list, and
 inlined into the page: what ccs-bash's account writes can't put another address in a QR code.
-ccs-bash still makes its own (`donate-qr-code`) only because the old ccs-front expects them in the
-JSON, as with ccs-back; ccs-front-bash doesn't use them, and once it replaces ccs-front, ccs-bash
-stops.
+ccs-bash makes none.
 
 **Markdown:** a strict subset in awk, in the spirit of `lib/frontmatter.awk`. Safe by
 construction: all text is HTML-escaped first, and only tags the renderer writes itself ever
