@@ -243,6 +243,23 @@ got=$(
 )
 if [[ $got == '1 1 0' ]]; then echo "ok   the forge down: one failed lookup a run, the other new proposals wait for the next"; else echo "FAIL the forge down: '$got' (lookups, the log line, state rows)"; status=1; fi
 
+# STATE_DIR/forge-ok (ccs-watch --run's "GitLab/Forgejo hasn't answered"): touched by a run whose
+# ideas came, left as it was by one whose didn't (the previous ideas kept)
+d=$TEST_TMP/forge && mkdir -p "$d" && cp -r "$TEST_TMP/state" "$d/state" && cp -r "$TEST_TMP/out" "$d/out"
+sed "s|$TEST_TMP/state|$d/state|; s|$TEST_TMP/out|$d/out|" "$TEST_TMP/ccs.conf" > "$d/ccs.conf" && chmod 444 "$d/ccs.conf"
+touch -d '-7 hours' "$d/state/forge-ok"
+# shellcheck disable=SC2016
+bash -c 'source "$1/../ccs-back.sh" && source "$1/stubs.sh" && ideas() { return 1; } && main "$2"' _ "$here" "$d/ccs.conf" 2> "$d/log" || true
+old_ok=$(find "$d/state/forge-ok" -mmin +60)
+# shellcheck disable=SC2016
+bash -c 'source "$1/../ccs-back.sh" && source "$1/stubs.sh" && main "$2"' _ "$here" "$d/ccs.conf" 2>> "$d/log" || true
+if [[ -f $TEST_TMP/state/forge-ok && $old_ok && -z $(find "$d/state/forge-ok" -mmin +60) ]] && grep -q 'keeping the previous list' "$d/log"; then
+    echo "ok   forge-ok: touched when the ideas came, not when they didn't"
+else
+    cat "$d/log"; echo "FAIL forge-ok"; status=1
+fi
+rm -rf "$d"
+
 # One MR that can't be read leaves out only that MR from the ideas (13 here; 11 stays).
 # shellcheck source=lib/gitlab.sh
 source "$here/../lib/gitlab.sh"
