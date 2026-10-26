@@ -57,7 +57,8 @@ By default `build` takes each repository's newest release tag (the set at the to
 [releases table](../../docs/handover.md#the-releases)) and says which before it starts, skipping
 any you have attested already in your ccs-sigs checkout (your name as `attest` has it: `SIGNER`'s,
 else gh's login). So after a release of one repository, only that one is built (the design: under
-half a minute) and `attest` signs just it. Or name the releases yourself, any of the three, built whether attested or not:
+half a minute) and `attest` signs a set of just it; `verify` counts each release in every set it
+is in. Or name the releases yourself, any of the three, built whether attested or not:
 
 ```
 contrib/release/build ccs-bash v0.2.8 ccs-front-bash v0.1.11 ccs-front-hugo v0.1.9
@@ -67,8 +68,8 @@ contrib/release/build ccs-bash                                             # the
 
 `attest` signs, adds your public key the first time (the check refuses a key without an
 attestation), and commits in `external/ccs-sigs` on a branch of its own, titled as feather-sigs'
-are: `Add <github username> <release>...`, the releases it signed, e.g.
-`Add plowsof ccs-bash-v0.2.8 ccs-front-bash-v0.1.11 ccs-front-hugo-v0.1.9`. `<github username>` may
+are: `Add <github username> <set>`, the set being the folder it signed, e.g.
+`Add plowsof ccs-bash-v0.2.8+ccs-front-bash-v0.1.11+ccs-front-hugo-v0.1.9`. `<github username>` may
 be left out if `gh` is signed in; `NO_COMMIT=1` leaves the commit to you.
 
 Then all that is left is the push, and one click. `attest` ends with both, for example:
@@ -101,13 +102,10 @@ in pairs, and builder keys, and checks each signature against its signer's key.
 
 ## What is attested
 
-Each release you built goes into a folder of its own, as Feather's one `all.SHA256SUMS` per
-version: `ccs-bash-v0.2.7/<you>/all.SHA256SUMS`, signed. So every signer of a release is in its
-folder, whatever else each built in the same run, and a release you attested once stays attested:
-it never changes, and `build` skips it next time. Which releases run together is the handover's
-[releases table](../../docs/handover.md#the-releases), not a folder. (Earlier attestations are in
-one folder per set, e.g. `ccs-bash-v0.2.7+ccs-front-bash-v0.1.9+ccs-front-hugo-v0.1.8/`, a line per
-release in one file; `verify` still reads them.) The line:
+Everything you built in one run goes into **one** file, signed once (as Feather's one
+`all.SHA256SUMS` per version), in a folder named after the set:
+`ccs-bash-v0.2.7+ccs-front-bash-v0.1.9+ccs-front-hugo-v0.1.8/<you>/all.SHA256SUMS`. One line per
+release:
 
 | Release | Its line |
 |---|---|
@@ -127,8 +125,8 @@ env TRUSTED_KEYS=/etc/ccs/trusted-signers contrib/release/verify
 contrib/release/verify --any-key
 ```
 
-Or one release: its folder and every older set folder it is in count, and its line must be the
-same for all of them:
+Or one release: it counts every set it is in, so signers who built different sets still add up,
+and its line must be the same for all of them:
 
 ```
 env CCS_SIGS_REPO=external/ccs-sigs TRUSTED_KEYS=/etc/ccs/trusted-signers contrib/release/verify ccs-bash-v0.2.7
