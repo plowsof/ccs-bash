@@ -86,9 +86,17 @@ check() {
         def rows($s): $s | split("\n") | map(select(. != "") | csvrow | {key: .[0], value: "\(.[2]) \(.[3][0:6])"}) | from_entries;
         rows($a) as $A | rows($b) as $B
         | ($older | split("\n")) as $O
-        | $A | to_entries[] | select(.key | IN($O[]) | not) | select($B[.key] != .value) | "\(.key): ccs-back \(.value), ccs-bash \($B[.key] // "(missing)")"')
+        | ([$A[] | split(" ")[0] | select(. != "") | tonumber] | max // 0) as $top
+        | $A | to_entries[] | select(.key | IN($O[]) | not) | select($B[.key] != .value)
+        # one with no subaddress in the export, given one since above every exported index: a
+        # funding-required proposal, at its first run: expected
+        | if .value == " " and (($B[.key] // "" | split(" ")[0]) as $i | $i != "" and ($i | tonumber) > $top)
+          then "new\t\(.key): subaddress \($B[.key] | split(" ")[0])" else "bad\t\(.key): ccs-back \(.value), ccs-bash \($B[.key] // "(missing)")" end')
+    local new
+    new=$(grep $'^new\t' <<<"$bad" | cut -f2- || true); bad=$(grep $'^bad\t' <<<"$bad" | cut -f2- || true)
     if [[ -z $bad ]]; then ok "ccs-bash's state has every proposal ccs-back had, with its index and address"
     else nok "the state differs from ccs-back's:"; printf '%s\n' "$bad" | head -n 10 | indent; fi
+    [[ -z $new ]] || { ok "funding-required proposals given a subaddress since the export (above its highest):"; printf '%s\n' "$new" | indent; }
     # the log: donations at an index the export lacks
     local idx top gaps='' newer=''
     idx=$(grep 'which no proposal was given (no label)' "${LOG:-/var/log/ccs-bash.log}" 2> /dev/null | tail -n 1 | grep -o 'subaddress [0-9 ]*' | cut -d' ' -f2- || true)
