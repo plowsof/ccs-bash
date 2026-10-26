@@ -19,7 +19,7 @@ tmp=$(mktemp "$dir/.incoming.XXXXXX")
 trap 'rm -f "$tmp"' EXIT
 head -c $(((64 << 20) + 1)) > "$tmp"
 first=$(head -n 1 "$tmp")
-if [[ $first =~ ^#\ retired\ ([a-z0-9-]+)\ wallet\ [0-9A-Za-z]{95}\ height\ [0-9]+\ time\ [0-9]+$ ]]; then
+if [[ $first =~ ^#\ retired\ ([a-z0-9-]+)\ wallet\ ([0-9A-Za-z]{95}|ccs-back-database)\ height\ [0-9]+\ time\ [0-9]+$ ]]; then
     name=${BASH_REMATCH[1]}
     (($(wc -c < "$tmp") <= 64 << 20)) || { echo "ccs-backup: retired wallet's file over 64 MB, not kept" >&2; exit 1; }
     if grep -qvE '^[0-9]+,[0-9a-f]{64},[0-9]+,[0-9]+,[0-9]+,[^/[:cntrl:]]+\.md$' < <(tail -n +2 "$tmp"); then
