@@ -22,6 +22,8 @@
 #   WATCH_SAMPLE=10                                       how many of the other pages to check
 #                                                         too, at random each run (default 10)
 #   SUBADDRESSES=/etc/ccs-front/subaddresses.txt          optional: name addresses not on it
+#   FORGE_HOURS=6                                         optional: how long GitLab or Forgejo may
+#                                                         be down before --run alerts (default 6)
 #   ALERT_PREFIX=[CCS-watch]                              optional: how messages start
 #   ALERT_PLAIN=1                                         optional: no IRC colours (for ntfy and the like)
 # One alert per problem an hour; "unreachable" after 3 runs in a row. Logs to stderr.
@@ -30,7 +32,11 @@
 # steps that failed ("ccs-bash", "the push", ...). The page check above only runs after a good
 # push, so it can't see a backend that has stopped: this does. Three failed runs in a row (about
 # six minutes; one or two are a blip) alert, once an hour while it lasts; the first good run
-# after that says so. A GitLab or Forgejo outage isn't a failed run (ccs-bash keeps the old data).
+# after that says so. A GitLab or Forgejo outage isn't a failed run (ccs-bash keeps the old data),
+# but one that lasts alerts: no good pull of the proposals (/var/lib/ccs/pull-ok, which
+# ccs-bash-update touches after one) or no answer from its API (ccs-bash's STATE_DIR/forge-ok) for
+# FORGE_HOURS (CONF, default 6), and new merged proposals and Ideas aren't reaching the site. Once
+# an hour while it lasts, and a line when both answer again.
 set -euo pipefail
 # ccs-watch --test SITE_URL [CONF]: send one test message, to check ALERT_URL works
 test_only=''
@@ -45,12 +51,12 @@ if [[ ${1:-} == --run ]]; then
 fi
 site_url=${1:?SITE_URL} local_site=${2:?LOCAL_SITE} conf=${3:-/etc/ccs/alert.conf}
 state=${CCS_WATCH_STATE:-/var/lib/ccs/state/watch}
-ALERT_URL='' WATCH_PROXY='' WATCH_THEMES='' SUBADDRESSES='' ALERT_PREFIX='' ALERT_TARGET='' ALERT_PASSWORD='' ALERT_PLAIN=''
+ALERT_URL='' WATCH_PROXY='' WATCH_THEMES='' SUBADDRESSES='' ALERT_PREFIX='' ALERT_TARGET='' ALERT_PASSWORD='' ALERT_PLAIN='' FORGE_HOURS=''
 if [[ -f $conf ]]; then
     # only these keys, KEY=value lines; nothing in it is run
     while IFS='=' read -r k v; do
-        case $k in ALERT_URL|WATCH_PROXY|WATCH_THEMES|SUBADDRESSES|ALERT_PREFIX|ALERT_TARGET|ALERT_PASSWORD|ALERT_PLAIN) printf -v "$k" '%s' "$v" ;; esac
-    done < <(grep -E '^(ALERT_URL|WATCH_PROXY|WATCH_THEMES|SUBADDRESSES|ALERT_PREFIX|ALERT_TARGET|ALERT_PASSWORD|ALERT_PLAIN)=' "$conf")
+        case $k in ALERT_URL|WATCH_PROXY|WATCH_THEMES|SUBADDRESSES|ALERT_PREFIX|ALERT_TARGET|ALERT_PASSWORD|ALERT_PLAIN|FORGE_HOURS) printf -v "$k" '%s' "$v" ;; esac
+    done < <(grep -E '^(ALERT_URL|WATCH_PROXY|WATCH_THEMES|SUBADDRESSES|ALERT_PREFIX|ALERT_TARGET|ALERT_PASSWORD|ALERT_PLAIN|FORGE_HOURS)=' "$conf")
 fi
 # IRC colours as CptHook's GitLab messages have them: the [CCS-watch] tag light blue (12), a
 # bad address red (04); none with ALERT_PLAIN
@@ -129,7 +135,29 @@ differs() {
     return 0
 }
 
+# forge: the proposals' forge down for FORGE_HOURS (above). A file not there yet (before the first
+# good pull or answer) is nothing known, not an outage.
+forge() {
+    local hours=6 f path what t down=''
+    [[ $FORGE_HOURS =~ ^[1-9][0-9]*$ ]] && hours=$FORGE_HOURS
+    for f in "${CCS_WATCH_PULL:-/var/lib/ccs/pull-ok}|the proposals repository (git pull)" \
+        "${CCS_WATCH_FORGE:-/var/lib/ccs/state/forge-ok}|its API (Ideas, merge requests)"; do
+        path=${f%%|*} what=${f#*|}
+        t=$(stat -c %Y "$path" 2> /dev/null) || continue
+        (($(date +%s) - t >= hours * 3600)) || continue
+        down+="${down:+, }$what since $(date -u -d "@$t" '+%F %H:%M UTC')"
+    done
+    if [[ $down ]]; then
+        touch "$state/forge-down"
+        alert forge "GitLab/Forgejo hasn't answered for over ${hours}h: $down. New merged proposals and Ideas aren't on the site (the last ones stay)"
+    elif [[ -f $state/forge-down ]]; then
+        rm -f "$state/forge-down"
+        alert forge-ok "GitLab/Forgejo answers again: the proposals and Ideas are up to date"
+    fi
+}
+
 if [[ $run_result ]]; then
+    forge
     n=$(cat "$state/failed-runs" 2> /dev/null || echo 0)
     if [[ $run_result == ok ]]; then
         ((n < 3)) || alert backend-ok "the backend runs again, after $n failed runs"
