@@ -52,6 +52,10 @@ Pinned container, read-only, no capabilities, `--network host` only to reach wal
   `assign_addresses` labels new ones. `check_known_subaddresses`: donations at a labelled index
   the state doesn't have stop the run (a lost state); at an unlabelled one, which anyone can send
   to from the signed list, they are logged and counted for no proposal.
+- `retired_totals` (`lib/wallet.sh`): the donations to wallets the CCS used before, per proposal
+  file, from `STATE_DIR/retired/*.csv` (written once by [`contrib/retire-wallet`](../contrib/retire-wallet),
+  which asks that wallet which state addresses are its own, and refuses one still receiving); every
+  field checked before bash arithmetic; no addresses in it.
 - [`lib/gitlab.sh`](../lib/gitlab.sh): the public API of GitLab or Forgejo (Forgejo's pull requests
   mapped to GitLab's shape). `merged_mr_url`: the merged MR that added a file. `mr_proposal_file`:
   an MR is an idea only if it adds exactly one `.md` at the root, and besides it only files in

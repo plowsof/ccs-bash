@@ -104,7 +104,8 @@ Two caches sit beside it, so a run doesn't redo work: `deposits.csv`, the wallet
 blocks deep (each run then asks the wallet only for newer ones; a wallet that knows less stops the
 run, so totals never go down), and `ideas.cache`, what each idea's merge request adds at a commit.
 Deleted, either is made again on the next run. `deposits.csv` is backed up too, one copy that is
-only replaced by one with every deposit it has.
+only replaced by one with every deposit it has. A wallet the CCS no longer uses is recorded in
+`retired/<name>.csv`, state like `proposals.csv` ([retiring a wallet](docs/handover.md#retiring-a-wallet)).
 
 ## Two ways to run it
 
