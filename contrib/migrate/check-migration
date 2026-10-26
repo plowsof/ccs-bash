@@ -126,6 +126,19 @@ check() {
               elif $B[$k] == null then "  \($k): only in ccs-back (not on the site now: its file, its front matter)"
               elif ($A[$k] | show) != ($B[$k] | show) then "  \($k): ccs-back \($A[$k] | show)  ccs-bash \($B[$k] | show)  (raised, contributions, address)"
               else empty end' > "$out/shown.txt"
+        # none may show less raised than on ccs-back (beyond ccs-back's own rounding, 0.05): a
+        # wallet, or an older wallet's record, missing (handover step 2, "Older wallets")
+        local lower
+        lower=$(jq -r -n --slurpfile a <(jq -s 'map(.[]) | map(.proposals[]?)' "$out"/ccs-back-proposals.json "$out"/ccs-back-completed-proposals.json 2> /dev/null) \
+            --slurpfile b <(jq -s 'map(.[]) | map(.proposals[]?)' "$site/proposals.json" "$site/completed-proposals.json") '
+            def key: ."local-url" | gsub("&amp;"; "&");
+            def num: tostring | gsub(","; "") | tonumber? // 0;
+            ($a[0] | map(select(."local-url")) | map({key: key, value: ."amount-funded"}) | from_entries) as $A
+            | ($b[0] | map(select(."local-url")) | map({key: key, value: ."amount-funded"}) | from_entries) as $B
+            | $A | to_entries[] | select($B[.key] != null and (($B[.key] | num) < (.value | num) - 0.05))
+            | "\(.key): ccs-back \(.value), ccs-bash \($B[.key])"')
+        if [[ -n $lower ]]; then nok "proposals that would show less raised than on ccs-back (an older wallet not recorded? handover step 2):"; printf '%s\n' "$lower" | head -n 10 | indent
+        else ok "no proposal shows less raised than on ccs-back"; fi
         if [[ -s $out/shown.txt ]]; then
             echo "CHECK   what $(grep -c . "$out/shown.txt") proposal(s) show differs (ideas, the forge's live list, aside), each to be explained (a donation only the wallet has, in compare-deposits; handover step 10): $out/shown.txt"
             head -n 10 "$out/shown.txt"

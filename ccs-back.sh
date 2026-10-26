@@ -48,6 +48,27 @@ build_site() {
     done
 }
 
+# A proposal's raised total never goes down from what the last run published (OUTPUT_DIR/projects.json):
+# a wallet or a retired wallet's record missing, or a state row cleared by hand, would otherwise show
+# less. The run stops and the site keeps its last totals. A decrease that is meant: the file
+# STATE_DIR/allow-lower, for one run (it is removed then). Raised only: a donation count can drop
+# when a pending tx leaves the pool.
+check_never_lower() {
+    local lower
+    [[ -f $OUTPUT_DIR/projects.json ]] || return 0
+    lower=$(jq -r --slurpfile f "$WORK/funds.json" '
+        .[] | select(.filename and $f[0][.filename]) | . as $p | $f[0][.filename] as $n
+        | select(($p.raised_amount | tonumber) > ($n.raised | tonumber))
+        | "\(.filename): \($p.raised_amount) before, \($n.raised) now"' "$OUTPUT_DIR/projects.json") || return 1
+    [[ -n $lower ]] || return 0
+    if [[ -f $STATE_DIR/allow-lower ]]; then
+        log "warning: allow-lower: lower totals published this once: ${lower//$'\n'/; }"
+        rm -f "$STATE_DIR/allow-lower"
+        return 0
+    fi
+    die "would show less raised than before ($(grep -c . <<<"$lower") proposals: ${lower//$'\n'/; }): a wallet or a retired wallet's record missing? The site keeps its last totals (docs/troubleshooting.md)"
+}
+
 main() {
     load_config "${1:-/etc/ccs/ccs.conf}"
     mkdir -p "$STATE_DIR" "$OUTPUT_DIR"
@@ -68,6 +89,7 @@ main() {
     record_new_proposals
     assign_addresses
     proposal_funds > "$WORK/funds.json"
+    check_never_lower
     if ! ideas > "$WORK/ideas.json"; then
         log "warning: could not fetch ideas from GitLab, keeping the previous list"
         previous_ideas > "$WORK/ideas.json"

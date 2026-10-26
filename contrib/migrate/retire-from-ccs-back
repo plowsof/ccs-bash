@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# retire-from-ccs-back NAME CONFIG OUT: moving from ccs-back (handover step 2, "Older wallets"),
+# record the donations of proposals whose address no wallet you have claims (an older wallet
+# whose view key is gone), from ccs-back's own deposits table, so their totals don't go down.
+# OUT is export-ccs-back's folder (proposals.csv, ccs-back-deposits.tsv). Run as ccs, after
+# retire-wallet has recorded every wallet you do have, with the update loop paused.
+#   - the proposals: those with an address in ccs-bash's state that CONFIG's wallet doesn't have;
+#   - their deposits: ccs-back's at their subaddress index (an index two of ccs-back's proposals
+#     share can't be told apart: refused, find that wallet's view key instead);
+#   - written as STATE_DIR/retired/NAME.csv, header "wallet ccs-back-database", and those rows'
+#     index and address cleared in proposals.csv (the old file kept beside it).
+set -euo pipefail
+export LC_ALL=C
+CCS_LIB=$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../../lib" && pwd)
+# shellcheck source=lib/common.sh
+source "$CCS_LIB/common.sh"
+# shellcheck source=lib/wallet.sh
+source "$CCS_LIB/wallet.sh"
+# shellcheck source=lib/proposals.sh
+source "$CCS_LIB/proposals.sh"
+
+csvrows='def csvrow: [("," + .) | match(",(\"(?:[^\"]|\"\")*\"|[^,]*)"; "g") | (.captures[0].string // "")
+                 | if startswith("\"") then .[1:-1] | gsub("\"\""; "\"") else . end];'
+
+retire_db_main() {
+local name=${1:?NAME (a-z, 0-9, -)} config=${2:?CONFIG} out=${3:?OUT (export-ccs-back)}
+local dest f a n dup deposits total
+[[ $name =~ ^[a-z0-9-]+$ ]] || die "NAME: a-z, 0-9 and - only"
+[[ -f $out/proposals.csv && -f $out/ccs-back-deposits.tsv ]] || die "$out: no proposals.csv and ccs-back-deposits.tsv (export-ccs-back first)"
+load_config "$config"
+dest=$STATE_DIR/retired/$name.csv
+[[ ! -e $dest ]] || die "$dest exists: another name"
+exec 9> "$STATE_DIR/lock"
+flock -n 9 || die "a run is going: pause the update loop first (systemctl stop ccs-bash)"
+WORK=$(mktemp -d)
+trap 'rm -rf "$WORK"' EXIT
+load_state
+
+# the state's rows with an address the wallet doesn't have: file TAB address
+: > "$WORK/unclaimed"
+jq -r 'to_entries[] | select(.value.address and (.key | endswith(".md"))) | [.key, .value.address] | @tsv' "$WORK/state.json" |
+    while IFS=$'\t' read -r f a; do
+        rpc get_address_index "$(jq -nc --arg a "$a" '{address: $a}')" > /dev/null 2>&1 || printf '%s\t%s\n' "$f" "$a" >> "$WORK/unclaimed"
+    done
+n=$(grep -c . "$WORK/unclaimed" || true)
+((n > 0)) || die "every address in proposals.csv is the wallet's: nothing to record"
+
+# their index in ccs-back's export, and every proposal there at that index
+jq -r -R -s "$csvrows"'
+    split("\n") | map(select(. != "") | csvrow) | map(select(.[2] != "" and .[3] != "")) | .[] | [.[2], .[0], .[3]] | @tsv' \
+    "$out/proposals.csv" > "$WORK/export"
+# (an index shared with any other export row, the wallet's own or another's, is ambiguous)
+dup=$(awk -F'\t' 'NR == FNR { want[$2] = 1; next } { n[$1]++; if ($3 in want) mine[$1] = $2 }
+    END { for (i in mine) if (n[i] > 1 && shown++ < 3) print " " i ":" mine[i] }' "$WORK/unclaimed" "$WORK/export")
+[[ -z ${dup// /} ]] || die "subaddress index shared by more than one of ccs-back's proposals, its deposits can't be told apart:$dup (that wallet's view key instead: retire-wallet)"
+awk -F'\t' 'NR == FNR { want[$2] = 1; next } ($3 in want) { print $1 "\t" $2 }' "$WORK/unclaimed" "$WORK/export" > "$WORK/index-file"
+[[ $(grep -c . "$WORK/index-file" || true) == "$n" ]] || die "not all of them are in $out/proposals.csv with an index (the export and the state differ)"
+
+# ccs-back's deposits at those indices, every field checked
+{
+    printf '# retired %s wallet ccs-back-database height 0 time %s\n' "$name" "$(date +%s)"
+    awk -F'\t' 'NR == FNR { file[$1] = $2; next }
+        NF != 4 || $1 !~ /^[0-9a-f]+$/ || length($1) != 64 || $2 !~ /^[0-9]+$/ || $3 !~ /^[0-9]+$/ || $4 !~ /^[0-9]+$/ { bad = 1; exit }
+        ($2 in file) && $4 > 0 { print $4 "," $1 "," $2 "," $3 ",0," file[$2] }
+        END { exit bad }' "$WORK/index-file" "$out/ccs-back-deposits.tsv" || die "$out/ccs-back-deposits.tsv: a line that isn't 'tx_id subaddr_index amount block_received'"
+} > "$WORK/retired"
+deposits=$(($(wc -l < "$WORK/retired") - 1))
+total=$(awk -F, 'NR > 1 { print $4 }' "$WORK/retired" | { s=0; while read -r a; do s=$((s + a)); done; echo "$s"; })
+
+cp -p "$STATE_DIR/proposals.csv" "$STATE_DIR/proposals.csv.before-retire-$name"
+cut -f2 "$WORK/index-file" | jq -R -s 'split("\n") | map(select(. != ""))' > "$WORK/files.json"
+jq --slurpfile f "$WORK/files.json" 'with_entries(if (.key | IN($f[0][])) then .value |= del(.subaddr_index, .address) else . end)' \
+    "$WORK/state.json" > "$WORK/state.new" && mv "$WORK/state.new" "$WORK/state.json"
+mkdir -p "$STATE_DIR/retired"
+atomic_write "$dest" cat "$WORK/retired"
+save_state
+echo "retired $name from ccs-back's database: $n proposals, $deposits deposits, $(xmr4 "$total") XMR, in $dest"
+echo "  proposals.csv no longer has their index and address (before: proposals.csv.before-retire-$name)"
+}
+
+if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
+    retire_db_main "$@"
+fi

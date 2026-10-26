@@ -550,6 +550,17 @@ if dep retire TEST_TRANSFERS="$TEST_TMP/quiet.json" && cp "$rw/out/projects.json
             echo "ok   retire-wallet: its donations kept by proposal (no addresses), the state cleared; a new wallet shows the same totals"
         else echo "FAIL retire-wallet: the totals after"; diff <(jq -c '.[] | {filename, raised_amount, contributions, address}' "$TEST_TMP/retire-before.json") <(jq -c '.[] | {filename, raised_amount, contributions, address}' "$rw/out/projects.json") | head; grep -E "error|warning" "$rw/log" | head -5; status=1; fi
     else echo "FAIL retire-wallet: what it wrote"; cat "$rw/retire.out"; status=1; fi
+    # a retired wallet's record gone: the totals would go down, so the run stops and the site keeps
+    # its last; with STATE_DIR/allow-lower, once
+    mv "$r" "$rw/old.csv.aside"
+    if ! dep retire TEST_TRANSFERS="$TEST_TMP/no-transfers.json" && grep -q 'would show less raised than before' "$rw/log" \
+        && [[ $(jq -c 'map({filename, raised_amount})' "$rw/out/projects.json") == "$(jq -c 'map({filename, raised_amount})' "$TEST_TMP/retire-before.json")" ]]; then
+        touch "$rw/state/allow-lower"
+        if dep retire TEST_TRANSFERS="$TEST_TMP/no-transfers.json" && grep -q 'allow-lower: lower totals published this once' "$rw/log" && [[ ! -e $rw/state/allow-lower ]]; then
+            echo "ok   never lower: a proposal's raised total going down stops the run (the site keeps its last); allow-lower lets it through once"
+        else echo "FAIL never lower: allow-lower"; cat "$rw/log"; status=1; fi
+    else echo "FAIL never lower: a missing retired record"; diff <(jq -c ".[] | {filename, raised_amount}" "$rw/out/projects.json") <(jq -c ".[] | {filename, raised_amount}" "$TEST_TMP/retire-before.json") | head -6; status=1; fi
+    mv "$rw/old.csv.aside" "$r"
     # a retired file with a line that isn't a deposit stops the run (it is state: restore it)
     printf '1,%064d,1,BASH_VERSINFO[$(touch${IFS}%s)],0,x.md\n' 5 "$TEST_TMP/pwned-r" >> "$r"
     if ! dep retire TEST_TRANSFERS="$TEST_TMP/no-transfers.json" && grep -q "a line that isn't a deposit" "$rw/log" && [[ ! -e $TEST_TMP/pwned-r ]]; then
@@ -559,6 +570,27 @@ else
     echo "FAIL retire-wallet: it didn't run"; cat "$rw/retire.out" "$rw/log" 2> /dev/null; status=1
 fi
 echo "$had" > "$TEST_TMP/wallet-count"; cp "$TEST_TMP/wallet-labels.had" "$TEST_TMP/wallet-labels"
+
+# contrib/migrate/retire-from-ccs-back: a proposal whose address no wallet here has (an older
+# wallet's, its view key gone), recorded from ccs-back's deposits table, so its total stays
+d=$TEST_TMP/dep-db; rm -rf "$d"; mkdir -p "$d/state" "$d/export"
+far=8$(printf '%094d' 0 | tr 0 Z)   # not this wallet's
+sed 's/^"c done, (old).md","https:\/\/example.org\/mr\/3","",""/"c done, (old).md","https:\/\/example.org\/mr\/3",900,"'"$far"'"/' "$TEST_TMP/state/proposals.csv" > "$d/state/proposals.csv"
+printf '"c done, (old).md","",900,"%s",""\n"a-fund.md","",1,"%s",""\n' "$far" "$(printf '8%094d' 1)" > "$d/export/proposals.csv"
+printf '%064d\t900\t1000000000000\t3000000\n%064d\t900\t2500000000000\t3000010\n%064d\t1\t5\t3000000\n' 1 2 3 > "$d/export/ccs-back-deposits.tsv"
+dep db > /dev/null 2>&1 || true   # (the config; this run stops: the address isn't the wallet's)
+if bash -c 'source "$1/../contrib/migrate/retire-from-ccs-back" && source "$1/stubs.sh" && retire_db_main old0 "$2" "$3"' _ "$here" "$d/ccs.conf" "$d/export" > "$d/db.out" 2>&1 \
+    && [[ $(awk 'NR == 1' "$d/state/retired/old0.csv") =~ ^#\ retired\ old0\ wallet\ ccs-back-database\  ]] \
+    && [[ $(awk 'NR > 1' "$d/state/retired/old0.csv" | wc -l) == 2 ]] \
+    && dep db && [[ $(jq -r '.[] | select(.filename == "c done, (old).md") | "\(.raised_amount) \(.contributions)"' "$d/out/projects.json") == "3.5000 2" ]]; then
+    # an index two of ccs-back's proposals share: refused, its deposits can't be told apart
+    printf '"b-wip.md","",900,"%s",""\n' "$(printf '8%094d' 2)" >> "$d/export/proposals.csv"
+    cp "$d/state/proposals.csv.before-retire-old0" "$d/state/proposals.csv"
+    if ! bash -c 'source "$1/../contrib/migrate/retire-from-ccs-back" && source "$1/stubs.sh" && retire_db_main old1 "$2" "$3"' _ "$here" "$d/ccs.conf" "$d/export" > "$d/db.out" 2>&1 \
+        && grep -q "can't be told apart" "$d/db.out" && [[ ! -e $d/state/retired/old1.csv ]]; then
+        echo "ok   retire-from-ccs-back: an unclaimed address's donations recorded from ccs-back's table (the total kept); a shared index refused"
+    else echo "FAIL retire-from-ccs-back: a shared index"; cat "$d/db.out"; status=1; fi
+else echo "FAIL retire-from-ccs-back"; cat "$d/db.out" "$d/log" 2> /dev/null | tail -n 5; status=1; fi
 
 # ccs-backup-receive (the backup machine): proposals.csv, every version kept; deposits.csv, one
 # copy, replaced only by one that has all its deposits; anything else refused
