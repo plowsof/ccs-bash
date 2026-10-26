@@ -99,7 +99,10 @@ main() {
     assign_addresses
     proposal_funds > "$WORK/funds.json"
     check_never_lower
-    if ! ideas > "$WORK/ideas.json"; then
+    # STATE_DIR/forge-ok: when GitLab last answered (ccs-watch --run alerts when that's long ago)
+    if ideas > "$WORK/ideas.json"; then
+        touch "$STATE_DIR/forge-ok"
+    else
         log "warning: could not fetch ideas from GitLab, keeping the previous list"
         previous_ideas > "$WORK/ideas.json"
     fi

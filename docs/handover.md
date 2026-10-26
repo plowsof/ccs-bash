@@ -192,8 +192,10 @@ its log rotation from step 4), as root (it only starts each step as that step's 
 # /usr/local/bin/ccs-bash-update (chmod 755)
 L=/var/log/ccs-bash.log W=/opt/ccs-bash/contrib/ccs-watch failed=''
 
-# the proposals; GitLab down: give up, not a failed run (the last checkout stays)
-timeout -k 5 40 runuser -u ccs-git -- env HOME=/ git -C /var/lib/ccs/proposals pull -q --ff-only
+# the proposals; GitLab down: give up, not a failed run (the last checkout stays); pull-ok: when
+# one last went through (ccs-watch --run alerts when that's FORGE_HOURS ago)
+timeout -k 5 40 runuser -u ccs-git -- env HOME=/ git -C /var/lib/ccs/proposals pull -q --ff-only \
+    && touch /var/lib/ccs/pull-ok
 
 # ccs-bash: totals, addresses, the JSON
 ccs-bash-run >> $L 2>&1 || failed="ccs-bash"
