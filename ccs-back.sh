@@ -53,6 +53,7 @@ main() {
     mkdir -p "$STATE_DIR" "$OUTPUT_DIR"
     IDEAS_CACHE=$STATE_DIR/ideas.cache   # lib/gitlab.sh, ideas
     DEPOSITS=$STATE_DIR/deposits.csv     # lib/wallet.sh, donation_totals
+    RETIRED_DIR=$STATE_DIR/retired       # lib/wallet.sh, retired_totals (contrib/retire-wallet)
 
     exec 9> "$STATE_DIR/lock"
     flock -n 9 || { log "another run is still going, skipping"; exit 0; }
