@@ -416,28 +416,34 @@ A proposal renamed later keeps its retired donations only if it is renamed in `r
 
 ## Upgrading
 
-Images are built on the backend from the release's tag (the same commit gives the same ID, so it
-can be checked); the design comes as its zip, checked by sha256. For each release:
+Images are built on the backend from the attested commit (the same commit gives the same ID, so it
+can be checked); the design comes as its zip, checked by sha256. An image holds only `ccs-back.sh`
+and `lib/` (ccs-front-bash's: its own): the scripts that run on the machines themselves (the gate,
+ccs-watch, `ccs-backup-receive`, `container/build.sh`) aren't in it, so another commit with the same
+`lib/` would build the same ID. They are trusted because they come from the commit the signers
+attested: check that commit out, never only the tag. For each release:
 
 1. **Attested.** From a ccs-sigs checkout on the backend, counting only signers you trust (their
    fingerprints in a file of yours, not in ccs-sigs, which anyone can send keys to):
    ```
    git clone -q https://github.com/plowsof/ccs-sigs /opt/ccs-sigs      # once; then: git -C /opt/ccs-sigs pull -q
    cd /opt/ccs-bash && env CCS_SIGS_REPO=/opt/ccs-sigs TRUSTED_KEYS=/etc/ccs/trusted-signers \
-       contrib/release/verify ccs-bash-v0.2.18
+       contrib/release/verify ccs-bash-v0.2.21
    ```
    It prints the image ID (or zip sha256), how many signers agree (two by default;
-   `--min-signers 1` relaxes it), and the commit. Too few: wait, or attest it yourself
-   ([contrib/release](../contrib/release/README.md)).
-2. **Built from its tag**, once `git -C /opt/ccs-bash rev-parse HEAD` after `fetch --tags` and
-   `checkout v0.2.18` is the commit `verify` printed (a tag can move, and the build runs as root):
-   `container/build.sh ccs-bash:v0.2.18` ([the pinned image](image.md)); the same for
-   ccs-front-bash. (`contrib/release/build` doesn't keep the image: it is for attesting.) Or build
+   `--min-signers 1` relaxes it), and the commit they all name. Too few: wait, or attest it
+   yourself ([contrib/release](../contrib/release/README.md)).
+2. **Built from that commit:** `git -C /opt/ccs-bash fetch --tags` and
+   `checkout <the commit verify printed>` (not the tag: a tag can move, and the build runs as root);
+   check `git describe --tags` is the release. Then `container/build.sh ccs-bash:v0.2.21`
+   ([the pinned image](image.md)); the same for ccs-front-bash. (`contrib/release/build` doesn't keep the image: it is for attesting.) Or build
    elsewhere and `docker save … | ssh <backend> docker load`. The design: its zip, `sha256sum`.
    A build that stops with `sources has files that are not in sources.lock`: a source an older
    release needed is still in `container/sources/` (a download cache, not in git); move it aside.
 3. **Compared:** the image ID and the zip's sha256 must be the attested ones. Any other: stop.
-4. **Switched**, web server first, so its gate allows the new pages: a new design unpacked beside
+4. **Switched**, web server first, so its gate allows the new pages: the gate
+   (`contrib/ccs-receive`) and `markdown.awk` from those same commits, their `sha256sum` the same
+   as the backend's checkouts' (`/opt/ccs-bash`, `/opt/ccs-front-bash`); a new design unpacked beside
    the old in `/etc/ccs-gate/design/` with its lines added to `design.sha256`; a changed
    `markdown.awk` beside the old as `/etc/ccs-gate/markdown-<release>.awk`. Then the new image IDs in
    `ccs-bash-run` and `ccs-front-run` (by ID, `--pull never`, so no cleanup can remove them), a

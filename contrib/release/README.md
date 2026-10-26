@@ -129,7 +129,8 @@ contrib/release/verify --any-key
 ```
 
 Or one release: it counts every set it is in, so signers who built different sets still add up,
-and its line must be the same for all of them:
+and its line (the ID or sha256, and the commit) must be the same for all who count. A set's own
+check also wants one line for each release its name lists, and no other, and prints them:
 
 ```
 env CCS_SIGS_REPO=external/ccs-sigs TRUSTED_KEYS=/etc/ccs/trusted-signers contrib/release/verify ccs-bash-v0.2.7
@@ -146,15 +147,18 @@ Each signature must be by the key of the signer whose folder it is in
 (`builder-keys/<signer>.asc`, one key), and a key counts once however many folders it signed: one
 person can't add up to two. Anyone can open a pull request with a new key, so only the people
 you trust count: their keys' fingerprints in a file of your own, one a line (the others are
-shown, not counted). Without `TRUSTED_KEYS`, `verify` counts nothing and says so (`--any-key`
-counts every key):
+shown, not counted, and not compared: they can't change what is printed, nor stop the others
+agreeing). A revoked key doesn't count. Without `TRUSTED_KEYS`, `verify` counts nothing and says
+so (`--any-key` counts every key):
 
 ```
 env TRUSTED_KEYS=/etc/ccs/trusted-signers contrib/release/verify ccs-bash-v0.2.7
 ```
 
-It prints the commit the release was built from. Before building a tag yourself, check
-`git rev-parse HEAD` is that commit: a tag can be moved, and `container/build.sh` runs as you.
+It prints the commit the release was built from, the one every counted signer names. Build from
+that commit (`git checkout <commit>`), not from the tag: a tag can be moved, `container/build.sh`
+runs as you, and the image ID covers only what goes into the image (`ccs-back.sh`, `lib/`), not
+the scripts that run on the machines (the gate, ccs-watch): those are vouched for by the commit.
 Then compare the attested ID or sha256 with the release notes and with what you are about to
 run (`docker image inspect ccs-bash --format '{{.Id}}'`, `sha256sum` of the zip, the `.pin`).
 
