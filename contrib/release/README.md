@@ -2,7 +2,9 @@
 
 Anyone can rebuild a CCS release and say, with their own GPG key, what came out: the same
 image ID or sha256 from the same tag, on their machine as on everyone else's. The signatures are
-collected in [ccs-sigs](https://github.com/plowsof/ccs-sigs), one folder per release and signer.
+collected in [ccs-sigs](https://github.com/plowsof/ccs-sigs), one folder per set and signer: a
+version of the CCS is the three together (`ccs-bash-v0.2.18+ccs-front-bash-v0.1.17+ccs-front-hugo-v0.1.17`),
+as feather-sigs has one folder per version of Feather.
 (The signed subaddress list isn't attested here: a Core Team member makes and signs it, and
 contributors can regenerate it and confirm its hash; see ccs-front-bash's docs/setup.md, step 5.)
 A release is trustworthy when several people who don't share a machine have attested the same.
@@ -54,10 +56,12 @@ env SIGNER=<fingerprint>=<github username> contrib/release/attest
 ```
 
 By default `build` takes each repository's newest release tag (the set at the top of the handover's
-[releases table](../../docs/handover.md#the-releases)) and says which before it starts, skipping
-any you have attested already in your ccs-sigs checkout (your name as `attest` has it: `SIGNER`'s,
-else gh's login). So after a release of one repository, only that one is built (the design: under
-half a minute) and `attest` signs just it. Or name the releases yourself, any of the three, built whether attested or not:
+[releases table](../../docs/handover.md#the-releases)), says which before it starts, and builds
+all three, so that `attest` signs the whole set; after a release of one repository the other two
+are built and signed again in the new set. It builds nothing if your ccs-sigs checkout already
+has your attestation of that set (your name as `attest` has it: `SIGNER`'s, else gh's login).
+`verify` counts each release in every set it is in. Or name the releases yourself, any of the
+three, built whether attested or not:
 
 ```
 contrib/release/build ccs-bash v0.2.8 ccs-front-bash v0.1.11 ccs-front-hugo v0.1.9
@@ -67,8 +71,8 @@ contrib/release/build ccs-bash                                             # the
 
 `attest` signs, adds your public key the first time (the check refuses a key without an
 attestation), and commits in `external/ccs-sigs` on a branch of its own, titled as feather-sigs'
-are: `Add <github username> <release>...`, the releases it signed, e.g.
-`Add plowsof ccs-bash-v0.2.8 ccs-front-bash-v0.1.11 ccs-front-hugo-v0.1.9`. `<github username>` may
+are: `Add <github username> <set>`, the set being the folder it signed, e.g.
+`Add plowsof ccs-bash-v0.2.8+ccs-front-bash-v0.1.11+ccs-front-hugo-v0.1.9`. `<github username>` may
 be left out if `gh` is signed in; `NO_COMMIT=1` leaves the commit to you.
 
 Then all that is left is the push, and one click. `attest` ends with both, for example:
@@ -101,13 +105,10 @@ in pairs, and builder keys, and checks each signature against its signer's key.
 
 ## What is attested
 
-Each release you built goes into a folder of its own, as Feather's one `all.SHA256SUMS` per
-version: `ccs-bash-v0.2.7/<you>/all.SHA256SUMS`, signed. So every signer of a release is in its
-folder, whatever else each built in the same run, and a release you attested once stays attested:
-it never changes, and `build` skips it next time. Which releases run together is the handover's
-[releases table](../../docs/handover.md#the-releases), not a folder. (Earlier attestations are in
-one folder per set, e.g. `ccs-bash-v0.2.7+ccs-front-bash-v0.1.9+ccs-front-hugo-v0.1.8/`, a line per
-release in one file; `verify` still reads them.) The line:
+Everything you built in one run goes into **one** file, signed once (as Feather's one
+`all.SHA256SUMS` per version), in a folder named after the set:
+`ccs-bash-v0.2.7+ccs-front-bash-v0.1.9+ccs-front-hugo-v0.1.8/<you>/all.SHA256SUMS`. One line per
+release:
 
 | Release | Its line |
 |---|---|
@@ -127,8 +128,8 @@ env TRUSTED_KEYS=/etc/ccs/trusted-signers contrib/release/verify
 contrib/release/verify --any-key
 ```
 
-Or one release: its folder and every older set folder it is in count, and its line must be the
-same for all of them:
+Or one release: it counts every set it is in, so signers who built different sets still add up,
+and its line must be the same for all of them:
 
 ```
 env CCS_SIGS_REPO=external/ccs-sigs TRUSTED_KEYS=/etc/ccs/trusted-signers contrib/release/verify ccs-bash-v0.2.7
