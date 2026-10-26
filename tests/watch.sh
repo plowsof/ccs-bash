@@ -164,7 +164,7 @@ else
 fi
 # Asked for as Tor Browser asks: a page as a page, a stylesheet as one (a web server can't pick
 # out the watcher by a missing Sec-Fetch-* header)
-hdr=$(port); mkdir -p "$tmp/h/site/assets"; echo '<link rel="stylesheet" href="assets/s.css">' > "$tmp/h/site/index.html"; echo 'a {}' > "$tmp/h/site/assets/s.css"
+hdr=$(port); mkdir -p "$tmp/h/site/assets"; echo '<link rel="stylesheet" href="assets/s.css">' > "$tmp/h/site/index.html"; printf '@font-face { src: url("f.woff2") format("woff2") }\n' > "$tmp/h/site/assets/s.css"; echo font > "$tmp/h/site/assets/f.woff2"
 python3 -c '
 import http.server, sys, os
 class H(http.server.SimpleHTTPRequestHandler):
@@ -175,11 +175,22 @@ class H(http.server.SimpleHTTPRequestHandler):
 os.chdir(sys.argv[3]); http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()' "$hdr" "$tmp/h/seen" "$tmp/h/site" & pids+=($!)
 sleep 1
 CCS_WATCH_STATE=$tmp/h/state "$here/../contrib/ccs-watch" "http://127.0.0.1:$hdr" "$tmp/h/site" /nonexistent 2> /dev/null || true
-if grep -q '^/ .*Sec-Fetch-Dest: document|Sec-Fetch-Mode: navigate|Sec-Fetch-Site: none|Sec-Fetch-User: ?1' "$tmp/h/seen" \
+if grep -qE '^/ .*Sec-Fetch-Dest: document\|Sec-Fetch-Mode: navigate\|Sec-Fetch-Site: (none|same-origin|cross-site)\|Sec-Fetch-User: \?1' "$tmp/h/seen" \
     && grep -q '^/ .*Upgrade-Insecure-Requests: 1' "$tmp/h/seen" && grep -q '^/assets/s.css .*Sec-Fetch-Dest: style' "$tmp/h/seen" \
-    && ! grep -q '^/assets/s.css .*Sec-Fetch-User' "$tmp/h/seen"; then
-    ok "asked for as Tor Browser asks: a page with Sec-Fetch-Dest: document, a stylesheet with style"
+    && ! grep -q '^/assets/s.css .*Sec-Fetch-User' "$tmp/h/seen" && grep -q '^/assets/f.woff2 .*Sec-Fetch-Dest: font' "$tmp/h/seen"; then
+    ok "asked for as Tor Browser asks: a page with Sec-Fetch-Dest: document, a stylesheet with style, the font it uses (url()) with font"
 else
     cat "$tmp/h/seen"; fail "the headers a page and a stylesheet are asked for with"
+fi
+# Visitors reach a donation page from the site's own lists (Sec-Fetch-Site: same-origin) or from
+# another site (cross-site), not only typed in (none): a web server that changes the page only for
+# those must not be invisible to the watcher. Over ten runs, some fetches of it as a click-through.
+mkdir -p "$tmp/h/site/proposals"; echo '<details class="contribute">x</details>' > "$tmp/h/site/proposals/p.html"
+: > "$tmp/h/seen"
+for _ in $(seq 10); do CCS_WATCH_STATE=$tmp/h/state "$here/../contrib/ccs-watch" "http://127.0.0.1:$hdr" "$tmp/h/site" /nonexistent 2> /dev/null || true; done
+if grep -qE '^/proposals/p.html .*Sec-Fetch-Site: (same-origin|cross-site)' "$tmp/h/seen"; then
+    ok "a donation page is sometimes asked for as a visitor clicking through to it"
+else
+    fail "a donation page only ever asked for as typed in (Sec-Fetch-Site: none): a web server can tell the watcher"
 fi
 exit "$status"
