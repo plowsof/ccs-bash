@@ -24,7 +24,7 @@ new set replaces the row (earlier sets: this file's history, and ccs-sigs).
 
 | Set | ccs-bash | ccs-front-bash | ccs-front-hugo | Running on |
 |---|---|---|---|---|
-| 2026-10-26 | v0.2.18 | v0.1.17 | v0.1.17 | testnet ([ccs.monerodevs.org](https://ccs.monerodevs.org)) |
+| 2026-10-26 | v0.2.19 | v0.1.18 | v0.1.18 | testnet ([ccs.monerodevs.org](https://ccs.monerodevs.org)) |
 
 Each is reproducible, and attested in [ccs-sigs](https://github.com/plowsof/ccs-sigs) by those who
 rebuilt it. Install only what `contrib/release/verify` confirms ([upgrading](#upgrading)).
@@ -413,6 +413,8 @@ can be checked); the design comes as its zip, checked by sha256. For each releas
    `container/build.sh ccs-bash:v0.2.18` ([the pinned image](image.md)); the same for
    ccs-front-bash. (`contrib/release/build` doesn't keep the image: it is for attesting.) Or build
    elsewhere and `docker save … | ssh <backend> docker load`. The design: its zip, `sha256sum`.
+   A build that stops with `sources has files that are not in sources.lock`: a source an older
+   release needed is still in `container/sources/` (a download cache, not in git); move it aside.
 3. **Compared:** the image ID and the zip's sha256 must be the attested ones. Any other: stop.
 4. **Switched**, web server first, so its gate allows the new pages: a new design unpacked beside
    the old in `/etc/ccs-gate/design/` with its lines added to `design.sha256`; a changed
