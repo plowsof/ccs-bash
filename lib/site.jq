@@ -14,11 +14,16 @@ $props[0] as $props | $state[0] as $state | $funds[0] as $funds | $qr[0] as $qr
   # name against this (docs/setup.md step 4).
   def liquid_escape: gsub("&"; "&amp;") | gsub("<"; "&lt;") | gsub(">"; "&gt;") | gsub("\""; "&quot;") | gsub("'"; "&#39;");
 
+  # Bidi controls go from what a page shows: they can show an address's halves in another order
+  # than written, so the web server's gate refuses them (a merged proposal's title with one would
+  # stop its page updating).
+  def nobidi: gsub("[\u202a-\u202e\u2066-\u2069]"; "");
+
   def proposal:
     ($state[.file] // {}) as $s
     | $funds[.file] as $f
     | {
-        name: (.title | @html),
+        name: (.title | nobidi | @html),
         "donate-address": $s.address,
         "donate-qr-code": (if $s.address then "data:image/png;base64,\($qr[$s.subaddr_index | tostring])" else null end),
         "gitlab-url": ((.gitlab_url // $s.gitlab_url) | link),
@@ -31,10 +36,10 @@ $props[0] as $props | $state[0] as $state | $funds[0] as $funds | $qr[0] as $qr
         amount: $f.amount,
         "amount-funded": $f.raised,
         "amount-pending": $f.pending,
-        author: (.author | @html),
+        author: (.author | nobidi | @html),
         date: (if .ts > 0 then .ts | strftime("%B %-d, %Y") else null end),
         "funding-required-date": ($s.funding_required_date | if . then fromdate | strftime("%B %-d, %Y") else null end),
-        tags: (.tags | map(@html))
+        tags: (.tags | map(nobidi | @html))
       };
 
   def project:

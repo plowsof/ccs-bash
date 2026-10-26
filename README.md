@@ -83,7 +83,9 @@ wallet shows against the signed list, but that is the machine to guard.
 2. **Check the wallet:** main address is `WALLET_ADDRESS`, every subaddress in the state file
    matches. A restored wallet gets them re-created; a wrong one stops the run.
 3. **Count donations** per subaddress: `amount-funded` at `MIN_CONFIRMATIONS`, newer (and pool)
-   `amount-pending`. Donations at an unknown subaddress stop the run.
+   `amount-pending`. Donations at a subaddress this wallet gave a proposal that the state file
+   doesn't have stop the run; at one never handed out (anyone can send to the signed list's),
+   they are logged and counted for no proposal.
 4. **Record new proposals:** the merged MR that added each new file, and when funding started.
 5. **Assign addresses:** a new subaddress for each `fr` proposal without one, after every index used.
 6. **Fetch ideas:** open MRs that add exactly one new proposal file (editing files doesn't count), and
