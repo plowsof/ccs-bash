@@ -428,6 +428,8 @@ v=$((v + 1)); site "$v" "$good"
 on backend 'rm /out/ideas/index.html && mkdir /out/ideas/index.html && touch /out/ideas/index.html/.keep'
 push > /dev/null || true
 if on web 'test -f /var/lib/ccs-data/ideas/index.html'; then ok "held back: a page made a folder (its last good copy stays)"; else fail "a page made a folder: the live page is gone"; fi
+# every page held back so far was held for a reason it states: none of them "could not check"
+if on web "! grep -q 'a page the gate could not check' /var/log/ccs-gate.log"; then ok "a page held back for a reason gives that reason only (not \"could not check\")"; else on web "grep 'could not check' /var/log/ccs-gate.log | head -n 3"; fail "a held page also said \"could not check\""; fi
 # the page check stopping (here: its cache of the proposals' texts broken) holds back every page,
 # not only the ones it got to: what isn't known good doesn't go live
 v=$((v + 1)); site "$v" "$good"
