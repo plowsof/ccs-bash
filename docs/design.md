@@ -40,9 +40,9 @@ and is "the original". Nothing here runs while the CCS does.
   donation box (raised, goal, percentage, contributors, pending, address, and its QR code, made
   here from the address once that is checked). All of it,
   every run: about 1.5 seconds for 316 proposals. With a signed list of the wallet's
-  subaddresses (made once offline from a view-only copy, signed with a key destroyed right
-  after), a donation address that isn't in it stops the run, and the list goes out with the
-  site so visitors can check an address themselves.
+  subaddresses (made once offline from a view-only copy, signed by a Core Team member's own key),
+  a funding-required proposal whose address isn't in it is left off the site (the run then counts
+  as failed), and the list goes out with the site so visitors can check an address themselves.
 - **ccs-watch**, right after each push: fetches the live donation pages, and every file they use
   (stylesheets, fonts, icons, QR codes, images), ten of the other pages at random and `/projects`,
   over HTTPS as Tor Browser asks for them (a page as typed in, clicked on the site or from
@@ -99,8 +99,8 @@ one, and a new proposal's page is a copy of the original's proposal page.
 
 jq renders each fragment from the JSON (every value HTML-escaped, links https-only, as
 `lib/site.jq` does now) and awk swaps it in. A missing, unmatched or repeated marker fails the
-run, and nothing is pushed. Output goes to a new directory, so a failed run leaves the last good
-site in place.
+run, and no new site is made. Output goes to a new directory, so a failed run leaves the last good
+site in place (and that is what the run pushes).
 
 **QR codes:** made here (qrencode), from the address once it is checked against the list, and
 inlined into the page: what ccs-bash's account writes can't put another address in a QR code.
@@ -134,7 +134,7 @@ on purpose; each copy has its own job, and they are all the same file:
 | Where | What | Its job |
 |---|---|---|
 | the offline machine | made from a view-only wallet, signed by a Core Team member with their own key (the one the Monero repository publishes), its sha256 posted beside the wallet's view key and reproduced by others | the only place the list is made or signed; it writes the four files: the list, `.asc` (signature), `.key.asc` (public key), `.pin` (sha256 and fingerprint) |
-| backend, `/etc/ccs-front/` | the four files | ccs-front-bash checks the list against its pin, then every donation address, before each push, and makes the QR codes from those addresses; a run with a wrong address makes no site: what ccs-bash's account writes can't change one |
+| backend, `/etc/ccs-front/` | the four files | ccs-front-bash checks the list against its pin, then every donation address, before each push, and makes the QR codes from those addresses; a proposal with an address not on the list is left off the site, and the run counts as failed: what ccs-bash's account writes can't change one |
 | web server, `/etc/ccs-gate/` | the four files (installed by hand, root-owned) | the gate checks every pushed page against the design's (nothing but its parts, each slot a value of its kind, a proposal's text the repository's), every address on it against the list, however it is written and in every QR code, and every other file against the design release: a taken-over backend can't get a wrong address live as text, link or QR code |
 | the site, `/subaddresses.txt(.asc, .key.asc)` | the list, signature and key, pushed with the pages (the gate lets through only its own copies); the Verify page with the fingerprint | visitors check the address their wallet shows, after scanning or pasting, themselves (`gpg --verify`, `grep`, or a copy of the wallet): the defence left if the web server itself is taken over |
 

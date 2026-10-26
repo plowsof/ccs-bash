@@ -245,8 +245,9 @@ The first run looks up the merged MR of every proposal, which takes a few minute
 to another machine whenever it changes, to an account that can only add copies: the key runs
 only `contrib/ccs-backup-receive`, which keeps each new version as `proposals-<UTC time>.csv`
 and never overwrites or deletes one, so a taken-over backend can't destroy the backups either.
-`STATE_DIR/deposits.csv` (the wallet's deposits, which a rescan can make again, slowly) goes the
-same way: there it is one copy, replaced only by one that has every deposit it has.
+`STATE_DIR/deposits.csv` (the wallet's deposits, a cache the wallet can make again) goes the
+same way: there it is one copy, replaced only by one that has every deposit it has, so a restored
+wallet that knows less can be checked against it.
 
 On the **backup machine** (any one; the file is a few KB):
 

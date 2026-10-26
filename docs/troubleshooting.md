@@ -40,6 +40,8 @@ donation. In the log, a run that went well ends with
    | `no frontmatter between --- lines` | the file must start with `---`, the front matter, `---` |
    | `bad filename`, `filename is not valid UTF-8`, `not a plain file` | rename it: `<plain-name>.md` |
 3. **Is it in the JSON?** `jq '.[] | .proposals[] | select(."local-url" | test("<name>"))' /var/lib/ccs/out/proposals.json`.
+   In the JSON but not on the site: `grep 'left off the site' /var/log/ccs-bash.log | tail -n 3`
+   (its address isn't on the signed list: see [the whole site](#the-whole-site-isnt-updating), `ccs-front-bash`).
    A funding-required one needs a donation address: `grep '"<name>.md"' /var/lib/ccs/state/proposals.csv`
    shows its subaddress. `warning: GitLab lookup failed for new proposal <name>.md, retrying next run`:
    the forge's API is down, it gets its address once it answers.
@@ -107,7 +109,7 @@ the lines above it say why.
 | Step | Common causes |
 |---|---|
 | `ccs-bash` | the wallet (above); `cannot read config`, `config … is writable by ccs` (it must be root's, 640, group ccs) |
-| `ccs-front-bash` | `<file>: no donation address` (a funding-required proposal without one: see the GitLab lookup above); `a donation address is not one of the wallet's` (an index past the signed list's end: make a longer list, ccs-front-bash's docs/setup.md step 5); `no proposal file`, marker errors (`no <!-- /ccs:… -->`, `nothing to fill`): the design and ccs-front-bash aren't releases that go together ([the releases](handover.md#the-releases)) |
+| `ccs-front-bash` | `<file>: no donation address` (a funding-required proposal without one: see the GitLab lookup above); `warning: left off the site: <page>: its donation address … is not one of the wallet's` (that proposal is left off, the rest of the site goes out; an index past the signed list's end: make a longer list, ccs-front-bash's docs/setup.md step 5; else **stop and look**); `no proposal file`, marker errors (`no <!-- /ccs:… -->`, `nothing to fill`): the design and ccs-front-bash aren't releases that go together ([the releases](handover.md#the-releases)) |
 | `the push` | the lines above it in the log say which: `ssh: connect … timed out` or `refused` (the web server or its firewall), `Permission denied (publickey)` (the push key, or the web server's `from=`), `Host key verification failed` (the web server's host key changed: check why before trusting it); or the gate refused: on the web server, `journalctl -t ccs-gate -n 20` (`refused the push: …` names what it lacks) |
 | `the push (the web server held a file back)` | see [a page isn't updating](#a-proposals-page-isnt-updating-old-text-old-totals) |
 | `Unable to find image` / `pull access denied` | the run script starts an image that is gone: it must name an image ID, `--pull never`, with a stopped container on it ([setup](setup.md) step 3) |
