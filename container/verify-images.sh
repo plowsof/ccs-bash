@@ -33,7 +33,8 @@ trust_keys() {
     export GNUPGHOME=$tmp/gnupg
     install -d -m 700 "$GNUPGHOME"
     gpg -q --batch --import "$1"
-    awk '/^#   [0-9A-F]{40} / { print $2 }' "$1" > "$tmp/trusted"
+    # (sed, not awk: Debian 12's mawk has no {40})
+    sed -nE 's/^#   ([0-9A-F]{40}) .*/\1/p' "$1" > "$tmp/trusted"
 }
 
 main() {
