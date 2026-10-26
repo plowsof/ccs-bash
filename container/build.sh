@@ -5,6 +5,14 @@ set -euo pipefail
 here=$(dirname "$(readlink -f "$0")")
 tag=${1:-ccs-bash}
 
+# Image IDs, as the releases and ccs-sigs name them, are the image config's digest: Docker's own
+# image store. Its containerd store (a fresh Docker 29's default) shows and runs images by their
+# manifest's digest instead, an ID no attestation names.
+if docker info --format '{{json .DriverStatus}}' | grep -q 'io\.containerd\.snapshotter'; then
+    echo 'error: Docker keeps images in its containerd store, where an image ID is not the attested one:' \
+        'add "features": {"containerd-snapshotter": false} to /etc/docker/daemon.json, restart Docker, build again' >&2
+    exit 1
+fi
 "$here/verify-images.sh"
 contexts=()
 while read -r name ref; do

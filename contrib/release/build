@@ -65,6 +65,13 @@ fi
 [[ $# -ge 2 ]] || usage
 what=$1
 
+# (an older tag's build.sh doesn't check this itself: Docker's containerd image store gives
+# images another ID than the one attested, see container/build.sh)
+if docker info --format '{{json .DriverStatus}}' 2> /dev/null | grep -q 'io\.containerd\.snapshotter'; then
+    echo 'ERR: Docker keeps images in its containerd store, where an image ID is not the attested one:' \
+        'add "features": {"containerd-snapshotter": false} to /etc/docker/daemon.json and restart Docker' >&2
+    exit 1
+fi
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 start=$(date +%s)
