@@ -255,7 +255,8 @@ retired_totals() {
         h=${BASH_REMATCH[2]} t=${BASH_REMATCH[3]}
         while IFS=, read -r height txid idx amount unlock file; do
             [[ $height =~ ^[0-9]+$ && $txid =~ ^[0-9a-f]{64}$ && $idx =~ ^[0-9]+$ && $amount =~ ^[0-9]+$ \
-                && $unlock =~ ^[0-9]+$ && $file == *.md && $file != */* && $file != *[[:cntrl:]]* ]] \
+                && $unlock =~ ^[0-9]+$ && $file == *.md && $file != */* && $file != *[[:cntrl:]]* \
+                && ! $file =~ [1-9A-HJ-NP-Za-km-z]{90} ]] \
                 || die "$f: a line that isn't a deposit (restore it from the backup machine)"
             if ((unlock != 0)); then
                 if ((unlock < 500000000)); then est=$((t + (unlock > h ? unlock - h : 0) * 120)); else est=$unlock; fi
