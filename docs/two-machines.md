@@ -210,10 +210,10 @@ what it is sent; it knows what a page may be. Each push, one at a time, it
    - a number, an amount or a date as ccs-bash writes them;
    - a name, author or tag: escaped text (no markup), 1000 characters at most, no bidi controls
      (they can show an address's halves in another order than written), and no run of 90
-     characters an address could be drawn with: base58, or any letter or digit that isn't ASCII
-     (a mathematical or fullwidth `9`, a Cyrillic `А`), joined by characters that aren't ASCII
-     (a zero-width space, a mark) or by nothing. So not an address, padded, split or drawn with
-     look-alikes; ccs-bash shortens an idea's title by the same rule;
+     characters each base58 or not ASCII. So not an address, padded or split by invisible
+     characters or drawn with look-alikes (a mathematical or fullwidth `9`, a Cyrillic `А`); ccs-bash
+     shortens an idea's title by the same rule (90 characters that aren't ASCII in a row, such
+     as a long Chinese title without a space, are shortened too);
    - a link to a proposal: the site's own page, or a page under the proposals repository itself
      (`proposals.conf`'s address, host and path, and `LINK_HOSTS`): not another repository on its
      forge, which anyone can make, and no `..` step, `%` or backslash to leave it by;
