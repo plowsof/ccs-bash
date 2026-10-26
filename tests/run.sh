@@ -718,25 +718,21 @@ if command -v gpg > /dev/null && command -v gpgconf > /dev/null; then
     attest ccs-bash-v9.9.9 bob "$good"; attest ccs-bash-v9.9.9 aaa "$evil"
     v2() { env CCS_SIGS_REPO="$sigs" TRUSTED_KEYS="$TEST_TMP/verify-trusted" "$here/../contrib/release/verify" "$@" > "$TEST_TMP/v.out" 2>&1; }
     vok=1
-    v2 ccs-bash-v9.9.9 && grep -q '(2 signer(s) agree)' "$TEST_TMP/v.out" && grep -q "from commit $(printf '%040d' 2) " "$TEST_TMP/v.out" \
-        && grep -q "Not counted: '.*/aaa/" "$TEST_TMP/v.out" || { cat "$TEST_TMP/v.out"; echo "FAIL release/verify: an untrusted signer's commit"; vok=''; }
+    if ! { v2 ccs-bash-v9.9.9 && grep -q '(2 signer(s) agree)' "$TEST_TMP/v.out" && grep -q "from commit $(printf '%040d' 2) " "$TEST_TMP/v.out" \
+        && grep -q "Not counted: '.*/aaa/" "$TEST_TMP/v.out"; }; then cat "$TEST_TMP/v.out"; echo "FAIL release/verify: an untrusted signer's commit"; vok=''; fi
     attest ccs-bash-v9.9.9 bob "$evil"
-    ! v2 ccs-bash-v9.9.9 && grep -q 'ERR: ccs-bash-v9.9.9 differs' "$TEST_TMP/v.out" \
-        || { cat "$TEST_TMP/v.out"; echo "FAIL release/verify: two trusted signers, two commits"; vok=''; }
+    if ! { ! v2 ccs-bash-v9.9.9 && grep -q 'ERR: ccs-bash-v9.9.9 differs' "$TEST_TMP/v.out"; }; then cat "$TEST_TMP/v.out"; echo "FAIL release/verify: two trusted signers, two commits"; vok=''; fi
     attest ccs-bash-v9.9.9 bob "$good"
     set2=ccs-bash-v9.9.9+ccs-front-bash-v9.9.9
     attest "$set2" alice "$good"; attest "$set2" bob "$good"
-    ! v2 "$set2" && grep -q 'has no line, or several, for ccs-front-bash-v9.9.9' "$TEST_TMP/v.out" \
-        || { cat "$TEST_TMP/v.out"; echo "FAIL release/verify: a set without a line for each of its releases"; vok=''; }
+    if ! { ! v2 "$set2" && grep -q 'has no line, or several, for ccs-front-bash-v9.9.9' "$TEST_TMP/v.out"; }; then cat "$TEST_TMP/v.out"; echo "FAIL release/verify: a set without a line for each of its releases"; vok=''; fi
     front=$(printf '%064d  ccs-front-bash-v9.9.9-%040d.image-id' 4 5)
     attest "$set2" alice "$good" "$front"; attest "$set2" bob "$good" "$front"; attest "$set2" aaa "$evil" "$front"
-    v2 "$set2" && grep -q "$set2: 2 signer(s) agree" "$TEST_TMP/v.out" && grep -qF "    $front" "$TEST_TMP/v.out" \
-        || { cat "$TEST_TMP/v.out"; echo "FAIL release/verify: a set, an untrusted signer read first"; vok=''; }
+    if ! { v2 "$set2" && grep -q "$set2: 2 signer(s) agree" "$TEST_TMP/v.out" && grep -qF "    $front" "$TEST_TMP/v.out"; }; then cat "$TEST_TMP/v.out"; echo "FAIL release/verify: a set, an untrusted signer read first"; vok=''; fi
     # (gpg keeps a revocation for each key it makes, its first line's ":" stopping a careless import)
     sed 's/^:-----BEGIN/-----BEGIN/' "$k/openpgp-revocs.d/$bob.rev" | GNUPGHOME=$k gpg --batch --quiet --import 2> /dev/null
     GNUPGHOME=$k gpg --batch --armor --export "$bob" > "$sigs/builder-keys/bob.asc"
-    ! v2 ccs-bash-v9.9.9 && grep -q "bob/all.SHA256SUMS' is not signed .*or that key is revoked" "$TEST_TMP/v.out" && grep -q '(1 signer(s) agree)' "$TEST_TMP/v.out" \
-        || { cat "$TEST_TMP/v.out"; echo "FAIL release/verify: a revoked key"; vok=''; }
+    if ! { ! v2 ccs-bash-v9.9.9 && grep -q "bob/all.SHA256SUMS' is not signed .*or that key is revoked" "$TEST_TMP/v.out" && grep -q '(1 signer(s) agree)' "$TEST_TMP/v.out"; }; then cat "$TEST_TMP/v.out"; echo "FAIL release/verify: a revoked key"; vok=''; fi
     GNUPGHOME=$k gpgconf --kill all 2> /dev/null || true
     if [[ $vok ]]; then echo "ok   release/verify: trusted signers agree on the commit too; an untrusted one changes nothing; a set lists exactly its releases; a revoked key doesn't count"; else status=1; fi
 else
