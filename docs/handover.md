@@ -32,7 +32,8 @@ testnet CCS. A row is added with each release.
 
 | Set | ccs-bash | ccs-front-bash | ccs-front-hugo | Running on |
 |---|---|---|---|---|
-| 2026-10-26 | v0.2.17 | v0.1.16 | v0.1.17 | testnet ([ccs.monerodevs.org](https://ccs.monerodevs.org)) |
+| 2026-10-26 | v0.2.18 | v0.1.17 | v0.1.17 | testnet ([ccs.monerodevs.org](https://ccs.monerodevs.org)) |
+| 2026-10-26 | v0.2.17 | v0.1.16 | v0.1.17 | testnet, before |
 | 2026-10-25 | v0.2.16 | v0.1.16 | v0.1.17 | testnet, before |
 | 2026-10-25 | v0.2.15 | v0.1.16 | v0.1.16 | testnet, before |
 | 2026-10-25 | v0.2.14 | v0.1.16 | v0.1.15 | testnet, before |
