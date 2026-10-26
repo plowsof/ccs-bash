@@ -10,7 +10,8 @@ Option B's image holds only pinned, source-built parts (about 28 MB):
 - **Built by StageX's BuildKit** (and runc), pinned and checked like the rest, not by the
   host Docker's.
 
-`container/build.sh` (needs Docker with buildx, `git`, `gpg`, `jq`):
+`container/build.sh` (needs Docker with buildx and its own image store, not the containerd one,
+whose image IDs are the manifest's digest: [setup](setup.md#dependencies); `git`, `gpg`, `jq`):
 
 1. **Checks the signatures** of every pin ([below](#signatures)).
 2. **Downloads** the pinned images and the sources; `fetch.sh` keeps only files whose sha256 matches.
