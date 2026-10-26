@@ -248,6 +248,31 @@ got=$(
     WORK=$(mktemp -d) FIXTURES=$fx PROPOSALS_DIR=$here/fixtures/proposals ideas 2> /dev/null | jq -r '.[] | select(."gitlab-url" | endswith("/11")) | .name'
 )
 if [[ $got == 'Pay naïve me: 44AFFq…EP3A!' ]]; then echo "ok   an address in an idea's title is shortened, invisible characters in it or not"; else echo "FAIL an address in an idea's title: '$got'"; status=1; fi
+# ... and when drawn with other characters (the web server's gate holds back the same): its halves
+# in bidi embeddings, shown in another order than written; mathematical letters and digits;
+# Cyrillic letters for some of its own. What is left has no bidi control, and no run of 90 base58
+# characters or letters and digits that aren't ASCII.
+for how in bidi math cyrillic; do
+    t=$(python3 -c '
+import sys; a, how = sys.argv[1:]
+if how == "bidi": print("Moved: ‫‪" + a[48:] + "‬‪ " + a[:48] + "‬‬", end="")
+elif how == "math": print("Pay: " + "".join(chr(0x1D7E2 + int(c)) if c.isdigit() else chr(0x1D5A0 + ord(c) - 65) if c.isupper() else chr(0x1D5BA + ord(c) - 97) for c in a), end="")
+else: print("Pay: " + a.replace("A", "А").replace("B", "В").replace("E", "Е"), end="")' "$addr" "$how")
+    jq --arg t "$t" 'map(if .iid == 11 then .title = $t else . end)' "$FIXTURES/gitlab/opened.json" > "$fx/gitlab/opened.json"
+    got=$(
+        # shellcheck source=tests/stubs.sh
+        source "$here/stubs.sh"
+        WORK=$(mktemp -d) FIXTURES=$fx PROPOSALS_DIR=$here/fixtures/proposals ideas 2> /dev/null | jq -r '.[] | select(."gitlab-url" | endswith("/11")) | .name'
+    )
+    if [[ $got == Pay* || $got == Moved* ]] && python3 -c '
+import re, sys; s = sys.argv[1]
+sys.exit(bool(re.search("[‪-‮⁦-⁩]", s) or re.search("(?:(?:[1-9A-HJ-NP-Za-km-z]|[^\\W\\x00-\\x7f])[^\\w\\x00-\\x7f]*){90}", s)))' "$got"; then
+        echo "ok   an address in an idea's title, drawn with other characters ($how), is shortened or broken up"
+    else
+        echo "FAIL an address in an idea's title ($how): '$got'"; status=1
+    fi
+done
+cp "$FIXTURES/gitlab/opened.json" "$fx/gitlab/opened.json"
 # an idea's file over 1 MB isn't kept, nor read: that idea is left out (13 stays)
 awk 'BEGIN { for (i = 0; i < 1048576; i += 64) printf "%63s\n", "" }' >> "$fx/gitlab/raw/sha-11"
 got=$(

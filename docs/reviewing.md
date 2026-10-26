@@ -56,8 +56,10 @@ Pinned container, read-only, no capabilities, `--network host` only to reach wal
   `images/<its name>/`. `ideas`: open MRs whose file reads as a proposal, the `IDEAS_MAX` (100) most recently updated,
   what each adds at its commit, and whether its file reads, kept in `STATE_DIR/ideas.cache`
   (anyone can open MRs: each is fetched once, not every run); title and author
-  HTML-escaped, any run of 90 or more base58 characters shortened, invisible characters in it or
-  not (an MR title can't carry an address to the gate), links `https:` only; its file 1 MB at most.
+  HTML-escaped, bidi controls dropped, any run of 90 or more characters an address could be drawn
+  with (base58, or letters and digits that aren't ASCII), invisible characters in it or not,
+  shortened, as the gate's `TEXT` rule (an MR title can't carry an address to the gate), links
+  `https:` only; its file 1 MB at most.
 - [`lib/images.sh`](../lib/images.sh): copies the images a proposal's Markdown shows from
   `images/<proposal>/` (plain files, PNG, JPEG or GIF by their first bytes, 2 MB at most) and writes
   `images.json`. No network.
@@ -120,10 +122,13 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
   `pages` (`pages_py`, Python's standard library only): every page must be one of the design's
   (`design/<release>/`, its zip unpacked), byte for byte outside its regions; each region a
   sequence of the design's parts and each `{{slot}}` a value of its kind, one regex per page
-  built from the parts (`Design.fill`, `region`, `slots`); a proposal's text what `markdown.awk`
-  makes of its file at one of those commits (`bodies`, kept by commit). `scan` (awk) reads every
-  page and JSON as written (entities decoded, a non-ASCII or control character both dropped and a
-  space) for addresses, the JSON as JSON too (`json_py`), and every `data:` image (`qrdata`:
+  built from the parts (`Design.fill`, `region`, `slots`); a proposal's text, milestones and
+  payouts what `markdown.awk` makes of its file at one of those commits (`bodies`, kept by
+  commit); a donation box one address of the signed list, its QR code that address's. A page it
+  doesn't pass (`=ok`), whatever the reason, out of time included, is held back. `kinds`: no
+  symlink, no folder in a file's place or file in a folder's. `scan` (`scan_py`, one pass) reads
+  every page and JSON as written (entities decoded, a non-ASCII or control character both
+  dropped and a space) for addresses, the JSON as JSON too (`json_py`), and every `data:` image (`qrdata`:
   zbarimg reads one listed address, and its pixels, read by `pixels_py`, are those of
   `qrencode -s 10` of it). A page or JSON must start with `<`, `[` or `{`. `changes`: any other
   file the push changes must be the design's (`design.sha256`), a proposal image the proposals
@@ -136,6 +141,6 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
 ## The dense parts
 
 Where to slow down: `markdown.awk`'s `hold`/`unhold`; `ccs-receive`'s `pages_py` (the slot
-rules: `TEXT`'s lookahead is what keeps an address out of a name) and `decode` (entity decoding by
-hand, no interval expressions for old mawk); `load_state`'s CSV regex
+rules: `TEXT`'s lookahead is what keeps an address out of a name, matched by `noaddress` in
+`gitlab.sh`) and `scan_py`'s `entity` (entity decoding by hand); `load_state`'s CSV regex
 (`proposals.sh`); `forgejo_prs`' time-zone conversion (`gitlab.sh`).
