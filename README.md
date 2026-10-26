@@ -41,39 +41,15 @@ any live machine:
 
 **Start here: [the handover](docs/handover.md)**, moving ccs.getmonero.org from ccs-back and
 Jekyll to this, step by step along the diagram above. Why it's built this way: [the
-design](docs/design.md). ccs-bash also still writes the JSON the old Jekyll ccs-front reads.
+design](docs/design.md).
 
 ## Security
 
-An attacker wants the donation addresses on the website: with a shell where the JSON is
-written or served, they can swap in their own. (The wallet is view-only; received coins are
-not at risk.) So ccs-bash leaves as few ways in as possible:
-
-- **Nothing to connect to.** No server, open port or database; only outgoing calls, to the
-  wallet and the proposals' forge (GitLab or Forgejo).
-- **Few dependencies.** About ten Debian packages, or the same tools from
-  [StageX](docs/image.md), built from source. All of ccs-bash is about 1,020 lines, or 750 without
-  comments: about 770 of bash (570 without comments), the proposal parser in awk and the JSON in jq.
-- **Least privilege.** Runs as a `ccs` user that can only write its state and output; refuses
-  to run if it can write its own config. The wallet has its own user ([setup](docs/setup.md) steps 1–2).
-- **Checks the wallet.** Its main address is pinned in the root-owned config
-  (`WALLET_ADDRESS`) and every subaddress must match the state file, so a swapped wallet stops
-  the run, even if the state file was changed to match.
-- **QR codes made fresh** from the addresses on every run, never stored, so there is no image
-  to swap. CI decodes them back.
-- **Untrusted text stays text.** Titles are HTML-escaped, no `eval`, every JSON value built by
-  jq, filenames checked.
-- **Can run apart from the website** ([two machines](docs/two-machines.md)): the wallet
-  machine accepts no connections and pushes the site to a key that can only write one folder;
-  the web server checks every page is the design release's own, filled as ccs-front-bash fills
-  it (a proposal's text as the proposals repository has it), every address on it, written and in
-  every QR code, against the wallet's signed list, and every other file against the design
-  release's; and the backend checks the live pages, and the files they use, are what it pushed.
-
-What it can't fix: a shell on the **web server** can still change the site. ccs-watch then alerts
-within minutes (it fetches the live pages and their files as a browser would, through Tor and a
-clearnet proxy, and compares them with what was pushed), and visitors can check the address their
-wallet shows against the signed list, but that is the machine to guard.
+An attacker wants the donation addresses on the website. How the setup keeps them the wallet's
+(no inbound connections, pinned images, a signed list checked on both machines, a web server
+that only serves what its gate passed, and a watcher on it): [the design](docs/design.md). What
+it can't fix: a shell on the web server can still change the site until ccs-watch alerts, which
+is why visitors can check an address against the signed list themselves.
 
 ## What a run does
 
@@ -108,8 +84,8 @@ wallet shows against the signed list, but that is the machine to guard.
 | `lib/proposals.sh` | proposals to JSON, the state file |
 | `lib/gitlab.sh` | ideas, merged MR lookup |
 | `lib/wallet.sh` | wallet RPC, subaddresses, totals, QR codes |
-| `lib/site.jq` | output for ccs-front and `/projects` |
-| `notify-loop.sh` | optional: also run on new txes ([setup](docs/setup.md) step 7) |
+| `lib/site.jq` | the JSON for ccs-front-bash and `/projects` |
+| `notify-loop.sh` | optional: also run on new txes ([setup](docs/setup.md) step 5) |
 
 ## State
 

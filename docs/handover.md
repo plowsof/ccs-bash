@@ -27,27 +27,13 @@ https://ccs.monerodevs.org, is this exact setup, running.
 
 ## The releases
 
-The three repositories are released separately; these versions work together and run the
-testnet CCS. A row is added with each release.
+The three repositories are released separately; this set works together and runs the testnet
+CCS. Each new set replaces the row (earlier sets: this file's history, and their folders in
+ccs-sigs).
 
 | Set | ccs-bash | ccs-front-bash | ccs-front-hugo | Running on |
 |---|---|---|---|---|
 | 2026-10-26 | v0.2.18 | v0.1.17 | v0.1.17 | testnet ([ccs.monerodevs.org](https://ccs.monerodevs.org)) |
-| 2026-10-26 | v0.2.17 | v0.1.16 | v0.1.17 | testnet, before |
-| 2026-10-25 | v0.2.16 | v0.1.16 | v0.1.17 | testnet, before |
-| 2026-10-25 | v0.2.15 | v0.1.16 | v0.1.16 | testnet, before |
-| 2026-10-25 | v0.2.14 | v0.1.16 | v0.1.15 | testnet, before |
-| 2026-10-25 | v0.2.13 | v0.1.16 | v0.1.15 | testnet, before |
-| 2026-10-25 | v0.2.13 | v0.1.16 | v0.1.14 | testnet, before |
-| 2026-10-25 | v0.2.13 | v0.1.15 | v0.1.13 | testnet, before |
-| 2026-10-25 | v0.2.12 | v0.1.14 | v0.1.12 | testnet, before |
-| 2026-10-25 | v0.2.11 | v0.1.13 | v0.1.12 | testnet, before |
-| 2026-10-25 | v0.2.11 | v0.1.13 | v0.1.11 | testnet, before |
-| 2026-10-24 | v0.2.11 | v0.1.13 | v0.1.10 | testnet, before |
-| 2026-10-24 | v0.2.10 | v0.1.12 | v0.1.9 | testnet, before |
-| 2026-10-24 | v0.2.9 | v0.1.11 | v0.1.9 | testnet, before |
-| 2026-10-24 | v0.2.8 | v0.1.11 | v0.1.9 | testnet, before |
-| 2026-10-24 | v0.2.7 | v0.1.10 | v0.1.9 | testnet, before |
 
 Each is reproducible: anyone who builds a tag gets the same image ID or zip sha256, and those who
 did sign what they got in [ccs-sigs](https://github.com/plowsof/ccs-sigs) (the box at the top left
@@ -161,7 +147,7 @@ curl -s --digest -u 'ccs:<rpc password>' http://127.0.0.1:18082/json_rpc \
   >> /var/lib/ccs/state/proposals.csv
 ```
 
-Then compare its JSON with ccs-back's: it should match, except the QR codes (another encoder) and
+Then compare its JSON with ccs-back's: it should match, except the QR codes (ccs-front-bash makes them, not ccs-bash) and
 the differences listed under [step 10](#10-the-cutover):
 
 ```
@@ -241,7 +227,7 @@ steps 2 and 5. It makes `/var/lib/ccs/www/site`, every page, each run.
 
 ## 6. The web server: the push, the gate, nginx
 
-[Two machines](two-machines.md), way A: the `ccs-data` account the backend pushes to (write-only,
+[Two machines](two-machines.md): the `ccs-data` account the backend pushes to (write-only,
 no deleting), nginx with HTTPS, the security headers, the cache rule and the theme lines, and
 **the gate**, which checks every page in each push against the design release's own (its zip
 unpacked there, as on the backend; a proposal's text against the proposals repository, which it
@@ -269,13 +255,13 @@ copy is what a restored wallet that knows less is checked against.
   ([the heartbeat](two-machines.md#the-heartbeat-the-web-server-notices-a-silent-backend)).
 
 Both post one line to the IRC bot's URL (below). [Two
-machines](two-machines.md#watching-the-web-server-way-a-the-backend-raises-the-alarm) and "The
+machines](two-machines.md#watching-the-web-server-the-backend-raises-the-alarm) and "The
 gate". `ccs-watch --test https://ccs.getmonero.org` sends one message to check it.
 
 ## 9. The update
 
-One run of everything, every 2 minutes and on each new donation ([setup](setup.md) step 7, with
-its log rotation from step 6), as root (it only starts each step as that step's own user):
+One run of everything, every 2 minutes and on each new donation ([setup](setup.md) step 5, with
+its log rotation from step 4), as root (it only starts each step as that step's own user):
 
 ```
 #!/bin/sh
@@ -504,6 +490,6 @@ the release's zip, checked by its sha256. For each new release, in this order:
    container on it (`docker create --name ccs-bash-keep --network none <ID>`, the old one renamed);
    unzip the design into a new folder and swap it with `/opt/ccs-front-hugo/public`, between runs.
    Keep the previous images (their stopped containers) to go back to.
-5. **Watched and noted.** The next run fills the site and ccs-watch confirms the pages; then add a
-   row to [the releases](#the-releases). If anything else on the backend prunes Docker images, keep
+5. **Watched and noted.** The next run fills the site and ccs-watch confirms the pages; then put the
+   new set in [the releases](#the-releases). If anything else on the backend prunes Docker images, keep
    a stopped container on each image ([troubleshooting](troubleshooting.md)).
