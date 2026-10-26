@@ -26,6 +26,13 @@ awk -F '\t' -v h="$H" -v bad="$tmp/bad" '
     { print $1 "," $2 " " $3 " " $4 " -" }
     END { print zero + 0 > "'"$tmp/zero"'"; print later + 0 > "'"$tmp/later"'"; print top + 0 > "'"$tmp/top"'" }' "$old" | sort > "$tmp/old"
 if [[ -s $tmp/bad ]]; then echo "$old: lines that aren't 'tx_id subaddr_index amount block_received' (tab-separated):" >&2; head -n 5 "$tmp/bad" >&2; exit 2; fi
+# deposits.csv is written by ccs-bash's account, and this runs as root: every line checked before
+# any of it is used (bash arithmetic would run a command hidden in a value like a[$(cmd)])
+if grep -qvE '^[0-9]+,[0-9a-f]{64},[0-9]+,[0-9]+,[0-9]+$' < <(tail -n +2 "$new"); then
+    echo "$new: a line that isn't 'height,txid,subaddress,amount,unlock_time' (digits, a 64-hex txid):" >&2
+    tail -n +2 "$new" | grep -vE '^[0-9]+,[0-9a-f]{64},[0-9]+,[0-9]+,[0-9]+$' | head -n 3 | cut -c1-120 >&2
+    exit 2
+fi
 tail -n +2 "$new" | awk -F, '{ print $2 "," $3 " " $4 " " $1 " " $5 }' | sort > "$tmp/new"
 cut -d' ' -f1 "$tmp/old" | sort -u > "$tmp/ok"; cut -d' ' -f1 "$tmp/new" | sort -u > "$tmp/nk"
 comm -23 "$tmp/ok" "$tmp/nk" > "$tmp/only-old"
