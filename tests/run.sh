@@ -276,6 +276,25 @@ for fail in "" 13; do
     fi
 done
 
+# Anyone can open MRs: what an MR adds at a commit, and whether its file reads, is kept
+# (IDEAS_CACHE), so a second run fetches no proposal's text again (only what an MR whose file is
+# already merged adds: 12 here, never kept) and gives the same ideas; and only the IDEAS_MAX most
+# recently updated open MRs are looked at.
+got=$(
+    # shellcheck source=tests/stubs.sh
+    source "$here/stubs.sh"
+    run_ideas() { WORK=$(mktemp -d) PROPOSALS_DIR=$FIXTURES/proposals IDEAS_CACHE=$TEST_TMP/ideas.cache ideas; }
+    : > "$TEST_TMP/gitlab-calls"
+    first=$(run_ideas 2> /dev/null | jq -c .)
+    fetched=$(grep -cE '/changes|/raw' "$TEST_TMP/gitlab-calls")
+    : > "$TEST_TMP/gitlab-calls"
+    second=$(run_ideas 2> /dev/null | jq -c .)
+    again=$(grep -cE '/raw|changes-1[13-6]|merge_requests/1[13-6]/' "$TEST_TMP/gitlab-calls" || true)
+    one=$(IDEAS_MAX=1 run_ideas 2>&1 > /dev/null | grep -c 'only the 1 most recently updated' || true)
+    [[ $first == "$second" && $fetched -gt 0 && $again == 0 && $one == 1 ]] && echo same || echo "fetched $fetched, again $again, capped $one; $first / $second"
+)
+if [[ $got == same ]]; then echo "ok   ideas: what each MR adds is fetched once (IDEAS_CACHE), at most IDEAS_MAX MRs a run"; else echo "FAIL ideas' cache: $got"; status=1; fi
+
 # atomic_write: a failed or silent command leaves the old file alone.
 aw=$(mktemp -d)
 echo old > "$aw/f"
@@ -462,6 +481,31 @@ got=$(
         ideas 2> /dev/null | jq -c 'map([.upvotes, .downvotes])'
 )
 if [[ $got == '[[1,0],[null,null]]' ]]; then echo "ok   unreadable reactions leave the idea, without counts"; else echo "FAIL unreadable reactions: $got"; status=1; fi
+
+# release/verify: only TRUSTED_KEYS' attesters count; without it nothing does, unless --any-key
+# (anyone can send ccs-sigs a key). A ccs-sigs of one release attested by one test key.
+if command -v gpg > /dev/null && command -v gpgconf > /dev/null; then
+    sigs=$TEST_TMP/sigs k=$TEST_TMP/gpg
+    mkdir -p "$sigs/builder-keys" "$sigs/ccs-bash-v9.9.9/alice" && mkdir -m 700 "$k"
+    GNUPGHOME=$k gpg --batch --quiet --passphrase '' --quick-gen-key 'alice <alice@test>' ed25519 sign 1d 2> /dev/null
+    fpr=$(GNUPGHOME=$k gpg --with-colons -K 2> /dev/null | awk -F: '$1 == "fpr" { print $10; exit }')
+    GNUPGHOME=$k gpg --batch --armor --export "$fpr" > "$sigs/builder-keys/alice.asc"
+    printf '%064d  ccs-bash-v9.9.9-%040d.image-id\n' 1 2 > "$sigs/ccs-bash-v9.9.9/alice/all.SHA256SUMS"
+    GNUPGHOME=$k gpg --batch --quiet --armor --detach-sign "$sigs/ccs-bash-v9.9.9/alice/all.SHA256SUMS"
+    GNUPGHOME=$k gpgconf --kill all 2> /dev/null || true
+    echo "$fpr  # alice" > "$TEST_TMP/verify-trusted" && echo "${fpr//?/0}" > "$TEST_TMP/verify-stranger"
+    v() { env CCS_SIGS_REPO="$sigs" "$@" "$here/../contrib/release/verify" --min-signers 1 ccs-bash-v9.9.9 > "$TEST_TMP/v.out" 2>&1; }
+    if ! v && grep -q 'ERR: set TRUSTED_KEYS' "$TEST_TMP/v.out" \
+        && v TRUSTED_KEYS="$TEST_TMP/verify-trusted" && grep -q '(1 signer(s) agree)' "$TEST_TMP/v.out" \
+        && ! v TRUSTED_KEYS="$TEST_TMP/verify-stranger" && grep -q 'by no one in TRUSTED_KEYS' "$TEST_TMP/v.out" \
+        && env CCS_SIGS_REPO="$sigs" "$here/../contrib/release/verify" --any-key --min-signers 1 ccs-bash-v9.9.9 > /dev/null 2>&1; then
+        echo "ok   release/verify: only trusted keys count; none set, nothing counts but with --any-key"
+    else
+        cat "$TEST_TMP/v.out"; echo "FAIL release/verify and TRUSTED_KEYS"; status=1
+    fi
+else
+    echo "ok   release/verify: skipped (no gpg here)"
+fi
 
 for f in proposals.json completed-proposals.json projects.json proposals.csv log; do
     if diff -u "$here/expected/$f" "$TEST_TMP/out/$f"; then echo "ok   $f"; else echo "FAIL $f"; status=1; fi

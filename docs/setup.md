@@ -126,6 +126,11 @@ server and step 6 pushes there ([two machines](two-machines.md)).
    `pinned: commit ... builds to sha256:...` line, the release notes. Then the transport
    doesn't need trusting. Loading or pulling runs nothing.
 
+   It runs that image by its ID, never pulled: a tag can be removed (a nightly Docker cleanup,
+   Coolify's say, does), then `docker run ccs-bash` would try Docker Hub instead; an ID can't be
+   moved, and is exactly the one you checked. Keep one stopped container on it, so no cleanup
+   removes the image itself: `docker create --name ccs-bash-keep --network none <ID>`.
+
    ```
    #!/bin/sh
    # read-only, no capabilities, only the config's folders; host network to reach 127.0.0.1
@@ -135,7 +140,7 @@ server and step 6 pushes there ([two machines](two-machines.md)).
        -v /var/lib/ccs/proposals:/var/lib/ccs/proposals:ro \
        -v /var/lib/ccs/state:/var/lib/ccs/state \
        -v /var/lib/ccs/out:/var/lib/ccs/out \
-       ccs-bash
+       --pull never sha256:<the image ID you checked>
    ```
 
 4. **Point ccs-front at the output.** Link or mount the **directories**, never the single JSON
