@@ -13,7 +13,7 @@ address and `/projects`. **Goes:** PHP, MySQL, Jekyll, Ruby; the web server runs
 ## Before you start
 
 - **Machines:** the **backend** (private, no inbound connections), the **web server** (public),
-  a **backup machine** (any), and an **offline machine** for the signed list.
+  a **backup machine** (any but the web server), and an **offline machine** for the signed list.
 - **The wallet**, view-only. Its address and view key are public: luigi1111 published them in
   [monero-project/meta #935](https://github.com/monero-project/meta/issues/935#issuecomment-1867257410).
 - **A Core Team member** to make and sign the subaddress list (step 4), and **an IRC bot** (step 8).
@@ -403,12 +403,14 @@ added to the new wallet's each run. Funding-required proposals get new addresses
 3. **The new wallet:** its files and `wallet-rpc.conf` (step 1), `WALLET_ADDRESS` (step 2), and
    **its list**: made and signed as in step 4, added as `subaddresses/<new wallet>/`, and installed
    on both machines in place of the old one's (`/etc/ccs-front/`, `/etc/ccs-gate/`: every address
-   shown from then on is the new wallet's). On the backup machine, as root, move the old
-   `deposits.csv` aside (it only takes one with every deposit it has).
+   shown from then on is the new wallet's). On the backup machine, as root, add the old wallet's
+   name to `/etc/ccs-backup/retired-names` (it keeps no record of a wallet not listed there) and
+   move the old `deposits.csv` aside (it only takes one with every deposit it has).
 4. **One run by hand**, then `systemctl start ccs-bash`: the same totals, new addresses.
 
-A proposal renamed later keeps its retired donations only if it is renamed in `retired/*.csv` too
-([edit the state](troubleshooting.md#edit-the-state)).
+A proposal renamed later: rename it in `proposals.csv`, give its subaddress the new name as its
+label (the run stops on a subaddress whose label names another proposal), and in `retired/*.csv`
+too, or it loses its retired donations ([edit the state](troubleshooting.md#edit-the-state)).
 
 ## Upgrading
 

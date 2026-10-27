@@ -57,7 +57,9 @@ Pinned container, read-only, no capabilities, `--network host` only to reach wal
 - `retired_totals` (`lib/wallet.sh`): the donations to wallets the CCS used before, per proposal
   file, from `STATE_DIR/retired/*.csv` (written once by [`contrib/retire-wallet`](../contrib/retire-wallet),
   which asks that wallet which state addresses are its own, and refuses one still receiving); every
-  field checked before bash arithmetic; no addresses in it.
+  field checked before bash arithmetic (no leading zero, at most 18 digits: bash wraps past 2^63);
+  no addresses in it. `check_wallet_addresses`: every state subaddress the wallet's, and given to
+  the proposal its label names (a swapped state stops the run).
 - [`lib/gitlab.sh`](../lib/gitlab.sh): the public API of GitLab or Forgejo (Forgejo's pull requests
   mapped to GitLab's shape). `merged_mr_url`: the merged MR that added a file. `mr_proposal_file`:
   an MR is an idea only if it adds exactly one `.md` at the root, and besides it only files in
@@ -119,8 +121,10 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
   another amount.
 - [`contrib/ccs-backup-receive`](../contrib/ccs-backup-receive), the backup machine's forced
   command: `proposals.csv` (1 MB, its rows' shape) and a retired wallet's file (64 MB) each kept as a
-  new dated copy, never overwritten or deleted; `deposits.csv` (64 MB) replaces its one copy only
-  if it has every deposit that copy has. Nothing once the folder holds 256 MB.
+  new dated copy, never overwritten or deleted; a retired wallet only if listed in
+  `/etc/ccs-backup/retired-names`, a later version only if it renames proposals one for one;
+  `deposits.csv` (64 MB) replaces its one copy only if it has every deposit that copy has, and
+  wasn't checked in the future. Every number at most 18 digits. Nothing once the folder holds 256 MB.
 
 ## Web server
 
