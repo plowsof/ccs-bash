@@ -138,8 +138,9 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
     is held back;
   - `kinds`: no symlink, no folder in a file's place or file in a folder's;
   - `scan` (`scan_py`, one pass): every address in pages and JSON as written (entities decoded, a
-    non-ASCII or control character read both as nothing and as a space), the JSON as JSON too
-    (`json_py`); every `data:` image (`qrdata`: zbarimg reads one listed address, and its pixels,
+    non-ASCII or control character read both as nothing and as a space; in groups split by up to
+    three spaces or punctuation, by its checksum: `check_py`, a budget of checksums and time a
+    file), the JSON as JSON too (`json_py`, its strings read the same way); every `data:` image (`qrdata`: zbarimg reads one listed address, and its pixels,
     `pixels_py`, are `qrencode -s 10`'s of it); pages and JSON start with `<`, `[` or `{`;
   - `changes`: any other file is the design's (`design.sha256`), a proposal image the repository
     has at that path (`repo_images`: `git hash-object` against `ls-tree`; its QR codes checked),
@@ -165,7 +166,7 @@ key; its `.pin` (sha256 and key) is what each machine trusts, installed by hand 
 | 6. The web server's list is the pinned one | `contrib/ccs-receive`, before the push is received | the gate's own copy (installed by hand) is the one its `.pin` names | every push refused, IRC told |
 | 7. Every address on every page is on the list | `contrib/ccs-receive` `scan` (`scan_py`, `json_py`) | every 95- or 106-character address in a page or JSON, as written (entities read, a non-ASCII character as nothing and as a space), is a line of the list or in `allowed` | that file held back, its last good copy stays, IRC told |
 | 8. Every QR code is of a listed address | `contrib/ccs-receive` `qrdata` (`pixels_py`) | each `data:` image is, pixel for pixel, `qrencode -s 10` of the `monero:` address zbarimg reads in it, and that address goes through step 7 | held back |
-| 9. Addresses only where the design puts them | `contrib/ccs-receive` `pages` (`pages_py`, the `address` and `qr` slots) | a page is the design's, filled: an address can only be in the donation box's slots, each one address | held back |
+| 9. Addresses only where the design puts them | `contrib/ccs-receive` `pages` (`pages_py`, the `address` and `qr` slots) | a page is the design's, filled: a whole address can only be in the donation box's slots, each one address; one in groups is found by `scan` (any slot), by its checksum | held back |
 | 10. What is live is what was pushed | `contrib/ccs-watch`, the page comparison (`differs`) | the live donation pages (and others at random) byte for byte; a live address not on the list is named in the alert | IRC told |
 | 11. The visitor | the Verify page (`parts/verify.html`, filled by `check_addresses`) | the wallet's address and view key, and where they were published: a view-only copy of the wallet says whether an address is its own (`get_address_index`) | the visitor doesn't pay |
 
