@@ -1,4 +1,5 @@
 # shellcheck shell=bash
+# shellcheck disable=SC2154,SC2034  # (sourced by run.sh: its here, status, TEST_TMP and FIXTURES)
 # Security review 5 (2026-10-27), state and backups: sourced by run.sh before its last comparison.
 # A taken-over backend (or backup machine) keeping false totals past being found: a deposits.csv
 # checked "in the future" by way of bash's 64-bit wrap; retired-record backups that merge
