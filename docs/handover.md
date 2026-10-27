@@ -68,9 +68,7 @@ far, so nothing is rescanned).
 Without the cache, wallet-rpc rescans from the restore height; without either file, make the
 wallet from the address and view key (`monero-wallet-cli --generate-from-view-key`, which asks
 for each in turn, or wallet-rpc's `generate_from_keys` with `address`, `viewkey`, `password` and
-`restore_height`), the restore height before the first donation, with monero's default lookahead (it finds a
-donation up to 200 subaddresses past the last one found: the CCS wallets' gaps are 3 at most, and
-CCS2's first is at 180). Once it has caught up, the smallest lookahead:
+`restore_height`), the restore height before the first donation. **Once it has caught up, the smallest lookahead:**
 `rpc set_subaddress_lookahead '{"password":"<wallet password>","major_idx":1,"minor_idx":1}'`
 (kept in the wallet's keys file). Moving from ccs-back, `compare-deposits` (step 2) shows whether
 the wallet found every deposit ccs-back had.
