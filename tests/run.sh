@@ -757,7 +757,8 @@ if ! type -P du head comm sort > /dev/null; then
     echo "ok   backup receiver: skipped (a host script, its tools are not in the image)"
 else
     bk=$TEST_TMP/backup; mkdir -p "$bk"
-    recv() { CCS_BACKUP_DIR=$bk "$here/../contrib/ccs-backup-receive" > "$TEST_TMP/recv.out" 2>&1; }
+    echo old > "$bk.names"   # (the retired wallets this machine's admin listed)
+    recv() { CCS_BACKUP_DIR=$bk CCS_BACKUP_RETIRED=$bk.names "$here/../contrib/ccs-backup-receive" > "$TEST_TMP/recv.out" 2>&1; }
     d1=$TEST_TMP/dep-a/state/deposits.csv
     if recv < "$TEST_TMP/state/proposals.csv" && recv < "$d1" && [[ $(find "$bk" -name 'proposals-*.csv' | wc -l) == 1 ]] && cmp -s "$d1" "$bk/deposits.csv" \
         && { sed '1s/checked [0-9]*/checked 1/' "$d1"; printf '3099999,%064d,1,5,0\n' 7; } | recv && [[ $(wc -l < "$bk/deposits.csv") == $(($(wc -l < "$d1") + 1)) ]] \
@@ -885,6 +886,8 @@ if command -v gpg > /dev/null && command -v gpgconf > /dev/null; then
 else
     echo "ok   release/verify: skipped (no gpg here)"
 fi
+
+source "$here/review5.sh"
 
 for f in proposals.json completed-proposals.json projects.json proposals.csv log; do
     if diff -u "$here/expected/$f" "$TEST_TMP/out/$f"; then echo "ok   $f"; else echo "FAIL $f"; status=1; fi

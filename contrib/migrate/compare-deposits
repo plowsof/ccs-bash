@@ -13,7 +13,9 @@
 set -euo pipefail
 export LC_ALL=C
 old=${1:?CCS_BACK_DEPOSITS (tab-separated: tx_id subaddr_index amount block_received)} new=${2:?DEPOSITS_CSV}
-head -n 1 "$new" | grep -qE '^# final [0-9]+ checked [0-9]+$' || { echo "$new: not a deposits.csv" >&2; exit 2; }
+# (numbers as ccs-bash reads them: no leading zero, at most 18 digits; bash wraps past 2^63)
+n='(0|[1-9][0-9]{0,17})'
+head -n 1 "$new" | grep -qE "^# final $n checked $n\$" || { echo "$new: not a deposits.csv" >&2; exit 2; }
 H=$(head -n 1 "$new" | cut -d' ' -f3)
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -28,9 +30,9 @@ awk -F '\t' -v h="$H" -v bad="$tmp/bad" '
 if [[ -s $tmp/bad ]]; then echo "$old: lines that aren't 'tx_id subaddr_index amount block_received' (tab-separated):" >&2; head -n 5 "$tmp/bad" >&2; exit 2; fi
 # deposits.csv is written by ccs-bash's account, and this runs as root: every line checked before
 # any of it is used (bash arithmetic would run a command hidden in a value like a[$(cmd)])
-if grep -qvE '^[0-9]+,[0-9a-f]{64},[0-9]+,[0-9]+,[0-9]+$' < <(tail -n +2 "$new"); then
+if grep -qvE "^$n,[0-9a-f]{64},$n,$n,$n\$" < <(tail -n +2 "$new"); then
     echo "$new: a line that isn't 'height,txid,subaddress,amount,unlock_time' (digits, a 64-hex txid):" >&2
-    tail -n +2 "$new" | grep -vE '^[0-9]+,[0-9a-f]{64},[0-9]+,[0-9]+,[0-9]+$' | head -n 3 | cut -c1-120 >&2
+    tail -n +2 "$new" | grep -vE "^$n,[0-9a-f]{64},$n,$n,$n\$" | head -n 3 | cut -c1-120 >&2
     exit 2
 fi
 tail -n +2 "$new" | awk -F, '{ print $2 "," $3 " " $4 " " $1 " " $5 }' | sort > "$tmp/new"

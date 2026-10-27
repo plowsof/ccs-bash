@@ -36,6 +36,16 @@ check_wallet_addresses() {
         | [$state[0] | to_entries[] | select(.value.address)
            | select($wallet[.value.subaddr_index | tostring] != .value.address)] | length == 0' <<<"$addrs" > /dev/null \
         || die "wallet subaddresses do not match $STATE_DIR/proposals.csv (wrong wallet?)"
+    # and given to the proposal the wallet's label says (assign_addresses labels each with its
+    # file): a state with two proposals' subaddresses swapped has only the wallet's addresses,
+    # but would show each proposal the other's address and donations
+    local swapped
+    swapped=$(jq -r --slurpfile state "$WORK/state.json" '
+        (.addresses | map({key: (.address_index | tostring), value: (.label // "")}) | from_entries) as $labels
+        | [$state[0] | to_entries[] | select(.value.subaddr_index != null)
+           | ($labels[.value.subaddr_index | tostring] // "") as $l | select($l != "" and $l != .key)
+           | "\(.value.subaddr_index) (labelled \($l), given to \(.key))"] | join(", ")' <<<"$addrs") || return 1
+    [[ -z $swapped ]] || die "subaddresses given to another proposal than the wallet's label says: $swapped (swapped or edited $STATE_DIR/proposals.csv? a renamed proposal: label_address it with its new file, docs/troubleshooting.md)"
     # each with its proposal's file as its label, as assign_addresses gives new ones: a wallet from
     # ccs-back, or restored, has none, and check_known_subaddresses tells handed-out ones by it
     jq -r --slurpfile state "$WORK/state.json" '
@@ -68,7 +78,7 @@ assign_addresses() {
             res=$(rpc create_address "$(jq -nc --arg l "$file" '{account_index: 0, label: $l}')") || return 1
             idx=$(jq -r .address_index <<<"$res")
             addr=$(jq -r .address <<<"$res")
-            [[ $idx =~ ^[0-9]+$ ]] || die "unexpected create_address result: $res"
+            [[ $idx =~ ^$NUM$ ]] || die "unexpected create_address result: $res"
             # just above every index in the state, or two proposals could share an address
             ((idx == max + 1)) || die "create_address gave subaddress $idx, but the state already goes up to $max"
         fi
@@ -81,6 +91,11 @@ assign_addresses() {
 
 # Money is added and converted only in bash, as 64-bit atomic units: exact to 9.2M XMR.
 # jq's doubles round sums above ~9007 XMR and turn /1e12 into 1.23449999...
+
+# A number read from the state or the wallet, before bash arithmetic: no leading zero (bash reads
+# 010 as octal 8, and 09 stops the run) and at most 18 digits (bash wraps at 2^63: a "checked"
+# time of 2^64 + now would read as now, and skip the recount for good)
+NUM='(0|[1-9][0-9]{0,17})'
 
 # Atomic units -> XMR, cut (not rounded) to 4 decimals, never more than there is: 99999960000000 -> 99.9999.
 xmr4() {
@@ -127,7 +142,7 @@ donation_totals() {
     ((n > 1)) || return 0
     indexes=$(jq -nc --argjson n "$n" '[range(1; $n)]')
     wh=$(rpc get_height | jq -r .height) || return 1
-    [[ $wh =~ ^[0-9]+$ ]] || die "unexpected get_height result: '$wh'"
+    [[ $wh =~ ^$NUM$ ]] || die "unexpected get_height result: '$wh'"
     depth=${DEPOSITS_FINAL:-30}
     [[ $depth =~ ^[0-9]+$ ]] || depth=30
     ((depth >= MIN_CONFIRMATIONS)) || depth=$MIN_CONFIRMATIONS
@@ -137,9 +152,9 @@ donation_totals() {
         read -r _ _ H _ T < "$file" || true
         local first=''
         IFS= read -r first < "$file" || true
-        [[ $first =~ ^#\ final\ (0|[1-9][0-9]*)\ checked\ (0|[1-9][0-9]*)$ ]] || die "$file: not a deposits file (delete it: the next run makes it again)"
+        [[ $first =~ ^#\ final\ $NUM\ checked\ $NUM$ ]] || die "$file: not a deposits file (delete it: the next run makes it again)"
         kept=$(awk 'NR > 1' "$file")
-        if [[ -n $kept ]] && grep -qvE '^(0|[1-9][0-9]*),[0-9a-f]{64},(0|[1-9][0-9]*),(0|[1-9][0-9]*),(0|[1-9][0-9]*)$' <<<"$kept"; then
+        if [[ -n $kept ]] && grep -qvE "^$NUM,[0-9a-f]{64},$NUM,$NUM,$NUM\$" <<<"$kept"; then
             die "$file: a line that isn't a deposit (delete it: the next run makes it again)"
         fi
         ((wh >= H)) || die "the wallet is at height $wh, below the $H its kept deposits go to: rescanning or restored? (the site keeps its last totals until it has caught up)"
@@ -155,19 +170,21 @@ donation_totals() {
     fi
     transfers=$(rpc get_transfers "$params") || return 1
     # kind height txid subaddress amount unlock_time confirmations; jq only passes amounts
-    # through, and stops above 2^53, where it can't read them exactly
+    # through, and stops above 2^53, where it can't read them exactly; an unlock_time past 18
+    # digits (anyone can send one: up to 2^64 - 1, locked for good) is the largest 18-digit time,
+    # still locked, not a number bash would wrap negative (unlocked)
     transfers=$(jq -r '
         ((.in // []) | map(. + {kind: "in"})) + ((.pool // []) | map(. + {kind: "pool"}))
         | unique_by([.txid, .subaddr_index.minor])
         | .[]
         | if .amount > 9007199254740992 then error("amount \(.amount) is too large for jq to read exactly") else . end
-        | "\(.kind) \(.height // 0) \(.txid) \(.subaddr_index.minor) \(.amount) \(.unlock_time // 0) \(.confirmations // 0)"' <<<"$transfers") || return 1
+        | "\(.kind) \(.height // 0) \(.txid) \(.subaddr_index.minor) \(.amount) \(if (.unlock_time // 0) >= 1e18 then "999999999999999999" else (.unlock_time // 0) end) \(.confirmations // 0)"' <<<"$transfers") || return 1
     # every field checked before bash arithmetic (a subscript can run commands), and the txid
     # before it goes in the file
     while read -r kind height txid idx amount unlock confs; do
         [[ -n $kind ]] || continue
-        [[ $kind =~ ^(in|pool)$ && $height =~ ^[0-9]+$ && $txid =~ ^[0-9a-f]{64}$ && $idx =~ ^[0-9]+$ && $amount =~ ^[0-9]+$ \
-            && $unlock =~ ^[0-9]+$ && $confs =~ ^[0-9]+$ ]] \
+        [[ $kind =~ ^(in|pool)$ && $height =~ ^$NUM$ && $txid =~ ^[0-9a-f]{64}$ && $idx =~ ^$NUM$ && $amount =~ ^$NUM$ \
+            && $unlock =~ ^$NUM$ && $confs =~ ^$NUM$ ]] \
             || die "unexpected transfer from wallet: '$kind $height $txid $idx $amount $unlock $confs'"
     done <<<"$transfers"
     if [[ $full && -n $kept ]]; then
@@ -197,7 +214,7 @@ donation_totals() {
     # the totals: the kept deposits, then what isn't final yet (and the pool)
     while IFS=, read -r height txid idx amount unlock; do
         [[ -n $height ]] || continue
-        [[ $height =~ ^[0-9]+$ && $txid =~ ^[0-9a-f]{64}$ && $idx =~ ^[0-9]+$ && $amount =~ ^[0-9]+$ && $unlock =~ ^[0-9]+$ ]] \
+        [[ $height =~ ^$NUM$ && $txid =~ ^[0-9a-f]{64}$ && $idx =~ ^$NUM$ && $amount =~ ^$NUM$ && $unlock =~ ^$NUM$ ]] \
             || die "$file: a line that isn't a deposit (delete it: the next run makes it again)"
         locked "$unlock" && continue
         confirmed[$idx]=$((${confirmed[$idx]:-0} + amount))
@@ -257,14 +274,15 @@ check_known_subaddresses() {
 
 # Print each proposal's donations to the wallets the CCS used before this one, file TAB atomic units
 # TAB count, from RETIRED_DIR (STATE_DIR/retired), one file per retired wallet, written once by
-# contrib/retire-wallet and never changed (state, backed up: the old wallet may be gone):
+# contrib/retire-wallet and changed only by hand, to rename a proposal (state, backed up: the old
+# wallet may be gone):
 #   # retired <name> wallet <main address, or ccs-back-database> height <h> time <unix time>
 #   <height>,<txid>,<subaddress>,<amount>,<unlock_time>,<proposal file>
 # No addresses: nothing in it can reach a page. A deposit still time-locked when its wallet was
 # retired counts once its lock has passed: a time, or a height taken as two minutes a block from
 # then (the old wallet isn't asked again). Every field checked before bash arithmetic.
 retired_totals() {
-    local f head h t height txid idx amount unlock file now est n='(0|[1-9][0-9]*)'
+    local f head h t height txid idx amount unlock file now est n=$NUM
     local -A sum=() cnt=()
     [[ -d ${RETIRED_DIR:-} ]] || return 0
     now=$(date +%s)
@@ -272,11 +290,11 @@ retired_totals() {
         [[ -f $f ]] || continue
         head=''
         IFS= read -r head < "$f" || true
-        [[ $head =~ ^#\ retired\ [a-z0-9-]+\ wallet\ ([0-9A-Za-z]{95}|ccs-back-database)\ height\ (0|[1-9][0-9]*)\ time\ (0|[1-9][0-9]*)$ ]] \
+        [[ $head =~ ^#\ retired\ [a-z0-9-]+\ wallet\ ([0-9A-Za-z]{95}|ccs-back-database)\ height\ $n\ time\ $n$ ]] \
             || die "$f: not a retired wallet's file (restore it from the backup machine)"
         h=${BASH_REMATCH[2]} t=${BASH_REMATCH[3]}
         while IFS=, read -r height txid idx amount unlock file; do
-            # (numbers without a leading zero: bash reads 010 as octal 8, and 09 stops the run)
+            # (numbers as NUM: no leading zero, at most 18 digits)
             [[ $height =~ ^$n$ && $txid =~ ^[0-9a-f]{64}$ && $idx =~ ^$n$ && $amount =~ ^$n$ \
                 && $unlock =~ ^$n$ && $file == *.md && $file != */* && $file != *[[:cntrl:]]* \
                 && ! $file =~ [1-9A-HJ-NP-Za-km-z]{90} ]] \
