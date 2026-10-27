@@ -73,6 +73,13 @@ highest index in `proposals.csv`, or it misses donations beyond a gap of 200:
 `rpc set_subaddress_lookahead '{"password":"<wallet password>","major_idx":1,"minor_idx":20000}'`
 (already scanned: `rpc rescan_blockchain` after).
 
+A known monero limit, not abused so far: a payment to a subaddress within the lookahead makes the
+wallet create every one up to it, and look a lookahead further. Anyone can pay a listed address,
+so dust payments can grow the wallet's cache without limit (the bigger the lookahead, the
+cheaper). Keep it small once scanned: `"major_idx":1,"minor_idx":1` (the smallest it takes) is
+enough, as ccs-bash creates a proposal's subaddress before showing it. ccs-bash keeps the list
+from being used up (a new proposal gets the index after the state's highest), not the cache.
+
 ## 2. ccs-bash and its state (the backend)
 
 The users, folders, config, proposals checkout and `ccs-bash-run`: [setup](setup.md) steps 2–3.
