@@ -81,7 +81,7 @@ rpc get_height; head -n 1 /var/lib/ccs/state/deposits.csv     # the wallet's hei
 | `the wallet's main address is not WALLET_ADDRESS`, `wallet subaddresses do not match proposals.csv` | another wallet is running | the right `wallet-file` in `wallet-rpc.conf`; nothing was written |
 | `deposits.csv: not a deposits file`, `a line that isn't a deposit` | the cache is damaged | [make deposits.csv again](#make-depositscsv-again) |
 | `would show less raised than before (N proposals: …)` | a proposal's total would go down: a retired wallet's record missing or damaged, a state row cleared, a wallet rescanning | find which (the line names them) and restore it; the site keeps its last totals meanwhile. Meant (a donation that was never real): `runuser -u ccs -- touch /var/lib/ccs/state/allow-lower` lets one run through |
-| `retired/<name>.csv: not a retired wallet's file`, `a line that isn't a deposit` | a retired wallet's record is damaged: state, not a cache | copy its newest `retired-<name>-*.csv` back from the backup machine (as [restore the state](#restore-the-state)) |
+| `retired/<name>.csv: not a retired wallet's file`, `a line that isn't a deposit` | a retired wallet's record is damaged: state, not a cache | copy its newest `retired-<name>-*.csv` back from the backup machine (as [restore the state](#restore-the-state)): the backup keeps a later version only if its deposits are the first version's |
 | a proposal funded through an older wallet shows 0 raised | it was renamed: its retired donations are under the old name | rename it in `retired/*.csv` too ([edit the state](#edit-the-state)) |
 
 A donation counts at `MIN_CONFIRMATIONS` (10); a **time-locked** one only once its lock has passed.
@@ -152,6 +152,10 @@ runuser -u ccs -- nano /var/lib/ccs/state/proposals.csv   # as ccs: the file is 
 /usr/local/bin/ccs-bash-update; tail -n 30 /var/log/ccs-bash.log
 systemctl start ccs-bash
 ```
+
+Don't restore `deposits.csv`: [make it again](#make-depositscsv-again) from the wallet (the backup's
+copy is only a check that it grows). A retired wallet's record lost: its newest
+`retired-<name>-*.csv`, into `/var/lib/ccs/state/retired/<name>.csv` (`ccs`, 644).
 
 Typical: a missing merge request link (column 2), a funding date (column 5, `2026-10-25T13:00:00Z`),
 an old index recorded as retired ([handover](handover.md#2-ccs-bash-and-its-state-the-backend)).
