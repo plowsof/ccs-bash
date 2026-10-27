@@ -332,6 +332,33 @@ if [[ $(live) == "$v" ]]; then ok "review 5: 100 such ideas, a third of a CPU: t
 else on web 'grep -c "could not be read in time" /var/log/ccs-gate.log || true'; fail "review 5: 100 such ideas (anyone's), a third of a CPU: every page held back, the home page too ($((SECONDS - start))s, exit $rc)"; fi
 docker update --cpus 0 "$name-web" > /dev/null
 # ---- end review 5 ----
+# ---- review 5, low ----
+# G5 / G7: what reaches zbarimg. A wrapper logs the first bytes of each image it is given.
+on web 'mv /usr/bin/zbarimg /usr/bin/zbarimg.real && printf "%s\n" "#!/bin/bash" "f=\"\${@: -1}\"; f=\"\${f#*:}\"" "head -c 4 \"\$f\" | od -An -c | tr -d \" \\\\n\" >> /tmp/zbar.log; echo >> /tmp/zbar.log" "exec /usr/bin/zbarimg.real \"\$@\"" > /usr/bin/zbarimg && chmod 755 /usr/bin/zbarimg && install -m 666 /dev/null /tmp/zbar.log'
+v=$((v + 1)); site "$v" "$good"
+svg64=$(printf '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>' | base64 -w0)
+change "$p" "$(qr64 "$good")" "$svg64"
+held "$v" "$p" "review 5: an SVG as a donation box's QR code" "$svg64"
+if on web '! grep -qv "^211PNG" /tmp/zbar.log'; then ok "review 5 (G5): zbarimg was given only PNGs"; else on web 'sort /tmp/zbar.log | uniq -c'; fail "review 5 (G5): zbarimg (ImageMagick) parsed a file that is not a PNG, from the backend, before any PNG check"; fi
+# G7: the same QR code on 5 proposal pages: read once (scan), or once per page (the box check)?
+on web 'cd /srv/proposals && for q in q1 q2 q3 q4; do cp p.md $q.md; done && git -c safe.directory=* add -A && git -c safe.directory=* -c user.name=t -c user.email=t@t commit -q -m more && chown -R ccs-data /srv/proposals'
+v=$((v + 1)); site "$v" "$good"
+on backend 'for q in q1 q2 q3 q4; do cp /out/proposals/p.html /out/proposals/$q.html; done'
+on web ': > /tmp/zbar.log'
+push > /dev/null || true
+n=$(on web 'grep -c . /tmp/zbar.log || true')
+if ((n <= 2)); then ok "review 5 (G7): one QR code on 5 pages read $n time(s)"; else fail "review 5 (G7): one QR code on 5 pages read $n times by zbarimg (the box check reads it again on each page, with no deadline)"; fi
+on web 'mv /usr/bin/zbarimg.real /usr/bin/zbarimg'
+on backend 'rm -f /out/proposals/q?.html'
+# a folder pushed without read permission: its pages can't be listed by the checks, nor copied
+v=$((v + 1)); site "$v" "$good"
+on backend "mkdir -p /out/sneak && printf '<p>%s</p>\n' '$taddr' > /out/sneak/index.html && chmod 300 /out/sneak"
+rc=0; push > /dev/null || rc=$?
+if on web "! grep -rqs '$taddr' /var/lib/ccs-data/sneak"; then ok "review 5: a folder pushed 300: its page does not go live (push exit $rc)"; else fail "review 5: a folder pushed 300: its unchecked page went live"; fi
+on backend 'chmod 755 /out/sneak && rm -rf /out/sneak'
+v=$((v + 1)); site "$v" "$good"
+if push > /dev/null && [[ $(live) == "$v" ]]; then ok "review 5: the next good push after a folder pushed 300 goes live"; else on web 'tail -n 3 /var/log/ccs-gate.log'; fail "review 5: after a folder pushed 300, the next good push does not go live"; fi
+# ---- end review 5, low ----
 v=$((v + 1)); site "$v" "$good"
 put projects.json <<<"[{\"address\": \"$good\", \"title\": \"R&D notes\", \"url\": \"data:text/plain,x\"}]"
 passes "$v" projects.json "JSON with & and data: in its text" 'R&D'

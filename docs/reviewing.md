@@ -147,8 +147,9 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
   - `scan` (`scan_py`, one pass): every address in pages and JSON as written (entities decoded, a
     non-ASCII or control character read both as nothing and as a space; in groups split by up to
     three spaces or punctuation, by its checksum: `check_py`, a budget of checksums and time a
-    file), the JSON as JSON too (`json_py`, its strings read the same way); every `data:` image (`qrdata`: zbarimg reads one listed address, and its pixels,
-    `pixels_py`, are `qrencode -s 10`'s of it); pages and JSON start with `<`, `[` or `{`;
+    file), the JSON as JSON too (`json_py`, its strings read the same way); every `data:` image (`qrdata`: first read as a plain PNG by
+    `pixels_py`, only then by zbarimg, as `png:`: one listed address, the pixels `qrencode -s 10`'s
+    of it; each image read once, within 5 minutes, the donation boxes' too); pages and JSON start with `<`, `[` or `{`;
   - `changes`: any other file is the design's (`design.sha256`), a proposal image the repository
     has at that path (`repo_images`: `git hash-object` against `ls-tree`; its QR codes checked),
     `projects.json`, or the list's files as installed;

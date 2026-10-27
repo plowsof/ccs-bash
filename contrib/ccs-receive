@@ -176,10 +176,13 @@ for f in sys.argv[1:]:
 
 # qr FILE IMAGE: the addresses in every QR code in IMAGE as "FILE<TAB>address" lines (none if it
 # has no QR code). zbarimg reads it, as ccs-data, with a time limit; inverted codes (light on dark)
-# too, which it skips by default and phones read.
+# too, which it skips by default and phones read. Read as the format its name says (png:, jpeg:,
+# gif:): ImageMagick, under zbarimg, would otherwise pick a decoder by the bytes (an SVG, a format
+# with a decoder of its own to get wrong).
 qr() {
-    local out
-    out=$(timeout 20 zbarimg -q --raw -Stest-inverted -- "$2" 2> /dev/null) || return 1
+    local out kind=${2##*.}
+    case ${kind,,} in png) kind=png ;; jpg | jpeg) kind=jpeg ;; gif) kind=gif ;; *) return 1 ;; esac
+    out=$(timeout 20 zbarimg -q --raw -Stest-inverted -- "$kind:$2" 2> /dev/null) || return 1
     grep -oE '[0-9A-Za-z]+' <<<"$out" | awk -v f="$1" '(length($0) == 95 || length($0) == 106) && !/[0OIl]/ { print f "\t" $0; n++ } END { exit !n }'
 }
 
@@ -238,12 +241,14 @@ pixels() { timeout 20 python3 -I -c "$pixels_py" < "$1" 2> /dev/null; }
 # qrdata FILE IMAGE: "FILE<TAB>address" if IMAGE is exactly the QR code of one address that
 # qrencode makes (as ccs-front-bash does: qrencode -s 10 "monero:<address>"), pixel for pixel;
 # else 1. zbarimg finding a good address isn't enough: the backend draws these, and one
-# could hold a good QR code beside a piece of another.
+# could hold a good QR code beside a piece of another. The backend's bytes reach zbarimg only
+# once pixels_py has read them as a plain PNG, and then as png: (never a format ImageMagick
+# picks by the bytes).
 qrdata() {
     local text ref got
-    text=$(timeout 20 zbarimg -q --raw -- "$2" 2> /dev/null) || return 1
-    [[ $text =~ ^monero:[1-9A-HJ-NP-Za-km-z]+$ && (${#text} == 102 || ${#text} == 113) ]] || return 1
     got=$(pixels "$2") && [[ $got ]] || return 1
+    text=$(timeout 20 zbarimg -q --raw -- "png:$2" 2> /dev/null) || return 1
+    [[ $text =~ ^monero:[1-9A-HJ-NP-Za-km-z]+$ && (${#text} == 102 || ${#text} == 113) ]] || return 1
     ref=$(qrencode -s 10 -o - -- "$text" | pixels /dev/stdin) && [[ $ref == "$got" ]] || return 1
     printf '%s\t%s\n' "$1" "${text#monero:}"
 }
@@ -656,7 +661,8 @@ bodies() {
 # code must be, pixel for pixel, qrencode's of the address the box shows.
 pages() {
     local designs='' d b vk='' out png file tag a q
-    local -A ok=()
+    local -A ok=() box=()
+    local end=$((SECONDS + 300))
     for d in "$conf"/design/*/; do [[ -d $d/parts ]] && designs+=${designs:+:}${d%/}; done
     b=$(bodies)
     [[ -f $list.viewkey ]] && vk=$list.viewkey
@@ -667,10 +673,21 @@ pages() {
         case $tag in
             =ok) [[ ${ok[$file]:-} == no ]] || ok[$file]=1 ;;
             =box)
-                if ! base64 -d <<<"$q" > "$png" 2> /dev/null || [[ $(qrdata "$file" "$png") != "$file"$'\t'"$a" ]]; then
-                    printf '%s\t%s\n' "$file" "!a donation box whose QR code is not exactly qrencode's of its address"
-                    ok[$file]=no
-                fi ;;
+                # each box's QR code read once (one address's is on several pages), all within 5
+                # minutes: past that, the page is held back unchecked
+                if [[ ! -v box[$a$q] ]]; then
+                    if ((SECONDS >= end)); then
+                        box[$a$q]=late
+                    elif base64 -d <<<"$q" > "$png" 2> /dev/null && [[ $(qrdata x "$png") == "x"$'\t'"$a" ]]; then
+                        box[$a$q]=ok
+                    else
+                        box[$a$q]=no
+                    fi
+                fi
+                case ${box[$a$q]} in
+                    late) printf '%s\t%s\n' "$file" "!its donation box's QR code could not be checked in time"; ok[$file]=no ;;
+                    no) printf '%s\t%s\n' "$file" "!a donation box whose QR code is not exactly qrencode's of its address"; ok[$file]=no ;;
+                esac ;;
             *) printf '%s\t%s\n' "$file" "$tag"; ok[$file]=no ;;
         esac
     done < "$out"
@@ -760,7 +777,11 @@ if [[ ${1:-} == --heartbeat ]]; then heartbeat; exit 0; fi
 # One push at a time: two at once would share the staging folder, and one could change it after
 # the other's checks, before its copy into the live site.
 exec 8> "$state/lock"
-flock -w 600 8 || { say "refused the push: another one is still going after 10 minutes"; exit 1; }
+if ! flock -w 600 8; then
+    say "refused the push: another one is still going after 10 minutes"
+    alert lock "a push has been checked for over 10 minutes: the pushes after it are refused (the heartbeat would only say none arrived); look at what the gate is doing"
+    exit 1
+fi
 
 # Staging starts as the live site each time: the push account can't delete, so whatever a
 # refused push left in it would otherwise stay there and refuse every push after it.
