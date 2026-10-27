@@ -887,6 +887,7 @@ else
     echo "ok   release/verify: skipped (no gpg here)"
 fi
 
+# shellcheck source=tests/review5.sh
 source "$here/review5.sh"
 
 for f in proposals.json completed-proposals.json projects.json proposals.csv log; do
