@@ -39,10 +39,13 @@ machine and the IRC bot):
   pages at random and `/projects`, as Tor Browser would and through Tor and a clearnet proxy, and
   alerts IRC if any differs from what was pushed. It catches what the gate can't: a taken-over
   web server ([details](two-machines.md#watching-the-web-server-the-backend-raises-the-alarm)).
-- **Backups** to another machine, whose account can only add copies: `proposals.csv` (which
-  proposal has which subaddress; nothing can make it again) and each retired wallet's record,
-  every version; `deposits.csv`, a cache, as one copy that only grows, so a restored wallet that
-  knows less is caught ([setup](setup.md#backing-up-the-state)).
+- **Backups** to another machine (not the web server), whose account can only add copies:
+  `proposals.csv` (which proposal has which subaddress; nothing can make it again) and each
+  retired wallet's record (only wallets its admin listed; a later version may only rename
+  proposals), every version; `deposits.csv`, a cache, as one copy that only grows, so a restored
+  wallet that knows less is caught ([setup](setup.md#backing-up-the-state)). Root on the backup
+  machine can still rewrite them all: restore the first retired version, and check a restored
+  `proposals.csv` against the live site.
 - **Pinned images:** ccs-bash and ccs-front-bash run in [StageX](https://stagex.tools) images
   ([details](image.md)), read-only, no capabilities, ccs-front-bash without network.
 - **Attested releases:** anyone can rebuild a release from its tag, byte for byte, and sign the

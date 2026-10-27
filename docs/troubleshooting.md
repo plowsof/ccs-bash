@@ -81,7 +81,7 @@ rpc get_height; head -n 1 /var/lib/ccs/state/deposits.csv     # the wallet's hei
 | `the wallet's main address is not WALLET_ADDRESS`, `wallet subaddresses do not match proposals.csv` | another wallet is running | the right `wallet-file` in `wallet-rpc.conf`; nothing was written |
 | `deposits.csv: not a deposits file`, `a line that isn't a deposit` | the cache is damaged | [make deposits.csv again](#make-depositscsv-again) |
 | `would show less raised than before (N proposals: …)` | a proposal's total would go down: a retired wallet's record missing or damaged, a state row cleared, a wallet rescanning | find which (the line names them) and restore it; the site keeps its last totals meanwhile. Meant (a donation that was never real): `runuser -u ccs -- touch /var/lib/ccs/state/allow-lower` lets one run through |
-| `retired/<name>.csv: not a retired wallet's file`, `a line that isn't a deposit` | a retired wallet's record is damaged: state, not a cache | copy its newest `retired-<name>-*.csv` back from the backup machine (as [restore the state](#restore-the-state)): the backup keeps a later version only if its deposits are the first version's |
+| `retired/<name>.csv: not a retired wallet's file`, `a line that isn't a deposit` | a retired wallet's record is damaged: state, not a cache | copy its first `retired-<name>-<time>.csv` back from the backup machine (as [restore the state](#restore-the-state)), and redo any rename by hand: the backup keeps a later version only if it renames proposals, one for one |
 | a proposal funded through an older wallet shows 0 raised | it was renamed: its retired donations are under the old name | rename it in `retired/*.csv` too ([edit the state](#edit-the-state)) |
 
 A donation counts at `MIN_CONFIRMATIONS` (10); a **time-locked** one only once its lock has passed.
@@ -154,12 +154,22 @@ systemctl start ccs-bash
 ```
 
 Don't restore `deposits.csv`: [make it again](#make-depositscsv-again) from the wallet (the backup's
-copy is only a check that it grows). A retired wallet's record lost: its newest
-`retired-<name>-*.csv`, into `/var/lib/ccs/state/retired/<name>.csv` (`ccs`, 644).
+copy is only a check that it grows). A retired wallet's record lost: its first
+`retired-<name>-<time>.csv` (the record; later ones only rename proposals, which you redo by hand),
+into `/var/lib/ccs/state/retired/<name>.csv` (`ccs`, 644).
 
 Typical: a missing merge request link (column 2), a funding date (column 5, `2026-10-25T13:00:00Z`),
 an old index recorded as retired ([handover](handover.md#2-ccs-bash-and-its-state-the-backend)).
 The next run backs the new version up. `retired/*.csv` (a renamed proposal) is edited the same way.
+A renamed proposal's subaddress gets its new name as its label too (the run stops on one whose
+label names another proposal: a swapped state), on the backend, as root (the login through a
+pipe, never on the command line):
+
+```
+c=/etc/ccs/ccs.conf; v() { grep -m1 "^$1=" "$c" | cut -d= -f2-; }
+curl -s --digest -K <(printf 'user = "%s:%s"\n' "$(v RPC_USER)" "$(v RPC_PASSWORD)") "$(v RPC_URL)" -H 'Content-Type: application/json' \
+    -d '{"jsonrpc":"2.0","id":"0","method":"label_address","params":{"index":{"major":0,"minor":<index>},"label":"<new name>.md"}}'
+```
 
 ### Make deposits.csv again
 
@@ -176,12 +186,17 @@ root (`/var/lib/ccs-backup/deposits.csv`): it only takes one that grows.
 ### Restore the state
 
 The newest `proposals-<time>.csv` on the backup machine from before it went wrong (a taken-over
-backend could have sent bad ones since: compare with `/projects`), copied to the backend, then:
+backend could have sent bad ones since: compare it with the live site's `/projects`, which the
+gate checked; not the backend's own), and each retired wallet's first `retired-<name>-<time>.csv`,
+copied to the backend. On a rebuilt backend, put the live `/projects` in
+`/var/lib/ccs/out/projects.json` (as `ccs`) before the first run, so it can't show less raised
+than the site did. Then:
 
 ```
 systemctl stop ccs-bash
 cp -a /var/lib/ccs/state/proposals.csv /root/proposals.csv.$(date -u +%Y%m%dT%H%M%SZ)   # the one it replaces
 install -o ccs -g ccs -m 644 proposals-<time>.csv /var/lib/ccs/state/proposals.csv
+install -o ccs -g ccs -m 644 retired-<name>-<time>.csv /var/lib/ccs/state/retired/<name>.csv   # each, if lost
 /usr/local/bin/ccs-bash-update; tail -n 30 /var/log/ccs-bash.log
 systemctl start ccs-bash
 ```

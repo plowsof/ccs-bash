@@ -196,13 +196,17 @@ every version (`proposals-<UTC time>.csv`), never overwriting or deleting one, s
 backend can't destroy them; `deposits.csv`, a cache, as one copy replaced only by one with every
 deposit it has.
 
-On the **backup machine** (any one; the file is a few KB):
+On the **backup machine** (any but the web server, whose root could rewrite every copy as well as
+the site; the files are a few KB):
 
 ```
 useradd --system --create-home --home-dir /home/ccs-backup --shell /bin/sh ccs-backup
 passwd -l ccs-backup
 install -d -o ccs-backup -g ccs-backup -m 700 /var/lib/ccs-backup
 install -m 755 ccs-backup-receive /usr/local/bin/              # from ccs-bash's contrib/
+# the retired wallets it keeps a record of, one name a line: you add each when you retire it
+# (handover, "Retiring a wallet"), so a taken-over backend can't add a wallet of its own
+install -d -m 755 /etc/ccs-backup && install -m 644 /dev/null /etc/ccs-backup/retired-names
 install -d -m 755 /etc/ssh/authorized_keys
 # root-owned and outside the account's home (which it owns), so it can't change it; the backend's key
 # below, usable only from the backend's address (its from=, as the web server's push key)
