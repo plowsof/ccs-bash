@@ -84,7 +84,7 @@ push: [the handover](handover.md), steps 3–9.
    useradd --system --home-dir /var/lib/ccs --shell /usr/sbin/nologin ccs
    useradd --system --no-create-home --shell /usr/sbin/nologin ccs-git   # owns the proposals checkout
    install -d -m 755 /var/lib/ccs
-   install -d -o ccs -g ccs -m 755 /var/lib/ccs/state /var/lib/ccs/out
+   install -d -o ccs -g ccs -m 755 /var/lib/ccs/state /var/lib/ccs/out /var/lib/ccs/pushed   # pushed: what ccs-watch compares with
    install -o ccs -g ccs -m 644 /dev/null /var/lib/ccs/state/proposals.csv   # fresh install only
    install -d -o ccs-git -g ccs-git -m 755 /var/lib/ccs/proposals
    runuser -u ccs-git -- env HOME=/ git clone -q -c core.symlinks=false \
