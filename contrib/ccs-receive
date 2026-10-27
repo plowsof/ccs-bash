@@ -780,7 +780,8 @@ if [[ $bad ]]; then
         awk -F '\t' "$k" <<<"$bad"
     done)
 fi
-rsync -a --delay-updates "$staging/" "$live/"
+# (modes fixed: a page pushed 600 would be a 403 for visitors, with no alert)
+rsync -a --chmod=D755,F644 --delay-updates "$staging/" "$live/"
 # 7 (which rsync never uses, and passes on): it went live but for the files held back, so the
 # backend's ccs-watch still checks the live pages; a refused push is 1
 [[ ! $bad ]] || exit 7

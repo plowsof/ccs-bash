@@ -184,6 +184,12 @@ livepage() { livefile proposals/p.html; }
 
 site 1 "$(addr 1)"
 if out=$(push) && [[ $(live) == 1 ]]; then ok "a push with the wallet's addresses, the design's pages filled, goes live"; else echo "$out"; on web 'tail -n 5 /var/log/ccs-gate.log'; fail "a good push"; fi
+# file modes don't go live: a page pushed 600 (a 403 for visitors, and no alert) is 644 there
+on backend "chmod 600 /out/index.html && chmod 700 /out/assets"
+if push > /dev/null && [[ $(on web "stat -c %a /var/lib/ccs-data/index.html /var/lib/ccs-data/assets" | tr '\n' ' ') == "644 755 " ]]; then
+    ok "file modes from the backend don't go live (files 644, folders 755)"
+else on web "ls -la /var/lib/ccs-data /var/lib/ccs-data/assets"; fail "file modes"; fi
+on backend "chmod 644 /out/index.html && chmod 755 /out/assets"
 
 site 2 "$(addr 9 B)"
 # The reason is written after rsync is done: the backend gets it only if ssh relays it before the
