@@ -41,6 +41,17 @@ load_state
 # the live wallet's subaddresses
 [[ $(rpc get_address '{"account_index": 0}' | jq -r .address) == "$WALLET_ADDRESS" ]] \
     || die "the wallet's main address is not WALLET_ADDRESS from $config (wallet-rpc down, or another wallet?)"
+# a wallet restored from its keys knows only the subaddresses it has made (and its lookahead): a
+# later one of its own would answer "doesn't belong". Made up to the state's highest index first,
+# as every run does (check_wallet_addresses)
+local max have
+max=$(jq '[.[].subaddr_index | numbers] | max // 0' "$WORK/state.json")
+((max <= 100000)) || die "proposals.csv has subaddress index $max, past any signed list (100000)"
+have=$(rpc get_address '{"account_index": 0}' | jq '.addresses | length') || die "the wallet doesn't answer"
+while ((have <= max)); do
+    rpc create_address '{"account_index": 0}' > /dev/null || die "could not make the wallet's subaddress $have"
+    have=$((have + 1))
+done
 : > "$WORK/unclaimed"
 while IFS=$'\t' read -r f a; do
     if ! err=$(rpc get_address_index "$(jq -nc --arg a "$a" '{address: $a}')" 2>&1 > /dev/null); then

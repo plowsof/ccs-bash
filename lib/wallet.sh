@@ -85,6 +85,17 @@ assign_addresses() {
         [[ $addr =~ ^[0-9A-Za-z]{95}$ ]] || die "unexpected address for subaddress $idx: $res"
         state_update --arg f "$file" --argjson i "$idx" --arg a "$addr" '.[$f] += {subaddr_index: $i, address: $a}'
         log "$file: subaddress $idx $addr"
+        # Deposits it had before it was handed out (the next one is easy to guess, the list
+        # publishes it: someone's dust) aren't this proposal's: dropped from this run's totals, and
+        # those up to this height from every later run's (ASSIGNED: "index<TAB>height")
+        if [[ -n ${ASSIGNED:-} ]] && grep -q "^$idx"$'\t' "$WORK/totals.tsv"; then
+            local h
+            h=$(rpc get_height | jq -r .height) || return 1
+            [[ $h =~ ^$NUM$ ]] || die "unexpected get_height result: '$h'"
+            printf '%s\t%s\n' "$idx" "$h" >> "$ASSIGNED"
+            log "warning: subaddress $idx had $(awk -F'\t' -v i="$idx" '$1 == i { print $4 }' "$WORK/totals.tsv") deposit(s) before $file was given it (sent to an address the list publishes): not counted"
+            awk -F'\t' -v i="$idx" '$1 != i' "$WORK/totals.tsv" > "$WORK/totals.tmp" && mv "$WORK/totals.tmp" "$WORK/totals.tsv"
+        fi
     done < <(jq -r --slurpfile state "$WORK/state.json" '
         .[] | select(.layout == "fr") | .file | select($state[0][.] and $state[0][.].address == null)' "$WORK/props.json")
 }
@@ -135,8 +146,15 @@ to_atomic() {
 # height (rescanning, restored) stops it too: never a total lower than the wallet once knew.
 donation_totals() {
     local file=${DEPOSITS:-} n indexes wh depth final kept='' H=0 T=0 now full=1 params transfers new=''
-    local kind height txid idx amount unlock confs
-    local -A confirmed=() pending=() count=()
+    local kind height txid idx amount unlock confs i h
+    local -A confirmed=() pending=() count=() since=()
+    # (a subaddress handed out after deposits had reached it: those up to its height aren't counted)
+    if [[ -n ${ASSIGNED:-} && -s $ASSIGNED ]]; then
+        while IFS=$'\t' read -r i h; do
+            [[ $i =~ ^$NUM$ && $h =~ ^$NUM$ ]] || die "$ASSIGNED: a line that isn't 'index<TAB>height' (delete it: deposits from before a subaddress was handed out then count)"
+            since[$i]=$h
+        done < "$ASSIGNED"
+    fi
     # subaddresses 1+, never 0: it receives other things (payout change looks incoming)
     n=$(rpc get_address '{"account_index": 0}' | jq '.addresses | length') || return 1
     ((n > 1)) || return 0
@@ -216,6 +234,7 @@ donation_totals() {
         [[ -n $height ]] || continue
         [[ $height =~ ^$NUM$ && $txid =~ ^[0-9a-f]{64}$ && $idx =~ ^$NUM$ && $amount =~ ^$NUM$ && $unlock =~ ^$NUM$ ]] \
             || die "$file: a line that isn't a deposit (delete it: the next run makes it again)"
+        [[ -n ${since[$idx]:-} ]] && ((height <= since[$idx])) && continue
         locked "$unlock" && continue
         confirmed[$idx]=$((${confirmed[$idx]:-0} + amount))
         count[$idx]=$((${count[$idx]:-0} + 1))
@@ -223,6 +242,7 @@ donation_totals() {
     while read -r kind height txid idx amount unlock confs; do
         [[ -n $kind ]] || continue
         if [[ $kind == in ]] && ((height > 0 && height <= final)); then continue; fi   # kept, counted above
+        [[ -n ${since[$idx]:-} ]] && ((height > 0 && height <= since[$idx])) && continue
         locked "$unlock" && continue
         if ((confs >= MIN_CONFIRMATIONS)); then
             confirmed[$idx]=$((${confirmed[$idx]:-0} + amount))
