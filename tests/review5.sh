@@ -85,4 +85,63 @@ elif ! r5_run "$d" && grep -q "labelled a-fund.md, given to b-wip.md" "$d/log"; 
     echo "ok   review 5: a state with two proposals' subaddresses swapped (against the wallet's labels): the run stops"
 else echo "FAIL review 5: a swapped state runs: $(tail -n 1 "$d/log")"; status=1; fi
 
+# Review 5, low findings.
+# D-5: dust at the next subaddress to be handed out (the state's highest + 1; the list publishes
+# it) before a proposal is given it isn't that proposal's: not on this run, nor any later one.
+d=$TEST_TMP/r5-dust; rm -rf "$d"; mkdir -p "$d/state"; cp "$FIXTURES/state.csv" "$d/state/proposals.csv"
+echo 30 > "$TEST_TMP/wallet-count"; printf '1 a-fund.md\n2 b-wip.md\n3 near-funded.md\n' > "$TEST_TMP/wallet-labels"
+jq '.in += [range(25) as $k | {txid: ("d0" + ("0" * 60) + ($k | tostring | if length == 1 then "0" + . else . end)), amount: 1, confirmations: 50, unlock_time: 0, subaddr_index: {major: 0, minor: 4}, height: 3099900}]' \
+    "$FIXTURES/rpc/get_transfers.json" > "$TEST_TMP/r5-dust.json"
+dust() { jq -r '.[] | select(.address == "8'"$(printf '%094d' 4)"'") | "\(.filename) \(.raised_amount) \(.contributions)"' "$d/out/projects.json" 2> /dev/null; }
+r5_run "$d" TEST_TRANSFERS="$TEST_TMP/r5-dust.json" || true; first=$(dust)
+r5_run "$d" TEST_TRANSFERS="$TEST_TMP/r5-dust.json" || true; second=$(dust)
+if [[ $first == *" 0.0000 0" && $second == "$first" ]] && grep -qE $'^4\t[0-9]+$' "$d/state/assigned.tsv" 2> /dev/null; then
+    echo "ok   review 5: dust sent to a subaddress before it was handed out isn't the new proposal's ($first), on later runs either"
+else echo "FAIL review 5: dust before a subaddress was handed out: '$first' then '$second'; assigned: $(cat "$d/state/assigned.tsv" 2>&1)"; status=1; fi
+
+# D-6: retire-wallet, the wallet not answering about one address (a timeout): stops, writes nothing
+# (it used to leave that proposal out of the record, silently)
+d=$TEST_TMP/r5-retire; rm -rf "$d"; mkdir -p "$d/state"; cp "$TEST_TMP/state/proposals.csv" "$d/state/"
+echo 6 > "$TEST_TMP/wallet-count"; : > "$TEST_TMP/wallet-labels"
+jq --argjson m 10 '.pool = [] | .in |= map(select(.confirmations >= $m))' "$FIXTURES/rpc/get_transfers.json" > "$TEST_TMP/r5-quiet.json"
+r5_run "$d" TEST_TRANSFERS="$TEST_TMP/r5-quiet.json" > /dev/null 2>&1 || true
+a1=8$(printf '%094d' 1)
+# shellcheck disable=SC2016
+if ! R5_FAIL=$a1 TEST_TRANSFERS="$TEST_TMP/r5-quiet.json" bash -c 'source "$1/../contrib/retire-wallet" && source "$1/stubs.sh"
+        eval "stub_$(declare -f rpc)"
+        rpc() { if [[ $1 == get_address_index && $2 == *"$R5_FAIL"* ]]; then echo "curl: (28) Operation timed out" >&2; return 1; fi; stub_rpc "$@"; }
+        retire_main old "$2"' _ "$here" "$d/ccs.conf" > "$d/retire.out" 2>&1 \
+    && grep -q "could not ask the wallet about a-fund.md" "$d/retire.out" && [[ ! -e $d/state/retired/old.csv ]]; then
+    echo "ok   review 5: retire-wallet stops when the wallet doesn't answer about an address (nothing written)"
+else cat "$d/retire.out"; echo "FAIL review 5: retire-wallet with an address the wallet didn't answer about"; status=1; fi
+
+# D-8: a run that hangs (here: the wallet never answers) is stopped after RUN_SECONDS, and its lock
+# freed: the runs after it would otherwise skip ("still going") for good
+d=$TEST_TMP/r5-hang; rm -rf "$d"; mkdir -p "$d/state" "$d/out"; cp "$TEST_TMP/state/proposals.csv" "$d/state/"
+sed "s|$TEST_TMP/state|$d/state|; s|$TEST_TMP/out|$d/out|" "$TEST_TMP/ccs.conf" > "$d/ccs.conf" && chmod 444 "$d/ccs.conf"
+# the lock free within 5 seconds (flock -n: the image's busybox flock has no -w)
+r5_free() { local i; for i in 1 2 3 4 5; do (exec 8> "$d/state/lock"; flock -n 8) && return 0; sleep 1; done; return 1; }
+start=$SECONDS rc=0
+r5_hang() { RUN_SECONDS=2 bash -c 'source "$1/../ccs-back.sh" && source "$1/stubs.sh"; rpc() { while :; do sleep 1; done; }; main "$2"' _ "$here" "$d/ccs.conf" 2> "$d/log"; }
+# (timeout only as a guard where there is one: the image has none)
+# shellcheck disable=SC2016
+if type -P timeout > /dev/null; then export -f r5_hang; export here d; timeout 60 bash -c r5_hang || rc=$?; else r5_hang || rc=$?; fi
+if ((rc != 0 && SECONDS - start < 20)) && grep -q "the run took over 2s: stopped" "$d/log" && r5_free; then
+    echo "ok   review 5: a run that hangs is stopped after RUN_SECONDS ($((SECONDS - start))s), its lock freed"
+else echo "FAIL review 5: a hung run: exit $rc after $((SECONDS - start))s; log: $(grep -v "skipping\|ignoring" "$d/log")"; status=1; fi
+
+# D-10: retire-from-ccs-back on a wallet restored from its keys (only subaddress 0 made): it makes
+# them up to the state's highest index before asking which are its own, as every run does (one not
+# made yet would answer "doesn't belong", and the live wallet's proposal would be retired)
+d=$TEST_TMP/dep-db
+if [[ -f $d/state/proposals.csv.before-retire-old0 ]]; then
+    cp "$d/state/proposals.csv.before-retire-old0" "$d/state/proposals.csv"; rm -f "$d/state/retired/r5.csv"
+    echo 1 > "$TEST_TMP/wallet-count"; : > "$TEST_TMP/wallet-labels"
+    bash -c 'source "$1/../contrib/migrate/retire-from-ccs-back" && source "$1/stubs.sh" && retire_db_main r5 "$2" "$3"' _ "$here" "$d/ccs.conf" "$d/export" > "$d/db-r5.out" 2>&1 || true
+    if (($(cat "$TEST_TMP/wallet-count") > 900)); then
+        echo "ok   review 5: retire-from-ccs-back makes the wallet's subaddresses up to the state's highest first ($(cat "$TEST_TMP/wallet-count"))"
+    else cat "$d/db-r5.out"; echo "FAIL review 5: retire-from-ccs-back asked a wallet with $(cat "$TEST_TMP/wallet-count") subaddresses made"; status=1; fi
+    cp "$d/state/proposals.csv.before-retire-old0" "$d/state/proposals.csv"; rm -f "$d/state/retired/r5.csv"
+else echo "FAIL review 5: no retire-from-ccs-back fixture (dep-db)"; status=1; fi
+
 echo "$r5_had" > "$TEST_TMP/wallet-count"; cp "$TEST_TMP/wallet-labels.r5" "$TEST_TMP/wallet-labels"
