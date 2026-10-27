@@ -217,7 +217,7 @@ good=$(addr 2) fake=$(addr 9 B)
 # Keccak (checked against Keccak-256's of nothing), and it in groups of four
 grouped=$(python3 - "$here/../contrib/ccs-receive" <<'PY'
 import os, sys
-src = open(sys.argv[1]).read().split("scan_py='", 1)[1].split("\n'\n", 1)[0]
+src = open(sys.argv[1]).read().split("check_py='", 1)[1].split("\n'\n", 1)[0]
 ns = {}; exec(src[src.index("M = (1 << 64)"):src.index("def valid(")], ns)
 assert ns["keccak"](b"").hex() == "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"
 d = bytes([53]) + os.urandom(64); d += ns["keccak"](d)[:4]; a = ""
@@ -300,6 +300,38 @@ for title in "Keep running the monero seed nodes for the next twenty four months
     v=$((v + 1)); site "$v" "$good" "$good" "$title"
     passes "$v" ideas/index.html "an idea titled \"$title\" (anyone can open one)" "$(python3 -c 'import html, sys; print(html.escape(sys.argv[1]))' "$title")"
 done
+# ---- review 5 ----
+# G3 residual: a foreign address (synthetic testnet, valid by its checksum) in groups split by
+# separators other than spaces or one of . _ : - ; in an idea's title (anyone's) and in a name
+taddr=9uH2Z776LeJ4gku967Y3o8VrBueTqSoQhDXVftRkU2Jt81du8DDNV4eAFmPaojQV4mhrgDBvzUfRX7EoHp245dNf9wimfPf
+tgroups() { python3 -c 'import sys; a = sys.argv[1]; print(sys.argv[2].join(a[i:i + 4] for i in range(0, 95, 4)), end="")' "$taddr" "$1"; }
+for sep in ' - ' ', ' ' | ' '/'; do
+    v=$((v + 1)); site "$v" "$good" "$good" "Send to $(tgroups "$sep")"
+    held "$v" ideas/index.html "review 5: an address in groups split by '$sep', in an idea's title" "$(tgroups "$sep" | python3 -c 'import html, sys; print(html.escape(sys.stdin.read()), end="")')"
+done
+v=$((v + 1)); site "$v" "$good"; change "$p" "<h1>A proposal</h1>" "<h1>Send to $(tgroups ' - ')</h1>"
+held "$v" "$p" "review 5: an address in groups split by ' - ', in a name" "$(tgroups ' - ')"
+# ... and in projects.json, its groups split by a JSON escaped space (json_py reads no groups; scan_py reads the raw text)
+v=$((v + 1)); site "$v" "$good"
+put projects.json <<<"[{\"address\": \"$good\", \"title\": \"Send to $(tgroups "$(printf '\x5cu0020')")\"}]"
+held "$v" projects.json "review 5: an address in groups split by \\u0020 in a projects.json string" 'Send to'
+on web "grep projects.json /var/log/ccs-gate.log | tail -n 1"
+# cost: 100 ideas titled "AAAA AAAA ..." (255 characters, anyone's): every window of the joined
+# run passes valid()'s network-byte check, so each costs a Keccak in Python; scan_py has 120 s for
+# every page of the site together, and past that holds back every page
+v=$((v + 1)); mapfile -t many < <(for i in $(seq 100); do printf 'AAAA %.0s' {1..51}; echo; done)
+site "$v" "$good" "$good" "${many[@]}"
+start=$SECONDS; rc=0; push > /dev/null || rc=$?
+if ((SECONDS - start < 30)) && ((rc == 0)); then ok "review 5: 100 ideas titled AAAA AAAA...: checked in $((SECONDS - start))s"; else fail "review 5: 100 ideas titled AAAA AAAA... (anyone's): the push took $((SECONDS - start))s (exit $rc); scan_py's 120 s is for every page together"; fi
+# ... the same on a web server with a third of a CPU (node2 also runs monerod and more): past
+# scan_py's 120 s every page of the push is held back, the home page too
+docker update --cpus 0.33 "$name-web" > /dev/null
+v=$((v + 1)); site "$v" "$good" "$good" "${many[@]}"
+start=$SECONDS; rc=0; push > /dev/null || rc=$?
+if [[ $(live) == "$v" ]]; then ok "review 5: 100 such ideas, a third of a CPU: the home page still goes live ($((SECONDS - start))s, exit $rc)"
+else on web 'grep -c "could not be read in time" /var/log/ccs-gate.log || true'; fail "review 5: 100 such ideas (anyone's), a third of a CPU: every page held back, the home page too ($((SECONDS - start))s, exit $rc)"; fi
+docker update --cpus 0 "$name-web" > /dev/null
+# ---- end review 5 ----
 v=$((v + 1)); site "$v" "$good"
 put projects.json <<<"[{\"address\": \"$good\", \"title\": \"R&D notes\", \"url\": \"data:text/plain,x\"}]"
 passes "$v" projects.json "JSON with & and data: in its text" 'R&D'
