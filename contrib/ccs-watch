@@ -309,9 +309,9 @@ urlof() { printf '%s/%s' "$site_url" "$(jq -rn --arg p "$1" '$p | split("/") | m
 # them run together, ...), in proposals/ or not, under a theme prefix at random: a web server that
 # answers its own page only where the watcher never asks must not know where that is
 unpushed() {
-    local names=() a b name='' try i
+    local names=() a b name='' try
     mapfile -t names < <(cd "$local_site" && for f in proposals/*.html; do [[ -f $f ]] && basename "$f" .html; done)
-    for i in 1 2 3 4 5 6; do
+    for _ in 1 2 3 4 5 6; do
         try=$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')
         if ((${#names[@]})); then
             a=${names[RANDOM % ${#names[@]}]} b=${names[RANDOM % ${#names[@]}]}

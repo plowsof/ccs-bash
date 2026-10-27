@@ -350,7 +350,6 @@ etry() {   # etry MODE RUNS WHAT: RUNS pushes, each with a timer run after it; a
     local seen=0 i
     echo "$1" > "$tmp/e/MODE"; rm -rf "$tmp/e/state" "$tmp/e/EVIL"; : > "$tmp/bot.txt"; sleep 5
     for ((i = 1; i <= $2; i++)); do
-        [[ $1 == toggle ]] && { ((i % 2)) && touch "$tmp/e/EVIL" || rm -f "$tmp/e/EVIL"; }
         push; [[ $1 == refuse-repeat ]] && sleep 5
         ewatch; [[ $1 == refuse-repeat ]] && sleep 5
         (($(visitor) > 0)) && seen=$((seen + 1))
