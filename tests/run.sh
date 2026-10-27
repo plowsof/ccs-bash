@@ -86,6 +86,27 @@ grep -q "already goes up to" "$d/log" || { cat "$d/log"; echo "FAIL reused subad
 [[ $(grep -c "$(printf '8%094d' 1)" "$d/state/proposals.csv") == 1 ]] || { echo "FAIL reused subaddress: given out twice"; exit 1; }
 reuse="ok   a wallet handing out a used subaddress stops the run"
 
+# Dust sent to the list's last address makes the wallet count every subaddress up to it as created
+# (wallet2 expands to the highest one received at): the new proposals still get the ones just after
+# the state's highest, not create_address's next, after the dust's (which would use the list up)
+d=$TEST_TMP/dust
+mkdir -p "$d/state" "$d/out"
+cp "$FIXTURES/state.csv" "$d/state/proposals.csv"
+sed "s|$TEST_TMP/state|$d/state|; s|$TEST_TMP/out|$d/out|" "$TEST_TMP/ccs.conf" > "$d/ccs.conf" && chmod 444 "$d/ccs.conf"
+# (the indices in a proposals.csv, highest last; bash only: the image has no sort or tail)
+indices() { local re=',([0-9]+),"8[0-9]{94}"' line; local -a i=(); while IFS= read -r line; do [[ $line =~ $re ]] && i[BASH_REMATCH[1]]=$((${i[BASH_REMATCH[1]]:-0} + 1)); done < "$1"; for line in "${!i[@]}"; do printf '%s %s\n' "$line" "${i[$line]}"; done; }
+had_max=$(indices "$d/state/proposals.csv" | { m=0; while read -r i _; do m=$i; done; echo "$m"; })
+count_had=$(cat "$TEST_TMP/wallet-count"); echo 15000 > "$TEST_TMP/wallet-count"; cp "$TEST_TMP/wallet-labels" "$TEST_TMP/wallet-labels.dust" 2> /dev/null || true; : > "$TEST_TMP/wallet-labels"
+# shellcheck disable=SC2016
+bash -c 'source "$1/../ccs-back.sh" && source "$1/stubs.sh" && main "$2"' _ "$here" "$d/ccs.conf" 2> "$d/log" || true
+got=$(indices "$d/state/proposals.csv")
+top=${got##*$'\n'}; top=${top% *}
+if ((top > had_max && top < 100)) && [[ $(cat "$TEST_TMP/wallet-count") == 15000 && $got != *' '[2-9]* ]] \
+    && grep -q "^$((had_max + 1)) " "$TEST_TMP/wallet-labels"; then
+    dust="ok   dust sent to the list's last address: new proposals still get the subaddresses just after the state's (the list isn't used up)"
+else cat "$d/log"; echo "FAIL dust at the list's last address: new proposals got ${got//$'\n'/, }"; exit 1; fi
+cp "$TEST_TMP/wallet-labels.dust" "$TEST_TMP/wallet-labels" 2> /dev/null || : > "$TEST_TMP/wallet-labels"; echo "$count_had" > "$TEST_TMP/wallet-count"
+
 sed -E "s/^[0-9-]+ [0-9:]+ //; s|$TEST_TMP|<tmp>|g" "$TEST_TMP/log-1" "$TEST_TMP/log-2" > "$TEST_TMP/log"
 cp "$TEST_TMP/state/proposals.csv" "$TEST_TMP/out/"
 cp "$TEST_TMP/log" "$TEST_TMP/out/"
@@ -98,6 +119,7 @@ status=0
 echo "$wrong_wallet"
 printf '%s' "$lost"
 echo "$reuse"
+echo "$dust"
 
 # Money conversion, exact in integers (see lib/wallet.sh).
 # shellcheck source=lib/common.sh
