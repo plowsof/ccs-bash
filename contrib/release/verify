@@ -104,6 +104,15 @@ signed() {
 # counts KEY: it counts, unless TRUSTED_KEYS is set and doesn't have it
 counts() { [[ -z ${TRUSTED_KEYS:-} ]] || grep -qxF "$1" <<<"$trusted"; }
 
+# a release's name, exactly (a name that is only the start of one, ccs-bash-v9.9 of
+# ccs-bash-v9.9.9, is none), or a set of them joined by +
+release_re='(ccs-bash|ccs-front-bash|ccs-front-hugo)-v[0-9]+\.[0-9]+\.[0-9]+'
+for name in "$@"; do
+    [[ $name =~ ^$release_re(\+$release_re)*$ ]] || { echo "ERR: '$name' is not a release (ccs-bash-v1.2.3, ...) or a set of them joined by +"; exit 1; }
+done
+# its line in a manifest, exactly: the hash, two spaces, the name, and the commit (an image) or .zip
+line_re() { printf '^[0-9a-f]{64}  %s(-[0-9a-f]{12,40}\\.image-id|\\.zip)$' "${1//./\\.}"; }
+named=$#
 if (( $# )); then names=( "$@" ); else
     names=()
     for d in "$CCS_SIGS_REPO"/*/*/all.SHA256SUMS; do names+=( "$(basename "$(dirname "$(dirname "$d")")")" ); done
@@ -121,14 +130,18 @@ release() {
         set=$(basename "$set")
         [[ +$set+ == *"+$name+"* ]] || continue
         for m in "$CCS_SIGS_REPO/$set"/*/all.SHA256SUMS; do
+            # a signer who doesn't count is passed over before anything is checked: their folder,
+            # whatever is in it, can't stop the others agreeing
+            seen=$((seen + 1))
+            if ! key=$(key_of "$(basename "$(dirname "$m")")") || ! counts "$key"; then
+                echo "Not counted: '$m' (its signer's key is not in TRUSTED_KEYS)"; continue
+            fi
             if ! key=$(signed "$m"); then
                 echo "ERR: '$m' is not signed by its signer's key (builder-keys/$(basename "$(dirname "$m")").asc), or that key is revoked"; failure=1; continue
             fi
-            line=$(grep -E "^[0-9a-f]{64}  $name([-.]|\$)" "$m" || true)
+            line=$(grep -E "$(line_re "$name")" "$m" || true)
             [ -n "$line" ] || { echo "ERR: '$m' has no line for $name"; failure=1; continue; }
             [[ $line != *$'\n'* ]] || { echo "ERR: '$m' has more than one line for $name"; failure=1; continue; }
-            seen=$((seen + 1))
-            if ! counts "$key"; then echo "Not counted: '$m' (key $key is not in TRUSTED_KEYS)"; continue; fi
             if [[ $counted == *" $key "* ]]; then echo "Not counted again: '$m' (key $key already counted)"; continue; fi
             if [ -z "$base" ]; then base=$line basefrom=$m
             elif [ "$line" != "$base" ]; then
@@ -145,10 +158,16 @@ release() {
         echo "$name: ${base%% *} (${n} signer(s) agree)"
         # the commit it was built from, when the attestation names it (contrib/release/build)
         commit=${base##*  "$name"-}; commit=${commit%.image-id}
-        [[ $commit =~ ^[0-9a-f]{12,40}$ ]] && echo "$name: from commit $commit (build from this commit, not the tag: a tag can move)"
+        if [[ $commit =~ ^[0-9a-f]{12,40}$ ]]; then
+            echo "$name: from commit $commit (build from this commit, not the tag: a tag can move)"
+        elif [[ $base == *.image-id ]]; then
+            echo "ERR: $name: its line names no commit to build from"; failure=1
+        fi
         if (( n < min_signers )); then echo "ERR: $name: $n signer(s) agree, $min_signers needed (--min-signers)"; failure=1; fi
     elif (( seen )); then
         echo "ERR: $name: attested $seen time(s), by no one in TRUSTED_KEYS"; failure=1
+    elif (( named )); then
+        echo "ERR: no attestation of $name"; failure=1
     else
         echo "WARN: no attestation of $name"
     fi
@@ -179,16 +198,18 @@ for name in "${names[@]}"; do
         n=0 counted=' ' base=''
         for m in "${all_all[@]}"; do
             [ -n "$m" ] || continue
+            if ! key=$(key_of "$(basename "$(dirname "$m")")") || ! counts "$key"; then
+                echo "Not counted: '$m' (its signer's key is not in TRUSTED_KEYS)"; continue
+            fi
             if ! key=$(signed "$m"); then
                 echo "ERR: '$m' is not signed by its signer's key (builder-keys/$(basename "$(dirname "$m")").asc), or that key is revoked"; failure=1; continue
             fi
-            if ! counts "$key"; then echo "Not counted: '$m' (key $key is not in TRUSTED_KEYS)"; continue; fi
             if [[ $counted == *" $key "* ]]; then echo "Not counted again: '$m' (key $key already counted)"; continue; fi
             if [ -z "$base" ]; then
                 ok=1 parts=0
                 for part in ${name//+/ }; do
                     parts=$((parts + 1))
-                    [[ $(grep -cE "^[0-9a-f]{64}  $part([-.]|\$)" "$m") == 1 ]] || { echo "ERR: '$m' has no line, or several, for $part"; ok=''; }
+                    [[ $(grep -cE "$(line_re "$part")" "$m") == 1 ]] || { echo "ERR: '$m' has no line, or several, for $part"; ok=''; }
                 done
                 [[ $(grep -c . "$m") == "$parts" ]] || { echo "ERR: '$m' has other lines than the $parts release(s) in '$name'"; ok=''; }
                 [ -n "$ok" ] || { failure=1; continue; }
@@ -210,7 +231,8 @@ for name in "${names[@]}"; do
         echo ""
         checked=1
     else
-        echo "WARN: No signature directories with all.SHA256SUMS found for '$name'"
+        if (( named )); then echo "ERR: No signature directories with all.SHA256SUMS found for '$name'"; failure=1
+        else echo "WARN: No signature directories with all.SHA256SUMS found for '$name'"; fi
         echo ""
     fi
 done
