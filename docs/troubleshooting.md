@@ -118,7 +118,7 @@ the lines above it say why.
 |---|---|---|
 | `the backend has failed N runs in a row since …: <steps>` | backend | three or more failed runs: [the whole site isn't updating](#the-whole-site-isnt-updating); once an hour while it lasts |
 | `the backend runs again, after N failed runs` | backend | it recovered |
-| `the page differs from what was pushed @ <url>`, `donation address … does not match the CCS wallet` | backend (ccs-watch) | the web server serves something the backend didn't push: **stop and look at the web server**, it may be taken over |
+| `the page differs from what was pushed @ <url>`, `donation address … does not match the CCS wallet` | backend (ccs-watch) | the web server serves something the backend didn't push: **stop and look at the web server**, it may be taken over. Once fixed: a stylesheet, font or image it served is kept a year by visitors' browsers (hashed names, `immutable`): a changed file of the design's needs a new release (new names), and say so on IRC |
 | `the page answers HTTP <code>, not what was pushed (N checks in a row)` | backend | one page keeps answering something else (a redirect, an error) while the site answers: the web server's nginx, or worse |
 | `<site> could not be fetched (N checks in a row)` | backend | the site is down or unreachable through the watcher's proxy (Tor) |
 | `the web server held back a page: donation address … is not in the signed list` / `held back a file: <reason>` | web server | [a page isn't updating](#a-proposals-page-isnt-updating-old-text-old-totals) |

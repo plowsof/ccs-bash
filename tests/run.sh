@@ -914,6 +914,24 @@ if command -v gpg > /dev/null && command -v gpgconf > /dev/null; then
     sed 's/^:-----BEGIN/-----BEGIN/' "$k/openpgp-revocs.d/$bob.rev" | GNUPGHOME=$k gpg --batch --quiet --import 2> /dev/null
     GNUPGHOME=$k gpg --batch --armor --export "$bob" > "$sigs/builder-keys/bob.asc"
     if ! { ! v2 ccs-bash-v9.9.9 && grep -q "bob/all.SHA256SUMS' is not signed .*or that key is revoked" "$TEST_TMP/v.out" && grep -q '(1 signer(s) agree)' "$TEST_TMP/v.out"; }; then cat "$TEST_TMP/v.out"; echo "FAIL release/verify: a revoked key"; vok=''; fi
+    # Review 5: a signer not in TRUSTED_KEYS can't stop the others agreeing, even with a broken
+    # signature or two lines; a name that is only the start of a release's (ccs-bash-v9.9 of
+    # ccs-bash-v9.9.9) is none; a line without its commit, or with a CRLF, is no line; a release
+    # named that no one attested is a failure, not a warning
+    rm -rf "$sigs"/*/bob   # (revoked above)
+    attest ccs-bash-v9.9.9 aaa "$good" "$good"
+    if ! { v2 --min-signers 1 ccs-bash-v9.9.9 && grep -q '(1 signer(s) agree)' "$TEST_TMP/v.out"; }; then cat "$TEST_TMP/v.out"; echo "FAIL release/verify: an untrusted signer's two lines stop the trusted ones"; vok=''; fi
+    attest ccs-bash-v9.9.9 aaa "$good"; echo >> "$sigs/ccs-bash-v9.9.9/aaa/all.SHA256SUMS"
+    if ! { v2 --min-signers 1 ccs-bash-v9.9.9 && grep -q '(1 signer(s) agree)' "$TEST_TMP/v.out"; }; then cat "$TEST_TMP/v.out"; echo "FAIL release/verify: an untrusted signer's bad signature stops the trusted ones"; vok=''; fi
+    rm -rf "$sigs/ccs-bash-v9.9.9/aaa"; mkdir -p "$sigs/ccs-bash-v9.9"; cp -r "$sigs/ccs-bash-v9.9.9/alice" "$sigs/ccs-bash-v9.9/"
+    if v2 --min-signers 1 ccs-bash-v9.9; then cat "$TEST_TMP/v.out"; echo "FAIL release/verify: ccs-bash-v9.9 passes on ccs-bash-v9.9.9's line"; vok=''; fi
+    rm -rf "$sigs/ccs-bash-v9.9"
+    mkdir -p "$sigs/ccs-bash-v9.9.8"; attest ccs-bash-v9.9.8 alice "$(printf '%064d  ccs-bash-v9.9.8.image-id' 1)"
+    if ! { ! v2 --min-signers 1 ccs-bash-v9.9.8 && grep -q "has no line for ccs-bash-v9.9.8" "$TEST_TMP/v.out"; }; then cat "$TEST_TMP/v.out"; echo "FAIL release/verify: an image line without its commit"; vok=''; fi
+    attest ccs-bash-v9.9.8 alice "$(printf '%064d  ccs-bash-v9.9.8-%040d.image-id\r' 1 2)"
+    if ! { ! v2 --min-signers 1 ccs-bash-v9.9.8 && grep -q "has no line for ccs-bash-v9.9.8" "$TEST_TMP/v.out"; }; then cat "$TEST_TMP/v.out"; echo "FAIL release/verify: a CRLF line"; vok=''; fi
+    rm -rf "$sigs/ccs-bash-v9.9.8"
+    if ! { ! v2 --min-signers 1 ccs-bash-v9.9.9 ccs-bash-v9.9.7 && grep -q "ERR: no attestation of ccs-bash-v9.9.7" "$TEST_TMP/v.out"; }; then cat "$TEST_TMP/v.out"; echo "FAIL release/verify: a named release no one attested passes beside one that is"; vok=''; fi
     GNUPGHOME=$k gpgconf --kill all 2> /dev/null || true
     if [[ $vok ]]; then echo "ok   release/verify: trusted signers agree on the commit too; an untrusted one changes nothing; a set lists exactly its releases; a revoked key doesn't count"; else status=1; fi
 else
