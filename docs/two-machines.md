@@ -321,23 +321,32 @@ systemctl daemon-reload && systemctl enable --now ccs-heartbeat.timer
 
 ## Watching the web server: the backend raises the alarm
 
-`contrib/ccs-watch`, on the backend after each push, fetches the pages that ask for donations
+`contrib/ccs-watch`, on the backend after each push and between pushes, fetches the pages that ask for donations
 (home, Funding Required, Donate, Verify, each funding-required proposal), every file they use
 (stylesheets, fonts, icons, the General Fund's QR code, proposal images: a stylesheet can hide an
 address), `WATCH_SAMPLE` (10) other pages at random (any page could get a donation box) and
-`/projects`, and compares each byte for byte with what was pushed. A difference alerts, naming the
-page and any address not on the list; so does a page answering anything else three checks in a
-row while the site answers.
+`/projects`, and compares each byte for byte with what was last pushed. A difference alerts the
+second time it is seen within a day (runs that see the right page in between or not), naming the
+page and any address not on the list; a recheck that isn't answered counts as still different. So
+does a page answering anything else three checks in a row while the site answers, a page never
+pushed answering anything but the 404 page, and the theme button leading anywhere but the page.
 
 To make it harder for the web server to serve it the right pages and visitors others, it asks
-as Tor Browser does (Firefox 128's headers, `Sec-Fetch-*` by what is fetched, a page typed in,
-clicked on the site or from another at random), in no fixed order, each page and each file the
-pages use under `/`, `/dark/` or `/light/` at random (`WATCH_THEMES=1`), through a proxy picked
-at random each fetch. A web server can still tell it apart: one browser only (a rule for every
-other one is never seen), a page fetched without its stylesheets and fonts, curl's TLS handshake,
-fetches right after each push. Tor alone isn't enough (its exits are public): add a clearnet proxy
-on another network (`ssh -D 1080 <machine>`, kept up by a service), and if you can, a second
-ccs-watch elsewhere.
+as one of three browsers, picked at random each run: Tor Browser, Firefox or Chrome, each with its
+own user agent and headers (`Sec-Fetch-*` by what is fetched, a page typed in, clicked on the site
+or from another at random; keep their versions current with `WATCH_FIREFOX_ESR`, `WATCH_FIREFOX`,
+`WATCH_CHROME`). It asks in no fixed order, each page and each file the pages use under `/`,
+`/dark/` or `/light/` at random (`WATCH_THEMES=1`), through a proxy picked at random each fetch;
+among them, at a random place, a page never pushed, named as the site's own are, and the theme
+button on a page. It runs right after each push and between pushes at random times
+(`ccs-watch.timer`, [handover](handover.md) step 9), so a web server that serves its own pages once
+the check after a push is over is seen too.
+
+A web server can still tell it apart: a page fetched without its stylesheets and fonts, and curl's
+TLS handshake. The never-pushed page catches a web server that serves its own page at any name, not
+one that adds pages at names it picks. Tor alone isn't enough (its exits are public): add a
+clearnet proxy on another network (`ssh -D 1080 <machine>`, kept up by a service), and if you can,
+a second ccs-watch elsewhere.
 
 Alerts go to one URL as a plain-text POST: an IRC bot (CptHook's `simple` module,
 `https://<host>/<endpoint>?channel=%23<channel>`), ntfy, or anything that takes a POST; or wmb's
@@ -359,6 +368,6 @@ The update script runs it after each push (also exit 7: a web server that lies c
 a held-back page), then `ccs-watch --run` with how the run went, so a stopped backend is an alarm
 too. One alert per problem an hour; "could not be fetched" after three checks; "the backend has
 failed N runs in a row" after three failed runs (about six minutes), and "runs again" after.
-A careful attacker on the web server can still tell the watcher apart: curl's TLS handshake, and
-its timing right after each push. Hence the Verify page, asking visitors to check the address
-their wallet shows. `tests/watch.sh` runs it against a local web server and a fake bot.
+A careful attacker on the web server can still tell the watcher apart (above). Hence the Verify
+page, asking visitors to check the address their wallet shows. `tests/watch.sh` runs it against a
+local web server and a fake bot, including web servers that try each trick above.

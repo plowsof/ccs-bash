@@ -35,7 +35,20 @@ for t in dark light; do
 done
 
 web=$(port) bot=$(port)
-python3 -m http.server "$web" --bind 127.0.0.1 -d "$tmp/remote" > /dev/null 2>&1 & pids+=($!)
+# the "web server": the files, and the theme lines' redirects (?theme=dark|light|system: the same
+# page under /dark/, /light/ or no prefix), as nginx answers them
+python3 -c '
+import http.server, os, re, sys, urllib.parse
+class H(http.server.SimpleHTTPRequestHandler):
+    def do_GET(self):
+        u = urllib.parse.urlsplit(self.path); t = urllib.parse.parse_qs(u.query).get("theme", [""])[0]
+        if t in ("dark", "light", "system"):
+            page = re.sub(r"^/(dark|light)(?=/)", "", u.path)
+            self.send_response(302); self.send_header("Location", page if t == "system" else "/" + t + page)
+            self.send_header("Content-Length", "0"); self.end_headers(); return
+        super().do_GET()
+    def log_message(self, *a): pass
+os.chdir(sys.argv[2]); http.server.ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()' "$web" "$tmp/remote" & pids+=($!)
 python3 -c '
 import http.server, sys
 class H(http.server.BaseHTTPRequestHandler):
@@ -85,11 +98,11 @@ if [[ $(alerts) == 1 ]]; then ok "a donation page answering 404 on six runs in a
 cp "$tmp/page.good" "$page"
 
 # (Each run fetches a page under /, /dark/ or /light/ at random: the alerts are read without it.)
-# A changed page alerts only when it stays changed: on three fetches over the waits, and on the
-# next run too.
+# A changed page alerts only when it stays changed: on three fetches over the waits, and on a
+# later run within a day too.
 sed -i "s/$(addr 1)/$(addr 7 B)/g" "$page"
 watch || true
-if [[ $(alerts) == 0 ]] && grep -q "alerting if it still does next run" "$tmp/log"; then ok "a page changed: no alert on the first run that sees it"; else cat "$tmp/log"; fail "first sight"; fi
+if [[ $(alerts) == 0 ]] && grep -q "alerting if it does again within a day" "$tmp/log"; then ok "a page changed: no alert on the first run that sees it"; else cat "$tmp/log"; fail "first sight"; fi
 if ! watch && [[ $(alerts) == 1 ]] && grep -qF "/simple?channel=%23ccs [CCS-watch] donation address $(addr 7 B | sed -E 's/^(.{6}).*(.{4})$/\1…\2/') does not match the CCS wallet @ http://127.0.0.1:$web/proposals/a%20b.html" <(sed -E 's#/(dark|light)/#/#' "$tmp/bot.txt") \
     && ! grep -qF "$(addr 3 8 | cut -c1-6)" "$tmp/bot.txt"; then
     ok "still changed on the next run: one alert, naming the page and only the new address (not the General Fund)"
@@ -98,7 +111,15 @@ else
 fi
 if ! watch && [[ $(alerts) == 1 ]]; then ok "still changed an hour later or less: no second alert"; else fail "a repeated alert"; fi
 cp "$tmp/page.good" "$page"
-if watch && [[ ! -e $tmp/state/differs-proposals_a_b.html ]]; then ok "put back: the page is clean again"; else fail "recovery"; fi
+if watch && [[ $(alerts) == 1 ]]; then ok "put back: no alert"; else fail "recovery"; fi
+# Security review 5: a run that sees the right page doesn't clear what an earlier one saw (a web
+# server showing its own page on every other push): changed again the same day, the first run
+# that sees it alerts
+rm -f "$tmp/state"/alert-*
+sed -i "s/$(addr 1)/$(addr 7 B)/g" "$page"
+watch || true
+if [[ $(alerts) == 2 ]]; then ok "changed, put back, changed again within a day: the first run that sees it again alerts"; else cat "$tmp/log"; fail "a page changed every other run"; fi
+cp "$tmp/page.good" "$page"; rm -f "$tmp/state"/differs-*
 
 # The files a page uses are watched too: a stylesheet can hide an address and show another, an
 # image can be another QR code. Each alerts as a page does (the second run that sees it).
@@ -122,24 +143,24 @@ watch || { cat "$tmp/log"; fail "put back"; }
 cp "$tmp/bot.before" "$tmp/bot.txt"
 
 # Changed for a moment only (a push landing): put back before the recheck, never alerts.
-rm -f "$tmp/state"/alert-*
+rm -f "$tmp/state"/alert-*; base=$(alerts)
 for _ in 1 2; do
     sed -i "s/$(addr 1)/$(addr 7 B)/g" "$page"
     (sleep 0.1; cp "$tmp/page.good" "$page") & putback=$!
     watch || true; wait "$putback"
 done
-if [[ $(alerts) == 1 ]]; then ok "changed for a moment on two runs: no alert"; else cat "$tmp/bot.txt"; fail "a moment's change"; fi
+if [[ $(alerts) == "$base" ]]; then ok "changed for a moment on two runs: no alert"; else cat "$tmp/bot.txt"; fail "a moment's change"; fi
 
 # The web server goes away while a changed page is being rechecked: nothing is known, no alert.
 sed -i "s/$(addr 1)/$(addr 7 B)/g" "$page"
 watch || true   # first sight
 kill "${pids[0]}"; wait "${pids[0]}" 2> /dev/null || true
 watch || true   # second run: it can't fetch at all now
-if [[ $(alerts) == 1 ]]; then ok "changed, then the web server down: no alert for the change"; else cat "$tmp/bot.txt"; fail "changed then down"; fi
+if [[ $(alerts) == "$base" ]]; then ok "changed, then the web server down: no alert for the change"; else cat "$tmp/bot.txt"; fail "changed then down"; fi
 
 # Down: an alert only after three checks in a row that reached nothing at all.
 for _ in 1 2; do watch || true; done
-if [[ $(alerts) == 2 ]] && tail -n 1 "$tmp/bot.txt" | grep -qF "[CCS-watch] http://127.0.0.1:$web could not be fetched (3 checks in a row)"; then
+if [[ $(alerts) == $((base + 1)) ]] && tail -n 1 "$tmp/bot.txt" | grep -qF "[CCS-watch] http://127.0.0.1:$web could not be fetched (3 checks in a row)"; then
     ok "the site down three checks in a row: one alert"
 else
     cat "$tmp/bot.txt"; fail "unreachable"
@@ -263,4 +284,101 @@ nwatch || true; first=$(alerts); nwatch || true
 if [[ $first == "$before" && $(alerts) == $((before + 1)) ]] && tail -n 1 "$tmp/bot.txt" | grep -q "a page that was never pushed answers HTTP 200, not the pushed 404 page"; then
     ok "the web server's own page at a path never pushed: an alert, on the second run that sees it"
 else cat "$tmp/n/log"; tail -n 2 "$tmp/bot.txt"; fail "a page never pushed"; fi
+
+# Security review 5 (2026-10-27): a web server (attacker 2) that serves visitors a foreign address
+# on a donation page while trying to hide it from the watcher. One local "web server" as nginx
+# answers (/dark/ and /light/ the same files, ?theme= redirects, the 404 page for anything not
+# there), its trick named in $tmp/e/MODE:
+#   refuse-repeat  the foreign page to everyone, but a second ask for the same page within 5s (the
+#                  watcher's recheck) answers 503
+#   toggle         the foreign page while $tmp/e/EVIL exists: on every other push
+#   after-unpushed the foreign page from the watcher's ask for a page never pushed until the next
+#                  push ($tmp/e/PUSH): the watcher's last ask, if it were always the last
+#   browser        the foreign page to every browser but Tor Browser
+#   unpushed       its own page at every name never pushed but a 12-hex-digit one
+#   theme          the theme button sends visitors elsewhere
+mkdir -p "$tmp/e/site/proposals"
+echo '<p>not here</p>' > "$tmp/e/site/404.html"; echo '<p>home</p>' > "$tmp/e/site/index.html"
+echo "<details class=\"contribute\"><a href=\"monero:$(addr 1)\"></a><div class=\"address\">$(addr 1)</div></details>" > "$tmp/e/site/proposals/p.html"
+sed "s/$(addr 1)/$(addr 7 B)/g" "$tmp/e/site/proposals/p.html" > "$tmp/e/evil.html"
+ep=$(port)
+python3 -c '
+import http.server, os, re, sys, time, urllib.parse
+d = sys.argv[2]; seen = {}; state = {"unpushed": 0.0}
+class H(http.server.BaseHTTPRequestHandler):
+    def send_body(self, code, body, extra=()):
+        self.send_response(code)
+        for k, v in extra: self.send_header(k, v)
+        self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+    def do_GET(self):
+        m = open(os.path.join(d, "MODE")).read().strip(); ua = self.headers.get("User-Agent", "")
+        with open(os.path.join(d, "agents"), "a") as f: f.write(ua + "\n")
+        u = urllib.parse.urlsplit(self.path); t = urllib.parse.parse_qs(u.query).get("theme", [""])[0]
+        path = re.sub(r"^/(dark|light)(?=/)", "", urllib.parse.unquote(u.path))
+        if t:
+            if m == "theme": return self.send_body(302, b"", [("Location", "/elsewhere/")])
+            return self.send_body(302, b"", [("Location", (u.path if t == "system" else "/" + t + u.path) if not re.match(r"^/(dark|light)/", u.path) else re.sub(r"^/(dark|light)", "" if t == "system" else "/" + t, u.path))])
+        f = os.path.join(d, "site", path.lstrip("/"))
+        if f.endswith("/"): f += "index.html"
+        evil = open(os.path.join(d, "evil.html"), "rb").read()
+        if not os.path.isfile(f):
+            if m == "unpushed" and not re.fullmatch(r"/proposals/[0-9a-f]{12}\.html", path): return self.send_body(200, b"<p>Donate here</p>")
+            state["unpushed"] = time.time()
+            return self.send_body(404, open(os.path.join(d, "site/404.html"), "rb").read())
+        if path == "/proposals/p.html":
+            if m == "refuse-repeat":
+                k = self.client_address[0]; last = seen.get(k, 0); seen[k] = time.time()
+                if time.time() - last < 5: return self.send_body(503, b"")
+                return self.send_body(200, evil)
+            if m == "toggle" and os.path.exists(os.path.join(d, "EVIL")): return self.send_body(200, evil)
+            if m == "after-unpushed" and state["unpushed"] > os.path.getmtime(os.path.join(d, "PUSH")): return self.send_body(200, evil)
+            if m == "browser" and "(Windows NT 10.0; rv:" not in ua: return self.send_body(200, evil)
+        self.send_body(200, open(f, "rb").read())
+    def log_message(self, *a): pass
+http.server.ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()' "$ep" "$tmp/e" & pids+=($!)
+echo none > "$tmp/e/MODE"; touch "$tmp/e/PUSH"
+sleep 1
+printf 'ALERT_URL=http://127.0.0.1:%s/simple?channel=%%23ccs\nALERT_PLAIN=1\nWATCH_SAMPLE=0\nWATCH_THEMES=1\n' "$bot" > "$tmp/e/alert.conf"
+# a run right after a push (the update script's), and one between pushes (ccs-watch.timer's)
+ewatch() { CCS_WATCH_STATE=$tmp/e/state "$here/../contrib/ccs-watch" "http://127.0.0.1:$ep" "$tmp/e/site" "$tmp/e/${econf:-alert.conf}" 2> "$tmp/e/log" || true; }
+push() { touch "$tmp/e/PUSH"; sleep 0.05; ewatch; }
+# a visitor (Chrome) asking for the donation page: does it get the foreign address?
+visitor() { curl -s -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36' "http://127.0.0.1:$ep/proposals/p.html" | grep -c "$(addr 7 B)" || true; }
+echo none > "$tmp/e/MODE"; rm -rf "$tmp/e/state"; : > "$tmp/bot.txt"; push; push
+if [[ $(alerts) == 0 ]] && grep -q "are what was pushed" "$tmp/e/log"; then ok "review 5: the test's web server, honest: no alert"; else cat "$tmp/e/log" "$tmp/bot.txt"; fail "review 5: the honest web server"; fi
+etry() {   # etry MODE RUNS WHAT: RUNS pushes, each with a timer run after it; a visitor looks in between
+    local seen=0 i
+    echo "$1" > "$tmp/e/MODE"; rm -rf "$tmp/e/state" "$tmp/e/EVIL"; : > "$tmp/bot.txt"; sleep 5
+    for ((i = 1; i <= $2; i++)); do
+        [[ $1 == toggle ]] && { ((i % 2)) && touch "$tmp/e/EVIL" || rm -f "$tmp/e/EVIL"; }
+        push; [[ $1 == refuse-repeat ]] && sleep 5
+        ewatch; [[ $1 == refuse-repeat ]] && sleep 5
+        (($(visitor) > 0)) && seen=$((seen + 1))
+        [[ $1 == refuse-repeat ]] && sleep 5
+    done
+    if ((seen == 0)); then fail "review 5: $1: the test's web server didn't serve the visitor the foreign page"
+    elif [[ $(alerts) == 0 ]]; then cat "$tmp/e/log"; fail "review 5: $3 (a visitor saw the foreign address after $seen of $2 pushes; no alert)"
+    else ok "review 5: $3: an alert"; fi
+}
+etry refuse-repeat 2 "the foreign page to everyone, a 503 for the watcher's recheck"
+# every other run, each run right after a push and no other, without the themes (one address per
+# page): every run that sees the right page used to clear what the one before saw
+grep -v WATCH_THEMES "$tmp/e/alert.conf" > "$tmp/e/plain.conf"
+echo toggle > "$tmp/e/MODE"; rm -rf "$tmp/e/state"; : > "$tmp/bot.txt"; seen=0
+for i in 1 2 3 4; do
+    if ((i % 2)); then touch "$tmp/e/EVIL"; else rm -f "$tmp/e/EVIL"; fi
+    econf=plain.conf push
+    (($(visitor) > 0)) && seen=$((seen + 1))
+done
+rm -f "$tmp/e/EVIL"
+if ((seen == 2)) && [[ $(alerts) != 0 ]]; then ok "review 5: the foreign page on every other push: an alert"; else cat "$tmp/e/log"; fail "review 5: the foreign page on every other push (seen $seen times; no alert)"; fi
+etry after-unpushed 2 "the foreign page from the watcher's ask for a page never pushed until the next push"
+etry browser 6 "the foreign page to every browser but Tor Browser"
+echo unpushed > "$tmp/e/MODE"; rm -rf "$tmp/e/state"; : > "$tmp/bot.txt"; push; push
+if [[ $(curl -s "http://127.0.0.1:$ep/proposals/ccs-fund-raise.html") == "<p>Donate here</p>" ]] && grep -q "a page that was never pushed answers HTTP 200" "$tmp/bot.txt"; then
+    ok "review 5: its own page at every name never pushed that isn't 12 hex digits: an alert"
+else cat "$tmp/e/log"; fail "review 5: never-pushed names"; fi
+echo theme > "$tmp/e/MODE"; rm -rf "$tmp/e/state"; : > "$tmp/bot.txt"; push; push
+if grep -q "the theme button sends visitors to http://127.0.0.1:$ep/elsewhere/" "$tmp/bot.txt"; then ok "review 5: the theme button sending visitors elsewhere: an alert"; else cat "$tmp/e/log"; fail "review 5: the theme button's redirect"; fi
+if (($(sort -u "$tmp/e/agents" | grep -c .) >= 2)); then ok "review 5: asked for as more than one browser over the runs"; else sort -u "$tmp/e/agents"; fail "review 5: one browser only"; fi
 exit "$status"
