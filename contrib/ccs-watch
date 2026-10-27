@@ -197,7 +197,8 @@ local_ref() {
 }
 uses() {
     local p d ref list
-    list=$(for p in "${pages[@]}"; do
+    # (and the 404 page's, which any path that wasn't pushed shows: its shell logo, say)
+    list=$(for p in "${pages[@]}" 404.html; do
         [[ -f $local_site/$p ]] || continue
         d=${p%/*}; [[ $d == "$p" ]] && d=.
         grep -oE '(href|src|srcset)="[^"]*"' "$local_site/$p" | sed -E 's/^[a-z]+="//; s/"$//' | tr ',' '\n' \
@@ -286,6 +287,24 @@ for c in "${checks[@]}"; do
     fi
     alert "page-$p" "$what @ $url"
 done
+# and a page that was never pushed (a proposal's, its name random): the web server must answer
+# 404 with the pushed 404 page. Its own page there (a fake proposal, a donation box) is something
+# the backend never made, which the checks above can't see (they ask only for pushed files).
+# Alerted as they are, when the second run in a row sees it.
+if [[ -f $local_site/404.html ]]; then
+    ghost=proposals/$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n').html
+    rc=0; fetch "$site_url/$ghost" "$tmp/page" || rc=$?
+    if ((rc == 3)) && [[ $code == 404 ]] && cmp -s "$tmp/page" "$local_site/404.html"; then
+        rm -f "$state/differs-unpushed"
+    elif ((rc != 1)); then
+        bad=$((bad + 1))
+        if [[ ! -f $state/differs-unpushed ]]; then
+            touch "$state/differs-unpushed"; log "$site_url/$ghost (never pushed) answers HTTP $code, not the 404 page; alerting if it still does next run"
+        else
+            alert unpushed "a page that was never pushed answers HTTP $code, not the pushed 404 page @ $site_url/$ghost"
+        fi
+    fi
+fi
 if ((failed == ${#checks[@]})); then
     n=$(($(cat "$state/unreachable" 2> /dev/null || echo 0) + 1)); echo "$n" > "$state/unreachable"
     ((n < 3)) || alert unreachable "$site_url could not be fetched ($n checks in a row)"
