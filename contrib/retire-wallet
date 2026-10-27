@@ -45,12 +45,18 @@ height=$(rpc get_height | jq -r .height) || die "the wallet doesn't answer at $R
 live=''; [[ $main == "$WALLET_ADDRESS" && $RPC_URL == "$live_url" ]] && live=1
 log "wallet ${main:0:6}…${main: -4} at height $height${live:+ (the live wallet)}"
 
-# which state rows are this wallet's: it says so for an address of its own, at which index
+# which state rows are this wallet's: it says so for an address of its own, at which index. Only
+# the wallet's own answer counts as "not ours" (as retire-from-ccs-back): a timeout would otherwise
+# leave a proposal out of the record, silently, and the record can't be written twice
 : > "$WORK/mine"
 # (retired-subaddress-N rows too: the old wallet's; their deposits are no proposal's, so not written)
 jq -r 'to_entries[] | select(.value.address) | [.key, .value.address] | @tsv' "$WORK/state.json" |
     while IFS=$'\t' read -r file addr; do
-        res=$(rpc get_address_index "$(jq -nc --arg a "$addr" '{address: $a}')" 2> /dev/null) || continue
+        if ! res=$(rpc get_address_index "$(jq -nc --arg a "$addr" '{address: $a}')" 2> "$WORK/err"); then
+            [[ $(cat "$WORK/err") =~ "Address doesn't belong to the wallet"|"Invalid address" ]] \
+                || die "could not ask the wallet about $file's address: $(head -c 300 "$WORK/err")"
+            continue
+        fi
         idx=$(jq -r 'select(.index.major == 0) | .index.minor' <<<"$res")
         [[ $idx =~ ^[0-9]+$ ]] && printf '%s\t%s\n' "$idx" "$file" >> "$WORK/mine"
     done
