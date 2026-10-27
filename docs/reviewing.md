@@ -108,11 +108,14 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
 
 - The push: `rsync --delay-updates` as `ccs` to the web server's key, which runs only the gate.
 - [`contrib/ccs-watch`](../contrib/ccs-watch), as `ccs`: fetches the donation pages, the files
-  they use (the stylesheets' `url()`s too), `WATCH_SAMPLE` other pages and `/projects`, as Tor
-  Browser asks (`Sec-Fetch-*` by what is fetched, under `/`, `/dark/` or `/light/`, through a
-  random proxy), and compares each byte for byte with what was pushed. A difference alerts after
-  three fetches over 40 s and two runs; so does a page answering anything but 200 three checks in
-  a row; `--run`, three failed runs. Its config is read key by key, never sourced.
+  they use (the stylesheets' `url()`s too), `WATCH_SAMPLE` other pages and `/projects`, as one of
+  three browsers asks (`Sec-Fetch-*` by what is fetched, under `/`, `/dark/` or `/light/`, through
+  a random proxy), and compares each byte for byte with what was last pushed; also a page never
+  pushed (the 404 page) and the theme button's redirect, at a random place among them. After each
+  push and on `ccs-watch.timer` between pushes. A difference (three fetches over 40 s, or a
+  recheck not answered) alerts the second time it is seen within a day; so does a page answering
+  anything but 200 three checks in a row; `--run`, three failed runs. Its config is read key by
+  key, never sourced.
 - [`contrib/migrate/compare-deposits`](../contrib/migrate/compare-deposits), as root, once:
   ccs-back's `deposits` table against the first run's `deposits.csv` (every line of which is
   checked first: it is `ccs`'s file); exits 1 if ccs-back has a deposit the wallet lacks, or
