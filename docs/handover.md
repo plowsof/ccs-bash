@@ -25,7 +25,7 @@ new set replaces the row (earlier sets: this file's history, and ccs-sigs).
 
 | Set | ccs-bash | ccs-front-bash | ccs-front-hugo | Running on |
 |---|---|---|---|---|
-| 2026-10-27 | v0.2.23 | v0.1.19 | v0.1.20 | testnet ([ccs.monerodevs.org](https://ccs.monerodevs.org)) |
+| 2026-10-27 | v0.2.24 | v0.1.19 | v0.1.20 | testnet ([ccs.monerodevs.org](https://ccs.monerodevs.org)) |
 
 Each is reproducible, and attested in [ccs-sigs](https://github.com/plowsof/ccs-sigs) by those who
 rebuilt it. Install only what `contrib/release/verify` confirms ([upgrading](#upgrading)).
@@ -420,14 +420,14 @@ attested: check that commit out, never only the tag. For each release:
    ```
    git clone -q https://github.com/plowsof/ccs-sigs /opt/ccs-sigs      # once; then: git -C /opt/ccs-sigs pull -q
    cd /opt/ccs-bash && env CCS_SIGS_REPO=/opt/ccs-sigs TRUSTED_KEYS=/etc/ccs/trusted-signers \
-       contrib/release/verify ccs-bash-v0.2.23
+       contrib/release/verify ccs-bash-v0.2.24
    ```
    It prints the image ID (or zip sha256), how many signers agree (two by default;
    `--min-signers 1` relaxes it), and the commit they all name. Too few: wait, or attest it
    yourself ([contrib/release](../contrib/release/README.md)).
 2. **Built from that commit:** `git -C /opt/ccs-bash fetch --tags` and
    `checkout <the commit verify printed>` (not the tag: a tag can move, and the build runs as root);
-   check `git describe --tags` is the release. Then `container/build.sh ccs-bash:v0.2.23`
+   check `git describe --tags` is the release. Then `container/build.sh ccs-bash:v0.2.24`
    ([the pinned image](image.md)); the same for ccs-front-bash. (`contrib/release/build` doesn't keep the image: it is for attesting.) Or build
    elsewhere and `docker save … | ssh <backend> docker load`. The design: its zip, `sha256sum`.
    A build that stops with `sources has files that are not in sources.lock`: a source an older
