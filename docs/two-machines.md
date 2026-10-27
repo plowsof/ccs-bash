@@ -284,7 +284,9 @@ the wallet's subaddresses on another proposal's page (the money stays in the CCS
 proposal's name, author, dates, goal or stage as ccs-bash read its front matter (a renamed
 proposal, a completed one with a donation box, a listed address still). Nor anything once the web
 server itself is taken over: then ccs-watch and visitors are the defence. zbarimg reads what the
-backend sends, as ccs-data: keep zbar-tools and ImageMagick updated (`unattended-upgrades`).
+backend sends, as ccs-data, but only images the gate has read as a plain PNG first, and then as
+`png:` (a proposal's image as the format its name says): ImageMagick never picks a decoder by the
+bytes. Keep zbar-tools and ImageMagick updated (`unattended-upgrades`).
 
 ### The heartbeat: the web server notices a silent backend
 
