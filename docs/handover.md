@@ -69,10 +69,17 @@ far, so nothing is rescanned).
 Without the cache, wallet-rpc rescans from the restore height; without either file, make the
 wallet from the address and view key (`monero-wallet-cli --generate-from-view-key`, which asks
 for each in turn, or wallet-rpc's `generate_from_keys` with `address`, `viewkey`, `password` and
-`restore_height`), the restore height before the first donation. Before it scans, raise the subaddress lookahead past the
-highest index in `proposals.csv`, or it misses donations beyond a gap of 200:
-`rpc set_subaddress_lookahead '{"password":"<wallet password>","major_idx":1,"minor_idx":20000}'`
-(already scanned: `rpc rescan_blockchain` after).
+`restore_height`), the restore height before the first donation. **Once it has caught up, the smallest lookahead:**
+`rpc set_subaddress_lookahead '{"password":"<wallet password>","major_idx":1,"minor_idx":1}'`
+(kept in the wallet's keys file). Moving from ccs-back, `compare-deposits` (step 2) shows whether
+the wallet found every deposit ccs-back had.
+
+Why 1, not more: a known monero limit, not abused so far. A payment to a subaddress within
+the lookahead makes the wallet create every one up to it, and look a lookahead further. Anyone can
+pay a listed address, so dust payments can grow the wallet's cache without limit (the bigger the
+lookahead, the cheaper). 1 is enough, as ccs-bash creates a proposal's subaddress before showing
+it. ccs-bash keeps the list from being used up (a new proposal gets the index after the state's
+highest), not the cache.
 
 ## 2. ccs-bash and its state (the backend)
 
