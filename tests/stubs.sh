@@ -8,6 +8,8 @@ fake_address() { printf '8%094d' "$1"; }
 rpc() {
     local n
     n=$(cat "$TEST_TMP/wallet-count")
+    # TEST_RPC_DOWN=<method>: wallet-rpc not answering that call
+    [[ ${TEST_RPC_DOWN:-} != "$1" ]] || { echo "curl: (7) Failed to connect to 127.0.0.1 port 18082" >&2; return 1; }
     case $1 in
         get_address) # all, or those address_index asks for; each with the label create_address gave it
             : >> "$TEST_TMP/wallet-labels"
@@ -25,7 +27,7 @@ rpc() {
         label_address)
             jq -r '"\(.index.minor) \(.label)"' <<<"$2" >> "$TEST_TMP/wallet-labels"; echo '{}' ;;
         get_address_index) # an address of this wallet's form ("8" and its index), created or not
-            jq -r '.address' <<<"$2" | grep -qE '^8[0-9]{94}$' || { echo "rpc get_address_index: not this wallet's" >&2; return 1; }
+            jq -r '.address' <<<"$2" | grep -qE '^8[0-9]{94}$' || { echo "jq: error (at <stdin>:0): rpc get_address_index: Address doesn't belong to the wallet" >&2; return 1; }
             jq -n --argjson i "$(jq -r '.address[1:] | tonumber' <<<"$2")" '{index: {major: 0, minor: $i}}' ;;
         get_height) printf '{"height": %d}\n' "${TEST_HEIGHT:-3100000}" ;;
         get_transfers) # (what was asked, for the tests of deposits.csv)
