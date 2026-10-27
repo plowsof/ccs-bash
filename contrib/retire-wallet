@@ -82,6 +82,11 @@ jq -r '
         ($3 in file) && file[$3] ~ /\.md$/ { print $1 "," $2 "," $3 "," $4 "," $5 "," file[$3] }
         END { exit bad }' "$WORK/mine" FS=' ' "$WORK/in" || die "unexpected transfer from the wallet"
 } > "$WORK/retired"
+# read back as a run reads it (lib/wallet.sh retired_totals): a name or number it would refuse
+# would stop every run after this one
+mkdir "$WORK/check" && cp "$WORK/retired" "$WORK/check/$name.csv"
+( RETIRED_DIR=$WORK/check retired_totals > /dev/null ) 2> "$WORK/check.err" \
+    || die "a line a run couldn't read back, nothing written: $(sed 's/ (restore it.*//' "$WORK/check.err")"
 deposits=$(($(wc -l < "$WORK/retired") - 1))
 total=$(awk -F, 'NR > 1 { print $4 }' "$WORK/retired" | { s=0; while read -r a; do s=$((s + a)); done; echo "$s"; })
 

@@ -69,7 +69,11 @@ check_never_lower() {
         .[] | select(.filename and $f[0][.filename]) | . as $p | $f[0][.filename] as $n
         | select(($p.raised_amount | tonumber) > ($n.raised | tonumber))
         | "\(.filename): \($p.raised_amount) before, \($n.raised) now"' "$OUTPUT_DIR/projects.json") || return 1
-    [[ -n $lower ]] || return 0
+    if [[ -z $lower ]]; then
+        # (not needed this run: gone all the same, or it would let a later drop through unseen)
+        [[ ! -f $STATE_DIR/allow-lower ]] || { log "allow-lower: no total went down, removed"; rm -f "$STATE_DIR/allow-lower"; }
+        return 0
+    fi
     if [[ -f $STATE_DIR/allow-lower ]]; then
         log "warning: allow-lower: lower totals published this once: ${lower//$'\n'/; }"
         rm -f "$STATE_DIR/allow-lower"
@@ -82,6 +86,7 @@ main() {
     load_config "${1:-/etc/ccs/ccs.conf}"
     mkdir -p "$STATE_DIR" "$OUTPUT_DIR"
     IDEAS_CACHE=$STATE_DIR/ideas.cache   # lib/gitlab.sh, ideas
+    MR_CACHE=$STATE_DIR/merged-files.cache   # lib/gitlab.sh, merged_mr_url
     DEPOSITS=$STATE_DIR/deposits.csv     # lib/wallet.sh, donation_totals
     RETIRED_DIR=$STATE_DIR/retired       # lib/wallet.sh, retired_totals (contrib/retire-wallet)
 

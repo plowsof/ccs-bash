@@ -134,9 +134,9 @@ donation_totals() {
         read -r _ _ H _ T < "$file" || true
         local first=''
         IFS= read -r first < "$file" || true
-        [[ $first =~ ^#\ final\ [0-9]+\ checked\ [0-9]+$ ]] || die "$file: not a deposits file (delete it: the next run makes it again)"
+        [[ $first =~ ^#\ final\ (0|[1-9][0-9]*)\ checked\ (0|[1-9][0-9]*)$ ]] || die "$file: not a deposits file (delete it: the next run makes it again)"
         kept=$(awk 'NR > 1' "$file")
-        if [[ -n $kept ]] && grep -qvE '^[0-9]+,[0-9a-f]{64},[0-9]+,[0-9]+,[0-9]+$' <<<"$kept"; then
+        if [[ -n $kept ]] && grep -qvE '^(0|[1-9][0-9]*),[0-9a-f]{64},(0|[1-9][0-9]*),(0|[1-9][0-9]*),(0|[1-9][0-9]*)$' <<<"$kept"; then
             die "$file: a line that isn't a deposit (delete it: the next run makes it again)"
         fi
         ((wh >= H)) || die "the wallet is at height $wh, below the $H its kept deposits go to: rescanning or restored? (the site keeps its last totals until it has caught up)"
@@ -261,7 +261,7 @@ check_known_subaddresses() {
 # retired counts once its lock has passed: a time, or a height taken as two minutes a block from
 # then (the old wallet isn't asked again). Every field checked before bash arithmetic.
 retired_totals() {
-    local f head h t height txid idx amount unlock file now est
+    local f head h t height txid idx amount unlock file now est n='(0|[1-9][0-9]*)'
     local -A sum=() cnt=()
     [[ -d ${RETIRED_DIR:-} ]] || return 0
     now=$(date +%s)
@@ -269,12 +269,13 @@ retired_totals() {
         [[ -f $f ]] || continue
         head=''
         IFS= read -r head < "$f" || true
-        [[ $head =~ ^#\ retired\ [a-z0-9-]+\ wallet\ ([0-9A-Za-z]{95}|ccs-back-database)\ height\ ([0-9]+)\ time\ ([0-9]+)$ ]] \
+        [[ $head =~ ^#\ retired\ [a-z0-9-]+\ wallet\ ([0-9A-Za-z]{95}|ccs-back-database)\ height\ (0|[1-9][0-9]*)\ time\ (0|[1-9][0-9]*)$ ]] \
             || die "$f: not a retired wallet's file (restore it from the backup machine)"
         h=${BASH_REMATCH[2]} t=${BASH_REMATCH[3]}
         while IFS=, read -r height txid idx amount unlock file; do
-            [[ $height =~ ^[0-9]+$ && $txid =~ ^[0-9a-f]{64}$ && $idx =~ ^[0-9]+$ && $amount =~ ^[0-9]+$ \
-                && $unlock =~ ^[0-9]+$ && $file == *.md && $file != */* && $file != *[[:cntrl:]]* \
+            # (numbers without a leading zero: bash reads 010 as octal 8, and 09 stops the run)
+            [[ $height =~ ^$n$ && $txid =~ ^[0-9a-f]{64}$ && $idx =~ ^$n$ && $amount =~ ^$n$ \
+                && $unlock =~ ^$n$ && $file == *.md && $file != */* && $file != *[[:cntrl:]]* \
                 && ! $file =~ [1-9A-HJ-NP-Za-km-z]{90} ]] \
                 || die "$f: a line that isn't a deposit (restore it from the backup machine)"
             if ((unlock != 0)); then
