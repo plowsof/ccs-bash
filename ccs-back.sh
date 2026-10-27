@@ -82,18 +82,50 @@ check_never_lower() {
     die "would show less raised than before ($(grep -c . <<<"$lower") proposals: ${lower//$'\n'/; }): a wallet or a retired wallet's record missing? The site keeps its last totals (docs/troubleshooting.md)"
 }
 
+# stop_under PID SKIP: TERM every process under PID but SKIP and what is under it: the whole
+# tree read first, then parents before their children, so none starts another child in between
+# (read from /proc: the image has no pkill)
+stop_under() {
+    local f s p pp tree=() todo=("$1") at
+    local -A kids=()
+    for f in /proc/[0-9]*/stat; do
+        s=$(< "$f") 2> /dev/null || continue
+        p=${s%% *} s=${s##*) } s=${s#* } pp=${s%% *}
+        [[ $p != "$2" ]] && kids[$pp]+=" $p"
+    done
+    while ((${#todo[@]})); do
+        at=${todo[0]} todo=("${todo[@]:1}")
+        for p in ${kids[$at]:-}; do tree+=("$p") todo+=("$p"); done
+    done
+    for p in "${tree[@]}"; do kill -TERM "$p" 2> /dev/null; done
+}
+
 main() {
     load_config "${1:-/etc/ccs/ccs.conf}"
     mkdir -p "$STATE_DIR" "$OUTPUT_DIR"
     IDEAS_CACHE=$STATE_DIR/ideas.cache   # lib/gitlab.sh, ideas
     MR_CACHE=$STATE_DIR/merged-files.cache   # lib/gitlab.sh, merged_mr_url
     DEPOSITS=$STATE_DIR/deposits.csv     # lib/wallet.sh, donation_totals
+    ASSIGNED=$STATE_DIR/assigned.tsv     # lib/wallet.sh, assign_addresses and donation_totals
     RETIRED_DIR=$STATE_DIR/retired       # lib/wallet.sh, retired_totals (contrib/retire-wallet)
 
     exec 9> "$STATE_DIR/lock"
     flock -n 9 || { log "another run is still going, skipping"; exit 0; }
     WORK=$(mktemp -d)
-    trap 'rm -rf "$WORK"' EXIT
+    # A run that hangs (a forge or wallet that never answers, a huge state) is stopped after
+    # RUN_SECONDS (config, default 900), and its lock with it: the runs after it would otherwise
+    # skip ("still going") for good, and the push of the last good site hide that (it goes on)
+    local max=${RUN_SECONDS:-900}
+    [[ $max =~ ^[1-9][0-9]{0,5}$ ]] || max=900
+    trap 'exit 1' TERM
+    # (the watchdog doesn't keep the lock open, takes its sleep with it when the run ends, and
+    # then stops what the run waits on: bash runs its TERM trap only once that has ended)
+    (exec 9>&-; sleep "$max" & s=$!; trap 'kill "$s" 2> /dev/null; exit 0' TERM
+     wait "$s" || exit 0
+     log "error: the run took over ${max}s: stopped"   # (here: the run may end before its trap)
+     { kill -TERM $$; stop_under $$ "$BASHPID"; } 2> /dev/null) &
+    WATCHDOG=$!   # (a global: the EXIT trap runs after main has returned)
+    trap 'kill "${WATCHDOG:-}" 2> /dev/null; rm -rf "$WORK"' EXIT
 
     read_proposals "$PROPOSALS_DIR" > "$WORK/props.json"
     load_state
