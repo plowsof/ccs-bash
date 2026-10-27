@@ -265,6 +265,27 @@ got=$(
 )
 if [[ $got == '1 1 0' ]]; then echo "ok   the forge down: one failed lookup a run, the other new proposals wait for the next"; else echo "FAIL the forge down: '$got' (lookups, the log line, state rows)"; status=1; fi
 
+# The merged MRs' files kept between runs (MR_CACHE): one MR that can't be read is passed over, the
+# others still found; the next run doesn't fetch again what one already read
+got=$(
+    # shellcheck source=lib/common.sh
+    source "$here/../lib/common.sh"
+    # shellcheck source=lib/gitlab.sh
+    source "$here/../lib/gitlab.sh"
+    # shellcheck source=tests/stubs.sh
+    source "$here/stubs.sh"
+    c=$(mktemp)
+    one=$(WORK=$(mktemp -d) MR_CACHE=$c TEST_FAIL_MR=9 merged_mr_url new-fund.md)
+    : > "$TEST_TMP/gitlab-calls"
+    two=$(WORK=$(mktemp -d) MR_CACHE=$c TEST_FAIL_MR=8 merged_mr_url new-fund.md)
+    refetched=$(grep -c 'merge_requests/8/changes' "$TEST_TMP/gitlab-calls" || true)
+    WORK=$(mktemp -d) MR_CACHE=$(mktemp) TEST_FAIL_MR=9 merged_mr_url missing.md > /dev/null && missing=found || missing=failed
+    echo "$one $two $refetched $missing"
+)
+if [[ $got == "https://example.org/mr/8 https://example.org/mr/8 0 failed" ]]; then
+    echo "ok   merged MRs' files kept between runs: one that can't be read passed over, read once; not found with one unread: tried again"
+else echo "FAIL the merged MRs' cache: '$got'"; status=1; fi
+
 # STATE_DIR/forge-ok (ccs-watch --run's "GitLab/Forgejo hasn't answered"): touched by a run whose
 # ideas came, left as it was by one whose didn't (the previous ideas kept)
 d=$TEST_TMP/forge && mkdir -p "$d" && cp -r "$TEST_TMP/state" "$d/state" && cp -r "$TEST_TMP/out" "$d/out"
@@ -649,6 +670,18 @@ if dep retire TEST_TRANSFERS="$TEST_TMP/quiet.json" && cp "$rw/out/projects.json
         else echo "FAIL never lower: allow-lower"; cat "$rw/log"; status=1; fi
     else echo "FAIL never lower: a missing retired record"; diff <(jq -c ".[] | {filename, raised_amount}" "$rw/out/projects.json") <(jq -c ".[] | {filename, raised_amount}" "$TEST_TMP/retire-before.json") | head -6; status=1; fi
     mv "$rw/old.csv.aside" "$r"
+    # allow-lower not needed (no total goes down): removed all the same, so a later drop isn't let through
+    touch "$rw/state/allow-lower"
+    if dep retire TEST_TRANSFERS="$TEST_TMP/no-transfers.json" && grep -q 'allow-lower: no total went down, removed' "$rw/log" && [[ ! -e $rw/state/allow-lower ]]; then
+        echo "ok   never lower: an allow-lower a run didn't need is removed (it can't let a later drop through)"
+    else echo "FAIL never lower: an unneeded allow-lower"; tail -n 3 "$rw/log"; status=1; fi
+    # a number with a leading zero (bash reads 010 as octal 8) stops the run, as any damaged line
+    cp "$r" "$rw/old.csv.good"
+    printf '1,%064d,1,010,0,x.md\n' 6 >> "$r"
+    if ! dep retire TEST_TRANSFERS="$TEST_TMP/no-transfers.json" && grep -q "a line that isn't a deposit" "$rw/log"; then
+        echo "ok   retire-wallet: a retired file's number with a leading zero stops the run (not read as octal)"
+    else echo "FAIL retired file: a leading zero"; status=1; fi
+    cp "$rw/old.csv.good" "$r"
     # a retired file with a line that isn't a deposit stops the run (it is state: restore it)
     printf '1,%064d,1,BASH_VERSINFO[$(touch${IFS}%s)],0,x.md\n' 5 "$TEST_TMP/pwned-r" >> "$r"
     if ! dep retire TEST_TRANSFERS="$TEST_TMP/no-transfers.json" && grep -q "a line that isn't a deposit" "$rw/log" && [[ ! -e $TEST_TMP/pwned-r ]]; then
@@ -686,6 +719,17 @@ if bash -c 'source "$1/../contrib/migrate/retire-from-ccs-back" && source "$1/st
         echo "ok   retire-from-ccs-back: an unclaimed address's donations recorded from ccs-back's table (the total kept); a shared index refused"
     else echo "FAIL retire-from-ccs-back: a shared index"; cat "$d/db.out"; status=1; fi
 else echo "FAIL retire-from-ccs-back"; cat "$d/db.out" "$d/log" 2> /dev/null | tail -n 5; status=1; fi
+# a proposal file name a run would refuse (an address-long run in it): nothing written, not a
+# record that stops every run after it
+cp "$d/state/proposals.csv.before-retire-old0" "$d/state/proposals.csv"
+odd=x$(printf '%090d' 0 | tr 0 Z).md far2=8$(printf '%094d' 0 | tr 0 Y)
+printf '"%s","",902,"%s",""\n' "$odd" "$far2" >> "$d/state/proposals.csv"
+printf '"c done, (old).md","",900,"%s",""\n"%s","",902,"%s",""\n' "$far" "$odd" "$far2" > "$d/export/proposals.csv"
+printf '%064d\t902\t7\t3000000\n' 4 >> "$d/export/ccs-back-deposits.tsv"
+if ! bash -c 'source "$1/../contrib/migrate/retire-from-ccs-back" && source "$1/stubs.sh" && retire_db_main old2 "$2" "$3"' _ "$here" "$d/ccs.conf" "$d/export" > "$d/db.out" 2>&1 \
+    && grep -q "a line a run couldn't read back, nothing written" "$d/db.out" && [[ ! -e $d/state/retired/old2.csv ]]; then
+    echo "ok   retire-from-ccs-back: a file name a run would refuse: nothing written (the writers read it back as a run does)"
+else echo "FAIL retire-from-ccs-back: a name a run refuses"; cat "$d/db.out"; status=1; fi
 
 # ccs-backup-receive (the backup machine): proposals.csv, every version kept; deposits.csv, one
 # copy, replaced only by one that has all its deposits (not one checked in the future); anything

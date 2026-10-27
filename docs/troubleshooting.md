@@ -93,7 +93,7 @@ A donation counts at `MIN_CONFIRMATIONS` (10); a **time-locked** one only once i
 | `could not fetch ideas from GitLab, keeping the previous list` | the forge is down: the last list stays |
 | `not an idea: MR !N's <file> doesn't read as a proposal: <reason>` | the MR's file wouldn't read once merged (the reasons as above): the author fixes it |
 | `could not read MR !N` / `could not fetch <file> of MR !N` | that one MR, this run only |
-| `N open MRs, only the 100 most recently updated are looked at` | many open MRs (spam?): `IDEAS_MAX` in `ccs.conf` |
+| `more than 100 open MRs, only the 100 most recently updated are looked at` | many open MRs (spam?): `IDEAS_MAX` in `ccs.conf` |
 
 An idea is an MR adding exactly one `.md` at the root (and only images in `images/<its name>/`).
 A title with a long run of address characters is shortened (`9ZqZqZ…ZqZq`).
