@@ -108,4 +108,4 @@ gets a list of its own, and the old one's addresses leave the site when it is re
 ## Setting it up
 
 From ccs-back and Jekyll to this, step by step: [the handover](handover.md). The testnet CCS,
-https://ccs.monerodevs.org, runs it on two machines.
+https://ccs.monerodevs.org, runs it ([testnet](testnet.md)).
