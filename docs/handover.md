@@ -7,7 +7,8 @@ ccs-front). The steps build the setup below box by box; then the old site is swi
 
 **Stays:** the proposals repository, the CCS wallet and every proposal's subaddress, the site's
 address and `/projects`. **Goes:** PHP, MySQL, Jekyll, Ruby; the web server runs no code. Why:
-[the design](design.md). The testnet CCS, https://ccs.monerodevs.org, is this setup, running.
+[the design](design.md). The testnet CCS, https://ccs.monerodevs.org, is this setup, running
+([where it differs](testnet.md)).
 
 ## Before you start
 
@@ -370,26 +371,8 @@ backend and the web server reach out to it, and nothing reaches the backend.
 proposals repository and its "Submit idea" link (ccs-front-hugo's `hugo.toml`). Changing any of
 them is a new design release.
 
-**Where the testnet differs** (don't copy these): `testnet=1`, monerod on `28081`, wallet-rpc on
-`18182`; `MIN_CONFIRMATIONS=1`; the proposals on Forgejo
-(`https://git.disroot.org/api/v1/repos/plowsof/ccs-proposals`; the gate's `proposals.conf`:
-`PROPOSALS_GIT=https://git.disroot.org/plowsof/ccs-proposals.git`, `LINK_HOSTS=repo.getmonero.org/monero-project/ccs-proposals`,
-where the older proposals' merge requests are); its own wallet and list; the IRC
-bot on the backend machine itself (the backend's alerts reach it on 127.0.0.1, the web server's
-over HTTPS through that machine's proxy); and a Forgejo Actions runner on the backend, for every
-repository of its owner on disroot, the testnet proposals' pre-parser among them: anyone opening a
-pull request there starts a job on the wallet's machine (master's script, in an unprivileged
-container with no Docker socket and no route to the wallet's RPC). A risk the testnet takes; the
-CCS's backend runs nothing but the CCS. **The testnet's machines aren't separate:** the backend
-is a shared host (other people's services open to the internet, more CI runners, some running
-jobs on the host itself, and Coolify building ccs-front-hugo's branches in its Docker), and its root
-has a key that logs in, with sudo, on the web server and the backup machine (other projects' tools
-use it). So on the testnet, root on the backend is root on all three, and the two-machine
-guarantees above ([who can do what](#who-can-do-what)) don't hold there; the web server and the
-backup machine run other services too. The testnet also shows the real CCS's totals: a local
-patch of `lib/wallet.sh` adds each proposal's real raised amount and count, as numbers only
-(`STATE_DIR/historic.tsv`), to what its testnet wallet receives; every address it shows is the
-testnet wallet's. Its alerts go to `#montero-ccs-emojis`.
+**The testnet** differs in places (its own wallet, proposals on Forgejo, machines that aren't
+separate): [testnet](testnet.md). Don't copy it.
 
 ## Retiring a wallet
 
