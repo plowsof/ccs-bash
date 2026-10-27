@@ -124,7 +124,10 @@ donation_totals() {
             die "$file: a line that isn't a deposit (delete it: the next run makes it again)"
         fi
         ((wh >= H)) || die "the wallet is at height $wh, below the $H its kept deposits go to: rescanning or restored? (the site keeps its last totals until it has caught up)"
-        ((now - T < 86400)) && full=''
+        # (a "checked" time in the future, from a clock gone wrong or a forged file, would skip the
+        # recount for good: recounted in full then)
+        ((T <= now && now - T < 86400)) && full=''
+        ((T <= now)) || log "warning: $file was checked in the future ($T): a full recount"
     fi
     if [[ $full ]]; then
         params="{\"in\": true, \"pool\": true, \"account_index\": 0, \"subaddr_indices\": $indexes}"
