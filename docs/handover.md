@@ -68,17 +68,21 @@ far, so nothing is rescanned).
 Without the cache, wallet-rpc rescans from the restore height; without either file, make the
 wallet from the address and view key (`monero-wallet-cli --generate-from-view-key`, which asks
 for each in turn, or wallet-rpc's `generate_from_keys` with `address`, `viewkey`, `password` and
-`restore_height`), the restore height before the first donation. Before it scans, raise the subaddress lookahead past the
-highest index in `proposals.csv`, or it misses donations beyond a gap of 200:
-`rpc set_subaddress_lookahead '{"password":"<wallet password>","major_idx":1,"minor_idx":20000}'`
-(already scanned: `rpc rescan_blockchain` after).
+`restore_height`), the restore height before the first donation. Then the smallest subaddress lookahead, and every
+subaddress up to the highest index in `proposals.csv` created before it scans (or it misses their
+donations), then a rescan:
+```
+rpc set_subaddress_lookahead '{"password":"<wallet password>","major_idx":1,"minor_idx":1}'
+rpc create_address '{"account_index":0,"count":<highest index>}'
+rpc rescan_blockchain
+```
 
-A known monero limit, not abused so far: a payment to a subaddress within the lookahead makes the
-wallet create every one up to it, and look a lookahead further. Anyone can pay a listed address,
-so dust payments can grow the wallet's cache without limit (the bigger the lookahead, the
-cheaper). Keep it small once scanned: `"major_idx":1,"minor_idx":1` (the smallest it takes) is
-enough, as ccs-bash creates a proposal's subaddress before showing it. ccs-bash keeps the list
-from being used up (a new proposal gets the index after the state's highest), not the cache.
+Not a bigger lookahead: a known monero limit, not abused so far. A payment to a subaddress within
+the lookahead makes the wallet create every one up to it, and look a lookahead further. Anyone can
+pay a listed address, so dust payments can grow the wallet's cache without limit (the bigger the
+lookahead, the cheaper). 1 is enough, as ccs-bash creates a proposal's subaddress before showing
+it. ccs-bash keeps the list from being used up (a new proposal gets the index after the state's
+highest), not the cache.
 
 ## 2. ccs-bash and its state (the backend)
 
