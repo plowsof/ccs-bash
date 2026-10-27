@@ -267,6 +267,7 @@ for attack in \
     "link|ideas/index.html|https://forge.test/ccs-proposals/pulls/0|https://evil.example/pr/0|a link to another site than the proposals' forge" \
     "otherrepo|ideas/index.html|https://forge.test/ccs-proposals/pulls/0|https://forge.test/someone/else/pulls/0|a link to another repository on the proposals' forge" \
     "dotdot|ideas/index.html|https://forge.test/ccs-proposals/pulls/0|https://forge.test/ccs-proposals/../someone/else|a link that steps out of the proposals repository (..)" \
+    "issue|ideas/index.html|https://forge.test/ccs-proposals/pulls/0|https://forge.test/ccs-proposals/issues/1|a link to an issue in the proposals repository, not its merge request" \
     "style|$p|<h1>A proposal</h1>|<h1 style=\"display:none\">A proposal</h1>|a style attribute" \
     "svg|$p|<h1>A proposal</h1>|<h1>A proposal</h1><svg><text>x</text></svg>|an <svg>" \
     "art|$p|<div class=\"body\">|<pre>"$'\xe2\x96\x88\xe2\x96\x80'"</pre><div class=\"body\">|a QR code drawn as text" \
@@ -283,7 +284,7 @@ for attack in \
     case $what in
         qr) site "$v" "$good" "$fake" ;;
         small) site "$v" "$good"; change "$file" "$(qr64 "$good")" "$(qr64 "$good" 4)" ;;
-        link | otherrepo | dotdot | groupedidea | date) site "$v" "$good" "$good" "An idea" ;;
+        link | otherrepo | dotdot | issue | groupedidea | date) site "$v" "$good" "$good" "An idea" ;;
         allowedbox) site "$v" "$fund" ;;
         *) site "$v" "$good" ;;
     esac
