@@ -213,26 +213,33 @@ ideas() {
     # characters each base58 or not ASCII (an address padded or split by invisible characters, or
     # drawn with look-alikes: a mathematical 9, a fullwidth or Cyrillic A; any character that isn't
     # ASCII, not only letters: jq's Unicode tables miss some) is shortened, as alerts show
-    # addresses, to its first 6 and last 4. So is one split into groups by spaces or one of
-    # . _ : - ("4A9b xZq3 ...") when, read joined, it holds an address (its checksum: is_address);
-    # without openssl's Keccak, every such run (a long title of plain words too). Bidi controls go
-    # first (they could show an address's halves, a space between them, in another order than
-    # written), and control characters become spaces.
-    local prep='def prep: gsub("[\u202a-\u202e\u2066-\u2069]"; "") | gsub("[\\x00-\\x1F\\x7F]"; " ")
+    # addresses, to its first 6 and last 4. So is one split into groups by up to three characters
+    # that can't be in an address (spaces, punctuation: "4A9b xZq3", "4A9b - xZq3", "4A9b/xZq3"; as
+    # the gate reads them) when, read joined, it holds an address (its checksum: is_address);
+    # without openssl's Keccak, every such run (a long title of plain words too), and so is every
+    # run once IDEAS_CHECKS (3000) places have been tried this run (titles made to look like an
+    # address everywhere cost a check a place: they are shortened, not checked for minutes). Only
+    # the ideas shown are looked at. Bidi controls go first (they could show an address's halves,
+    # a space between them, in another order than written), control characters become spaces, and
+    # a run of spaces one, as a browser shows it.
+    local prep='def prep: gsub("[\u202a-\u202e\u2066-\u2069]"; "") | gsub("[\\x00-\\x1F\\x7F]"; " ") | gsub(" +"; " ")
             | gsub("(?<r>(?:[1-9A-HJ-NP-Za-km-z]|[^\\x00-\\x7F]){90,})"; .r | gsub("[^\\x20-\\x7E]"; "") | "\(.[0:6])…\(.[-4:])");
-        def groups: "(?:[1-9A-HJ-NP-Za-km-z]|[^\\x00-\\x7F])(?:(?: +|[._:-])?(?:[1-9A-HJ-NP-Za-km-z]|[^\\x00-\\x7F])){89,}";'
-    local run joined w n shorten=() keccak=1
+        def groups: "(?:[1-9A-HJ-NP-Za-km-z]|[^\\x00-\\x7F])(?:[\\x20-\\x2F\\x3A\\x3B\\x3D\\x3F\\x40\\x5B-\\x60\\x7B-\\x7E]{0,3}(?:[1-9A-HJ-NP-Za-km-z]|[^\\x00-\\x7F])){89,}";'
+    local run joined w n shorten=() keccak=1 tried=0 budget=${IDEAS_CHECKS:-3000}
+    [[ $budget =~ ^[0-9]{1,6}$ ]] || budget=3000
     printf '' | openssl dgst -keccak-256 > /dev/null 2>&1 || keccak=''
     while IFS= read -r run; do
-        if [[ -z $keccak ]]; then shorten+=("$run"); continue; fi
-        joined=$(LC_ALL=C sed 's/[ ._:-]//g; s/[^1-9A-HJ-NP-Za-km-z]//g' <<<"$run")
+        if [[ -z $keccak ]] || ((tried > budget)); then shorten+=("$run"); continue; fi
+        joined=$(LC_ALL=C sed 's/[^1-9A-HJ-NP-Za-km-z]//g' <<<"$run")
         for n in 95 106; do
             for ((w = 0; w + n <= ${#joined}; w++)); do
-                if is_address "${joined:w:n}"; then shorten+=("$run"); break 2; fi
+                tried=$((tried + 1))
+                if ((tried > budget)) || is_address "${joined:w:n}"; then shorten+=("$run"); break 2; fi
             done
         done
-    done < <(jq -r "$prep"' .[] | (.title, .author.username) | strings | prep | [scan(groups)] | .[]' <<<"$mrs")
+    done < <(jq -r --argjson keep "$(printf '%s\n' "${keep[@]}" | jq -s .)" "$prep"' .[] | select(.iid | IN($keep[])) | (.title, .author.username) | strings | prep | [scan(groups)] | .[]' <<<"$mrs")
     [[ $keccak ]] || ((${#shorten[@]} == 0)) || log "warning: openssl has no Keccak-256 (3.2 or later): ${#shorten[@]} idea title(s) shortened that may hold no address"
+    ((tried <= budget)) || log "warning: idea titles with more than $budget places that could hold an address: the rest shortened unchecked"
     jq --argjson keep "$(printf '%s\n' "${keep[@]}" | jq -s .)" --argjson votes "$votes" \
         --argjson shorten "$(printf '%s\n' "${shorten[@]}" | jq -R . | jq -s 'map(select(. != ""))')" "$prep"'
         def noaddress: prep | gsub("(?<r>" + groups + ")"; if .r | IN($shorten[]) then .r | gsub("[^\\x20-\\x7E]"; "") | "\(.[0:6])…\(.[-4:])" else .r end);
