@@ -580,6 +580,14 @@ if dep a && grep -q 'the wallet knows 1 deposit(s) below height 3099970' "$TEST_
     && grep -q '^3099950,' "$TEST_TMP/dep-a/state/deposits.csv" && [[ $(jq -c . "$TEST_TMP/dep-a/out/projects.json") == "$first" ]]; then
     echo "ok   deposits.csv: the daily recount, a deposit the wallet knows and the file lacked: added, the same totals"
 else cat "$TEST_TMP/dep-a/log"; echo "FAIL deposits.csv: a deposit the file lacked"; deposits_ok=0; fi
+# a "checked" time in the future (a forged file, a clock gone wrong) doesn't skip the recount: a
+# forged deposit in it stops the run, not counted every run after
+cp "$TEST_TMP/dep-a/state/deposits.csv" "$TEST_TMP/deposits.good"
+{ sed '1s/checked [0-9]*/checked 99999999999/' "$TEST_TMP/deposits.good"; printf '3099960,%064d,1,1000000000000000,0\n' 9; } > "$TEST_TMP/dep-a/state/deposits.csv"
+if ! dep a && grep -q 'checked in the future' "$TEST_TMP/dep-a/log" && grep -q 'the wallet lacks 1 of the deposits kept' "$TEST_TMP/dep-a/log"; then
+    echo "ok   deposits.csv: checked in the future: recounted in full, a forged deposit stops the run"
+else cat "$TEST_TMP/dep-a/log"; echo "FAIL deposits.csv: checked in the future"; deposits_ok=0; fi
+cp "$TEST_TMP/deposits.good" "$TEST_TMP/dep-a/state/deposits.csv"
 ((deposits_ok)) || status=1
 
 # Retiring a wallet (contrib/retire-wallet): its donations recorded by proposal, the state cleared of
@@ -637,6 +645,13 @@ sed 's/^"c done, (old).md","https:\/\/example.org\/mr\/3","",""/"c done, (old).m
 printf '"c done, (old).md","",900,"%s",""\n"a-fund.md","",1,"%s",""\n' "$far" "$(printf '8%094d' 1)" > "$d/export/proposals.csv"
 printf '%064d\t900\t1000000000000\t3000000\n%064d\t900\t2500000000000\t3000010\n%064d\t1\t5\t3000000\n' 1 2 3 > "$d/export/ccs-back-deposits.tsv"
 dep db > /dev/null 2>&1 || true   # (the config; this run stops: the address isn't the wallet's)
+# (wallet-rpc down, or not answering about an address: refused, not taken as "no wallet's")
+for m in get_address get_address_index; do
+    if TEST_RPC_DOWN=$m bash -c 'source "$1/../contrib/migrate/retire-from-ccs-back" && source "$1/stubs.sh" && retire_db_main old0 "$2" "$3"' _ "$here" "$d/ccs.conf" "$d/export" > "$d/db.out" 2>&1 \
+        || [[ -e $d/state/retired/old0.csv ]]; then
+        echo "FAIL retire-from-ccs-back: wallet-rpc down ($m)"; cat "$d/db.out"; status=1
+    fi
+done
 if bash -c 'source "$1/../contrib/migrate/retire-from-ccs-back" && source "$1/stubs.sh" && retire_db_main old0 "$2" "$3"' _ "$here" "$d/ccs.conf" "$d/export" > "$d/db.out" 2>&1 \
     && [[ $(awk 'NR == 1' "$d/state/retired/old0.csv") =~ ^#\ retired\ old0\ wallet\ ccs-back-database\  ]] \
     && [[ $(awk 'NR > 1' "$d/state/retired/old0.csv" | wc -l) == 2 ]] \
@@ -651,7 +666,8 @@ if bash -c 'source "$1/../contrib/migrate/retire-from-ccs-back" && source "$1/st
 else echo "FAIL retire-from-ccs-back"; cat "$d/db.out" "$d/log" 2> /dev/null | tail -n 5; status=1; fi
 
 # ccs-backup-receive (the backup machine): proposals.csv, every version kept; deposits.csv, one
-# copy, replaced only by one that has all its deposits; anything else refused
+# copy, replaced only by one that has all its deposits (not one checked in the future); anything
+# else refused
 # (a host script: not in the image, which has no du, head, comm or sort; skipped there)
 if ! type -P du head comm sort > /dev/null; then
     echo "ok   backup receiver: skipped (a host script, its tools are not in the image)"
@@ -663,18 +679,24 @@ else
         && { sed '1s/checked [0-9]*/checked 1/' "$d1"; printf '3099999,%064d,1,5,0\n' 7; } | recv && [[ $(wc -l < "$bk/deposits.csv") == $(($(wc -l < "$d1") + 1)) ]] \
         && ! sed '$d' "$d1" | recv && grep -q 'lacks 2 deposit' "$TEST_TMP/recv.out" \
         && ! printf '# final 1 checked 1\n1,zz,1,1,0\n' | recv && grep -q 'not a deposits.csv' "$TEST_TMP/recv.out" \
-        && ! printf 'hello\n' | recv && [[ $(find "$bk" -name 'proposals-*.csv' | wc -l) == 1 ]]; then
+        && ! printf 'hello\n' | recv && [[ $(find "$bk" -name 'proposals-*.csv' | wc -l) == 1 ]] \
+        && ! { sed '1s/checked [0-9]*/checked 99999999999/' "$d1"; printf '3099998,%064d,1,5,0\n' 8; } | recv && grep -q 'checked in the future' "$TEST_TMP/recv.out"; then
         echo "ok   backup: proposals.csv kept as a new copy; deposits.csv one copy, replaced only by one with all its deposits; anything else refused"
     else
         cat "$TEST_TMP/recv.out"; ls -la "$bk"; echo "FAIL backup receiver"; status=1
     fi
-    # a retired wallet's file: every version kept, as the state; one with an address in it refused
+    # a retired wallet's file: every version kept, as the state; one with an address in it refused,
+    # and one whose wallet or deposits differ from the first version (a forged newest)
     rf=$TEST_TMP/dep-retire/state/retired/old.csv
     if [[ -f $rf ]] && head -n 2 "$rf" | recv && [[ $(find "$bk" -name 'retired-old-*.csv' | wc -l) == 1 ]] \
         && head -n 2 "$rf" | recv && grep -q 'retired old unchanged' "$TEST_TMP/recv.out" \
         && ! { head -n 1 "$rf"; printf '1,%064d,1,5,0,8%s.md\n' 7 "$(printf '%094d' 0 | tr 0 Z)"; } | recv && grep -q "not a retired wallet's file" "$TEST_TMP/recv.out" \
-        && [[ $(find "$bk" -name 'retired-old-*.csv' | wc -l) == 1 ]]; then
-        echo "ok   backup: a retired wallet's file kept as a new copy, each version; anything else refused"
+        && [[ $(find "$bk" -name 'retired-old-*.csv' | wc -l) == 1 ]] \
+        && ! { head -n 1 "$rf"; sed -n 2p "$rf" | awk -F, -v OFS=, '{ $4 = $4 * 1000; print }'; } | recv && grep -q 'differs from its first version' "$TEST_TMP/recv.out" \
+        && ! { head -n 1 "$rf" | sed 's/ wallet [^ ]* / wallet ccs-back-database /'; sed -n 2p "$rf"; } | recv && grep -q 'differs from its first version' "$TEST_TMP/recv.out" \
+        && [[ $(find "$bk" -name 'retired-old-*.csv' | wc -l) == 1 ]] && sleep 1 \
+        && { head -n 1 "$rf"; sed -n 2p "$rf" | sed 's/,[^,]*$/,renamed.md/'; } | recv && [[ $(find "$bk" -name 'retired-old-*.csv' | wc -l) == 2 ]]; then
+        echo "ok   backup: a retired wallet's file kept as a new copy, each version (later ones may only rename a proposal); anything else refused"
     else
         cat "$TEST_TMP/recv.out"; ls -la "$bk"; echo "FAIL backup receiver, retired"; status=1
     fi

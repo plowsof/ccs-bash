@@ -24,7 +24,7 @@ csvrows='def csvrow: [("," + .) | match(",(\"(?:[^\"]|\"\")*\"|[^,]*)"; "g") | (
 
 retire_db_main() {
 local name=${1:?NAME (a-z, 0-9, -)} config=${2:?CONFIG} out=${3:?OUT (export-ccs-back)}
-local dest f a n dup deposits total
+local dest f a n dup deposits total err
 [[ $name =~ ^[a-z0-9-]+$ ]] || die "NAME: a-z, 0-9 and - only"
 [[ -f $out/proposals.csv && -f $out/ccs-back-deposits.tsv ]] || die "$out: no proposals.csv and ccs-back-deposits.tsv (export-ccs-back first)"
 load_config "$config"
@@ -36,12 +36,18 @@ WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 load_state
 
-# the state's rows with an address the wallet doesn't have: file TAB address
+# the state's rows with an address the wallet doesn't have: file TAB address. Only the wallet's
+# own answer counts as "not ours": wallet-rpc down, or another wallet open, would otherwise retire
+# the live wallet's subaddresses
+[[ $(rpc get_address '{"account_index": 0}' | jq -r .address) == "$WALLET_ADDRESS" ]] \
+    || die "the wallet's main address is not WALLET_ADDRESS from $config (wallet-rpc down, or another wallet?)"
 : > "$WORK/unclaimed"
-jq -r 'to_entries[] | select(.value.address and (.key | endswith(".md"))) | [.key, .value.address] | @tsv' "$WORK/state.json" |
-    while IFS=$'\t' read -r f a; do
-        rpc get_address_index "$(jq -nc --arg a "$a" '{address: $a}')" > /dev/null 2>&1 || printf '%s\t%s\n' "$f" "$a" >> "$WORK/unclaimed"
-    done
+while IFS=$'\t' read -r f a; do
+    if ! err=$(rpc get_address_index "$(jq -nc --arg a "$a" '{address: $a}')" 2>&1 > /dev/null); then
+        [[ $err =~ "Address doesn't belong to the wallet"|"Invalid address" ]] || die "could not ask the wallet about $f's address: $err"
+        printf '%s\t%s\n' "$f" "$a" >> "$WORK/unclaimed"
+    fi
+done < <(jq -r 'to_entries[] | select(.value.address and (.key | endswith(".md"))) | [.key, .value.address] | @tsv' "$WORK/state.json")
 n=$(grep -c . "$WORK/unclaimed" || true)
 ((n > 0)) || die "every address in proposals.csv is the wallet's: nothing to record"
 

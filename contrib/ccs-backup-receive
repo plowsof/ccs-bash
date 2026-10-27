@@ -5,11 +5,12 @@
 #     unless it is the same as the newest copy. Never overwritten or deleted, so even a taken-over
 #     backend can only add copies, not destroy the old ones; 1 MB each.
 #   - a retired wallet's file (contrib/retire-wallet, its first line "# retired <name> ..."): state,
-#     kept as retired-<name>-<UTC time>.csv, every version, as proposals.csv; 64 MB each.
+#     kept as retired-<name>-<UTC time>.csv, every version, as proposals.csv; 64 MB each. A later
+#     version may differ from the first only in its file names (a proposal renamed).
 #   - deposits.csv (a cache of the wallet's deposits, its first line "# final ..."): one copy,
 #     deposits.csv, replaced only by one that has every deposit it has (it only ever grows; a taken-
 #     over backend can add lines, never take one away). 64 MB at most. A real shrink (a reorg deeper
-#     than its depth) is reset here by hand, as root.
+#     than its depth) is reset here by hand, as root. Not one checked in the future.
 # Nothing once the folder holds 256 MB, so it can't fill the disk either. Root-owned, 755. Copies in
 # /var/lib/ccs-backup (the ccs-backup user's, 700).
 set -euo pipefail
@@ -29,6 +30,13 @@ if [[ $first =~ ^#\ retired\ ([a-z0-9-]+)\ wallet\ ([0-9A-Za-z]{95}|ccs-back-dat
     fi
     last=$(find "$dir" -maxdepth 1 -name "retired-$name-*.csv" | sort | tail -n 1)
     if [[ $last ]] && cmp -s "$tmp" "$last"; then echo "ccs-backup: retired $name unchanged"; exit 0; fi
+    # the first version is the record: a later one may rename a proposal (the file column), never
+    # change the wallet or a deposit (a taken-over backend can't make a forged one the newest)
+    ref=$(find "$dir" -maxdepth 1 -name "retired-$name-*.csv" | sort | head -n 1)
+    if [[ $ref ]] && ! { [[ $(head -n 1 "$ref" | cut -d' ' -f3-5) == $(head -n 1 "$tmp" | cut -d' ' -f3-5) ]] \
+        && cmp -s <(tail -n +2 "$ref" | cut -d, -f1-5 | sort) <(tail -n +2 "$tmp" | cut -d, -f1-5 | sort); }; then
+        echo "ccs-backup: retired $name differs from its first version ($(basename "$ref")) in more than the file names, not kept (a real change: reset it here by hand, as root)" >&2; exit 1
+    fi
     dest=$dir/retired-$name-$(date -u +%Y%m%dT%H%M%SZ).csv
     [[ -e $dest ]] && { echo "ccs-backup: $dest exists" >&2; exit 1; }
     chmod 440 "$tmp" && mv -n "$tmp" "$dest"
@@ -40,6 +48,11 @@ if [[ $first =~ ^#\ final\ [0-9]+\ checked\ [0-9]+$ ]]; then
     # (no pipe into grep -q: with pipefail, tail killed early would hide what grep found)
     if grep -qvE '^[0-9]+,[0-9a-f]{64},[0-9]+,[0-9]+,[0-9]+$' < <(tail -n +2 "$tmp"); then
         echo "ccs-backup: not a deposits.csv, not kept" >&2; exit 1
+    fi
+    # (checked in the future: the backend would never recount it, and keep a forged deposit)
+    [[ $first =~ checked\ ([0-9]+)$ ]]
+    if ((10#${BASH_REMATCH[1]} > $(date +%s) + 3600)); then
+        echo "ccs-backup: deposits.csv checked in the future, not kept" >&2; exit 1
     fi
     old=$dir/deposits.csv
     if [[ -f $old ]]; then
