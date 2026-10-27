@@ -91,8 +91,9 @@ site serves from its copy. What the 268 proposals checked use:
 ## The signed subaddress list
 
 The wallet's subaddresses are listed once, in advance, and every address shown is checked
-against it on both machines (the same four files on each: the list, `.asc` its signature,
-`.key.asc` the key, `.pin` its sha256 and fingerprint); visitors check the wallet itself:
+against it on both machines (the same five files on each: the list, `.asc` its signature,
+`.key.asc` the key, `.pin` its sha256 and fingerprint, `.viewkey` for the Verify page); visitors
+check the wallet itself:
 
 | Where | Its job |
 |---|---|
