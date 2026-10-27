@@ -14,17 +14,19 @@ gitlab_get() {
 
 forgejo() { [[ ${REPOSITORY_URL:-} =~ /api/v1/repos/[^/]+/[^/]+/?$ ]]; }
 
-# All MRs in state $1 (opened or merged), most recently updated first.
+# All MRs in state $1 (opened or merged), most recently updated first; with $2, no more pages once
+# there are more than $2 (anyone can open MRs: the ideas look at IDEAS_MAX of them).
 gitlab_mrs() {
     local page=1 batch all='[]'
     if forgejo; then
-        forgejo_prs "$1"
+        forgejo_prs "$1" "${2:-}"
         return
     fi
     while :; do
         batch=$(gitlab_get "merge_requests?state=$1&scope=all&order_by=updated_at&per_page=100&page=$page") || return 1
         all=$(jq -s 'add' <<<"$all $batch") || return 1
         [[ $(jq length <<<"$batch") -eq 100 ]] || break
+        [[ -z ${2:-} ]] || (($(jq length <<<"$all") <= $2)) || break
         page=$((page + 1))
     done
     printf '%s\n' "$all"
@@ -45,6 +47,7 @@ forgejo_prs() {
                 | todate end)
         }))' <<<"$all $batch") || return 1
         [[ $(jq length <<<"$batch") -eq 50 ]] || break
+        [[ -z ${2:-} ]] || (($(jq length <<<"$all") <= $2)) || break
         page=$((page + 1))
     done
     printf '%s\n' "$all"
@@ -67,17 +70,21 @@ mr_proposal_file() {
     printf '%s\n' "$md"
 }
 
-# Print the URL of the merged MR that added file $1, or nothing. Fetched once per run.
+# Print the URL of the merged MR that added file $1, or nothing. The merged MRs fetched once per
+# run; what each adds kept in MR_CACHE ("iid<TAB>file", STATE_DIR/merged-files.cache when ccs-back.sh
+# sets it: a merged MR doesn't change), so a lookup cut short goes on from there next run. One MR
+# that can't be read is passed over (the others still found): 1 at the end if the file wasn't.
 merged_mr_url() {
-    local iid url file cache=$WORK/merged-files.tsv
+    local iid url file failed='' cache=${MR_CACHE:-$WORK/merged-files.tsv}
     if [[ ! -s $WORK/merged.json ]]; then
         gitlab_mrs merged > "$WORK/merged.tmp" || return 1
         mv "$WORK/merged.tmp" "$WORK/merged.json"
-        : > "$cache"
     fi
+    [[ -f $cache ]] || : > "$cache"
     while IFS=$'\t' read -r iid url; do
+        [[ $iid =~ ^[0-9]+$ ]] || continue
         if ! file=$(awk -F'\t' -v i="$iid" '$1 == i { print $2; found = 1 } END { exit !found }' "$cache"); then
-            file=$(mr_proposal_file "$iid") || return 1
+            file=$(mr_proposal_file "$iid") || { failed=1; continue; }
             printf '%s\t%s\n' "$iid" "$file" >> "$cache"
         fi
         if [[ $file == "$1" ]]; then
@@ -85,6 +92,7 @@ merged_mr_url() {
             return 0
         fi
     done < <(jq -r '.[] | [.iid, .web_url] | @tsv' "$WORK/merged.json")
+    [[ ! $failed ]]
 }
 
 # is_address S: S (base58, 95 or 106 characters) is a Monero address, by its checksum: base58 as
@@ -156,10 +164,10 @@ idea_file_reads() {
 # it), so each is fetched once, not every run. Unset (the tests): everything is fetched.
 ideas() {
     local mrs iid file sha why rc keep=() votes='{}' v max=${IDEAS_MAX:-100} cached='' fresh='' hit
-    mrs=$(gitlab_mrs opened) || return 1
     [[ $max =~ ^[0-9]+$ ]] || max=100
+    mrs=$(gitlab_mrs opened "$max") || return 1
     if (($(jq length <<<"$mrs") > max)); then
-        log "warning: $(jq length <<<"$mrs") open MRs, only the $max most recently updated are looked at for ideas"
+        log "warning: more than $max open MRs, only the $max most recently updated are looked at for ideas"
     fi
     [[ -n ${IDEAS_CACHE:-} && -f $IDEAS_CACHE ]] && cached=$(cat "$IDEAS_CACHE")
     while IFS=$'\t' read -r iid sha; do
