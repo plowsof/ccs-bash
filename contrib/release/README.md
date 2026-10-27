@@ -100,8 +100,11 @@ that branch, and the link opens the pull request against `testnet`.
 Then, back in `ccs-bash`, give the disk back: `contrib/release/clean` (about 2.7 GB).
 
 The pull request's `lint` check
-(feather-sigs', from Bitcoin Core's guix.sigs) lets a pull request only add attestation files,
-in pairs, and builder keys, and checks each signature against its signer's key.
+(feather-sigs', from Bitcoin Core's guix.sigs) checks that a pull request only adds attestation
+files, in pairs, and builder keys, and each signature against its signer's key. It is advisory:
+it runs from the pull request's own tree, which can change it, so the repository's owner reviews
+each pull request (a changed builder key above all); what counts is `verify` with your own
+`TRUSTED_KEYS`.
 
 ## What is attested
 
@@ -147,8 +150,8 @@ Each signature must be by the key of the signer whose folder it is in
 (`builder-keys/<signer>.asc`, one key), and a key counts once however many folders it signed: one
 person can't add up to two. Anyone can open a pull request with a new key, so only the people
 you trust count: their keys' fingerprints in a file of your own, one a line (the others are
-shown, not counted, and not compared: they can't change what is printed, nor stop the others
-agreeing). A revoked key doesn't count. Without `TRUSTED_KEYS`, `verify` counts nothing and says
+shown, not counted, and not compared: they can't change what is printed; a folder of theirs
+with a bad signature still fails the check, accepting nothing). A revoked key doesn't count. Without `TRUSTED_KEYS`, `verify` counts nothing and says
 so (`--any-key` counts every key):
 
 ```
