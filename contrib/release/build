@@ -78,16 +78,19 @@ start=$(date +%s)
 # step TEXT: what is happening now, and how long since the start
 step() { printf '\n==> [%s] %s\n' "$(date -u -d "@$(($(date +%s) - start))" +%M:%S)" "$*"; }
 
-# published: the value the release notes publish for this release (empty if unreadable)
+# published: the value the release notes publish for this release (empty if unreadable, "several"
+# if they name more than one: a release made by hand keeps its text, and CI's notes come after it,
+# so a value written in by hand mustn't be taken for the built one)
 published() {
-    local body
+    local body vals
     body=$(curl -fsS --max-time 20 "https://api.github.com/repos/plowsof/$what/releases/tags/$tag" 2> /dev/null \
         | jq -r '.body // empty' 2> /dev/null) || return 0
     if [[ $what == ccs-front-hugo ]]; then
-        grep -oE '[0-9a-f]{64}' <<<"$body" | head -n 1 || true
+        vals=$(grep -oE '[0-9a-f]{64}' <<<"$body" | sort -u || true)
     else
-        grep -oE 'Image ID: `sha256:[0-9a-f]{64}' <<<"$body" | grep -oE '[0-9a-f]{64}' | head -n 1 || true
+        vals=$(grep -oE 'Image ID: `sha256:[0-9a-f]{64}' <<<"$body" | grep -oE '[0-9a-f]{64}' | sort -u || true)
     fi
+    if [[ $vals == *$'\n'* ]]; then echo several; else printf '%s\n' "$vals"; fi
 }
 
 case $what in
@@ -124,6 +127,8 @@ case $what in
         pub=$(published)
         if [[ -z $pub ]]; then
             echo "Couldn't read the release notes: compare it yourself with https://github.com/plowsof/$what/releases/tag/$tag"
+        elif [[ $pub == several ]]; then
+            echo "!! The release notes name more than one: compare it yourself with https://github.com/plowsof/$what/releases/tag/$tag"
         elif [[ $pub == "$result" ]]; then
             echo "The same as the release notes publish."
         else
