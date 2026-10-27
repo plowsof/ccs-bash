@@ -72,16 +72,19 @@ refuse() {
 # (a no-break space mustn't join one to the word beside it). A page or JSON must start with <, [
 # or {: no image format does, and a browser shows an <img> of any file whose bytes are an image's.
 # Python, read as bytes, in one pass each: time linear in the file (awk's took minutes for 1 MB).
-scan_py='
-import os, re, sys
-MAX = int(os.environ.get("CCS_GATE_MAX", 8 << 20))
-ENT = re.compile(r"&#[0-9]+;?|&#[xX][0-9A-Fa-f]+;?|&[A-Za-z][A-Za-z0-9]*;")
-NAMED = {"amp": 38, "lt": 60, "gt": 62, "quot": 34, "apos": 39}
-QR = re.compile(r"data:image/png;base64,[A-Za-z0-9+/]+=*")
-TOK = re.compile(r"[0-9A-Za-z]+")
-# an address written in groups, split by spaces or one of . _ : - ("4A9b xZq3 ..."): read joined,
-# and kept only where its checksum says it is one (prose joined that way is never one)
-GROUPS = re.compile(r"[1-9A-HJ-NP-Za-km-z]+(?:(?: +|[._:-])[1-9A-HJ-NP-Za-km-z]+)+")
+# check_py: what both read addresses with. An address written in groups, split by up to three
+# characters that can't be in one (spaces, punctuation: "4A9b xZq3", "4A9b - xZq3", "4A9b/xZq3"),
+# is read joined, and kept only where its checksum says it is one (prose joined that way is never
+# one). Each file has a budget of checksums (CCS_GATE_KECCAK, 3000) and of time (CCS_GATE_SECS,
+# 20 s): past either, it is held back alone ("too many..."), not every file with it (text made
+# to look like an address everywhere, an idea's title, costs a checksum a place).
+check_py='
+import os, re, sys, time
+GROUPS = re.compile(r"[1-9A-HJ-NP-Za-km-z]+(?:[^1-9A-HJ-NP-Za-km-z0OIl<>\x01]{1,3}[1-9A-HJ-NP-Za-km-z]+)+")
+class TooMany(Exception): pass
+BUDGET, SECS = int(os.environ.get("CCS_GATE_KECCAK", 3000)), float(os.environ.get("CCS_GATE_SECS", 20))
+spent = {"n": 0, "t": 0.0}
+def start(): spent["n"], spent["t"] = 0, time.monotonic()
 M = (1 << 64) - 1
 RC = [1, 0x8082, 0x800000000000808a, 0x8000000080008000, 0x808b, 0x80000001, 0x8000000080008081,
       0x8000000000008009, 0x8a, 0x88, 0x80008009, 0x8000000a, 0x8000808b, 0x800000000000008b,
@@ -117,10 +120,30 @@ def b58(s):   # base58 as Monero has it: blocks of 11 characters, 8 bytes
         if k is None or n >> (8 * k): return None
         out += n.to_bytes(k, "big")
     return out
+NETS = (18, 19, 24, 25, 36, 42, 53, 54, 63)
+seen_valid = {}
 def valid(s):   # an address its checksum says is one, of a network Monero has (its first byte)
-    if s[0] not in "45789AB" or (b58(s[:11]) or b"\x00")[0] not in (18, 19, 24, 25, 36, 42, 53, 54, 63): return False
+    if s[0] not in "45789AB" or (b58(s[:11]) or b"\x00")[0] not in NETS: return False
+    if s in seen_valid: return seen_valid[s]
     d = b58(s)
-    return d is not None and d[0] in (18, 19, 24, 25, 36, 42, 53, 54, 63) and keccak(d[:-4])[:4] == d[-4:]
+    if d is None or d[0] not in NETS: return False
+    spent["n"] += 1
+    if spent["n"] > BUDGET or time.monotonic() - spent["t"] > SECS: raise TooMany()
+    seen_valid[s] = keccak(d[:-4])[:4] == d[-4:]
+    return seen_valid[s]
+def grouped(t):   # the addresses written in groups in t (TooMany past the budget)
+    out = set()
+    for g in GROUPS.findall(re.sub(r"\s+", " ", t)):
+        j = re.sub(r"[^1-9A-HJ-NP-Za-km-z]", "", g)
+        out.update(j[i:i + n] for n in (95, 106) for i in range(len(j) - n + 1) if valid(j[i:i + n]))
+    return out
+'
+scan_py=$check_py'
+MAX = int(os.environ.get("CCS_GATE_MAX", 8 << 20))
+ENT = re.compile(r"&#[0-9]+;?|&#[xX][0-9A-Fa-f]+;?|&[A-Za-z][A-Za-z0-9]*;")
+NAMED = {"amp": 38, "lt": 60, "gt": 62, "quot": 34, "apos": 39}
+QR = re.compile(r"data:image/png;base64,[A-Za-z0-9+/]+=*")
+TOK = re.compile(r"[0-9A-Za-z]+")
 def char(n):   # printable ASCII as itself, a space as one, anything else \x01 (read both ways)
     if 32 < n < 127: return chr(n)
     return " " if n in (9, 10, 12, 13, 32) else "\x01"
@@ -141,11 +164,13 @@ for f in sys.argv[1:]:
     # each data: image (the QR codes: pages() allows them nowhere else) to zbarimg; not text
     for m in QR.finditer(d): print(f + "\t?qr\t" + m.group(0)[22:])
     d = QR.sub(" ", d)
-    for t in (d.replace("\x01", ""), d.replace("\x01", " ")):
-        out.update(f + "\t" + w for w in TOK.findall(t) if len(w) in (95, 106) and not re.search("[0OIl]", w))
-        for g in GROUPS.findall(t):
-            j = re.sub("[ ._:-]", "", g)
-            out.update(f + "\t" + j[i:i + n] for n in (95, 106) for i in range(len(j) - n + 1) if valid(j[i:i + n]))
+    start()
+    try:
+        for t in (d.replace("\x01", ""), d.replace("\x01", " ")):
+            out.update(f + "\t" + w for w in TOK.findall(t) if len(w) in (95, 106) and not re.search("[0OIl]", w))
+            out.update(f + "\t" + a for a in grouped(t))
+    except TooMany:
+        out.add(f + "\t!too many runs that could be addresses to check")
     for l in sorted(out): print(l)
 '
 
@@ -227,8 +252,8 @@ qrdata() {
 # and value, a key twice both), their addresses as "file<TAB>address" lines, read as the pages'
 # text is: a character that isn't ASCII dropped (it mustn't split an address), and again as a
 # space (it mustn't join one to its neighbour); "file<TAB>!reason" if it isn't JSON.
-json_py='
-import json, re, sys
+json_py=$check_py'
+import json
 for f in sys.argv[1:]:
     seen = []
     def pairs(p):   # every pair as it is read, the same key twice too; what is left to walk: none
@@ -245,10 +270,15 @@ for f in sys.argv[1:]:
     except Exception:
         print(f + "\t!not JSON (UTF-8) that reads"); continue
     out = set()
-    for s in seen:
-        s = re.sub(r"[\t\n\f\r]", " ", s); s = re.sub(r"[\x00-\x1f\x7f]", "", s)
-        for t in (re.sub(r"[^\x00-\x7f]", "", s), re.sub(r"[^\x00-\x7f]", " ", s)):
-            out.update(w for w in re.findall(r"[0-9A-Za-z]+", t) if len(w) in (95, 106) and not re.search(r"[0OIl]", w))
+    start()
+    try:
+        for s in seen:
+            s = re.sub(r"[\t\n\f\r]", " ", s); s = re.sub(r"[\x00-\x1f\x7f]", "", s)
+            for t in (re.sub(r"[^\x00-\x7f]", "", s), re.sub(r"[^\x00-\x7f]", " ", s)):
+                out.update(w for w in re.findall(r"[0-9A-Za-z]+", t) if len(w) in (95, 106) and not re.search(r"[0OIl]", w))
+                out.update(grouped(t))
+    except TooMany:
+        out.add("!too many runs that could be addresses to check")
     for a in sorted(out): print(f + "\t" + a)
 '
 
@@ -274,8 +304,8 @@ B58 = "[1-9A-HJ-NP-Za-km-z]"
 # characters, or drawn with look-alikes (a mathematical or fullwidth 9, a Cyrillic A). Any
 # character that is not ASCII counts, not only letters: Unicode tables differ between Python and
 # the jq that shortens idea titles by the same rule (gitlab.sh), and must agree with it. An
-# address in groups ("4A9b xZq3 ..."): scan_py, by its checksum (gitlab.sh shortens every such
-# run of 90, a stricter rule, so the two agree)
+# address in groups ("4A9b xZq3", "4A9b - xZq3", "4A9b/xZq3"): scan_py, by its checksum
+# (gitlab.sh shortens every such run that holds one, with the same separators, so the two agree)
 RUN = "(?:" + B58 + "|[^\\x00-\\x7f])"
 TEXT = "(?:(?!" + RUN + "{90})(?:[^<>\"\x27&\\x00-\\x1f\\x7f\\u202a-\\u202e\\u2066-\\u2069]|&(?:amp|lt|gt|quot|#39|apos);)){0,1000}"
 # a milestone or payout: anything escaped, compared afterwards with the repository
