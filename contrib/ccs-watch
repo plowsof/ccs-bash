@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 # ccs-watch SITE_URL LOCAL_SITE [CONF]: the backend watching the web server. Right after a push,
-# fetch the pages where donations are asked for (home, Funding Required, Donate, Verify, every
-# funding-required proposal) from SITE_URL, as a visitor's browser would, and every file they use
-# (stylesheets with theme.css, fonts, icons, the General Fund's QR code, images), and compare each,
-# byte for byte, with LOCAL_SITE, what was just pushed. A difference means the web server serves something the
-# backend didn't make (a push skips a file whose size and time were kept: this doesn't): alert.
+# and between pushes at random times (ccs-watch.timer, docs/handover.md), fetch the pages where
+# donations are asked for (home, Funding Required, Donate, Verify, every funding-required proposal)
+# from SITE_URL, as a visitor's browser would, and every file they use (stylesheets with
+# theme.css, fonts, icons, the General Fund's QR code, images), and compare each, byte for byte,
+# with LOCAL_SITE, what was last pushed. A difference means the web server serves something the
+# backend didn't make (a push skips a file whose size and time were kept: this doesn't): alert,
+# the second time it is seen within a day. Also a page never pushed (it must be the 404 page) and,
+# with the themes, the theme button's redirect.
 # CONF (default /etc/ccs/alert.conf, root-owned, not in any repository):
 #   ALERT_URL=https://bot.example/simple?channel=%23ccs   POSTed the message as plain text
 #                                                         (CptHook's simple module, ntfy, ...)
@@ -21,6 +24,11 @@
 #                                                         theme.css files
 #   WATCH_SAMPLE=10                                       how many of the other pages to check
 #                                                         too, at random each run (default 10)
+#   WATCH_FIREFOX_ESR=140 WATCH_FIREFOX=144 WATCH_CHROME=141
+#                                                         optional: the browsers' current versions
+#                                                         (Tor Browser's Firefox ESR, Firefox,
+#                                                         Chrome): one asked as, at random each
+#                                                         run; a version no one runs is a tell
 #   SUBADDRESSES=/etc/ccs-front/subaddresses.txt          optional: name addresses not on it
 #   FORGE_HOURS=6                                         optional: how long GitLab or Forgejo may
 #                                                         be down before --run alerts (default 6)
@@ -52,11 +60,13 @@ fi
 site_url=${1:?SITE_URL} local_site=${2:?LOCAL_SITE} conf=${3:-/etc/ccs/alert.conf}
 state=${CCS_WATCH_STATE:-/var/lib/ccs/state/watch}
 ALERT_URL='' WATCH_PROXY='' WATCH_THEMES='' SUBADDRESSES='' ALERT_PREFIX='' ALERT_TARGET='' ALERT_PASSWORD='' ALERT_PLAIN='' FORGE_HOURS=''
+WATCH_FIREFOX_ESR='' WATCH_FIREFOX='' WATCH_CHROME=''
+keys='ALERT_URL|WATCH_PROXY|WATCH_THEMES|SUBADDRESSES|ALERT_PREFIX|ALERT_TARGET|ALERT_PASSWORD|ALERT_PLAIN|FORGE_HOURS|WATCH_FIREFOX_ESR|WATCH_FIREFOX|WATCH_CHROME'
 if [[ -f $conf ]]; then
     # only these keys, KEY=value lines; nothing in it is run
     while IFS='=' read -r k v; do
-        case $k in ALERT_URL|WATCH_PROXY|WATCH_THEMES|SUBADDRESSES|ALERT_PREFIX|ALERT_TARGET|ALERT_PASSWORD|ALERT_PLAIN|FORGE_HOURS) printf -v "$k" '%s' "$v" ;; esac
-    done < <(grep -E '^(ALERT_URL|WATCH_PROXY|WATCH_THEMES|SUBADDRESSES|ALERT_PREFIX|ALERT_TARGET|ALERT_PASSWORD|ALERT_PLAIN|FORGE_HOURS)=' "$conf")
+        [[ $k =~ ^($keys)$ ]] && printf -v "$k" '%s' "$v"
+    done < <(grep -E "^($keys)=" "$conf")
 fi
 # IRC colours as CptHook's GitLab messages have them: the [CCS-watch] tag light blue (12), a
 # bad address red (04); none with ALERT_PLAIN
@@ -88,51 +98,89 @@ send() {
 
 # fetch URL FILE: only a whole answer counts: HTTP 200, not empty, within 60s (curl also fails a
 # body cut short of its Content-Length). 1 if nothing answered; 3 if the web server answered
-# something else (its status in $code): a page that keeps doing that is an alert (below), as a
-# web server sending visitors elsewhere would. Never a "differs".
-# Asked for as Tor Browser asks: its user agent and the headers Firefox 128 sends, a page as a
-# page (Sec-Fetch-Dest: document...) and a stylesheet, font or image as one, compressed as it
-# compresses (what this curl can undo of it), through one of the proxies at random: a web server
-# serving the watcher the right pages and visitors others must first tell it apart from them. A
-# page is asked for as a visitor arrives at it, at random: typed in or from a bookmark
-# (Sec-Fetch-Site: none), a click on the site itself (same-origin: from Funding Required, say) or
-# on another (cross-site: getmonero.org's link); never only one way, or a web server could change
-# the page for the others. No Referer: the site's Referrer-Policy (no-referrer) has a browser send
-# none to it either.
-# Its TLS handshake is still curl's, which a web server can tell from Firefox's.
+# something else (its status in $code, a redirect's target in $location): a page that keeps doing
+# that is an alert (below), as a web server sending visitors elsewhere would. Never a "differs".
+# Asked for as a visitor's browser asks, one of three for the whole run, at random: Tor Browser
+# (its Firefox ESR), Firefox or Chrome, each with its own user agent and the headers it sends, a
+# page as a page (Sec-Fetch-Dest: document...) and a stylesheet, font or image as one, compressed
+# as it compresses (what this curl can undo of it), through one of the proxies at random: a web
+# server serving the watcher the right pages and visitors others must first tell it apart from
+# them, and a rule for all but one browser is seen too. A page is asked for as a visitor arrives
+# at it, at random: typed in or from a bookmark (Sec-Fetch-Site: none), a click on the site itself
+# (same-origin: from Funding Required, say) or on another (cross-site: getmonero.org's link); never
+# only one way, or a web server could change the page for the others. No Referer: the site's
+# Referrer-Policy (no-referrer) has a browser send none to it either.
+# Its TLS handshake is still curl's, which a web server can tell from a browser's.
 read -ra proxies <<<"$WATCH_PROXY"
-ua='Mozilla/5.0 (Windows NT 10.0; rv:128.0) Gecko/20100101 Firefox/128.0'
+v() { [[ $1 =~ ^[1-9][0-9]{1,3}$ ]] && echo "$1" || echo "$2"; }
+esr=$(v "$WATCH_FIREFOX_ESR" 140) firefox=$(v "$WATCH_FIREFOX" 144) chrome=$(v "$WATCH_CHROME" 141)
 enc=$(curl -V 2> /dev/null | awk '/^Features:/ { f = " " $0 " " } END {
     e = "gzip, deflate"; if (f ~ / brotli /) e = e ", br"; if (f ~ / zstd /) e = e ", zstd"; print e }')
-code=''
+origin=$(sed -E 's#^([a-z]+://[^/]+).*#\1#' <<<"$site_url")
+browser=$(shuf -n 1 -e tor firefox chrome)
+case $browser in
+    tor) ua="Mozilla/5.0 (Windows NT 10.0; rv:$esr.0) Gecko/20100101 Firefox/$esr.0" lang='en-US,en;q=0.5' ;;
+    firefox) ua="Mozilla/5.0 (X11; Linux x86_64; rv:$firefox.0) Gecko/20100101 Firefox/$firefox.0" lang='en-US,en;q=0.5' ;;
+    chrome) ua="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/$chrome.0.0.0 Safari/537.36" lang='en-US,en;q=0.9' ;;
+esac
+code='' location=''
 fetch() {
-    local proxy='' kind=()
+    local proxy='' kind=() out rc=0
     ((${#proxies[@]})) && proxy=${proxies[RANDOM % ${#proxies[@]}]}
-    case ${1%%[?#]*} in
-        *.css) kind=(-H 'Accept: text/css,*/*;q=0.1' -H 'Sec-Fetch-Dest: style' -H 'Sec-Fetch-Mode: no-cors' -H 'Sec-Fetch-Site: same-origin') ;;
-        *.woff2) kind=(-H 'Accept: application/font-woff2;q=1.0,application/font-woff;q=0.9,*/*;q=0.8' -H 'Sec-Fetch-Dest: font' -H 'Sec-Fetch-Mode: cors' -H 'Sec-Fetch-Site: same-origin') ;;
-        *.png | *.jpg | *.jpeg | *.gif) kind=(-H 'Accept: image/avif,image/webp,image/png,image/svg+xml,image/*;q=0.8,*/*;q=0.5' -H 'Sec-Fetch-Dest: image' -H 'Sec-Fetch-Mode: no-cors' -H 'Sec-Fetch-Site: same-origin') ;;
-        *) local from=(none same-origin cross-site)
-            kind=(-H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' -H 'Upgrade-Insecure-Requests: 1'
-            -H 'Sec-Fetch-Dest: document' -H 'Sec-Fetch-Mode: navigate' -H "Sec-Fetch-Site: ${from[RANDOM % 3]}" -H 'Sec-Fetch-User: ?1' -H 'Priority: u=0, i') ;;
-    esac
-    code=$(curl -sS --max-time 60 ${proxy:+--proxy "$proxy"} --compressed -A "$ua" -H 'Accept-Language: en-US,en;q=0.5' \
-        -H "Accept-Encoding: $enc" "${kind[@]}" -o "$2" -w '%{http_code}' "$1" 2> /dev/null) || code=000
+    if [[ $browser == chrome ]]; then
+        kind=(-H "sec-ch-ua: \"Google Chrome\";v=\"$chrome\", \"Not?A_Brand\";v=\"8\", \"Chromium\";v=\"$chrome\"" -H 'sec-ch-ua-mobile: ?0' -H 'sec-ch-ua-platform: "Windows"')
+        case ${1%%[?#]*} in
+            *.css) kind+=(-H 'Accept: text/css,*/*;q=0.1' -H 'Sec-Fetch-Dest: style' -H 'Sec-Fetch-Mode: no-cors' -H 'Sec-Fetch-Site: same-origin') ;;
+            *.woff2) kind+=(-H 'Accept: */*' -H "Origin: $origin" -H 'Sec-Fetch-Dest: font' -H 'Sec-Fetch-Mode: cors' -H 'Sec-Fetch-Site: same-origin') ;;
+            *.png | *.jpg | *.jpeg | *.gif) kind+=(-H 'Accept: image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8' -H 'Sec-Fetch-Dest: image' -H 'Sec-Fetch-Mode: no-cors' -H 'Sec-Fetch-Site: same-origin') ;;
+            *) local from=(none same-origin cross-site)
+                kind+=(-H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7' -H 'Upgrade-Insecure-Requests: 1'
+                -H 'Sec-Fetch-Dest: document' -H 'Sec-Fetch-Mode: navigate' -H "Sec-Fetch-Site: ${from[RANDOM % 3]}" -H 'Sec-Fetch-User: ?1' -H 'Priority: u=0, i') ;;
+        esac
+    else
+        case ${1%%[?#]*} in
+            *.css) kind=(-H 'Accept: text/css,*/*;q=0.1' -H 'Sec-Fetch-Dest: style' -H 'Sec-Fetch-Mode: no-cors' -H 'Sec-Fetch-Site: same-origin') ;;
+            *.woff2) kind=(-H 'Accept: application/font-woff2;q=1.0,application/font-woff;q=0.9,*/*;q=0.8' -H "Origin: $origin" -H 'Sec-Fetch-Dest: font' -H 'Sec-Fetch-Mode: cors' -H 'Sec-Fetch-Site: same-origin') ;;
+            *.png | *.jpg | *.jpeg | *.gif) kind=(-H 'Accept: image/avif,image/webp,image/png,image/svg+xml,image/*;q=0.8,*/*;q=0.5' -H 'Sec-Fetch-Dest: image' -H 'Sec-Fetch-Mode: no-cors' -H 'Sec-Fetch-Site: same-origin') ;;
+            *) local from=(none same-origin cross-site)
+                kind=(-H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' -H 'Upgrade-Insecure-Requests: 1'
+                -H 'Sec-Fetch-Dest: document' -H 'Sec-Fetch-Mode: navigate' -H "Sec-Fetch-Site: ${from[RANDOM % 3]}" -H 'Sec-Fetch-User: ?1' -H 'Priority: u=0, i') ;;
+        esac
+    fi
+    out=$(curl -sS --max-time 60 ${proxy:+--proxy "$proxy"} --compressed -A "$ua" -H "Accept-Language: $lang" \
+        -H "Accept-Encoding: $enc" "${kind[@]}" -o "$2" -w '%{http_code}\t%{redirect_url}' "$1" 2> /dev/null) || rc=$?
+    if ((rc)); then code=000 location=''; else code=${out%%$'\t'*} location=${out#*$'\t'}; fi
     [[ $code == 200 && -s $2 ]] && return 0
     [[ $code != 000 ]] && return 3
     return 1
 }
 
 # differs URL LOCAL: 0 if the page still differs from LOCAL on two more whole fetches, 10s and 30s
-# later (a push may be landing); 1 if it matches again; 2 if a fetch fails (then nothing is known)
+# later (a push may be landing), or a recheck isn't answered (a web server refusing the watcher's
+# second ask mustn't hide what the first saw; $tmp/page keeps the last differing answer); 1 only
+# if it matches again
 differs() {
     local wait
     for wait in ${CCS_WATCH_WAITS:-10 30}; do   # (tests make them shorter)
         sleep "$wait"
-        fetch "$1" "$tmp/page" || return 2
-        cmp -s "$tmp/page" "$2" && return 1
+        fetch "$1" "$tmp/again" || continue
+        cmp -s "$tmp/again" "$2" && return 1
+        cp "$tmp/again" "$tmp/page"
     done
     return 0
+}
+
+# sighted FILE...: 0 if any of these marks a difference seen within the last 24 hours (the second
+# sighting: alert); else 1, the first, marked now. A run that sees no difference doesn't clear it:
+# a web server showing its own page only on every other push is still seen twice.
+sighted() {
+    local f now
+    now=$(date +%s)
+    for f in "$@"; do
+        [[ -f $f ]] && ((now - $(stat -c %Y "$f") < 86400)) && return 0
+    done
+    touch "$@"
+    return 1
 }
 
 # forge: the proposals' forge down for FORGE_HOURS (above). A file not there yet (before the first
@@ -238,17 +286,85 @@ while IFS= read -r p; do
     checks+=("${prefixes[RANDOM % ${#prefixes[@]}]}${p%index.html}"$'\t'"$p")
 done < <(cd "$local_site" && find . -name '*.html' -printf '%P\n' | grep -vxF -f <(printf '%s\n' "${pages[@]}") | shuf -n "$sample")
 [[ -f $local_site/projects.json ]] && checks+=("projects"$'\t'"projects.json")
+fetches=$(printf '%s\n' "${checks[@]}" | grep -c .)
+# and, among them at random (no fixed last ask that a web server could switch after):
+# - a page that was never pushed, named like the site's own: the web server must answer 404 with
+#   the pushed 404 page. Its own page there (a fake proposal, a donation box) is something the
+#   backend never made, which the checks above can't see (they ask only for pushed files);
+# - with the themes, the theme button (?theme=dark|light|system) on a page: it must send the
+#   visitor to that same page under that prefix (or none), not elsewhere.
+[[ -f $local_site/404.html ]] && checks+=(unpushed)
+if [[ $WATCH_THEMES ]]; then
+    p=$(printf '%s\n' "${checks[@]}" | awk -F'\t' '$2 ~ /\.html$/ && $2 != "404.html" { print $2 }' | shuf -n 1)
+    [[ $p ]] && checks+=("theme"$'\t'"$p")
+fi
 mapfile -t checks < <(printf '%s\n' "${checks[@]}" | grep . | shuf)   # in no fixed order
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 bad=0 failed=0 answered=()
+urlof() { printf '%s/%s' "$site_url" "$(jq -rn --arg p "$1" '$p | split("/") | map(@uri) | join("/")')"; }
+
+# unpushed: a path never pushed, named as the site's own are (a proposal's name with -2, two of
+# them run together, ...), in proposals/ or not, under a theme prefix at random: a web server that
+# answers its own page only where the watcher never asks must not know where that is
+unpushed() {
+    local names=() a b name='' try
+    mapfile -t names < <(cd "$local_site" && for f in proposals/*.html; do [[ -f $f ]] && basename "$f" .html; done)
+    for _ in 1 2 3 4 5 6; do
+        try=$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')
+        if ((${#names[@]})); then
+            a=${names[RANDOM % ${#names[@]}]} b=${names[RANDOM % ${#names[@]}]}
+            case $((RANDOM % 4)) in
+                0) try=$a-$((RANDOM % 8 + 2)) ;;
+                1) try=${a%%-*}-${b#*-} ;;
+                2) try=$b-${a%%-*} ;;
+                3) try=${a%-*} ;;
+            esac
+        fi
+        case $((RANDOM % 5)) in 0) try=$try.html ;; 1) try=$try/ ;; *) try=proposals/$try.html ;; esac
+        [[ -e $local_site/$try || -e $local_site/${try%/}.html ]] || { name=$try; break; }
+    done
+    [[ $name ]] || name=proposals/$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n').html
+    name=${prefixes[RANDOM % ${#prefixes[@]}]}$name
+    rc=0; fetch "$(urlof "$name")" "$tmp/page" || rc=$?
+    if ((rc == 3)) && [[ $code == 404 ]] && cmp -s "$tmp/page" "$local_site/404.html"; then return; fi
+    ((rc == 1)) && return   # nothing answered: nothing known
+    bad=$((bad + 1))
+    if ! sighted "$state/differs-unpushed"; then
+        log "$(urlof "$name") (never pushed) answers HTTP $code, not the 404 page; alerting if it does again within a day"
+    else
+        alert unpushed "a page that was never pushed answers HTTP $code, not the pushed 404 page @ $(urlof "$name")"
+    fi
+}
+
+# theme PAGE: the theme button on PAGE, under a prefix at random, as a click on it: HTTP 302 to
+# that page under /dark/ or /light/, or none for system (the theme lines in docs/two-machines.md)
+theme() {
+    local page=${1%index.html} t want from rc
+    t=$(shuf -n 1 -e dark light system) from=${prefixes[RANDOM % ${#prefixes[@]}]}
+    if [[ $t == system ]]; then want=$(urlof "$page"); else want=$(urlof "$t/$page"); fi
+    rc=0; fetch "$(urlof "$from$page")?theme=$t" "$tmp/page" || rc=$?
+    ((rc == 1)) && return
+    [[ $code == 302 && ($location == "$want" || $location == "${want#"$origin"}") ]] && return
+    bad=$((bad + 1))
+    if ! sighted "$state/differs-theme"; then
+        log "the theme button on $(urlof "$from$page") (?theme=$t) answers HTTP $code ${location:+to $location}, not $want; alerting if it does again within a day"
+    else
+        alert theme "the theme button sends visitors to ${location:-nowhere} (HTTP $code), not to the page @ $(urlof "$from$page")?theme=$t"
+    fi
+}
+
 for c in "${checks[@]}"; do
+    case $c in
+        unpushed) unpushed; continue ;;
+        theme$'\t'*) theme "${c#*$'\t'}"; continue ;;
+    esac
     remote=${c%%$'\t'*} p=${c#*$'\t'}
-    url=$site_url/$(jq -rn --arg p "$remote" '$p | split("/") | map(@uri) | join("/")')
-    # seen: by the pushed file (differing under any prefix, then any other: the next run alerts),
-    # and by the address, prefix and all (differing only under /dark/: the next time /dark/ is the
-    # prefix picked for it alerts, whatever the others showed in between)
+    url=$(urlof "$remote")
+    # seen: by the pushed file (differing under any prefix, then any other: alert), and by the
+    # address, prefix and all (differing only under /dark/: the next time /dark/ is the prefix
+    # picked for it alerts, whatever the others showed in between)
     seen=$state/differs-${p//[^A-Za-z0-9._-]/_} seen_at=$state/differs-at-${remote//[^A-Za-z0-9._-]/_}
     other=$state/answers-${p//[^A-Za-z0-9._-]/_}
     rc=0; fetch "$url" "$tmp/page" || rc=$?
@@ -262,17 +378,14 @@ for c in "${checks[@]}"; do
         continue
     fi
     rm -f "$other"
-    if cmp -s "$tmp/page" "$local_site/$p"; then rm -f "$seen" "$seen_at"; continue; fi
-    rc=0; differs "$url" "$local_site/$p" || rc=$?
-    case $rc in
-        1) rm -f "$seen" "$seen_at"; continue ;;
-        2) failed=$((failed + 1)); log "could not fetch $url again"; continue ;;
-    esac
-    # It differed on three whole fetches over 40s. Only the second run in a row that sees it
-    # (about two minutes later) alerts: no single moment, push or glitch, raises an alarm.
+    cmp -s "$tmp/page" "$local_site/$p" && continue
+    differs "$url" "$local_site/$p" || continue
+    # It differed on three fetches over 40s (or wasn't answered again). The second run within a
+    # day that sees it alerts, runs that see the page right in between or not: no single moment,
+    # push or glitch, raises an alarm, and neither does showing it only now and then hide it.
     bad=$((bad + 1))
-    if [[ ! -f $seen && ! -f $seen_at ]]; then
-        touch "$seen" "$seen_at"; log "$url differs from what was pushed; alerting if it still does next run"; continue
+    if ! sighted "$seen" "$seen_at"; then
+        log "$url differs from what was pushed; alerting if it does again within a day"; continue
     fi
     # n1oc's style: "<what> @ <link>"; an address shortened to its first 6 and last 4
     what="the page differs from what was pushed"
@@ -287,25 +400,7 @@ for c in "${checks[@]}"; do
     fi
     alert "page-$p" "$what @ $url"
 done
-# and a page that was never pushed (a proposal's, its name random): the web server must answer
-# 404 with the pushed 404 page. Its own page there (a fake proposal, a donation box) is something
-# the backend never made, which the checks above can't see (they ask only for pushed files).
-# Alerted as they are, when the second run in a row sees it.
-if [[ -f $local_site/404.html ]]; then
-    ghost=proposals/$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n').html
-    rc=0; fetch "$site_url/$ghost" "$tmp/page" || rc=$?
-    if ((rc == 3)) && [[ $code == 404 ]] && cmp -s "$tmp/page" "$local_site/404.html"; then
-        rm -f "$state/differs-unpushed"
-    elif ((rc != 1)); then
-        bad=$((bad + 1))
-        if [[ ! -f $state/differs-unpushed ]]; then
-            touch "$state/differs-unpushed"; log "$site_url/$ghost (never pushed) answers HTTP $code, not the 404 page; alerting if it still does next run"
-        else
-            alert unpushed "a page that was never pushed answers HTTP $code, not the pushed 404 page @ $site_url/$ghost"
-        fi
-    fi
-fi
-if ((failed == ${#checks[@]})); then
+if ((failed == fetches)); then
     n=$(($(cat "$state/unreachable" 2> /dev/null || echo 0) + 1)); echo "$n" > "$state/unreachable"
     ((n < 3)) || alert unreachable "$site_url could not be fetched ($n checks in a row)"
 else
@@ -319,5 +414,5 @@ else
     done
 fi
 n=0; for p in "${pages[@]}"; do [[ -f $local_site/$p ]] && n=$((n + 1)); done
-((bad == 0 && failed == 0)) && log "the $n pages on $site_url, and the $((${#checks[@]} - n)) other pages and files, are what was pushed"
+((bad == 0 && failed == 0)) && log "the $n pages on $site_url, and the $((fetches - n)) other pages and files, are what was pushed (asked for as $browser)"
 exit $((bad > 0))
