@@ -86,6 +86,23 @@ grep -q "already goes up to" "$d/log" || { cat "$d/log"; echo "FAIL reused subad
 [[ $(grep -c "$(printf '8%094d' 1)" "$d/state/proposals.csv") == 1 ]] || { echo "FAIL reused subaddress: given out twice"; exit 1; }
 reuse="ok   a wallet handing out a used subaddress stops the run"
 
+# A state with a huge subaddress index (damaged, or forged): the run stops before creating any
+d=$TEST_TMP/huge
+mkdir -p "$d/state" "$d/out"
+# (its first row with an address given index 100001; bash only: the image's sed is busybox's)
+huge_re=',[0-9]+,"8[0-9]{94}"' first=1
+while IFS= read -r line; do
+    if [[ $first && $line =~ $huge_re ]]; then line=${line/"${BASH_REMATCH[0]}"/,100001,\"8$(printf '%094d' 100001)\"}; first=''; fi
+    printf '%s\n' "$line"
+done < "$FIXTURES/state.csv" > "$d/state/proposals.csv"
+sed "s|$TEST_TMP/state|$d/state|; s|$TEST_TMP/out|$d/out|" "$TEST_TMP/ccs.conf" > "$d/ccs.conf" && chmod 444 "$d/ccs.conf"
+echo 1 > "$TEST_TMP/wallet-count"
+# shellcheck disable=SC2016
+if ! bash -c 'source "$1/../ccs-back.sh" && source "$1/stubs.sh" && main "$2"' _ "$here" "$d/ccs.conf" 2> "$d/log" \
+    && grep -q "subaddress index 100001, past any signed list" "$d/log" && [[ $(cat "$TEST_TMP/wallet-count") == 1 ]]; then
+    huge="ok   a state with a huge subaddress index: the run stops before creating any"
+else cat "$d/log"; echo "FAIL a huge subaddress index"; exit 1; fi
+
 # Dust sent to the list's last address makes the wallet count every subaddress up to it as created
 # (wallet2 expands to the highest one received at): the new proposals still get the ones just after
 # the state's highest, not create_address's next, after the dust's (which would use the list up)
@@ -119,6 +136,7 @@ status=0
 echo "$wrong_wallet"
 printf '%s' "$lost"
 echo "$reuse"
+echo "$huge"
 echo "$dust"
 
 # Money conversion, exact in integers (see lib/wallet.sh).

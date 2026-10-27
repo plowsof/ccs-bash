@@ -230,7 +230,7 @@ The list's files are the backend's (`/etc/ccs-front/`, checked there:
 **The design**, the release zip the backend runs, unpacked, and the sums of every file but the pages:
 
 ```
-v=v0.1.18                                                            # the handover's releases table
+v=v0.1.20                                                            # the handover's releases table
 sha256sum ccs-front-hugo-$v.zip                                      # the attested one
 unzip -q ccs-front-hugo-$v.zip -d /etc/ccs-gate/design/$v
 (cd /etc/ccs-gate/design/$v && find . -type f ! -name '*.html' -exec sha256sum {} +) > /etc/ccs-gate/design.sha256
