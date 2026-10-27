@@ -35,10 +35,13 @@ machine and the IRC bot):
   proposals): every proposal page, the stage lists, each donation box. Every donation address is
   checked against the wallet's signed list (below); a proposal whose address isn't on it is left
   off and the run counts as failed. It makes the QR codes itself, from checked addresses.
-- **ccs-watch**, after each push: fetches the live donation pages, the files they use, ten other
-  pages at random and `/projects`, as Tor Browser would and through Tor and a clearnet proxy, and
-  alerts IRC if any differs from what was pushed. It catches what the gate can't: a taken-over
-  web server ([details](two-machines.md#watching-the-web-server-the-backend-raises-the-alarm)).
+- **ccs-watch**, after each push and between pushes at random times: fetches the live donation
+  pages, the files they use, ten other pages at random and `/projects`, as a visitor's browser
+  would (one of three) and through Tor and a clearnet proxy, and alerts IRC if any differs from
+  what was pushed. It catches what the gate can't: a taken-over web server that serves its own
+  pages to everyone, or to whoever it can't tell from the watcher; not one that tells them apart
+  (curl's TLS handshake can give it away), which is why the Verify page asks visitors to check
+  ([details](two-machines.md#watching-the-web-server-the-backend-raises-the-alarm)).
 - **Backups** to another machine (not the web server), whose account can only add copies:
   `proposals.csv` (which proposal has which subaddress; nothing can make it again) and each
   retired wallet's record (only wallets its admin listed; a later version may only rename

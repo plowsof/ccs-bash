@@ -239,7 +239,10 @@ ccs-front-run >> $L 2>&1 || failed="${failed:+$failed, }ccs-front-bash"
 # Pushed every run, the last good site if none was made: the push is this machine's heartbeat,
 # so the web server's alarm only sounds when this machine can't reach it (its own alerts cover
 # a failed run). The push exits 7 when the gate held a file back but the rest went live: a failed
-# run, and the live pages are still checked (a web server that lies must not hide behind it)
+# run, and the live pages are still checked (a web server that lies must not hide behind it).
+# The push and pushed/, the copy of what went that ccs-watch compares with, under one lock: a
+# check on ccs-watch.timer (below) never sees one without the other
+exec 9> /run/ccs-watch.lock; flock -w 600 9
 rc=0
 timeout -k 5 120 runuser -u ccs -- rsync -a --delay-updates \
     -e "ssh -p 22 -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15" \
@@ -247,8 +250,10 @@ timeout -k 5 120 runuser -u ccs -- rsync -a --delay-updates \
 [ "$rc" = 7 ] && failed="${failed:+$failed, }the push (the web server held a file back)"
 [ "$rc" = 0 ] || [ "$rc" = 7 ] || failed="${failed:+$failed, }the push"
 if [ "$rc" = 0 ] || [ "$rc" = 7 ]; then
-    runuser -u ccs -- $W https://ccs.getmonero.org /var/lib/ccs/www/site >> $L 2>&1
+    runuser -u ccs -- rsync -a --delete /var/lib/ccs/www/site/ /var/lib/ccs/pushed/
+    runuser -u ccs -- $W https://ccs.getmonero.org /var/lib/ccs/pushed >> $L 2>&1
 fi
+exec 9>&-
 
 # how the run went: three failed runs in a row alert, so a stopped backend can't go unnoticed
 runuser -u ccs -- $W --run "${failed:-ok}" >> $L 2>&1
@@ -256,6 +261,31 @@ runuser -u ccs -- $W --run "${failed:-ok}" >> $L 2>&1
 
 `-p 22` is the web server's ssh port, given in full in case the backend's `ssh_config` defaults to
 another.
+
+ccs-watch also runs between pushes, at random times, so a web server can't serve its own pages
+only once the check after a push is over (`ccs-watch` itself puts its asks in no fixed order):
+
+```
+# /etc/systemd/system/ccs-watch.service
+[Unit]
+Description=ccs-watch between pushes
+ConditionPathExists=/run/ccs-watch.lock
+ConditionPathExists=/var/lib/ccs/pushed/index.html
+[Service]
+Type=oneshot
+User=ccs
+ExecStart=/usr/bin/flock -s -w 600 /run/ccs-watch.lock /opt/ccs-bash/contrib/ccs-watch https://ccs.getmonero.org /var/lib/ccs/pushed
+
+# /etc/systemd/system/ccs-watch.timer
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=5min
+RandomizedDelaySec=8min
+[Install]
+WantedBy=timers.target
+```
+
+`systemctl enable --now ccs-watch.timer`; its log is `journalctl -u ccs-watch`.
 
 ## 10. The cutover
 
