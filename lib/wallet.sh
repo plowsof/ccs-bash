@@ -23,6 +23,9 @@ check_wallet_addresses() {
     [[ $(jq -r .address <<<"$addrs") == "$WALLET_ADDRESS" ]] \
         || die "the wallet's main address is not WALLET_ADDRESS from the config (wrong wallet?)"
     have=$(jq '.addresses | length' <<<"$addrs")
+    # (a damaged or forged state's huge index would have this create subaddresses one at a time,
+    # for days; no signed list comes near it)
+    ((max <= 100000)) || die "proposals.csv has subaddress index $max, past any signed list (100000): a damaged state file? (restore it)"
     while ((have <= max)); do
         rpc create_address '{"account_index": 0}' > /dev/null || return 1
         have=$((have + 1))

@@ -235,4 +235,32 @@ if grep -qE '^/proposals/p.html .*Sec-Fetch-Site: (same-origin|cross-site)' "$tm
 else
     fail "a donation page only ever asked for as typed in (Sec-Fetch-Site: none): a web server can tell the watcher"
 fi
+# A page that was never pushed: answered 404 with the pushed 404 page (as nginx's error_page does),
+# no alert; the web server's own page there instead (FAKE set), an alert on the second run
+mkdir -p "$tmp/n/site/assets" && echo '<p>home</p>' > "$tmp/n/site/index.html" && echo shell > "$tmp/n/site/assets/clam.gif"
+echo '<p>not here</p><img src="./assets/clam.gif">' > "$tmp/n/site/404.html"
+nf=$(port); : > "$tmp/n/bot.txt"
+python3 -c '
+import http.server, os, sys
+class H(http.server.SimpleHTTPRequestHandler):
+    def send_error(self, code, *a, **k):
+        if code != 404: return super().send_error(code, *a, **k)
+        fake = os.path.exists(sys.argv[2])
+        body = b"<p>Donate here</p>" if fake else open("404.html", "rb").read()
+        self.send_response(200 if fake else 404); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+    def log_message(self, *a): pass
+os.chdir(sys.argv[3]); http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()' "$nf" "$tmp/n/FAKE" "$tmp/n/site" & pids+=($!)
+sleep 1
+printf 'ALERT_URL=http://127.0.0.1:%s/simple?channel=%%23ccs\nALERT_PLAIN=1\n' "$bot" > "$tmp/n/alert.conf"
+nwatch() { CCS_WATCH_STATE=$tmp/n/state "$here/../contrib/ccs-watch" "http://127.0.0.1:$nf" "$tmp/n/site" "$tmp/n/alert.conf" 2> "$tmp/n/log"; }
+before=$(alerts)
+nwatch; nwatch
+if [[ $(alerts) == "$before" ]] && grep -q "and the 2 other pages and files, are what was pushed" "$tmp/n/log"; then
+    ok "a page never pushed answers 404 with the pushed 404 page: no alert; the files the 404 page uses (its logo) checked too (2: the logo, and the 404 page as one of the sampled pages)"
+else cat "$tmp/n/log"; fail "a 404 page"; fi
+touch "$tmp/n/FAKE"
+nwatch || true; first=$(alerts); nwatch || true
+if [[ $first == "$before" && $(alerts) == $((before + 1)) ]] && tail -n 1 "$tmp/bot.txt" | grep -q "a page that was never pushed answers HTTP 200, not the pushed 404 page"; then
+    ok "the web server's own page at a path never pushed: an alert, on the second run that sees it"
+else cat "$tmp/n/log"; tail -n 2 "$tmp/bot.txt"; fail "a page never pushed"; fi
 exit "$status"
