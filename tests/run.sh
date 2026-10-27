@@ -370,6 +370,39 @@ for how in bidi math cyrillic groups dashes; do
         echo "FAIL an address in an idea's title ($how): '$got'"; status=1
     fi
 done
+# Review 5 (G3 residual): the same groups split by other separators a reader removes as easily:
+# " - ", ", ", " | ", "/" (a synthetic testnet address, valid by its checksum, random keys)
+taddr=9uH2Z776LeJ4gku967Y3o8VrBueTqSoQhDXVftRkU2Jt81du8DDNV4eAFmPaojQV4mhrgDBvzUfRX7EoHp245dNf9wimfPf
+for sep in ' - ' ', ' ' | ' '/'; do
+    t=$(jq -rn --arg a "$taddr" --arg s "$sep" '"Pay: " + ([range(0; 95; 4) as $i | $a[$i:$i + 4]] | join($s))')
+    jq --arg t "$t" 'map(if .iid == 11 then .title = $t else . end)' "$FIXTURES/gitlab/opened.json" > "$fx/gitlab/opened.json"
+    got=$(
+        # shellcheck source=tests/stubs.sh
+        source "$here/stubs.sh"
+        WORK=$(mktemp -d) FIXTURES=$fx PROPOSALS_DIR=$here/fixtures/proposals ideas 2> /dev/null | jq -r '.[] | select(."gitlab-url" | endswith("/11")) | .name'
+    )
+    if [[ $got == *…* ]]; then echo "ok   review 5: an address in groups split by '$sep' in an idea's title is shortened"
+    else echo "FAIL review 5: an address in groups split by '$sep' in an idea's title stays whole: '${got:0:60}…'"; status=1; fi
+done
+# Review 5 (cost): anyone can open MRs titled "AAAA AAAA ..." (255 characters): every 95- and
+# 106-character window of the joined run passes is_address's network-byte check, so each costs a
+# bash base58 decode and an openssl process; titles of up to two pages of MRs (200) are scanned
+# every run, not only the IDEAS_MAX looked at. One run's ideas() should stay well under a minute.
+if printf '' | openssl dgst -keccak-256 > /dev/null 2>&1; then
+    jq --arg t "$(printf 'AAAA %.0s' {1..51})" '[range(0; 100) as $i | .[0] + {iid: (1000 + $i), title: $t}]' "$FIXTURES/gitlab/opened.json" > "$fx/gitlab/opened.json"
+    start=${EPOCHREALTIME/./}
+    (
+        # shellcheck source=tests/stubs.sh
+        source "$here/stubs.sh"
+        WORK=$(mktemp -d) FIXTURES=$fx PROPOSALS_DIR=$here/fixtures/proposals ideas > /dev/null 2>&1
+    ) || true
+    secs=$(((${EPOCHREALTIME/./} - start) / 1000000))
+    if ((secs < 60)); then echo "ok   review 5: 100 open MRs titled AAAA AAAA...: ideas() took ${secs}s"
+    else echo "FAIL review 5: 100 open MRs titled AAAA AAAA... (any one can open them): ideas() took ${secs}s, every run"; status=1; fi
+else
+    echo "ok   review 5: (skipped the is_address cost case: this openssl has no Keccak; run it in the pinned image)"
+fi
+cp "$FIXTURES/gitlab/opened.json" "$fx/gitlab/opened.json"
 # A long title of plain words, no comma and none of l I O 0, joins like an address in groups but
 # holds none: left as it is with openssl's Keccak (the image's: its checksum says no); without one
 # (openssl before 3.2) shortened, and said so
@@ -757,7 +790,8 @@ if ! type -P du head comm sort > /dev/null; then
     echo "ok   backup receiver: skipped (a host script, its tools are not in the image)"
 else
     bk=$TEST_TMP/backup; mkdir -p "$bk"
-    recv() { CCS_BACKUP_DIR=$bk "$here/../contrib/ccs-backup-receive" > "$TEST_TMP/recv.out" 2>&1; }
+    echo old > "$bk.names"   # (the retired wallets this machine's admin listed)
+    recv() { CCS_BACKUP_DIR=$bk CCS_BACKUP_RETIRED=$bk.names "$here/../contrib/ccs-backup-receive" > "$TEST_TMP/recv.out" 2>&1; }
     d1=$TEST_TMP/dep-a/state/deposits.csv
     if recv < "$TEST_TMP/state/proposals.csv" && recv < "$d1" && [[ $(find "$bk" -name 'proposals-*.csv' | wc -l) == 1 ]] && cmp -s "$d1" "$bk/deposits.csv" \
         && { sed '1s/checked [0-9]*/checked 1/' "$d1"; printf '3099999,%064d,1,5,0\n' 7; } | recv && [[ $(wc -l < "$bk/deposits.csv") == $(($(wc -l < "$d1") + 1)) ]] \
@@ -885,6 +919,9 @@ if command -v gpg > /dev/null && command -v gpgconf > /dev/null; then
 else
     echo "ok   release/verify: skipped (no gpg here)"
 fi
+
+# shellcheck source=tests/review5.sh
+source "$here/review5.sh"
 
 for f in proposals.json completed-proposals.json projects.json proposals.csv log; do
     if diff -u "$here/expected/$f" "$TEST_TMP/out/$f"; then echo "ok   $f"; else echo "FAIL $f"; status=1; fi

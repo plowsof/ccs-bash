@@ -13,7 +13,7 @@ address and `/projects`. **Goes:** PHP, MySQL, Jekyll, Ruby; the web server runs
 ## Before you start
 
 - **Machines:** the **backend** (private, no inbound connections), the **web server** (public),
-  a **backup machine** (any), and an **offline machine** for the signed list.
+  a **backup machine** (any but the web server), and an **offline machine** for the signed list.
 - **The wallet**, view-only. Its address and view key are public: luigi1111 published them in
   [monero-project/meta #935](https://github.com/monero-project/meta/issues/935#issuecomment-1867257410).
 - **A Core Team member** to make and sign the subaddress list (step 4), and **an IRC bot** (step 8).
@@ -28,7 +28,10 @@ new set replaces the row (earlier sets: this file's history, and ccs-sigs).
 | 2026-10-27 | v0.2.24 | v0.1.19 | v0.1.20 | testnet ([ccs.monerodevs.org](https://ccs.monerodevs.org)) |
 
 Each is reproducible, and attested in [ccs-sigs](https://github.com/plowsof/ccs-sigs) by those who
-rebuilt it. Install only what `contrib/release/verify` confirms ([upgrading](#upgrading)).
+rebuilt it: on the testnet so far by one throwaway key a set (one person; the CCS's should be two
+or more people). Install only what `contrib/release/verify` confirms ([upgrading](#upgrading)),
+and keep `trusted-signers` to the people you trust now (an old key whose secret wasn't really
+destroyed could attest anything).
 
 ## 1. monerod and monero-wallet-rpc (the backend)
 
@@ -142,7 +145,8 @@ ccs-front-hugo's release zip, sha256 checked, unpacked on the backend: ccs-front
 Every donation address shown must be one of the live wallet's first 15,000 subaddresses, a list
 checked by the backend and the web server. Each wallet's is in this repository, in
 `subaddresses/<wallet>/` (the mainnet's: [`subaddresses/ccs2/`](../subaddresses/ccs2/)), with its
-signature, key, `.pin`, `list-signers` and view key file. In full: ccs-front-bash's
+signature, key, `.pin` and view key file (not `list-signers`: you write that from the fingerprints
+in step 2, so a forged folder can't bring its own). In full: ccs-front-bash's
 [setup](https://github.com/plowsof/ccs-front-bash/blob/master/docs/setup.md), step 5. In short:
 
 1. **Made** by a Core Team member on the offline machine (`tools/make-subaddresses.sh`) from the
@@ -429,12 +433,14 @@ added to the new wallet's each run. Funding-required proposals get new addresses
 3. **The new wallet:** its files and `wallet-rpc.conf` (step 1), `WALLET_ADDRESS` (step 2), and
    **its list**: made and signed as in step 4, added as `subaddresses/<new wallet>/`, and installed
    on both machines in place of the old one's (`/etc/ccs-front/`, `/etc/ccs-gate/`: every address
-   shown from then on is the new wallet's). On the backup machine, as root, move the old
-   `deposits.csv` aside (it only takes one with every deposit it has).
+   shown from then on is the new wallet's). On the backup machine, as root, add the old wallet's
+   name to `/etc/ccs-backup/retired-names` (it keeps no record of a wallet not listed there) and
+   move the old `deposits.csv` aside (it only takes one with every deposit it has).
 4. **One run by hand**, then `systemctl start ccs-bash`: the same totals, new addresses.
 
-A proposal renamed later keeps its retired donations only if it is renamed in `retired/*.csv` too
-([edit the state](troubleshooting.md#edit-the-state)).
+A proposal renamed later: rename it in `proposals.csv`, give its subaddress the new name as its
+label (the run stops on a subaddress whose label names another proposal), and in `retired/*.csv`
+too, or it loses its retired donations ([edit the state](troubleshooting.md#edit-the-state)).
 
 ## Upgrading
 
@@ -463,9 +469,12 @@ attested: check that commit out, never only the tag. For each release:
    A build that stops with `sources has files that are not in sources.lock`: a source an older
    release needed is still in `container/sources/` (a download cache, not in git); move it aside.
 3. **Compared:** the image ID and the zip's sha256 must be the attested ones. Any other: stop.
-4. **Switched**, web server first, so its gate allows the new pages: the gate
-   (`contrib/ccs-receive`) and `markdown.awk` from those same commits, their `sha256sum` the same
-   as the backend's checkouts' (`/opt/ccs-bash`, `/opt/ccs-front-bash`); a new design unpacked beside
+4. **Switched**, web server first, so its gate allows the new pages. Its admin checks the release
+   there, not against the backend (a taken-over backend would bring both the gate and the sums it
+   is compared with): `verify` as in step 1 with their own `trusted-signers`, on the web server or
+   their own machine; the gate (`contrib/ccs-receive`) and `markdown.awk` from a checkout of the
+   commits it prints, made there; the design's zip fetched there, its sha256 the attested one.
+   The same for `ccs-backup-receive` on the backup machine. A new design unpacked beside
    the old in `/etc/ccs-gate/design/` with its lines added to `design.sha256`; a changed
    `markdown.awk` beside the old as `/etc/ccs-gate/markdown-<release>.awk`. Then the new image IDs in
    `ccs-bash-run` and `ccs-front-run` (by ID, `--pull never`, so no cleanup can remove them), a

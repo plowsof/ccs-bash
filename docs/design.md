@@ -42,10 +42,13 @@ machine and the IRC bot):
   pages to everyone, or to whoever it can't tell from the watcher; not one that tells them apart
   (curl's TLS handshake can give it away), which is why the Verify page asks visitors to check
   ([details](two-machines.md#watching-the-web-server-the-backend-raises-the-alarm)).
-- **Backups** to another machine, whose account can only add copies: `proposals.csv` (which
-  proposal has which subaddress; nothing can make it again) and each retired wallet's record,
-  every version; `deposits.csv`, a cache, as one copy that only grows, so a restored wallet that
-  knows less is caught ([setup](setup.md#backing-up-the-state)).
+- **Backups** to another machine (not the web server), whose account can only add copies:
+  `proposals.csv` (which proposal has which subaddress; nothing can make it again) and each
+  retired wallet's record (only wallets its admin listed; a later version may only rename
+  proposals), every version; `deposits.csv`, a cache, as one copy that only grows, so a restored
+  wallet that knows less is caught ([setup](setup.md#backing-up-the-state)). Root on the backup
+  machine can still rewrite them all: restore the first retired version, and check a restored
+  `proposals.csv` against the live site.
 - **Pinned images:** ccs-bash and ccs-front-bash run in [StageX](https://stagex.tools) images
   ([details](image.md)), read-only, no capabilities, ccs-front-bash without network.
 - **Attested releases:** anyone can rebuild a release from its tag, byte for byte, and sign the
@@ -94,8 +97,9 @@ site serves from its copy. What the 268 proposals checked use:
 ## The signed subaddress list
 
 The wallet's subaddresses are listed once, in advance, and every address shown is checked
-against it on both machines (the same four files on each: the list, `.asc` its signature,
-`.key.asc` the key, `.pin` its sha256 and fingerprint); visitors check the wallet itself:
+against it on both machines (the same five files on each: the list, `.asc` its signature,
+`.key.asc` the key, `.pin` its sha256 and fingerprint, `.viewkey` for the Verify page); visitors
+check the wallet itself:
 
 | Where | Its job |
 |---|---|
