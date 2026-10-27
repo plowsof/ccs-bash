@@ -121,6 +121,7 @@ Docker on the host and gets Debian's security updates automatically.
 - [Attesting a release](contrib/release/README.md): rebuild a release, sign what came out into ccs-sigs, as Feather Wallet does
 - [When something is wrong](docs/troubleshooting.md): what the log lines mean
 - [Reviewing](docs/reviewing.md): what each file that runs on the live machines does, and checks
+- [The testnet](docs/testnet.md): https://ccs.monerodevs.org, and where it differs from the setup (not to copy)
 
 ## Tests
 
