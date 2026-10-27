@@ -158,6 +158,12 @@ so (`--any-key` counts every key):
 env TRUSTED_KEYS=/etc/ccs/trusted-signers contrib/release/verify ccs-bash-v0.2.7
 ```
 
+A name must be a release's in full (`ccs-bash-v0.2.7`, or a set joined by `+`), and each line in a
+manifest exactly that release's (its hash, the name, and the commit an image was built from): a
+line without its commit, or one cut short or with a carriage return, is no line. A release you name
+that no one attested fails. A signer who doesn't count is passed over before their folder is
+looked at, so nothing in it can make the check fail.
+
 It prints the commit the release was built from, the one every counted signer names. Build from
 that commit (`git checkout <commit>`), not from the tag: a tag can be moved, `container/build.sh`
 runs as you, and the image ID covers only what goes into the image (`ccs-back.sh`, `lib/`), not

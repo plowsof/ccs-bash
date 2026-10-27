@@ -159,7 +159,8 @@ in step 2, so a forged folder can't bring its own). In full: ccs-front-bash's
    contributors make it themselves from the same public data and post the same sha256.
 4. **Checked, then installed** in `/etc/ccs-front/` (root, 644): the four files, and
    `list-signers` (the two fingerprints above). It must say OK:
-   `tools/verify-subaddresses.sh /etc/ccs-front/subaddresses.txt /etc/ccs-front/list-signers <WALLET_ADDRESS>`.
+   `SIGNER_KEYS=<the signer's key from the Monero repository's utils/gpg_keys/> tools/verify-subaddresses.sh /etc/ccs-front/subaddresses.txt /etc/ccs-front/list-signers <WALLET_ADDRESS>`
+   (without `SIGNER_KEYS` it uses the key that came with the list, which may predate a revocation).
 5. The same files go to the web server **by hand** (step 6), never pushed.
 
 From then on, each machine trusts the `.pin`; changing it, or `list-signers`, needs root there
