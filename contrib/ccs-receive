@@ -284,10 +284,11 @@ NAME = "(?:[^\"<>/&\\n]|&(?:amp|lt|gt|quot|#39|apos);){1,300}"
 NUM = "[0-9]{1,30}"
 XMR = "[0-9]{1,30}(?:\\.[0-9]{1,30})?"
 DATE = "(?:(?:January|February|March|April|May|June|July|August|September|October|November|December) [1-9][0-9]?, [0-9]{4})?"   # as site.jq writes them
-# a link to a proposal: under one of HOSTS (the proposals repository, by its path), then a path
-# with no "." or ".." step (a browser would follow it out), no "%" (%2e is a dot to it), no backslash
-PATH = "(?:(?=[/?#])(?:(?!/\\.\\.?(?:[/?#\"]|$))[A-Za-z0-9/_.~+=?&;#:@!,-]){1,500})?"
-LINK = ("https://(?:" + "|".join(re.escape(h.strip("/")) for h in hosts.split()) + ")" + PATH) if hosts.split() else "(?!)"
+# a link to a proposal: under one of HOSTS (the proposals repository, by its path), its merge
+# request (GitLab, old or new form) or pull request (Forgejo), and nothing else: not an issue or a
+# file anyone could write in "Comments and updates"
+MR = "(?:/-/merge_requests/|/merge_requests/|/pulls/)[0-9]{1,10}"
+LINK = ("https://(?:" + "|".join(re.escape(h.strip("/")) for h in hosts.split()) + ")" + MR) if hosts.split() else "(?!)"
 
 def read(p):
     with open(p, "rb") as f: return f.read().decode("utf-8")
@@ -499,11 +500,29 @@ scan() {
     if ((${#texts[@]})) && ! timeout 120 python3 -I -c "$scan_py" "${texts[@]}" > "$out" 2> /dev/null; then
         printf '%s\t!its addresses could not be read in time\n' "${texts[@]}" >> "$out"
     fi
+    # each QR code: one image read once however often it is pushed (a page of 200 copies took a
+    # minute), 4 a file at most (a proposal's page has one), and all of them within 5 minutes: past
+    # that, a file is held back unchecked (the pushes after this one wait on its lock)
+    local -A seen=() many=()
+    local res end=$((SECONDS + 300))
     while IFS=$'\t' read -r file tag payload; do
         if [[ $tag != '?qr' ]]; then printf '%s\t%s\n' "$file" "$tag"; continue; fi
-        if ! base64 -d <<<"$payload" > "$png" 2> /dev/null || ! qrdata "$file" "$png"; then
-            printf '%s\t%s\n' "$file" "!an image that is not exactly qrencode's QR code of one address"
+        many[$file]=$((${many[$file]:-0} + 1))
+        if ((many[$file] > 4)); then
+            ((many[$file] == 5)) && printf '%s\t%s\n' "$file" "!more than 4 QR codes in one file"
+            continue
         fi
+        if [[ ! -v seen[$payload] ]]; then
+            if ((SECONDS >= end)); then
+                res="!its QR codes could not be checked in time"
+            elif base64 -d <<<"$payload" > "$png" 2> /dev/null && res=$(qrdata x "$png"); then
+                res=${res#x$'\t'}
+            else
+                res="!an image that is not exactly qrencode's QR code of one address"
+            fi
+            seen[$payload]=$res
+        fi
+        printf '%s\t%s\n' "$file" "${seen[$payload]}"
     done < "$out"
     rm -f "$png" "$out"
 }
