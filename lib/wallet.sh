@@ -43,17 +43,33 @@ check_wallet_addresses() {
         done || return 1
 }
 
-# A new subaddress for every fr proposal without one (after check_wallet_addresses).
+# A new subaddress for every fr proposal without one (after check_wallet_addresses): the one
+# after the state's highest, not create_address's next. A donation to a subaddress past the last
+# created one (the list publishes them all, anyone can send) makes the wallet count every one up
+# to it as created, so create_address would hand out the one after it: a dust payment to the
+# list's last address would use the whole list up. One already there is used if it has no label
+# (assign_addresses gave it none: never handed out).
 assign_addresses() {
-    local file res idx addr max
+    local file res idx addr max n
     while IFS= read -r file; do
-        res=$(rpc create_address "$(jq -nc --arg l "$file" '{account_index: 0, label: $l}')") || return 1
-        idx=$(jq -r .address_index <<<"$res")
-        addr=$(jq -r .address <<<"$res")
-        [[ $idx =~ ^[0-9]+$ && $addr =~ ^[0-9A-Za-z]{95}$ ]] || die "unexpected create_address result: $res"
-        # above every index in the state, or two proposals could share an address
         max=$(jq '[.[].subaddr_index | numbers] | max // 0' "$WORK/state.json")
-        ((idx > max)) || die "create_address gave subaddress $idx, but the state already goes up to $max"
+        idx=$((max + 1))
+        n=$(rpc get_address '{"account_index": 0}' | jq '.addresses | length') || return 1
+        if ((idx < n)); then
+            res=$(rpc get_address "{\"account_index\": 0, \"address_index\": [$idx]}") || return 1
+            [[ $(jq -r '.addresses[0].label // ""' <<<"$res") == "" ]] \
+                || die "subaddress $idx has a label already: handed out to a proposal $STATE_DIR/proposals.csv doesn't have (lost or wrong state file?)"
+            addr=$(jq -r '.addresses[0].address' <<<"$res")
+            rpc label_address "$(jq -nc --argjson i "$idx" --arg l "$file" '{index: {major: 0, minor: $i}, label: $l}')" > /dev/null || return 1
+        else
+            res=$(rpc create_address "$(jq -nc --arg l "$file" '{account_index: 0, label: $l}')") || return 1
+            idx=$(jq -r .address_index <<<"$res")
+            addr=$(jq -r .address <<<"$res")
+            [[ $idx =~ ^[0-9]+$ ]] || die "unexpected create_address result: $res"
+            # just above every index in the state, or two proposals could share an address
+            ((idx == max + 1)) || die "create_address gave subaddress $idx, but the state already goes up to $max"
+        fi
+        [[ $addr =~ ^[0-9A-Za-z]{95}$ ]] || die "unexpected address for subaddress $idx: $res"
         state_update --arg f "$file" --argjson i "$idx" --arg a "$addr" '.[$f] += {subaddr_index: $i, address: $a}'
         log "$file: subaddress $idx $addr"
     done < <(jq -r --slurpfile state "$WORK/state.json" '
