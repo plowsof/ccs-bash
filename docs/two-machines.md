@@ -160,9 +160,12 @@ what it is sent; it knows what a page may be. Each push, one at a time, it
      reorder an address's halves), and no run of 90 characters each base58 or not ASCII: no
      address, padded, split by invisible characters or drawn with look-alikes. ccs-bash shortens
      idea titles by the same rule;
-   - a link to a proposal: the site's own page, or a page under the proposals repository itself
-     (`proposals.conf`'s address, host and path, and `LINK_HOSTS`): not another repository on its
-     forge, which anyone can make, and no `..` step, `%` or backslash to leave it by;
+   - a link to a proposal: the site's own page, or a merge request of the proposals repository
+     itself (`proposals.conf`'s address, host and path, and `LINK_HOSTS`; `/-/merge_requests/N`,
+     `/merge_requests/N` or `/pulls/N`): not another repository on its forge, which anyone can
+     make, and no `..` step, `%` or backslash to leave it by. Any merge request number, though:
+     anyone can open one there, so a taken-over backend could link a proposal's "Comments and
+     updates" to theirs (the forge's page, saying whatever they wrote; not an address on the site);
    - a proposal's text, milestones and payouts: exactly what `markdown.awk` (installed here)
      makes of its file in the **proposals repository**, which the gate fetches itself each push
      (its last two commits, for a merge landing mid-push; the last fetch if it can't). A backend
@@ -174,8 +177,11 @@ what it is sent; it knows what a page may be. Each push, one at a time, it
    doesn't go live;
 3. checks **every address** (95 or 106 base58 characters) in pages and JSON against the signed
    list and `allowed`, as written (tags and attributes too, entities decoded, a non-ASCII
-   character read both as nothing and as a space; one pass, 2 minutes at most), the JSON as JSON
-   too; and **every QR code**: each `data:image/png;base64,` image must be, pixel for pixel,
+   character read both as nothing and as a space; one in groups split by up to three spaces or
+   punctuation, `4A9b - xZq3`, `4A9b/xZq3`, where its checksum says it is one), the JSON as JSON
+   too, its strings read the same way. One pass, 2 minutes at most for all; a file that needs more
+   than 3000 checksums or 20 s is held back alone ("too many runs that could be addresses"), not
+   every file with it; and **every QR code**: each `data:image/png;base64,` image must be, pixel for pixel,
    `qrencode -s 10` of such an address. Pages and JSON must start with `<`, `[` or `{` (a
    browser shows `<img src="x.html">` by its bytes);
 4. checks every other file the push changes: the design's, byte for byte (`design.sha256`: a
@@ -203,7 +209,7 @@ Set it up once, as root:
 
 ```
 apt install zbar-tools qrencode git                                  # the QR codes, read and remade; git, for the proposals
-install -m 755 contrib/ccs-receive /usr/local/bin/ccs-receive        # from this repository
+install -m 755 contrib/ccs-receive /usr/local/bin/ccs-receive        # from this repository at the attested commit, checked out here (handover: Upgrading, 1-2)
 install -d -o ccs-data -m 755 /var/lib/ccs-staging
 install -d -m 755 /etc/ccs-gate /etc/ccs-gate/design
 install -o ccs-data -m 644 /dev/null /var/log/ccs-gate.log          # optional: the refusals, as a file
@@ -221,11 +227,13 @@ LIST
 # every page, anyone's repository there too
 printf 'PROPOSALS_GIT=https://repo.getmonero.org/monero-project/ccs-proposals.git\nPROPOSALS_BRANCH=master\n' > /etc/ccs-gate/proposals.conf
 # the markdown.awk of the ccs-front-bash release the backend runs (its lib/markdown.awk)
-install -m 644 <ccs-front-bash checkout at that tag>/lib/markdown.awk /etc/ccs-gate/markdown.awk
+install -m 644 <ccs-front-bash checkout at the attested commit>/lib/markdown.awk /etc/ccs-gate/markdown.awk
 ```
 
 The list's files are the backend's (`/etc/ccs-front/`, checked there:
-[handover](handover.md#4-the-signed-subaddress-list), step 4); `sha256sum` each against the backend's.
+[handover](handover.md#4-the-signed-subaddress-list), step 4); check them here too, the same way
+(`tools/verify-subaddresses.sh` with a `list-signers` of your own), not only against the backend's
+sums: a taken-over backend would bring both.
 
 **The design**, the release zip the backend runs, unpacked, and the sums of every file but the pages:
 

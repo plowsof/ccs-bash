@@ -113,7 +113,8 @@ fi
 # release NAME: one release, in every set (folder) that has it: each signature checked, and its
 # whole line (the hash, and the name with the commit it was built from) the same for every signer
 # who counts, whichever set they attested. Only those who count are compared: one who doesn't
-# can't change what is printed, nor stop the others agreeing.
+# can't change what is printed (a folder of theirs with a bad signature, or two lines for a
+# release, still fails the check: look at it, it accepts nothing).
 release() {
     local name=$1 set m line key base='' basefrom='' n=0 seen=0 commit counted=' '
     for set in "$CCS_SIGS_REPO"/*/; do
@@ -144,7 +145,7 @@ release() {
         echo "$name: ${base%% *} (${n} signer(s) agree)"
         # the commit it was built from, when the attestation names it (contrib/release/build)
         commit=${base##*  "$name"-}; commit=${commit%.image-id}
-        [[ $commit =~ ^[0-9a-f]{12,40}$ ]] && echo "$name: from commit $commit (check the tag is it before building)"
+        [[ $commit =~ ^[0-9a-f]{12,40}$ ]] && echo "$name: from commit $commit (build from this commit, not the tag: a tag can move)"
         if (( n < min_signers )); then echo "ERR: $name: $n signer(s) agree, $min_signers needed (--min-signers)"; failure=1; fi
     elif (( seen )); then
         echo "ERR: $name: attested $seen time(s), by no one in TRUSTED_KEYS"; failure=1
