@@ -230,6 +230,7 @@ ideas() {
     printf '' | openssl dgst -keccak-256 > /dev/null 2>&1 || keccak=''
     while IFS= read -r run; do
         if [[ -z $keccak ]] || ((tried > budget)); then shorten+=("$run"); continue; fi
+        # shellcheck disable=SC2001  # (by bytes, LC_ALL=C, whatever the locale)
         joined=$(LC_ALL=C sed 's/[^1-9A-HJ-NP-Za-km-z]//g' <<<"$run")
         for n in 95 106; do
             for ((w = 0; w + n <= ${#joined}; w++)); do
