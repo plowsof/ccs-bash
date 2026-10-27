@@ -27,6 +27,10 @@ OUTPUT_DIR=/var/lib/ccs/out
 # Confirmations before a donation is counted. 0 also counts txes in the pool.
 MIN_CONFIRMATIONS=10
 
+# A run that takes longer than this many seconds (a forge or wallet that never answers) is
+# stopped, and its lock freed. Optional, default 900.
+#RUN_SECONDS=900
+
 # Ideas: at most this many open MRs, the most recently updated, are looked at each run (anyone
 # can open them). Optional, default 100.
 #IDEAS_MAX=100
