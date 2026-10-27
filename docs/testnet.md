@@ -18,7 +18,11 @@ releases](handover.md#the-releases). Nothing here is part of the setup: don't co
   (`STATE_DIR/retired/ccs1.csv` and `ccs2.csv`, [retiring a wallet](handover.md#retiring-a-wallet)):
   numbers only, no addresses, so the site's raised amounts look like the real CCS's.
 - **The IRC bot** runs on the backend machine itself: the backend's alerts reach it on 127.0.0.1,
-  the web server's over HTTPS through that machine's proxy. They go to `#montero-ccs-emojis`.
+  the web server's over HTTPS through that machine's proxy. They go to `#montero-ccs-emojis`. So
+  root on the backend can also silence the web server's alerts (a held-back page, no push); the
+  CCS's bot belongs on a third machine.
+- **ccs-watch fetches through Tor only** (no clearnet proxy): a web server that serves Tor's exits
+  the right pages and everyone else others isn't seen.
 - **A Forgejo Actions runner on the backend**, for every repository of its owner on disroot, the
   testnet proposals' pre-parser among them: anyone opening a pull request there starts a job on
   the wallet's machine (master's script, in an unprivileged container with no Docker socket and
@@ -33,5 +37,7 @@ Docker, whose nightly cleanup has removed images in use (hence the stopped `-kee
 each image, [upgrading](handover.md#upgrading)). Its root has a key that logs in, with sudo, on
 the other machine. The web server and the backup machine are one machine, which runs other
 services too (since 2026-10-27, when the cloud provider disabled the first web server's
-instance). So on the testnet, root on the backend is root everywhere, and the two-machine
+instance): monero nodes and other daemons open to the internet, run by an account with sudo, other
+people's keys, ssh open to all. So on the testnet, root on the backend is root everywhere, a hole
+in any of node2's services is root over the gate and every backup, and the two-machine
 guarantees ([who can do what](handover.md#who-can-do-what)) don't hold there.
