@@ -90,7 +90,7 @@ ccs-bash)
     while :; do
         n=$(($(num "$R/ccs-bash/done") + 1))
         wait_for pull "$n"
-        if run /opt/ccs-bash/ccs-back.sh "${CCS_CONFIG:-/etc/ccs/ccs.conf}"; then finish "$n" ok; else finish "$n" "failed: ccs-bash"; fi
+        if run "${CCS_BACK:-/opt/ccs-bash/ccs-back.sh}" "${CCS_CONFIG:-/etc/ccs/ccs.conf}"; then finish "$n" ok; else finish "$n" "failed: ccs-bash"; fi
         wake backup front
     done
     ;;
@@ -123,7 +123,7 @@ front)
     while :; do
         n=$(($(num "$R/front/done") + 1))
         wait_for ccs-bash "$n"
-        if run /opt/ccs-front-bash/ccs-front-bash.sh "$@"; then finish "$n" ok; else finish "$n" "failed: ccs-front-bash"; fi
+        if run "${CCS_FRONT:-/opt/ccs-front-bash/ccs-front-bash.sh}" "$@"; then finish "$n" ok; else finish "$n" "failed: ccs-front-bash"; fi
         wake push
     done
     ;;
@@ -135,10 +135,11 @@ push)
         wait_for front "$n"
         wait_for backup "$n"
         # the push and the copy of what went, under ccs-watch's lock (opened read-only: any open
-        # file can be locked), so a check between pushes never sees one without the other
+        # file can be locked), so a check between pushes never sees one without the other.
+        # (busybox's flock has no -w: timeout's flock takes the lock for this shell's fd 9)
         rc=0
         {
-            flock -w 600 9
+            timeout 600 flock 9 || say "warning: ccs-watch's lock not had in 10 minutes, pushing all the same"
             run timeout -k 5 120 rsync -a --delay-updates \
                 -e "ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15" "$site/" "${CCS_PUSH:?}:" || rc=$?
             if ((rc == 0 || rc == 7)); then rsync -a --delete "$site/" "$pushed/"; fi
