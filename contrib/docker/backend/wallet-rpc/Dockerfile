@@ -26,6 +26,7 @@ RUN set -e; cd /check; export GNUPGHOME=/check/gpg; mkdir -m 700 "$GNUPGHOME" \
 
 FROM debian@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3
 COPY --from=check /out/ /
+COPY --chmod=755 ccs-notify /usr/local/bin/ccs-notify
 # only a default: compose runs it as the host's wallet user
 USER 10003:10003
 ENTRYPOINT ["/usr/local/bin/monero-wallet-rpc"]
