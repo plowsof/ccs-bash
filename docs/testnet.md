@@ -7,8 +7,18 @@ releases](handover.md#the-releases). Nothing here is part of the setup: don't co
 ## Where it differs
 
 - **Testnet:** `testnet=1`, monerod on `28081`, wallet-rpc on `18182`; `MIN_CONFIRMATIONS=1`. Its
-  own wallet and signed list ([subaddresses/testnet](../subaddresses/testnet/README.md)): every
-  address the site shows is the testnet wallet's.
+  own wallet and signed list ([subaddresses/testnet2](../subaddresses/testnet2/README.md)): every
+  address the site shows is the testnet wallet's. A full wallet (its spend key too), so testnet
+  donations can be sent from it.
+- **A retired wallet, rehearsed** (2026-10-28, [retiring a wallet](handover.md#retiring-a-wallet)):
+  the first testnet wallet ([subaddresses/testnet](../subaddresses/testnet/README.md), `fresh_test`)
+  retired as `testnet` while still receiving, then a donation to one of its old addresses after
+  the switch, recorded by `retire-wallet --again` as `testnet-2`: the same 319 totals across the
+  switch, the late one added. Its wallet-rpc for `--again`: `systemd-run --unit
+  ccs-old-wallet-rpc` on `127.0.0.1:18183` (its config in `/run/ccs-old-wallet/`, its login in
+  `/root/ccs/pre-retire/old-rpc-login`; gone at a reboot: started again the same way). On the
+  testnet a donation can't be faked from the wallet itself: a transfer to its own subaddress is an
+  "out" only, which no record counts; send it from another wallet.
 - **The proposals on gitlab.com** ([plowsof/ccs-proposals](https://gitlab.com/plowsof/ccs-proposals),
   since 2026-10-28; disroot's Forgejo before): `master` is monero-project/ccs-proposals as of
   2026-10-09, and the testnet runs its `testnet` branch (master, the tags of the commit below, and
