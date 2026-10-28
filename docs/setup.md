@@ -138,6 +138,10 @@ push: [the handover](handover.md), steps 3–9.
        --pull never sha256:<the image ID you checked>
    ```
 
+   And `ccs`, for looking at it all as ccs-back's artisan commands did
+   ([troubleshooting](troubleshooting.md#looking)): `ln -s /opt/ccs-bash/contrib/ccs /usr/local/bin/ccs`
+   (a link: it reads its docs from the checkout, which each upgrade moves to the new release).
+
 4. **One update** (pull, run, build the site, push it), from root's cron. Root only starts the
    steps: git and the site builder read merged proposals, so they run as their own users. The
    script: [the handover](handover.md#9-the-update), step 9.
