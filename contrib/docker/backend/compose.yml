@@ -64,6 +64,13 @@ services:
       HOME: ${WALLET_DIR:-/var/lib/ccs/wallet}
     command: ["--config-file", "/etc/ccs-wallet/wallet-rpc.conf", "--non-interactive",
               "--tx-notify", "/usr/local/bin/ccs-notify %s"]
+    # answering: its RPC port open (bash's /dev/tcp; the image has no curl)
+    healthcheck:
+      test: ["CMD", "bash", "-c", ": > /dev/tcp/127.0.0.1/${WALLET_PORT:-18182}"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
     volumes:
       - ${WALLET_CONF:-/etc/ccs-wallet/wallet-rpc.conf}:/etc/ccs-wallet/wallet-rpc.conf:ro
       - ${WALLET_DIR:-/var/lib/ccs/wallet}:${WALLET_DIR:-/var/lib/ccs/wallet}
@@ -91,6 +98,9 @@ services:
     network_mode: host
     user: "${CCS_UID}"
     entrypoint: ["/opt/ccs-bash/contrib/docker/backend/step", "ccs-bash"]
+    depends_on:
+      wallet-rpc:
+        condition: service_healthy
     volumes:
       - /etc/ccs/ccs.conf:/etc/ccs/ccs.conf:ro
       - /var/lib/ccs/proposals:/var/lib/ccs/proposals:ro
@@ -120,10 +130,12 @@ services:
     network_mode: none
     user: "${FRONT_UID}"
     # the stage runner from ccs-bash's checkout at its attested commit (the image has bash)
-    entrypoint: ["/step", "front", "/original", "/data", "/proposals", "/www/site", "/subaddresses/subaddresses.txt"]
+    entrypoint: ["/step", "front", "/design/public", "/data", "/proposals", "/www/site", "/subaddresses/subaddresses.txt"]
     volumes:
       - ${CCS_BASH_DIR:-/opt/ccs-bash}/contrib/docker/backend/step:/step:ro
-      - ${CCS_DESIGN:-/opt/ccs-front-hugo/public}:/original:ro
+      # the folder above the design: an upgrade renames public (public.old, public.new), and
+      # a mount of public itself would keep the old one
+      - ${CCS_DESIGN_DIR:-/opt/ccs-front-hugo}:/design:ro
       - /var/lib/ccs/out:/data:ro
       - /var/lib/ccs/proposals:/proposals:ro
       - /var/lib/ccs/www:/www
@@ -143,7 +155,9 @@ services:
       - /etc/passwd:/etc/passwd:ro
       # the push key and known_hosts, in the ccs user's home as on the host
       - ${CCS_HOME:-/var/lib/ccs}/.ssh:${CCS_HOME:-/var/lib/ccs}/.ssh:ro
-      - /var/lib/ccs/www/site:/var/lib/ccs/www/site:ro
+      # the folder above the site: ccs-front-bash replaces www/site each run, and a mount of it
+      # would keep the one replaced (empty, once deleted)
+      - /var/lib/ccs/www:/var/lib/ccs/www:ro
       - /var/lib/ccs/pushed:/var/lib/ccs/pushed
       - /run/ccs-watch.lock:/run/ccs-watch.lock:ro
       - *run
