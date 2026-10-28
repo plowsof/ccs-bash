@@ -399,6 +399,25 @@ v=$((v + 1)); site "$v" "$good"; docker exec "$name-backend" sh -c "mkdir -p /ou
 rc=0; push > /dev/null || rc=$?
 if ((rc)) && [[ $(live) == "$v" ]] && on web 'cmp -s /var/lib/ccs-data/images/p/ok.png /srv/proposals/images/p/ok.png'; then ok "held back: a proposal image changed from the repository's (its last good copy stays)"; else fail "a changed proposal image"; fi
 on backend 'rm -rf /out/images'
+# a proposal taken out of the repository: its page, left on the live site (the push can't
+# delete), goes with its images and the push is good; pushed again by the backend, it is held
+# back; while the repository can't be fetched (the last fetch), it stays
+stale() { on web 'cd /var/lib/ccs-data && cp proposals/p.html proposals/gone.html && mkdir -p images/gone && cp /srv/proposals/images/p/ok.png images/gone/ && chown -R ccs-data proposals/gone.html images'; }
+stale
+v=$((v + 1)); site "$v" "$good"
+if push > /dev/null && [[ $(live) == "$v" ]] && on web '! test -e /var/lib/ccs-data/proposals/gone.html && ! test -e /var/lib/ccs-data/images/gone' \
+    && on web "grep -q 'removed proposals/gone.html (and images/gone/, if any) from the site: gone.md is no longer' /var/log/ccs-gate.log"; then
+    ok "a proposal taken out of the repository: its page left live goes, with its images; the push is good"
+else on web 'tail -n 5 /var/log/ccs-gate.log'; fail "a removed proposal's page"; fi
+v=$((v + 1)); site "$v" "$good"; on backend 'cp /out/proposals/p.html /out/proposals/gone.html'
+held "$v" proposals/gone.html "a page of a proposal not in the repository, pushed" "no proposal"
+on web "sed -i 's#=file:///srv/proposals#=file:///nowhere#' /etc/ccs-gate/proposals.conf"
+stale
+v=$((v + 1)); site "$v" "$good"
+rc=0; push > /dev/null || rc=$?
+if ((rc)) && on web 'test -e /var/lib/ccs-data/proposals/gone.html'; then ok "the repository can't be fetched: a page with no proposal in the last fetch stays (held back)"; else fail "a removed proposal's page, no fetch"; fi
+on web 'rm -rf /var/lib/ccs-data/proposals/gone.html /var/lib/ccs-data/images/gone'
+on web "sed -i 's#=file:///nowhere#=file:///srv/proposals#' /etc/ccs-gate/proposals.conf"
 # the repository can't be fetched: the last fetch is checked against, so the site goes on
 on web "sed -i 's#=file:///srv/proposals#=file:///nowhere#' /etc/ccs-gate/proposals.conf"
 v=$((v + 1)); site "$v" "$good"

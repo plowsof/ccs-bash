@@ -296,7 +296,7 @@ got=$(
     one=$(WORK=$(mktemp -d) MR_CACHE=$c TEST_FAIL_MR=9 merged_mr_url new-fund.md)
     : > "$TEST_TMP/gitlab-calls"
     two=$(WORK=$(mktemp -d) MR_CACHE=$c TEST_FAIL_MR=8 merged_mr_url new-fund.md)
-    refetched=$(grep -c 'merge_requests/8/changes' "$TEST_TMP/gitlab-calls" || true)
+    refetched=$(grep -c 'merge_requests/8/diffs' "$TEST_TMP/gitlab-calls" || true)
     WORK=$(mktemp -d) MR_CACHE=$(mktemp) TEST_FAIL_MR=9 merged_mr_url missing.md > /dev/null && missing=found || missing=failed
     echo "$one $two $refetched $missing"
 )
@@ -463,10 +463,10 @@ got=$(
     run_ideas() { WORK=$(mktemp -d) PROPOSALS_DIR=$FIXTURES/proposals IDEAS_CACHE=$TEST_TMP/ideas.cache ideas; }
     : > "$TEST_TMP/gitlab-calls"
     first=$(run_ideas 2> /dev/null | jq -c .)
-    fetched=$(grep -cE '/changes|/raw' "$TEST_TMP/gitlab-calls")
+    fetched=$(grep -cE '/diffs|/raw' "$TEST_TMP/gitlab-calls")
     : > "$TEST_TMP/gitlab-calls"
     second=$(run_ideas 2> /dev/null | jq -c .)
-    again=$(grep -cE '/raw|changes-1[13-6]|merge_requests/1[13-6]/' "$TEST_TMP/gitlab-calls" || true)
+    again=$(grep -cE '/raw|merge_requests/1[13-6]/' "$TEST_TMP/gitlab-calls" || true)
     one=$(IDEAS_MAX=1 run_ideas 2>&1 > /dev/null | grep -c 'only the 1 most recently updated' || true)
     [[ $first == "$second" && $fetched -gt 0 && $again == 0 && $one == 1 ]] && echo same || echo "fetched $fetched, again $again, capped $one; $first / $second"
 )
@@ -596,9 +596,11 @@ img=$(mktemp -d)
     proposal_images 2>> "$img/log"
     (cd "$img/out/images" && echo */*) > "$img/files2"
     # Ideas: one new .md and its images, inside images/<its name>/; anything else isn't an idea
-    gitlab_get() { jq -n --argjson f "$TEST_FILES" '{changes: ($f | map({new_file: true, new_path: .}))}'; }
+    # (GitLab's /diffs, a page of 100: a full one, more files than it shows, is no proposal)
+    gitlab_get() { jq -n --argjson f "$TEST_FILES" '$f | map({new_file: true, new_path: .})'; }
     for set in '["pics.md", "images/pics/a.png", "images/pics/b.jpeg"]' '["pics.md", "images/pics/notes.txt"]' \
-        '["pics.md", "images/other/a.png"]' '["pics.md", "a.png"]' '["pics.md", "more.md"]'; do
+        '["pics.md", "images/other/a.png"]' '["pics.md", "a.png"]' '["pics.md", "more.md"]' \
+        "$(jq -nc '["pics.md"] + [range(99) | "images/pics/\(.).png"]')"; do
         printf '[%s] ' "$(TEST_FILES=$set mr_proposal_file 1)"
     done > "$img/ideas"
 )
@@ -610,8 +612,8 @@ if [[ $(cat "$img/map1" 2> /dev/null) == '{"images/my-proposal/chart.png":"my-pr
 else
     cat "$img/map1" "$img/files1" "$img/time" "$img/log" "$img/files2" 2> /dev/null; echo "FAIL images"; status=1
 fi
-if [[ $(cat "$img/ideas") == '[pics.md] [] [] [] [] ' ]]; then
-    echo "ok   ideas: one new .md and its images (images/<its name>/), nothing else"
+if [[ $(cat "$img/ideas") == '[pics.md] [] [] [] [] [] ' ]]; then
+    echo "ok   ideas: one new .md and its images (images/<its name>/), nothing else, nor 100 files or more"
 else
     cat "$img/ideas"; echo; echo "FAIL ideas with images"; status=1
 fi
@@ -858,6 +860,16 @@ got=$(
         ideas 2> /dev/null | jq -c 'map([.upvotes, .downvotes])'
 )
 if [[ $got == '[[1,0],[null,null]]' ]]; then echo "ok   unreadable reactions leave the idea, without counts"; else echo "FAIL unreadable reactions: $got"; status=1; fi
+# GitLab: each idea's votes from the MR read on its own (gitlab.com's list has none); one that
+# can't be read: the idea stays, without counts
+got=$(
+    # shellcheck source=tests/stubs.sh
+    source "$here/stubs.sh"
+    for f in '' 11; do
+        WORK=$(mktemp -d) PROPOSALS_DIR=$FIXTURES/proposals TEST_FAIL_VOTES=$f ideas 2> /dev/null | jq -c 'map([.upvotes, .downvotes])'
+    done | tr '\n' ' '
+)
+if [[ $got == '[[1,0],[5,2]] [[1,0],[null,null]] ' ]]; then echo "ok   GitLab: each idea's votes read from its MR; unreadable ones leave the idea, without counts"; else echo "FAIL GitLab votes: $got"; status=1; fi
 
 # release/verify: only TRUSTED_KEYS' attesters count; without it nothing does, unless --any-key
 # (anyone can send ccs-sigs a key). A ccs-sigs of one release attested by one test key.
