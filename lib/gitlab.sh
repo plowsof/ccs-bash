@@ -55,12 +55,13 @@ forgejo_prs() {
 
 # Print the proposal file MR $1 adds: exactly one new .md in the repo root, and besides it only
 # its images, inside an images folder: images/<its name>/<file>.png|jpg|jpeg|gif. Else nothing.
+# GitLab: /diffs (/changes is deprecated), one page of 100: a full page is more than a proposal.
 mr_proposal_file() {
     local files md f
     if forgejo; then
         files=$(gitlab_get "pulls/$1/files?limit=50" | jq -r '.[] | select(.status == "added") | .filename') || return 1
     else
-        files=$(gitlab_get "merge_requests/$1/changes" | jq -r '.changes[] | select(.new_file) | .new_path') || return 1
+        files=$(gitlab_get "merge_requests/$1/diffs?per_page=100" | jq -r 'if length >= 100 then empty else .[] | select(.new_file) | .new_path end') || return 1
     fi
     md=$(grep -E '\.md$' <<<"$files" || true)
     if [[ -z $md || $md == *$'\n'* ]] || ! safe_filename "$md"; then return 0; fi
@@ -117,7 +118,7 @@ is_address() {
 }
 
 # Forgejo: the 👍 and 👎 reactions on pull request $1 as {"upvotes": n, "downvotes": n}
-# (GitLab has both on each MR already). 50 a page.
+# (GitLab has both on each MR, read on its own: ideas). 50 a page.
 forgejo_votes() {
     local page=1 batch all='[]'
     while :; do
@@ -200,10 +201,16 @@ ideas() {
         fi
         [[ -n $file && $rc == 0 && ! -e $PROPOSALS_DIR/$file ]] || continue
         keep+=("$iid")
+        # the votes of each idea shown, read on its own: gitlab.com's MR list, read without a
+        # token, has 0 for every MR (2026-10-28; read on its own, its real counts)
         if forgejo; then
             v=$(forgejo_votes "$iid") || { log "warning: could not read the reactions on PR #$iid"; v=null; }
-            votes=$(jq -c --arg i "$iid" --argjson v "$v" '.[$i] = $v' <<<"$votes")
+        else
+            if ! v=$(gitlab_get "merge_requests/$iid") || ! v=$(jq -c '{upvotes, downvotes}' <<<"$v"); then
+                log "warning: could not read the votes on MR !$iid"; v=null
+            fi
         fi
+        votes=$(jq -c --arg i "$iid" --argjson v "$v" '.[$i] = $v' <<<"$votes")
     done < <(jq -r --argjson max "$max" '.[:$max][] | [.iid, (.sha // "")] | @tsv' <<<"$mrs")
     # the open MRs looked at this run only: a closed one's line goes
     [[ -z ${IDEAS_CACHE:-} ]] || atomic_write "$IDEAS_CACHE" printf '%s' "${fresh:-$'\n'}" || true
@@ -244,7 +251,7 @@ ideas() {
     jq --argjson keep "$(printf '%s\n' "${keep[@]}" | jq -s .)" --argjson votes "$votes" \
         --argjson shorten "$(printf '%s\n' "${shorten[@]}" | jq -R . | jq -s 'map(select(. != ""))')" "$prep"'
         def noaddress: prep | gsub("(?<r>" + groups + ")"; if .r | IN($shorten[]) then .r | gsub("[^\\x20-\\x7E]"; "") | "\(.[0:6])…\(.[-4:])" else .r end);
-        map(select(.iid | IN($keep[])) | ($votes[.iid | tostring] // {upvotes, downvotes}) as $v | {
+        map(select(.iid | IN($keep[])) | $votes[.iid | tostring] as $v | {
             name: (.title | sub("^\\s+"; "") | sub("\\s+$"; "") | noaddress | @html),
             "gitlab-url": (.web_url | if type == "string" and test("^https://[^\\s\"\\x27<>\\\\]+$") then @html else null end),
             author: (.author.username | noaddress | @html),

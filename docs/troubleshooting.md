@@ -138,7 +138,7 @@ before resuming.
 | **Pause / resume** | `systemctl stop ccs-bash` / `systemctl start ccs-bash` (the site stays as it is; after 15 minutes without a push the web server tells IRC, and again when pushes return: expected) |
 | **One run by hand**, while paused | `/usr/local/bin/ccs-bash-update; tail -n 30 /var/log/ccs-bash.log` |
 | **Change a proposal's text, title, milestones, status** | in the proposals repository, never on a machine: the next run shows it (and the gate checks it against the repository) |
-| **Remove a proposal from the site** | revert or remove its file in the proposals repository; its subaddress stays in the state, never handed out again |
+| **Remove a proposal from the site** | revert or remove its file in the proposals repository; its subaddress stays in the state, never handed out again. The push can't delete: the gate takes the page (and `images/<name>/`) off the live site itself, at the first push after it fetched the repository without the file (`removed proposals/<name>.html … from the site` in its log). A tag only it had keeps its tag page until it's deleted on the web server (`/var/lib/ccs-data/explore/tag/<tag>/`) |
 
 ### Edit the state
 

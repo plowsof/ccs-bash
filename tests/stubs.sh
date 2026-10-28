@@ -45,12 +45,17 @@ gitlab_get() {
     local iid
     echo "$1" >> "$TEST_TMP/gitlab-calls"   # what was asked for (the ideas' cache is checked by it)
     case $1 in
-        merge_requests\?state=opened*) cat "$FIXTURES/gitlab/opened.json" ;;
+        # as gitlab.com's list without a token: no votes (each MR read on its own has them)
+        merge_requests\?state=opened*) jq 'map(.upvotes = 0 | .downvotes = 0)' "$FIXTURES/gitlab/opened.json" ;;
         merge_requests\?state=merged*) cat "$FIXTURES/gitlab/merged.json" ;;
-        merge_requests/*/changes)
+        merge_requests/*/diffs\?*)
+            iid=${1#merge_requests/}; iid=${iid%%/*}
+            [[ $iid != "${TEST_FAIL_MR:-}" ]] || return 1 # TEST_FAIL_MR=N: that MR fails
+            cat "$FIXTURES/gitlab/diffs-$iid.json" ;;
+        merge_requests/[0-9]*)   # one MR (its votes); TEST_FAIL_VOTES=N: that one fails
             iid=${1#merge_requests/}
-            [[ ${iid%/changes} != "${TEST_FAIL_MR:-}" ]] || return 1 # TEST_FAIL_MR=N: that MR fails
-            cat "$FIXTURES/gitlab/changes-${iid%/changes}.json" ;;
+            [[ $iid =~ ^[0-9]+$ && $iid != "${TEST_FAIL_VOTES:-}" ]] || return 1
+            jq --argjson i "$iid" '.[] | select(.iid == $i)' "$FIXTURES/gitlab/opened.json" ;;
         # Forgejo: the same MRs as Forgejo pull requests (times with an offset, a closed PR
         # that was not merged among the merged ones)
         pulls\?state=open*) gitlab_forgejo < "$FIXTURES/gitlab/opened.json" ;;
@@ -70,8 +75,8 @@ gitlab_get() {
         pulls/*/files*)
             iid=${1#pulls/}; iid=${iid%%/*}
             [[ $iid != "${TEST_FAIL_MR:-}" ]] || return 1
-            jq '.changes | map({filename: .new_path, status: (if .new_file then "added" else "changed" end)})' \
-                "$FIXTURES/gitlab/changes-$iid.json" ;;
+            jq 'map({filename: .new_path, status: (if .new_file then "added" else "changed" end)})' \
+                "$FIXTURES/gitlab/diffs-$iid.json" ;;
         *) return 1 ;;
     esac
 }
