@@ -1,10 +1,12 @@
 # The busybox applets in the image: what ccs-bash runs, plus cp, diff, grep, ln, ls, mkfifo,
 # sed, sleep, touch, tr and wc for the tests, so they run against exactly what ships.
 # Nothing else is compiled into busybox.
+# chown, sha256sum and timeout: the backend compose (contrib/docker/backend/step)
 awk
 base64
 cat
 chmod
+chown
 cp
 cut
 date
@@ -23,8 +25,10 @@ mv
 readlink
 rm
 sed
+sha256sum
 sleep
 sync
+timeout
 touch
 tr
 wc
