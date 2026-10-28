@@ -9,11 +9,15 @@ releases](handover.md#the-releases). Nothing here is part of the setup: don't co
 - **Testnet:** `testnet=1`, monerod on `28081`, wallet-rpc on `18182`; `MIN_CONFIRMATIONS=1`. Its
   own wallet and signed list ([subaddresses/testnet](../subaddresses/testnet/README.md)): every
   address the site shows is the testnet wallet's.
-- **The proposals on Forgejo** (disroot): ccs-bash's `REPOSITORY_URL` is
-  `https://git.disroot.org/api/v1/repos/plowsof/ccs-proposals`; the gate's `proposals.conf`:
-  `PROPOSALS_GIT=https://git.disroot.org/plowsof/ccs-proposals.git`,
-  `LINK_HOSTS=repo.getmonero.org/monero-project/ccs-proposals`, where the older proposals' merge
-  requests are. The backend's checkout has a commit of its own (tags), rebased on each pull.
+- **The proposals on gitlab.com** ([plowsof/ccs-proposals](https://gitlab.com/plowsof/ccs-proposals),
+  since 2026-10-28; disroot's Forgejo before): `master` is monero-project/ccs-proposals as of
+  2026-10-09, and the testnet runs its `testnet` branch (master, the tags of the commit below, and
+  the testnet's own proposals, merge requests to `testnet`). ccs-bash's `REPOSITORY_URL` is
+  `https://gitlab.com/api/v4/projects/88213536`, the checkout on `testnet`; the gate's
+  `proposals.conf`: `PROPOSALS_GIT=https://gitlab.com/plowsof/ccs-proposals.git`,
+  `PROPOSALS_BRANCH=testnet`, `LINK_HOSTS=repo.getmonero.org/monero-project/ccs-proposals`, where
+  the older proposals' merge requests are. The backend's checkout had a commit of its own (tags),
+  rebased on each pull: it is in `testnet` now. Moving it: [another forge](setup.md#proposals-on-another-forge).
 - **The real CCS's totals:** the CCS1 and CCS2 wallets' donations, by proposal, as retired wallets
   (`STATE_DIR/retired/ccs1.csv` and `ccs2.csv`, [retiring a wallet](handover.md#retiring-a-wallet)):
   numbers only, no addresses, so the site's raised amounts look like the real CCS's.
@@ -23,11 +27,11 @@ releases](handover.md#the-releases). Nothing here is part of the setup: don't co
   CCS's bot belongs on a third machine.
 - **ccs-watch fetches through Tor only** (no clearnet proxy): a web server that serves Tor's exits
   the right pages and everyone else others isn't seen.
-- **A Forgejo Actions runner on the backend**, for every repository of its owner on disroot, the
-  testnet proposals' pre-parser among them: anyone opening a pull request there starts a job on
-  the wallet's machine (master's script, in an unprivileged container with no Docker socket and
-  no route to the wallet's RPC). A risk the testnet takes; the CCS's backend runs nothing but the
-  CCS.
+- **A Forgejo Actions runner on the backend**, for every repository of its owner on disroot (the
+  testnet proposals' pre-parser among them, while they were there): anyone opening a pull request
+  there starts a job on the wallet's machine (master's script, in an unprivileged container with
+  no Docker socket and no route to the wallet's RPC). A risk the testnet takes; the CCS's backend
+  runs nothing but the CCS.
 
 ## The machines aren't separate
 
