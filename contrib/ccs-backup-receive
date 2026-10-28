@@ -6,8 +6,9 @@
 #     backend can only add copies, not destroy the old ones; 1 MB each.
 #   - a retired wallet's file (contrib/retire-wallet, its first line "# retired <name> ..."): state,
 #     kept as retired-<name>-<UTC time>.csv, every version, as proposals.csv; 64 MB each. Only a
-#     name this machine's admin listed in /etc/ccs-backup/retired-names (root's, one a line: a
-#     wallet is retired once, by hand), so a taken-over backend can't add a wallet of its own. A
+#     name this machine's admin listed in /etc/ccs-backup/retired-names (root's, one a line: each
+#     wallet's name and its follow-up records', NAME-2..., listed by hand), so a taken-over
+#     backend can't add a wallet of its own. A
 #     later version may differ from the first only in its file names, one for one (a proposal
 #     renamed; never two proposals' deposits put under one).
 #   - deposits.csv (a cache of the wallet's deposits, its first line "# final ..."): one copy,
