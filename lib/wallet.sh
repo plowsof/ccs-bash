@@ -302,8 +302,8 @@ check_known_subaddresses() {
 # retired counts once its lock has passed: a time, or a height taken as two minutes a block from
 # then (the old wallet isn't asked again). Every field checked before bash arithmetic.
 retired_totals() {
-    local f head h t height txid idx amount unlock file now est n=$NUM
-    local -A sum=() cnt=()
+    local f head w h t height txid idx amount unlock file now est n=$NUM
+    local -A sum=() cnt=() seen=()
     [[ -d ${RETIRED_DIR:-} ]] || return 0
     now=$(date +%s)
     for f in "$RETIRED_DIR"/*.csv; do
@@ -312,7 +312,7 @@ retired_totals() {
         IFS= read -r head < "$f" || true
         [[ $head =~ ^#\ retired\ [a-z0-9-]+\ wallet\ ([0-9A-Za-z]{95}|ccs-back-database)\ height\ $n\ time\ $n$ ]] \
             || die "$f: not a retired wallet's file (restore it from the backup machine)"
-        h=${BASH_REMATCH[2]} t=${BASH_REMATCH[3]}
+        w=${BASH_REMATCH[1]} h=${BASH_REMATCH[2]} t=${BASH_REMATCH[3]}
         while IFS=, read -r height txid idx amount unlock file; do
             # (numbers as NUM: no leading zero, at most 18 digits)
             [[ $height =~ ^$n$ && $txid =~ ^[0-9a-f]{64}$ && $idx =~ ^$n$ && $amount =~ ^$n$ \
@@ -323,6 +323,9 @@ retired_totals() {
                 if ((unlock < 500000000)); then est=$((t + (unlock > h ? unlock - h : 0) * 120)); else est=$unlock; fi
                 ((now >= est)) || continue
             fi
+            # a deposit in two records of one wallet (retire-wallet --again's NAME-2 and NAME): once
+            [[ ! ${seen[$w,$txid,$idx]:-} ]] || continue
+            seen[$w,$txid,$idx]=1
             sum[$file]=$((${sum[$file]:-0} + amount))
             cnt[$file]=$((${cnt[$file]:-0} + 1))
         done < <(awk 'NR > 1' "$f")
