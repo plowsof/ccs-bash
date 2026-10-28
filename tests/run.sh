@@ -690,10 +690,12 @@ cp "$TEST_TMP/deposits.good" "$TEST_TMP/dep-a/state/deposits.csv"
 # its subaddresses, then a new wallet with none yet: every total and count the same as before
 rw=$TEST_TMP/dep-retire; rm -rf "$rw"; had=$(cat "$TEST_TMP/wallet-count")
 cp "$TEST_TMP/wallet-labels" "$TEST_TMP/wallet-labels.had"
-# (a wallet still receiving isn't retired: the fixture has a deposit under MIN_CONFIRMATIONS and one in the pool)
-if dep retire && ! bash -c 'source "$1/../contrib/retire-wallet" && source "$1/stubs.sh" && retire_main old "$2"' _ "$here" "$rw/ccs.conf" > "$rw/retire.out" 2>&1 \
-    && grep -q 'retire a wallet once it is quiet' "$rw/retire.out" && [[ ! -e $rw/state/retired/old.csv ]]; then
-    echo "ok   retire-wallet: not while deposits are in the pool or under MIN_CONFIRMATIONS"
+# (a wallet still receiving: the fixture has a deposit under MIN_CONFIRMATIONS and one in the
+# pool. Recorded all the same, without those two, named for --again: the switch needn't wait)
+if dep retire && bash -c 'source "$1/../contrib/retire-wallet" && source "$1/stubs.sh" && retire_main old "$2"' _ "$here" "$rw/ccs.conf" > "$rw/retire.out" 2>&1 \
+    && grep -q '2 deposit(s) in the pool or under 10 confirmations, not recorded yet: retire-wallet --again old' "$rw/retire.out" \
+    && [[ -f $rw/state/retired/old.csv ]] && ! grep -qE ',743[36]0' "$rw/state/retired/old.csv"; then
+    echo "ok   retire-wallet: a wallet still receiving: what is confirmed recorded, the rest named for --again"
 else echo "FAIL retire-wallet: a wallet still receiving"; cat "$rw/retire.out"; status=1; fi
 jq --argjson m 10 '.pool = [] | .in |= map(select(.confirmations >= $m))' "${TEST_TRANSFERS:-$FIXTURES/rpc/get_transfers.json}" > "$TEST_TMP/quiet.json"
 rm -rf "$rw"
@@ -740,6 +742,37 @@ if dep retire TEST_TRANSFERS="$TEST_TMP/quiet.json" && cp "$rw/out/projects.json
     if ! dep retire TEST_TRANSFERS="$TEST_TMP/no-transfers.json" && grep -q "a line that isn't a deposit" "$rw/log" && [[ ! -e $TEST_TMP/pwned-r ]]; then
         echo "ok   retire-wallet: a damaged retired file stops the run, nothing in it run"
     else echo "FAIL retire-wallet: a damaged retired file"; status=1; fi
+    cp "$rw/old.csv.good" "$r"
+    # --again: what came to the retired wallet since (the young deposit confirmed, a late one to
+    # subaddress 1), from its own wallet-rpc (not the live one), in old-2.csv; once more: nothing
+    # new; the new wallet's run adds them to that proposal, the rest the same. A deposit in two
+    # records counts once.
+    jq '.pool = [] | .in |= map(if .txid | startswith("7433") then .confirmations = 20 else . end)
+        | .in += [{txid: ("7499" + "0" * 60), amount: 3000000000000, confirmations: 15, unlock_time: 0, subaddr_index: {major: 0, minor: 1}, height: 3099995}]' \
+        "$FIXTURES/rpc/get_transfers.json" > "$TEST_TMP/late.json"
+    f1=$(awk -F, 'NR > 1 && $3 == 1 { print $6; exit }' "$r")
+    again() { echo "$had" > "$TEST_TMP/wallet-count"; cp "$TEST_TMP/wallet-labels.had" "$TEST_TMP/wallet-labels"
+        TEST_TRANSFERS="$TEST_TMP/late.json" bash -c 'source "$1/../contrib/retire-wallet" && source "$1/stubs.sh" && retire_main --again old "${@:2}"' _ "$here" "$rw/ccs.conf" "$@"
+        local rc=$?; echo 1 > "$TEST_TMP/wallet-count"; : > "$TEST_TMP/wallet-labels"; return $rc; }
+    dep retire TEST_TRANSFERS="$TEST_TMP/no-transfers.json"; before2=$(jq -c 'map({filename, raised_amount, contributions})' "$rw/out/projects.json")
+    if ! again > "$rw/again0.out" 2>&1 && grep -q 'this is the live wallet' "$rw/again0.out" \
+        && again http://old-wallet.invalid/json_rpc > "$rw/again.out" 2>&1 && r2=$rw/state/retired/old-2.csv \
+        && [[ $(awk 'NR == 1' "$r2") =~ ^#\ retired\ old-2\ wallet\ 8[0-9]{94}\  ]] \
+        && [[ $(awk -F, 'NR > 1 { print substr($2, 1, 4) "," $3 "," $6 }' "$r2" | tr '\n' ' ') == "7433,1,$f1 7499,1,$f1 " ]] \
+        && grep -q 'add old-2 to the backup machine' "$rw/again.out" \
+        && again http://old-wallet.invalid/json_rpc > "$rw/again2.out" 2>&1 && grep -q 'nothing new for old' "$rw/again2.out" && [[ ! -e $rw/state/retired/old-3.csv ]] \
+        && dep retire TEST_TRANSFERS="$TEST_TMP/no-transfers.json" \
+        && [[ $(jq -c --arg f "$f1" 'map(select(.filename != $f)) | map({filename, raised_amount, contributions})' "$rw/out/projects.json") \
+            == "$(jq -c --arg f "$f1" 'map(select(.filename != $f))' <<<"$before2")" ]] \
+        && [[ $(jq -r --arg f "$f1" '.[] | select(.filename == $f) | .contributions' "$rw/out/projects.json") \
+            == $(($(jq -r --arg f "$f1" '.[] | select(.filename == $f) | .contributions' <<<"$before2") + 2)) ]]; then
+        after2=$(jq -c 'map({filename, raised_amount, contributions})' "$rw/out/projects.json")
+        cp "$r2" "$rw/state/retired/copy.csv"
+        if dep retire TEST_TRANSFERS="$TEST_TMP/no-transfers.json" && [[ $(jq -c 'map({filename, raised_amount, contributions})' "$rw/out/projects.json") == "$after2" ]]; then
+            echo "ok   retire-wallet --again: what came since (young then, late), in old-2.csv, its proposal's total up by them; nothing new: nothing written; not the live wallet; a deposit in two records counts once"
+        else echo "FAIL retire-wallet --again: a deposit in two records"; status=1; fi
+        rm -f "$rw/state/retired/copy.csv"
+    else echo "FAIL retire-wallet --again"; cat "$rw/again0.out" "$rw/again.out" "$rw/again2.out" "${r2:-/dev/null}" 2> /dev/null; tail -n 3 "$rw/log"; status=1; fi
 else
     echo "FAIL retire-wallet: it didn't run"; cat "$rw/retire.out" "$rw/log" 2> /dev/null; status=1
 fi

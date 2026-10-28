@@ -83,6 +83,8 @@ rpc get_height; head -n 1 /var/lib/ccs/state/deposits.csv     # the wallet's hei
 | `would show less raised than before (N proposals: …)` | a proposal's total would go down: a retired wallet's record missing or damaged, a state row cleared, a wallet rescanning | find which (the line names them) and restore it; the site keeps its last totals meanwhile. Meant (a donation that was never real): `runuser -u ccs -- touch /var/lib/ccs/state/allow-lower` lets one run through |
 | `retired/<name>.csv: not a retired wallet's file`, `a line that isn't a deposit` | a retired wallet's record is damaged: state, not a cache | copy its first `retired-<name>-<time>.csv` back from the backup machine (as [restore the state](#restore-the-state)), and redo any rename by hand: the backup keeps a later version only if it renames proposals, one for one |
 | a proposal funded through an older wallet shows 0 raised | it was renamed: its retired donations are under the old name | rename it in `retired/*.csv` too ([edit the state](#edit-the-state)) |
+| a donation to a retired wallet's address (after the switch, or too young then) isn't counted | a record is taken when it is run, not kept up | `retire-wallet --again <name>` ([retiring a wallet](handover.md#retiring-a-wallet), "After") |
+| `ccs-backup: retired wallet <name>-2 isn't in /etc/ccs-backup/retired-names` (a failed run) | `--again` wrote a record the backup machine wasn't told of | add the name there, as root on the backup machine |
 
 A donation counts at `MIN_CONFIRMATIONS` (10); a **time-locked** one only once its lock has passed.
 

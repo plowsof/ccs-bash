@@ -1,0 +1,8 @@
+The testnet CCS wallet (https://ccs.monerodevs.org), on the Monero testnet, since 2026-10-28
+(the rehearsal of retiring a wallet: the one before, subaddresses/testnet/, retired):
+
+address  9zSQntmDBFiNEJ7pXbYXfTA7X2rFHfEazYioPf2DyNVrAFTqNjrx44dB8J4ZexttrHZiRaYBh4zahNiuqqsZAdc4UeLAh8p
+view key f6a623fb67d7c148aba796cbc4a06d955f9b3f9ac241c4e4aca9dd9862dd8a04
+
+Its donation addresses are subaddresses of this wallet: a view-only wallet made from the address
+and view key above (both are needed) says whether an address is one of them (get_address_index).

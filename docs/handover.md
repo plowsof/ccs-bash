@@ -419,29 +419,58 @@ separate): [testnet](testnet.md). Don't copy it.
 ## Retiring a wallet
 
 When the CCS moves to a new wallet (CCS2 to CCS3), the old one's donations keep counting: recorded
-once, by proposal, in `STATE_DIR/retired/<name>.csv` (no addresses; backed up, every version), and
-added to the new wallet's each run. Funding-required proposals get new addresses.
+by proposal in `STATE_DIR/retired/<name>.csv` (no addresses; backed up, every version), and added
+to the new wallet's each run. Funding-required proposals get new addresses. The switch takes
+minutes, the site keeps its totals, and the old wallet needn't go quiet first: what reaches it
+later (a deposit still too young, a saved address, a QR code shared before) is recorded after.
 
-1. **Take its addresses off the site** and let it go quiet (nothing in the pool or under
-   `MIN_CONFIRMATIONS`: the script refuses until then). `systemctl stop ccs-bash`.
-2. **Record it**, as ccs (another wallet-rpc than the config's: its `RPC_URL`, and
-   `RETIRE_RPC_USER`/`RETIRE_RPC_PASSWORD` for its login):
+**Before** (days ahead, nothing changes yet):
+
+- the new wallet, synced, and its **signed list**: made, signed, published and reproduced as in
+  [step 4](#4-the-signed-subaddress-list), added as `subaddresses/<new wallet>/`;
+- a **view-only copy of the old wallet**, synced, with a wallet-rpc of its own (another port, its
+  own login): `retire-wallet --again` reads it afterwards, the live one being the new wallet;
+- on the backup machine, as root, the old wallet's name and its follow-up records' in
+  `/etc/ccs-backup/retired-names` (`ccs2`, `ccs2-2`, `ccs2-3`: it keeps no record of a name not
+  listed there).
+
+**The switch**, as root on the backend:
+
+1. `systemctl stop ccs-bash`.
+2. **Record it**, as ccs (the live wallet: the config's `RPC_URL`):
    ```
-   runuser -u ccs -- /opt/ccs-bash/contrib/retire-wallet ccs2 /etc/ccs/ccs.conf [RPC_URL]
+   runuser -u ccs -- /opt/ccs-bash/contrib/retire-wallet ccs2 /etc/ccs/ccs.conf
    ```
-   It writes `retired/ccs2.csv`, clears those proposals' index and address in `proposals.csv` (the
-   old file kept beside it) and, for the live wallet, moves `deposits.csv` aside.
-3. **The new wallet:** its files and `wallet-rpc.conf` (step 1), `WALLET_ADDRESS` (step 2), and
-   **its list**: made and signed as in step 4, added as `subaddresses/<new wallet>/`, and installed
-   on both machines in place of the old one's (`/etc/ccs-front/`, `/etc/ccs-gate/`: every address
-   shown from then on is the new wallet's). On the backup machine, as root, add the old wallet's
-   name to `/etc/ccs-backup/retired-names` (it keeps no record of a wallet not listed there) and
-   move the old `deposits.csv` aside (it only takes one with every deposit it has).
+   It writes `retired/ccs2.csv` (every deposit with `MIN_CONFIRMATIONS`; it names those in the
+   pool or younger, for later), clears those proposals' index and address in `proposals.csv`
+   (the old file kept as `proposals.csv.before-retire-ccs2`: the old addresses, for later) and
+   moves `deposits.csv` and `assigned.tsv` aside.
+3. **The new wallet:** its files and `wallet-rpc.conf` (step 1; `systemctl restart
+   ccs-wallet-rpc`), `WALLET_ADDRESS` (step 2), and its list on both machines in place of the old
+   one's: `subaddresses.txt`, `.asc`, `.key.asc`, `.pin` and `.viewkey` (the Verify page's), in
+   `/etc/ccs-front/` and `/etc/ccs-gate/`, checked as in step 4 (`list-signers` too, if the signer
+   changes). Every address shown from then on is the new wallet's. On the backup machine, as
+   root, move the old `deposits.csv` aside (it only takes one with every deposit it has).
 4. **One run by hand**, then `systemctl start ccs-bash`: the same totals, new addresses.
 
+**After:** a day later, and again now and then (until it says nothing new), with the loop paused,
+the old wallet's view-only copy's wallet-rpc as `RPC_URL` (`RETIRE_RPC_USER`/`RETIRE_RPC_PASSWORD`
+for its login):
+
+```
+systemctl stop ccs-bash
+runuser -u ccs -- /opt/ccs-bash/contrib/retire-wallet --again ccs2 /etc/ccs/ccs.conf http://127.0.0.1:<its port>/json_rpc
+/usr/local/bin/ccs-bash-update; systemctl start ccs-bash
+```
+
+Each time something came, it writes the next record (`retired/ccs2-2.csv`, then `-3`): only
+deposits no record of `ccs2` has, under each proposal's name there; nothing new, nothing written. A
+run counts a deposit once, whichever records have it. The name must be in `retired-names` first,
+or the backup refuses it (a failed run until it is).
+
 A proposal renamed later: rename it in `proposals.csv`, give its subaddress the new name as its
-label (the run stops on a subaddress whose label names another proposal), and in `retired/*.csv`
-too, or it loses its retired donations ([edit the state](troubleshooting.md#edit-the-state)).
+label (the run stops on a subaddress whose label names another proposal), and in every
+`retired/*.csv` too, or it loses its retired donations ([edit the state](troubleshooting.md#edit-the-state)).
 
 ## Upgrading
 

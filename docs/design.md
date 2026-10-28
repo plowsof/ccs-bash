@@ -29,7 +29,7 @@ machine and the IRC bot):
 - **monero-wallet-rpc**, view-only, its own user, on 127.0.0.1.
 - **ccs-bash**: the JSON and the state, every 2 minutes or on a new tx. It reads the network (the
   forge), so nothing it writes is trusted further on. A proposal's total counts the live wallet
-  and every retired one (each recorded once, in the state); no total can go down from one run to
+  and every retired one (recorded in the state, each deposit counted once); no total can go down from one run to
   the next unless allowed by hand ([retiring a wallet](handover.md#retiring-a-wallet)).
 - **ccs-front-bash**: fills a fresh copy of the original each run (about 1.5 s for 316
   proposals): every proposal page, the stage lists, each donation box. Every donation address is
