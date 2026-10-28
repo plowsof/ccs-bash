@@ -855,6 +855,28 @@ else
     fi
 fi
 
+# contrib/ccs: the backend looked at by ccs-back's artisan names (a host script: runuser, sort)
+if command -v sort > /dev/null && command -v runuser > /dev/null; then
+    c=$TEST_TMP/ccs; mkdir -p "$c/state/retired" "$c/out"
+    printf 'STATE_DIR=%s\nOUTPUT_DIR=%s\n' "$c/state" "$c/out" > "$c/ccs.conf"
+    printf '"a.md","https://forge.test/mr/1",1,"8%094d","2026-10-01T00:00:00Z"\n"b.md","","","",""\n' 1 > "$c/state/proposals.csv"
+    printf '# final 100 checked 1\n90,%064d,1,1000000000000,0\n' 7 > "$c/state/deposits.csv"
+    printf '# retired old wallet 8%094d height 80 time 1\n70,%064d,3,2000000000000,0,b.md\n' 0 8 > "$c/state/retired/old.csv"
+    printf '== run 2026-10-28 10:00:00\nold: warning: could not fetch ideas from GitLab, keeping the previous list\n== run 2026-10-28 10:02:00\n2026-10-28 10:02:01 warning: could not fetch ideas from GitLab, keeping the previous list\n2026-10-28 10:02:02 warning: could not fetch ideas from GitLab, keeping the previous list\nskipping x.md: missing date\n2026-10-28 10:02:09 ccs-watch: this run failed (the push), 1 in a row\n' > "$c/log"
+    cc() { CCS_AS=none CCS_CONFIG=$c/ccs.conf CCS_LOG=$c/log "$here/../contrib/ccs" "$@"; }
+    if [[ $(cc deposit:list | jq -c 'map([.wallet, .proposal, .amount])') == '[["live","a.md",1],["old","b.md",2]]' ]] \
+        && [[ $(cc deposit:list b.md | jq length) == 1 ]] \
+        && ga=$(cc generate:addresses) && grep -q "^Project: a.md, subaddress 1, address: 8" <<<"$ga" && grep -q "(1 without a subaddress" <<<"$ga" \
+        && out=$(cc log 1) && grep -q 'could not fetch ideas from GitLab, keeping the previous list  (×2)' <<<"$out" \
+        && grep -q '↳ Ideas are missing: the forge is down' <<<"$out" && ! grep -q '^old:' <<<"$out" \
+        && grep -q '^  skipping x.md: missing date' <<<"$out" \
+        && st=$(cc status 2> /dev/null) && grep -q '^the last run: 2026-10-28 10:02:00 UTC, this run failed (the push), 1 in a row' <<<"$st"; then
+        echo "ok   ccs: deposit:list (the live wallet's and the retired ones'), generate:addresses, log (the last runs, each message once, its troubleshooting line, the files left out), status"
+    else echo "FAIL ccs"; cc deposit:list; cc generate:addresses; cc log 1; cc status; status=1; fi
+else
+    echo "ok   ccs: skipped (a host script, its tools are not in the image)"
+fi
+
 # contrib/migrate/compare-deposits: ccs-back's deposits table against the first run's deposits.csv.
 # The same deposits: OK. One ccs-back has and the wallet doesn't, or another amount: NOT OK (exit 1).
 # One only the wallet has (time-locked: ccs-back skipped it) is listed with why. Blocks past the
