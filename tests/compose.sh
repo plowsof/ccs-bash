@@ -9,6 +9,7 @@ here=$(dirname "$(readlink -f "$0")")
 step=$here/../contrib/docker/backend/step
 t=$(mktemp -d)
 pids=()
+# shellcheck disable=SC2317  # (the trap calls it)
 cleanup() { for p in "${pids[@]}"; do kill "$p" 2> /dev/null; done; wait 2> /dev/null; rm -rf "$t"; }
 trap cleanup EXIT
 status=0
