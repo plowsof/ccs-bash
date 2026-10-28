@@ -18,6 +18,11 @@ releases](handover.md#the-releases). Nothing here is part of the setup: don't co
   `PROPOSALS_BRANCH=testnet`, `LINK_HOSTS=repo.getmonero.org/monero-project/ccs-proposals`, where
   the older proposals' merge requests are. The backend's checkout had a commit of its own (tags),
   rebased on each pull: it is in `testnet` now. Moving it: [another forge](setup.md#proposals-on-another-forge).
+  Its CI/CD configuration file is ccs-proposal-pre-parser's `gitlab_comment_workflow.yml`, by its
+  raw URL at a commit (the API's `ci_config_path`): the proposal check, one comment on each merge
+  request, edited in place, and once merged the links to the file and its editor. The comment is
+  a project access token's (`pre-parser`, Reporter, scope `api`, until 2027-10-27), in the masked
+  variable `PRE_PARSER_TOKEN`.
 - **The real CCS's totals:** the CCS1 and CCS2 wallets' donations, by proposal, as retired wallets
   (`STATE_DIR/retired/ccs1.csv` and `ccs2.csv`, [retiring a wallet](handover.md#retiring-a-wallet)):
   numbers only, no addresses, so the site's raised amounts look like the real CCS's.
