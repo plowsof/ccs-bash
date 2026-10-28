@@ -55,10 +55,12 @@ Pinned container, read-only, no capabilities, `--network host` only to reach wal
 - `check_never_lower` (`ccs-back.sh`): a proposal's raised total may not go below what the last
   run published (`OUTPUT_DIR/projects.json`): the run stops; `STATE_DIR/allow-lower` lets one through.
 - `retired_totals` (`lib/wallet.sh`): the donations to wallets the CCS used before, per proposal
-  file, from `STATE_DIR/retired/*.csv` (written once by [`contrib/retire-wallet`](../contrib/retire-wallet),
-  which asks that wallet which state addresses are its own, and refuses one still receiving); every
-  field checked before bash arithmetic (no leading zero, at most 18 digits: bash wraps past 2^63);
-  no addresses in it. `check_wallet_addresses`: every state subaddress the wallet's, and given to
+  file, from `STATE_DIR/retired/*.csv` (written by [`contrib/retire-wallet`](../contrib/retire-wallet),
+  which asks that wallet which state addresses are its own and records only deposits with
+  `MIN_CONFIRMATIONS`; `--again` later, what came since, in `<name>-2.csv`, never one a record of
+  that wallet has); a deposit (wallet, txid, subaddress) counted once, whichever files have it;
+  every field checked before bash arithmetic (no leading zero, at most 18 digits: bash wraps past
+  2^63); no addresses in it. `check_wallet_addresses`: every state subaddress the wallet's, and given to
   the proposal its label names (a swapped state stops the run).
 - [`lib/gitlab.sh`](../lib/gitlab.sh): the public API of GitLab or Forgejo (Forgejo's pull requests
   mapped to GitLab's shape). `merged_mr_url`: the merged MR that added a file. `mr_proposal_file`:
