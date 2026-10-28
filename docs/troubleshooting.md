@@ -26,7 +26,7 @@ reads this page from the same checkout, so its hints are the release's.
 
 | Machine | What to look at | Command |
 |---|---|---|
-| **backend** | every run, every step: errors, warnings, proposals skipped and why | `tail -n 100 /var/log/ccs-bash.log`, `grep -E 'error\|warning\|skipping\|failed' /var/log/ccs-bash.log \| tail -n 30` |
+| **backend** | every run, every step: errors, warnings, proposals skipped and why | `ccs status`, `ccs log` ([looking](#looking)); the whole log: `tail -n 100 /var/log/ccs-bash.log` |
 | | the update loop and the wallet | `systemctl status ccs-bash ccs-wallet-rpc`, `journalctl -u ccs-bash -u ccs-wallet-rpc -n 50` |
 | | what the site was made from | `/var/lib/ccs/out/*.json` (ccs-bash's JSON), `/var/lib/ccs/www/site/` (the pages pushed) |
 | | the state: which proposal has which subaddress | `/var/lib/ccs/state/proposals.csv` (the one file nothing can make again); `deposits.csv` and `ideas.cache` beside it are caches |
@@ -54,10 +54,10 @@ run ends with `ccs-watch: the N pages on https://… and the M other pages and f
    | `no frontmatter between --- lines` | the file must start with `---`, the front matter, `---` |
    | `bad filename`, `filename is not valid UTF-8`, `not a plain file` | rename it: `<plain-name>.md` |
 3. **Is it in the JSON?** `jq '.[] | .proposals[] | select(."local-url" | test("<name>"))' /var/lib/ccs/out/proposals.json`.
-   In the JSON but not on the site: `grep 'left off the site' /var/log/ccs-bash.log | tail -n 3`
+   In the JSON but not on the site: `ccs log` (`left off the site`)
    (its address isn't on the signed list: see [the whole site](#the-whole-site-isnt-updating), `ccs-front-bash`).
-   A funding-required one needs a donation address: `grep '"<name>.md"' /var/lib/ccs/state/proposals.csv`
-   shows its subaddress. `warning: GitLab lookup failed for new proposal <name>.md, retrying next run`:
+   A funding-required one needs a donation address: `ccs generate:addresses <name>.md` shows its
+   subaddress. `warning: GitLab lookup failed for new proposal <name>.md, retrying next run`:
    the forge's API is down, it gets its address once it answers.
 
 ## A proposal's page isn't updating (old text, old totals)
@@ -81,10 +81,11 @@ The push then exits 7: a failed run; ccs-watch still checks the live pages.
 
 ## The totals look stuck, or wrong
 
-Totals come from the wallet. On the **backend**:
+Totals come from the wallet. On the **backend**, `ccs status` (the wallet and its height),
+`ccs log` (what the last runs said), `ccs deposit:list <name>.md` (every deposit a proposal's
+total counts, the retired wallets' too); by hand:
 
 ```
-grep -E 'error|wallet|deposits' /var/log/ccs-bash.log | tail -n 10
 rpc() { curl -s --digest -u "$(sed -n 's/^RPC_USER=//p' /etc/ccs/ccs.conf):$(sed -n 's/^RPC_PASSWORD=//p' /etc/ccs/ccs.conf)" \
     "$(sed -n 's/^RPC_URL=//p' /etc/ccs/ccs.conf)" -d "{\"jsonrpc\":\"2.0\",\"id\":0,\"method\":\"$1\",\"params\":${2:-{\}}}"; }
 rpc get_height; head -n 1 /var/lib/ccs/state/deposits.csv     # the wallet's height, and the kept deposits'
@@ -110,6 +111,8 @@ A donation counts at `MIN_CONFIRMATIONS` (10); a **time-locked** one only once i
 
 ## Ideas are missing
 
+`ccs proposal:update`: the Ideas shown, and each open MR looked at and why it is or isn't one.
+
 | In the log | Meaning |
 |---|---|
 | `could not fetch ideas from GitLab, keeping the previous list` | the forge is down: the last list stays |
@@ -122,8 +125,8 @@ A title with a long run of address characters is shortened (`9ZqZqZ…ZqZq`).
 
 ## The whole site isn't updating
 
-`grep 'ccs-watch: this run failed' /var/log/ccs-bash.log | tail -n 3` names the steps that failed;
-the lines above it say why.
+`ccs status` names the steps the last run failed in; `ccs log` shows the lines that say why
+(`grep 'ccs-watch: this run failed' /var/log/ccs-bash.log | tail -n 3`, and the lines above it).
 
 | Step | Common causes |
 |---|---|
@@ -156,9 +159,10 @@ before resuming.
 
 | Job | How |
 |---|---|
-| **Run now** (not waiting 2 minutes) | `touch /var/lib/ccs-notify/new-tx` (it runs within 30 s); watch `tail -f /var/log/ccs-bash.log` |
+| **Run now** (not waiting 2 minutes) | `ccs proposal:process` (waits for a run going, pauses the loop, one run, its lines, the loop started again); or `touch /var/lib/ccs-notify/new-tx` (the loop runs within 30 s) |
 | **Pause / resume** | `systemctl stop ccs-bash` / `systemctl start ccs-bash` (the site stays as it is; after 15 minutes without a push the web server tells IRC, and again when pushes return: expected) |
-| **One run by hand**, while paused | `/usr/local/bin/ccs-bash-update; tail -n 30 /var/log/ccs-bash.log` |
+| **One run by hand**, while paused | `ccs proposal:process` (paused, it stays paused); or `/usr/local/bin/ccs-bash-update; tail -n 30 /var/log/ccs-bash.log` |
+| **What happened** | `ccs status`, `ccs log` ([looking](#looking)) |
 | **Change a proposal's text, title, milestones, status** | in the proposals repository, never on a machine: the next run shows it (and the gate checks it against the repository) |
 | **Remove a proposal from the site** | revert or remove its file in the proposals repository; its subaddress stays in the state, never handed out again. The push can't delete: the gate takes the page (and `images/<name>/`) off the live site itself, at the first push after it fetched the repository without the file (`removed proposals/<name>.html … from the site` in its log). A tag only it had keeps its tag page until it's deleted on the web server (`/var/lib/ccs-data/explore/tag/<tag>/`) |
 
@@ -171,7 +175,7 @@ a shown proposal's index or address: donors pay that address.
 systemctl stop ccs-bash
 cp -a /var/lib/ccs/state/proposals.csv /root/proposals.csv.$(date -u +%Y%m%dT%H%M%SZ)
 runuser -u ccs -- nano /var/lib/ccs/state/proposals.csv   # as ccs: the file is ccs's
-/usr/local/bin/ccs-bash-update; tail -n 30 /var/log/ccs-bash.log
+ccs proposal:process                                      # one run (the loop stays paused): check it
 systemctl start ccs-bash
 ```
 
@@ -219,7 +223,7 @@ systemctl stop ccs-bash
 cp -a /var/lib/ccs/state/proposals.csv /root/proposals.csv.$(date -u +%Y%m%dT%H%M%SZ)   # the one it replaces
 install -o ccs -g ccs -m 644 proposals-<time>.csv /var/lib/ccs/state/proposals.csv
 install -o ccs -g ccs -m 644 retired-<name>-<time>.csv /var/lib/ccs/state/retired/<name>.csv   # each, if lost
-/usr/local/bin/ccs-bash-update; tail -n 30 /var/log/ccs-bash.log
+ccs proposal:process                                      # one run (the loop stays paused): check it
 systemctl start ccs-bash
 ```
 
