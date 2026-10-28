@@ -191,7 +191,11 @@ what it is sent; it knows what a page may be. Each push, one at a time, it
    has one (a symlink or a folder in a page's place would take the page away);
 5. copies staging into the live site, except a file that fails, which keeps its last good copy:
    one bad page doesn't stop the rest. The push then exits 7 (a refused one: 1); which file and
-   why: `journalctl -t ccs-gate` (and `/var/log/ccs-gate.log` if created), and IRC;
+   why: `journalctl -t ccs-gate` (and `/var/log/ccs-gate.log` if created), and IRC. The one
+   exception: a proposal page the push didn't send, whose proposal is in neither commit just
+   fetched (not the last fetch), and with nothing else wrong, is a proposal taken out of the
+   repository. The push can't delete, so the gate takes it, and its `images/<name>/`, off the live
+   site, and the push is good;
 6. refuses the whole push without its pinned list, `design.sha256`, the design, `markdown.awk`,
    `proposals.conf`, `zbarimg`, `qrencode`, `python3` or `git`.
 
