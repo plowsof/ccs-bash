@@ -4,6 +4,24 @@ Start from what you see (the symptoms below) or what IRC said ([the alerts](#wha
 Every run rebuilds the whole site, so most things fix themselves once their cause is gone; manual
 jobs are at the end.
 
+## Looking
+
+On the backend, as root, `ccs` does what ccs-back's artisan commands did (the same names), and
+reads the rest; only `proposal:process` changes anything:
+
+| ccs-back | Here | Says |
+|---|---|---|
+| `php artisan proposal:process` | `ccs proposal:process` | one run by hand (the loop paused for it, started again after): this run's lines |
+| `php artisan proposal:update` | `ccs proposal:update` | the Ideas shown, and each open MR looked at: an idea, merged already, no proposal, or why its file doesn't read |
+| `php artisan generate:addresses` | `ccs generate:addresses [file.md]` | which proposal has which subaddress and address, funding since when |
+| `php artisan wallet:notify` | `ccs wallet:notify [N]` | the funding-required proposals' raised and donations, and the last N donations |
+| `php artisan deposit:list` | `ccs deposit:list [file.md]` | every deposit as JSON: the live wallet's and each retired one's |
+| `laravel.log` | `ccs log [N]` | the errors and warnings of the last N runs (3), each once, with what this page says of it; then the proposal files left out, and why |
+| | `ccs status` | the loop, the last run (ok, or the steps that failed), the forge, the backup, the web server, the wallet, the releases |
+
+It is `/opt/ccs-bash/contrib/ccs` ([setup](setup.md) step 3 links it as `/usr/local/bin/ccs`): it
+reads this page from the same checkout, so its hints are the release's.
+
 ## Where everything is
 
 | Machine | What to look at | Command |
@@ -51,11 +69,13 @@ The gate held it back; its last good copy stays live. On the **web server**,
 |---|---|---|
 | `<page>: <address>` (and IRC: `donation address … is not in the signed list`) | an address on the page isn't one of the wallet's | a proposal quoting another address (a payout address, an example): add it to `/etc/ccs-gate/allowed`, one a line with a `#` comment. Not that: **stop and look**, someone may be trying to show a foreign address |
 | `not the text of its proposal as the proposals repository has it` | the page's text isn't what the gate makes of the proposal's file | a merge landing between the backend's pull and the push: gone next run. Lasting: the web server's `markdown.awk` isn't the backend's ccs-front-bash's (install it), or the gate can't fetch the repository (`could not fetch the proposals repository`: its last fetch is used) |
-| `a proposal page with no proposal (<name>.md) in the proposals repository` | the gate's copy of the repository doesn't have it yet | as above: the next fetch |
+| `a proposal page with no proposal (<name>.md) in the proposals repository` | the gate's copy of the repository doesn't have it yet (merged after its fetch), or the backend still sends a proposal taken out of it | the next fetch; one taken out goes by itself once the backend stops sending it (`removed proposals/<name>.html … from the site`) |
 | `not a page of the design as ccs-front-bash fills it`, `a page the design does not have`, `the design has no part or slot` | the page isn't the design's | after a design or ccs-front-bash upgrade: the web server lacks the new design (`/etc/ccs-gate/design/<release>/`, `design.sha256`). Otherwise: **stop and look**, the backend sent something else |
 | `an image that is not exactly qrencode's QR code of one address` | a QR code that isn't the wallet's address, drawn as ccs-front-bash draws it | **stop and look** |
 | `not the design's (design.sha256)` | a stylesheet, font or icon that isn't the design release's | install the new design's lines on the web server, or **stop and look** |
 | `not the proposals repository's images/…` | a proposal image the repository doesn't have at that path | it was changed or removed upstream; the next fetch, or **stop and look** |
+| `held back N file(s), with an address that isn't the wallet's nor allowed, or not allowed here` | the lines under it name each file and why (the rows above) | the rest of the push went live |
+| `could not fetch the proposals repository (proposals.conf): checking against the last fetch` | the gate couldn't fetch the repository this push (the forge down, or `proposals.conf` wrong): pages are checked against its last fetch | a proposal merged or changed since is held back until a fetch works; after `FORGE_HOURS`, IRC says so |
 
 The push then exits 7: a failed run; ccs-watch still checks the live pages.
 

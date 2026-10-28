@@ -20,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, pinned by commit
       - name: shellcheck
-        run: shellcheck -x ccs-back.sh notify-loop.sh lib/*.sh tests/*.sh container/*.sh contrib/ccs-receive contrib/ccs-watch contrib/ccs-backup-receive contrib/retire-wallet contrib/migrate/compare-deposits
+        run: shellcheck -x ccs-back.sh notify-loop.sh lib/*.sh tests/*.sh container/*.sh contrib/ccs-receive contrib/ccs-watch contrib/ccs-backup-receive contrib/retire-wallet contrib/migrate/compare-deposits contrib/ccs
       - name: tests (Ubuntu's awk is mawk)
         run: tests/run.sh
       - name: tests with gawk
