@@ -213,7 +213,7 @@ cmd_status() {
     fi
     echo "the proposals pulled: $(age /var/lib/ccs/pull-ok); GitLab/Forgejo answered: $(age "$STATE_DIR/forge-ok")"
     if compose; then
-        f=$(ls -t "$RUN_DIR"/backup/sent-* 2> /dev/null | head -n 1)
+        f=$(find "$RUN_DIR/backup" -maxdepth 1 -name 'sent-*' -printf '%T@ %p\n' 2> /dev/null | sort -rn | head -n 1 | cut -d' ' -f2-)
         echo "the state backed up: $(age "${f:-/nonexistent}") (sent when it changes; the backup stage: $(cat "$RUN_DIR/backup/status" 2> /dev/null || echo '?'))"
     else
         echo "the state backed up: $(age /var/lib/ccs/backup-sent) (sent when it changes)"
