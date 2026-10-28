@@ -116,6 +116,7 @@ Docker on the host and gets Debian's security updates automatically.
 - [Handover](docs/handover.md): start here, from ccs-back and Jekyll to this, step by step; what you fill in
 - [Recommended design](docs/design.md): bash renders the site on the backend, the web server only serves files
 - [Setup](docs/setup.md): dependencies, installing step by step, backing up the state
+- [The backend in Docker](docs/docker.md): the update as one container a stage (its own user, network and folders) and monero-wallet-rpc, with docker compose
 - [Two machines](docs/two-machines.md): the backend pushes, the web server only receives; the gate, the alerts, the theme
 - [The pinned image](docs/image.md): how B is built and checked, changing the pin, releases
 - [Attesting a release](contrib/release/README.md): rebuild a release, sign what came out into ccs-sigs, as Feather Wallet does
