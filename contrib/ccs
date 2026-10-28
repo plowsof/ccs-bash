@@ -1,0 +1,203 @@
+#!/usr/bin/env bash
+# ccs COMMAND: looking at the backend, by the names of ccs-back's artisan commands (so what a CCS
+# maintainer typed there works here; docs/troubleshooting.md, "Looking"). As root on the backend,
+# installed as /usr/local/bin/ccs. Only proposal:process changes anything (it runs the update).
+#
+#   ccs proposal:process          one run by hand, the loop paused for it (and started again after,
+#                                 if it was running): this run's lines
+#   ccs proposal:update           the ideas: each open MR looked at, and why it is or isn't one
+#   ccs generate:addresses [F.md] which proposal has which subaddress (proposals.csv)
+#   ccs wallet:notify [N]         the funding-required proposals' donations, and the last N (20)
+#   ccs deposit:list [F.md]       every deposit as JSON: the live wallet's and each retired one's
+#   ccs log [N]                   the errors and warnings of the last N runs (3), once each, with
+#                                 what troubleshooting.md says of them
+#   ccs status                    the loop, the last run, the wallet, the forge, the backup, the
+#                                 web server, the releases
+#
+# It reads the state as ccs, its owner (root never opens a file another account controls: it
+# could be a link to any file), prints no password or key, and changes nothing else.
+set -euo pipefail
+export LC_ALL=C.UTF-8
+CONFIG=${CCS_CONFIG:-/etc/ccs/ccs.conf}
+LOG=${CCS_LOG:-/var/log/ccs-bash.log}
+DOCS=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../docs
+as_ccs=(runuser -u ccs --)
+[[ ${CCS_AS:-} != none ]] || as_ccs=()   # (the tests: no ccs user)
+
+die() { echo "ccs: $*" >&2; exit 1; }
+# conf KEY DEFAULT: one key of the config, as written (a sourced file: read here, not run)
+conf() { local v; v=$(sed -n "s/^$1=//p" "$CONFIG" 2> /dev/null | tail -n 1); v=${v%\"}; v=${v#\"}; printf '%s' "${v:-$2}"; }
+STATE_DIR=$(conf STATE_DIR /var/lib/ccs/state)
+OUTPUT_DIR=$(conf OUTPUT_DIR /var/lib/ccs/out)
+PROPOSALS_DIR=$(conf PROPOSALS_DIR /var/lib/ccs/proposals)
+read_ccs() { "${as_ccs[@]}" cat -- "$1"; }
+
+# the state as JSON: {"file.md": {index, address, since, url}}
+state_json() {
+    read_ccs "$STATE_DIR/proposals.csv" | jq -R -s '
+        def csvrow: [("," + .) | match(",(\"(?:[^\"]|\"\")*\"|[^,]*)"; "g") | (.captures[0].string // "")
+                     | if startswith("\"") then .[1:-1] | gsub("\"\""; "\"") else . end];
+        split("\n") | map(select(. != "") | csvrow | {key: .[0], value: {url: .[1], index: (.[2] | tonumber? // null), address: .[3], since: .[4]}}) | from_entries'
+}
+xmr() { jq -r '. / 1e12 | . * 1e4 | floor / 1e4 | tostring'; }
+
+# the line where the last N runs start: "== run <time>" (ccs-bash-update writes it); a log from
+# before it did: its last 400 lines
+runs_from() {
+    local n=$1 total at
+    total=$(wc -l < "$LOG")
+    at=$(grep -n '^== run ' "$LOG" | tail -n "$n" | head -n 1 | cut -d: -f1)
+    echo "${at:-$((total > 400 ? total - 399 : 1))}"
+}
+
+# the rows of troubleshooting.md's tables whose first cell names a message: {re, where, says}
+hints() {
+    [[ -f $DOCS/troubleshooting.md ]] || { echo '[]'; return; }
+    jq -R -s '
+        def re_escape: gsub("(?<c>[.^$|()\\[\\]{}*+?\\\\])"; "\\\(.c)");
+        def unlink: gsub("\\[(?<t>[^\\]]*)\\]\\([^)]*\\)"; .t) | gsub("\\*\\*"; "") | gsub("`"; "");
+        reduce (split("\n")[]) as $l ({where: "", rows: []};
+            if $l | startswith("## ") then .where = ($l | ltrimstr("## "))
+            elif $l | test("^\\| `") then
+                ($l | ltrimstr("| ") | rtrimstr(" |") | split(" | ")) as $c | .where as $w
+                # (11 characters at least of the message itself: not "could not …", nor placeholders only)
+                | .rows += [$c[0] | [scan("`([^`]+)`") | .[0]] | .[] | select(gsub("<[^>]*>|…|\\b[NH]\\b|[ :.,()]"; "") | length >= 11)
+                    | {re: (re_escape | gsub("…"; ".*") | gsub("<[^>]*>"; ".*") | gsub("\\b[NH]\\b"; "[0-9]+")),
+                       lit: (gsub("<[^>]*>|…"; "") | length), where: $w, says: ($c[1:] | map(unlink) | join("; "))}]
+            else . end)
+        # the most particular first: "could not fetch ideas from GitLab" before "could not …"
+        | .rows | sort_by(-.lit)' "$DOCS/troubleshooting.md"
+}
+
+cmd_process() {
+    local was start
+    was=$(systemctl is-active ccs-bash 2> /dev/null || true)
+    for _ in $(seq 60); do pgrep -x ccs-bash-update > /dev/null || break; sleep 5; done
+    if [[ $was == active ]]; then
+        trap 'systemctl start ccs-bash; echo "(the loop: $(systemctl is-active ccs-bash))"' EXIT
+        systemctl stop ccs-bash
+        for _ in $(seq 60); do pgrep -x ccs-bash-update > /dev/null || break; sleep 5; done
+    fi
+    pgrep -x ccs-bash-update > /dev/null && die "a run is still going after 5 minutes: look at it first (ccs status)"
+    start=$(wc -l < "$LOG")
+    /usr/local/bin/ccs-bash-update || true
+    tail -n +"$((start + 1))" "$LOG" | grep -vE '^\s*$|^(skipping|ignoring) ' || true
+    echo "($(tail -n +"$((start + 1))" "$LOG" | grep -cE '^(skipping|ignoring) ' || true) proposal files skipped or ignored: ccs log shows why)"
+}
+
+cmd_ideas() {
+    local cache=$STATE_DIR/ideas.cache iid sha file rc why
+    echo "Ideas shown (open MRs adding a proposal that reads):"
+    read_ccs "$OUTPUT_DIR/proposals.json" | jq -r '[.. | objects | select(has("upvotes") and has("gitlab-url"))] | if length == 0 then "  (none)" else .[] | "  \(."gitlab-url"): \(.name) (\(.author), \(.date); 👍 \(.upvotes // "?") 👎 \(.downvotes // "?"))" end'
+    echo "Every open MR looked at (the most recently updated, at most IDEAS_MAX):"
+    "${as_ccs[@]}" test -s "$cache" || { echo "  (none yet: no run since the cache was emptied)"; return; }
+    while IFS=$'\t' read -r iid sha file rc; do
+        [[ $iid =~ ^[0-9]+$ ]] || continue
+        if [[ $file == - ]]; then why="adds no proposal (one new .md at the root, and only its images)"
+        elif "${as_ccs[@]}" test -e "$PROPOSALS_DIR/$file"; then why="$file: merged already"
+        elif [[ $rc == 0 ]]; then why="$file: an idea"
+        else why="$file: doesn't read as a proposal: $(grep -F "MR !$iid's" "$LOG" | tail -n 1 | sed 's/.*doesn.t read as a proposal: //')"
+        fi
+        echo "  MR !$iid (${sha:0:8}): $why"
+    done < <(read_ccs "$cache")
+}
+
+cmd_addresses() {
+    state_json | jq -r --arg f "${1:-}" '
+        to_entries | map(select($f == "" or .key == $f)) as $all
+        | ($all | map(select(.value.index != null)) | sort_by(.value.index)[] | "Project: \(.key), subaddress \(.value.index), address: \(.value.address)\(if .value.since != "" then ", funding since \(.value.since)" else "" end)"),
+          "(\($all | map(select(.value.index == null)) | length) without a subaddress: not funding required yet, retired, or never)"'
+}
+
+cmd_notify() {
+    local n=${1:-20} st
+    [[ $n =~ ^[0-9]+$ ]] || die "wallet:notify N: a number"
+    st=$(state_json)
+    echo "Funding required:"
+    read_ccs "$OUTPUT_DIR/projects.json" | jq -r '
+        map(select(.state == "FUNDING-REQUIRED")) | sort_by(.filename) | if length == 0 then "  (none)" else .[]
+        | "  \(.filename): \(.raised_amount) of \(.target_amount) XMR raised, \(.contributions) donation(s), \(.percentage_funded)%" end'
+    echo "The last $n donations to the live wallet (deposits.csv: the confirmed ones a run kept):"
+    read_ccs "$STATE_DIR/deposits.csv" 2> /dev/null | awk -F, 'NR > 1' | tail -n "$n" | jq -R -r --argjson s "$st" '
+        split(",") as $d | ($s | to_entries | map(select(.value.index == ($d[2] | tonumber))) | .[0].key // "subaddress \($d[2]), no proposal") as $p
+        | "Donation to \"\($p)\": \($d[3] | tonumber / 1e12) XMR, height \($d[0]), tx \($d[1][0:16])…"'
+}
+
+cmd_deposits() {
+    local st f
+    st=$(state_json)
+    {
+        read_ccs "$STATE_DIR/deposits.csv" 2> /dev/null | awk -F, 'NR > 1' | jq -R --argjson s "$st" '
+            split(",") as $d | {wallet: "live", proposal: ($s | to_entries | map(select(.value.index == ($d[2] | tonumber))) | .[0].key // null),
+                height: ($d[0] | tonumber), txid: $d[1], subaddress: ($d[2] | tonumber), amount: (($d[3] | tonumber) / 1e12)}'
+        for f in $("${as_ccs[@]}" find "$STATE_DIR/retired" -maxdepth 1 -name '*.csv' 2> /dev/null | sort); do
+            read_ccs "$f" | awk -F, 'NR > 1' | jq -R --arg w "$(basename "$f" .csv)" '
+                split(",") as $d | {wallet: $w, proposal: $d[5], height: ($d[0] | tonumber), txid: $d[1], subaddress: ($d[2] | tonumber), amount: (($d[3] | tonumber) / 1e12)}'
+        done
+    } | jq -s --arg f "${1:-}" 'map(select($f == "" or .proposal == $f))'
+}
+
+cmd_log() {
+    local n=${1:-3} from
+    [[ $n =~ ^[0-9]+$ ]] || die "log N: a number"
+    from=$(runs_from "$n")
+    echo "The errors and warnings of the last $n run(s), from line $from of $LOG (each once, the last time it was said):"
+    # (and the gate's reason for each file it held back: "ccs-gate:   <file>: <why>")
+    tail -n +"$from" "$LOG" | grep -iE 'error|warning|fail|refus|held back|alert|could not|can.t |cannot|denied|timed out|not ok|stop|^ccs-gate:   ' \
+        | grep -vE 'ccs-watch: the [0-9]+ pages on .* are what was pushed|^(skipping|ignoring) ' \
+        | jq -R -s -r --argjson h "$(hints)" '
+            split("\n") | map(select(. != "")) | map({line: ., msg: sub("^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9:]{8} "; "")})
+            | group_by(.msg) | map({line: .[-1].line, msg: .[0].msg, n: length}) | sort_by(.line)[]
+            | . as $e | ([$h[] | select(.re as $r | $e.msg | test($r))][0]) as $m
+            | "\($e.line)\(if $e.n > 1 then "  (×\($e.n))" else "" end)",
+              (if $m then "    ↳ \($m.where): \($m.says | .[0:300])" else empty end)' \
+        | grep . || echo "  (none)"
+    # the proposal files a run leaves out (troubleshooting.md, "A proposal isn't on the site"):
+    # the same each run, so once, at the end
+    echo "Proposal files left out (not on the site):"
+    tail -n +"$from" "$LOG" | grep -E '^(skipping|ignoring) ' | sort -u | sed 's/^/  /' | grep . || echo "  (none)"
+}
+
+cmd_status() {
+    local last at failed f
+    age() { local t; t=$("${as_ccs[@]}" stat -c %Y "$1" 2> /dev/null) || { echo "never"; return; }; echo "$(( ($(date +%s) - t) / 60 )) min ago"; }
+    echo "the loop: $(systemctl is-active ccs-bash 2> /dev/null || true)$(pgrep -x ccs-bash-update > /dev/null && echo ", a run going now")"
+    at=$(grep -n '^== run ' "$LOG" | tail -n 1) || at=''
+    if [[ $at ]]; then
+        last=$(tail -n +"${at%%:*}" "$LOG")
+        failed=$(grep -o 'this run failed (.*' <<<"$last" | tail -n 1 || true)
+        echo "the last run: ${at#*:== run } UTC, ${failed:-ok}"
+    else
+        # (a log from before "== run": a failed run ends with its "this run failed", after its pages line)
+        last=$(grep -E 'ccs-watch: (this run failed|the [0-9]+ pages on)' "$LOG" | tail -n 1)
+        if [[ $last == *"this run failed"* ]]; then echo "the last run: ${last#*ccs-watch: }"; else echo "the last run: ok (${last:0:19})"; fi
+    fi
+    echo "the proposals pulled: $(age /var/lib/ccs/pull-ok); GitLab/Forgejo answered: $(age "$STATE_DIR/forge-ok")"
+    echo "the state backed up: $(age /var/lib/ccs/backup-sent) (sent when it changes)"
+    echo "the web server: $(grep -E 'ccs-watch: (the [0-9]+ pages|ALERT)' "$LOG" | tail -n 1 | cut -c1-160)"
+    f=$(read_ccs "$OUTPUT_DIR/projects.json" 2> /dev/null | jq -r '[length, (map(select(.state == "FUNDING-REQUIRED")) | length)] | "\(.[0]) proposals, \(.[1]) funding required"' 2> /dev/null || echo "no projects.json")
+    echo "the site: $f"
+    echo "the wallet: $(wallet_line)"
+    echo "the releases: $(grep -ho '# v[0-9.]*, by ID' /usr/local/bin/ccs-bash-run /usr/local/bin/ccs-front-run 2> /dev/null | sed 's/# //; s/, by ID//' | paste -sd ' ' -) (ccs-bash, ccs-front-bash); design $(cut -d' ' -f1 /opt/ccs-front-hugo/VERSION 2> /dev/null || echo '?')"
+}
+# the wallet's height and the node's, the wallet's main address (its config's login, not shown)
+wallet_line() {
+    local url user pass h a
+    url=$(conf RPC_URL http://127.0.0.1:18082/json_rpc) user=$(conf RPC_USER '') pass=$(conf RPC_PASSWORD '')
+    # (the login on stdin, not in a command line other users could see)
+    r() { printf 'user = "%s:%s"\n' "$user" "$pass" | curl -fsS -m 20 --digest -K - "$url" -d "{\"jsonrpc\":\"2.0\",\"id\":\"0\",\"method\":\"$1\"$2}"; }
+    h=$(r get_height '' | jq -r .result.height) || { echo "doesn't answer at $url"; return; }
+    a=$(r get_address ',"params":{"account_index":0}' | jq -r .result.address) || a='?'
+    echo "${a:0:6}…${a: -4} at height $h$( [[ $a == "$(conf WALLET_ADDRESS '')" ]] || echo ", NOT the config's WALLET_ADDRESS")"
+}
+
+case ${1:-} in
+    proposal:process) cmd_process ;;
+    proposal:update) cmd_ideas ;;
+    generate:addresses) cmd_addresses "${2:-}" ;;
+    wallet:notify) cmd_notify "${2:-}" ;;
+    deposit:list) cmd_deposits "${2:-}" ;;
+    log) cmd_log "${2:-}" ;;
+    status) cmd_status ;;
+    *) sed -n '2,/^set -euo/{/^#/s/^# \{0,1\}//p}' "$0" | sed '/^set /d'; exit 1 ;;
+esac
