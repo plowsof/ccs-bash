@@ -584,6 +584,7 @@ fetch() {
     fi
     [[ -d $git ]] || git init -q --bare "$git" || return 1
     if GIT_TERMINAL_PROMPT=0 timeout 60 git -C "$git" fetch -q --no-tags --depth=2 "$url" "+refs/heads/$branch:refs/heads/ccs" 2> /dev/null; then
+        fresh=1
         forge_up
     else
         say "could not fetch the proposals repository (proposals.conf): checking against the last fetch"
@@ -810,13 +811,32 @@ trap 'rm -f "$design"' EXIT
 sed -nE 's#^([0-9a-f]{64}) [ *](\./)?(.+)$#\1 \3#p' "$conf/design.sha256" > "$design"
 # the checks below list files one a line, tab-separated: a name with a newline or tab can't be held back
 if find "$staging" -name '*[[:cntrl:]]*' -print -quit | grep -q .; then refuse "a file name with a control character in it" names; fi
-fetched=''
+fetched='' fresh=''
 fetch && fetched=1
 
 # the list's addresses, then the allowed file's (first word of each line; # comments)
 mapfile -d '' files < <(find "$staging" -type f \( -name '*.html' -o -name '*.json' \) -print0)
 bad=$( { kinds; scan "${files[@]}"; pages; changes; } | awk -F '\t' 'NR == FNR { if ($1 !~ /^#/ && NF) ok[$1] = 1; next } !($2 in ok)' \
     <(cut -d' ' -f2 "$list"; awk '{ print $1 }' "$conf/allowed" 2> /dev/null) - | sort -u)
+# A proposal taken out of the repository (troubleshooting.md, "Remove a proposal"): its page is
+# still live, and the push account can't delete it, so every push after would hold it back and
+# fail. It goes from the live site, with its images/<name>/, when the repository was fetched just
+# now (not the last fetch), has its .md in neither commit, that is all that's wrong with it, and
+# the push didn't send it (staging has the live copy): the backend no longer makes it either.
+if [[ $bad && $fresh ]]; then
+    gone=''
+    while IFS= read -r file; do
+        rp=${file#"$staging"/} name=${file#"$staging"/proposals/}; name=${name%.html}
+        [[ $rp == proposals/*.html && $name =~ ^[A-Za-z0-9_][A-Za-z0-9._-]*$ ]] || continue
+        awk -F '\t' -v f="$file" '$1 == f && $2 !~ /^!a proposal page with no proposal \(/ { x = 1 } END { exit x }' <<<"$bad" || continue
+        cmp -s -- "$file" "$live/$rp" || continue
+        # (one that can't be removed stays held back, as before)
+        rm -rf -- "$file" "$live/${rp:?}" "$staging/images/${name:?}" "$live/images/${name:?}" 2> /dev/null || continue
+        say "removed $rp (and images/$name/, if any) from the site: $name.md is no longer in the proposals repository"
+        gone+=$file$'\n'
+    done < <(awk -F '\t' '$2 ~ /^!a proposal page with no proposal \(/ { print $1 }' <<<"$bad" | sort -u)
+    [[ ! $gone ]] || bad=$(awk -F '\t' 'NR == FNR { g[$0] = 1; next } !($1 in g)' <(printf '%s' "$gone") - <<<"$bad")
+fi
 # The rest of the push goes live; a file that fails keeps its last good copy (a new one stays
 # out): one bad page doesn't stop the site updating, and nothing here rewrites a file. The push
 # still fails, so the backend's log shows it.
