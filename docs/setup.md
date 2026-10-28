@@ -227,29 +227,48 @@ On the **backend**: a key (`ssh-keygen -t ed25519 -N '' -f /root/.ssh/ccs-backup
 script](handover.md#9-the-update) sends each new version (`ccs-backup: kept …` in the log).
 Restoring: [troubleshooting](troubleshooting.md#restore-the-state).
 
-## Proposals on Forgejo (disroot, Codeberg) instead of GitLab
+## Proposals on another forge
 
-Two changes on the backend:
+GitLab (gitlab.com, or another GitLab) or Forgejo/Gitea (disroot, Codeberg): a public repository,
+read without a token. The testnet moved from disroot's Forgejo to gitlab.com this way
+([the testnet](testnet.md)). With the loop paused (`systemctl stop ccs-bash`), copies kept:
 
-1. **The API**, in `/etc/ccs/ccs.conf`:
+1. **The API**, in the backend's `/etc/ccs/ccs.conf`:
 
    ```
-   REPOSITORY_URL=https://git.disroot.org/api/v1/repos/<owner>/<repo>
+   REPOSITORY_URL=https://gitlab.com/api/v4/projects/<id>              # GitLab: the project's number
+   REPOSITORY_URL=https://git.disroot.org/api/v1/repos/<owner>/<repo>  # Forgejo or Gitea
    ```
 
-   (`/api/v1/repos/` is what makes it Forgejo or Gitea; public, read without a token.)
+   (`/api/v4/projects/` or `/api/v1/repos/` is what tells them apart.)
 
-2. **The checkout**, so `ccs-bash-update` pulls from there:
+2. **The checkout**, so `ccs-bash-update` pulls from there: the same history, `remote set-url`;
+   else a fresh clone in its place, of the branch the site runs:
 
    ```
    runuser -u ccs-git -- env HOME=/ git -C /var/lib/ccs/proposals \
        remote set-url origin https://git.disroot.org/<owner>/<repo>.git
+   # or, the old one kept beside it:
+   install -d -o ccs-git -g ccs-git -m 755 /var/lib/ccs/proposals.new
+   runuser -u ccs-git -- env HOME=/ git clone -q --branch <branch> https://gitlab.com/<owner>/<repo>.git /var/lib/ccs/proposals.new
+   mv /var/lib/ccs/proposals /var/lib/ccs/proposals.old && mv /var/lib/ccs/proposals.new /var/lib/ccs/proposals
    ```
 
-   Pushed from the GitLab one (the same history), the next pull carries on; else clone it afresh.
+3. **The merge request caches**, emptied: `rm -f /var/lib/ccs/state/ideas.cache
+   /var/lib/ccs/state/merged-files.cache`. They are by merge request number, and the new forge's
+   numbers start again: kept, its !1 would be the old forge's !1.
 
-Ideas become its open pull requests, and newly merged proposals link to theirs; known ones keep
-their GitLab link in `proposals.csv` (imported with their numbers: rewrite them with
+4. **The web server's gate**, `/etc/ccs-gate/proposals.conf`: `PROPOSALS_GIT` the new repository's
+   git URL, `PROPOSALS_BRANCH` its branch (default `master`), and `LINK_HOSTS` the old forge's
+   repository (host/path), so the proposals already linked to its merge requests keep their links.
+   Without it, every page would be checked against the old repository.
+
+Then one run by hand, and `systemctl start ccs-bash`. Ideas become the new forge's open merge or
+pull requests, and newly merged proposals link to theirs; known ones keep their link in
+`proposals.csv` (to rewrite them too:
 `sed -i 's#https://repo.getmonero.org/monero-project/ccs-proposals/-/merge_requests/#https://git.disroot.org/<owner>/<repo>/pulls/#'`,
-the loop paused, a copy kept). The site's words ("GitLab", Submit Idea) are ccs-front-hugo's.
-Going back: the old `REPOSITORY_URL` and remote.
+the loop paused, a copy kept, and the old host out of `LINK_HOSTS`). A proposal the new repository
+doesn't have leaves the site: the gate takes its page off at the next push
+([remove a proposal](troubleshooting.md#doing-things-by-hand)). The site's words ("GitLab", Submit Idea) are
+ccs-front-hugo's. Going back: the old `REPOSITORY_URL`, checkout and `proposals.conf`, and the
+caches emptied again.
