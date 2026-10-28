@@ -204,6 +204,8 @@ its log rotation from step 4), as root (it only starts each step as that step's 
 #!/bin/sh
 # /usr/local/bin/ccs-bash-update (chmod 755)
 L=/var/log/ccs-bash.log W=/opt/ccs-bash/contrib/ccs-watch failed=''
+# where each run starts (ccs log and ccs status read the runs by it)
+echo "== run $(date -u '+%F %T')" >> $L
 
 # the proposals; GitLab down: give up, not a failed run (the last checkout stays); pull-ok: when
 # one last went through (ccs-watch --run alerts when that's FORGE_HOURS ago)
