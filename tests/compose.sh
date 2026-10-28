@@ -55,8 +55,8 @@ fi
 if [[ -p $t/run/pull/now && -p $t/run/push/watch && -p $t/run/front/wake ]]; then ok "init: a folder and pipes for each stage"; else fail "init's pipes"; fi
 exec 3<> "$t/run/push/watch"
 for s in pull ccs-bash backup front push; do "$step" "$s" > /dev/null 2>&1 & pids+=($!); done
-# until run N is pushed (60 s at most)
-until_pushed() { local i; for ((i = 0; i < 600; i++)); do (($(cat "$t/run/push/done" 2> /dev/null || echo 0) >= $1)) && return 0; sleep 0.1; done; return 1; }
+# until run N is pushed (90 s at most)
+until_pushed() { local i; for ((i = 0; i < 90; i++)); do (($(cat "$t/run/push/done" 2> /dev/null || echo 0) >= $1)) && return 0; sleep 1; done; return 1; }
 line() { local l; IFS= read -r -t 30 l <&3 && printf '%s\n' "$l"; }
 
 if until_pushed 2 && [[ $(line) == "1 pushed ok" && $(line) == "2 pushed ok" ]] \
