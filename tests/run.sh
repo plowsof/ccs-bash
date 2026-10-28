@@ -870,7 +870,7 @@ if command -v sort > /dev/null && command -v runuser > /dev/null; then
         && out=$(cc log 1) && grep -q 'could not fetch ideas from GitLab, keeping the previous list  (×2)' <<<"$out" \
         && grep -q '↳ Ideas are missing: the forge is down' <<<"$out" && ! grep -q '^old:' <<<"$out" \
         && grep -q '^  skipping x.md: missing date' <<<"$out" \
-        && st=$(cc status 2> /dev/null) && grep -q '^the last run: 2026-10-28 10:02:00 UTC, this run failed (the push), 1 in a row' <<<"$st"; then
+        && st=$(cc status 2> /dev/null) && grep -q '^the last run (ended): 2026-10-28 10:02:00 UTC, this run failed (the push), 1 in a row' <<<"$st"; then
         echo "ok   ccs: deposit:list (the live wallet's and the retired ones'), generate:addresses, log (the last runs, each message once, its troubleshooting line, the files left out), status"
     else echo "FAIL ccs"; cc deposit:list; cc generate:addresses; cc log 1; cc status; status=1; fi
 else
