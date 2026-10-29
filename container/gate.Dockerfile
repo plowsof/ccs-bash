@@ -68,7 +68,6 @@ COPY --from=libffi / /
 COPY --from=coreutils / /
 COPY --from=findutils / /
 COPY --from=grep / /
-COPY --from=pcre2 / /
 COPY --from=sed / /
 COPY --from=gawk / /
 COPY --from=diffutils / /
@@ -90,7 +89,7 @@ COPY contrib/docker/web/init /usr/local/bin/ccs-web-init
 # of util-linux, flock; of Python, no tests, IDLE, Tk, pip or headers, its modules compiled
 # again in place of the packaged .pyc (whose source times every file's commit time changes:
 # unchecked-hash .pyc don't depend on them). rrsync from rsync's own source. /bin/sh is bash
-# (git runs a file:// fetch's upload-pack through it). /etc/passwd and group: links to the ones
+# (git runs a file:// fetch's upload-pack through it); /var/log, where compose.yml mounts the gate's log. /etc/passwd and group: links to the ones
 # init writes in the mounted key folder (a mounted file replaced would stay the old one). Headers, static libraries and manuals
 # dropped; every file the commit's time.
 FROM toolchain AS fix
@@ -119,7 +118,7 @@ RUN --mount=type=bind,source=container,target=/pin \
     && find usr/lib/python3.14 -name __pycache__ -prune -exec rm -rf {} + \
     && PYTHONHASHSEED=0 chroot /rootfs /usr/bin/python3 -I -m compileall -q -j 1 \
         --invalidation-mode unchecked-hash /usr/lib/python3.14 > /dev/null \
-    && ln -s bash usr/bin/sh && ln -sf /etc/ccs-ssh/keys/passwd etc/passwd && ln -sf /etc/ccs-ssh/keys/group etc/group \
+    && mkdir -p var/log && ln -s bash usr/bin/sh && ln -sf /etc/ccs-ssh/keys/passwd etc/passwd && ln -sf /etc/ccs-ssh/keys/group etc/group \
     && chmod 755 usr/local/bin/ccs-receive usr/local/bin/ccs-backup-receive usr/local/bin/ccs-web-init && chmod 644 etc/ssh/sshd_config \
     && find . -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
 

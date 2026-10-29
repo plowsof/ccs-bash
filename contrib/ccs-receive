@@ -626,7 +626,11 @@ scan() {
     local file tag payload png out jsons=() texts=()
     png=$(mktemp) out=$(mktemp)
     # a NUL byte: HTML drops it from the text, so it could split an address
-    printf '%s\0' "$@" | grep -zE '\.(html|json)$' | xargs -0 -r grep -laP '\x00' -- | sed 's/$/\t!a NUL byte (a browser drops it from the text)/'
+    # (Python, not grep -P: a grep without PCRE, the image's, has none)
+    printf '%s\0' "$@" | grep -zE '\.(html|json)$' | xargs -0 -r python3 -I -c 'import sys
+for f in sys.argv[1:]:
+    with open(f, "rb") as h:
+        if b"\0" in h.read(): print(f)' | sed 's/$/\t!a NUL byte (a browser drops it from the text)/'
     # the JSON, as JSON (its \u escapes are an address's characters to whoever reads it)
     mapfile -d '' jsons < <(printf '%s\0' "$@" | grep -zE '\.json$')
     if ((${#jsons[@]})); then
