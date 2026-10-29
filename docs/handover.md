@@ -43,7 +43,8 @@ destroyed could attest anything).
 ## 1. monerod and monero-wallet-rpc (the backend)
 
 monerod (local, or one you trust) and monero-wallet-rpc with the CCS wallet, view-only, its own
-user, on 127.0.0.1: [setup](setup.md) step 1.
+user: on 127.0.0.1 ([setup](setup.md) step 1), or in Docker on a network only ccs-bash is on
+([docker](docker.md)).
 
 **Moving the wallet from ccs-back:** copy its two files as they are: `<name>.keys` (the keys,
 encrypted with the wallet's password) and `<name>` (the cache: every transfer and subaddress so
@@ -66,7 +67,8 @@ far, so nothing is rescanned).
    sha256sum /var/lib/ccs/wallet/ccs /var/lib/ccs/wallet/ccs.keys   # the same as on ccs-back's
    ```
 4. `password` in `wallet-rpc.conf` is the wallet's own (the old wallet-rpc's `--password` or
-   `--password-file`). Start the service, and check:
+   `--password-file`). Start the service, and check (in Docker, its RPC isn't on the host:
+   `ccs config:check` asks the same through ccs-bash's container):
    ```
    rpc() { curl -s --digest -u 'ccs:<rpc password>' http://127.0.0.1:18082/json_rpc \
        -d "{\"jsonrpc\":\"2.0\",\"id\":0,\"method\":\"$1\",\"params\":${2:-{\}}}"; }
@@ -333,20 +335,31 @@ server, the backup machine, the IRC bot, Tor).
 
 | Account | Does | Can't |
 |---|---|---|
-| root | runs the update every 2 minutes, starting each step as the account below; holds the backup key | |
-| `ccs-wallet` | runs monero-wallet-rpc, on 127.0.0.1 only, with a login | spend: the wallet is view-only |
-| `ccs-git` | owns the proposals checkout and pulls it | anything else: no shell |
-| `ccs` | runs ccs-bash (its container read-only, no capabilities, no new privileges); owns the state and the JSON; holds the push key | write the proposals; log in |
-| `ccs-front` | makes the site (its container read-only, no network) | write anything but the site |
+In Docker ([docker](docker.md)) each account is its stage's container's (read-only, no
+capabilities, no new privileges, only its own folders); on the host, root runs the update and
+starts each step as its account.
 
-**The web server:** 80 and 443 open to everyone; 22 to the backend and you.
+| Account | Does | Can't |
+|---|---|---|
+| root | the host setup: runs the update every 2 minutes, starting each step as the account below; holds the backup key. In Docker: none of it (each stage runs itself) | |
+| `ccs-wallet` | runs monero-wallet-rpc, with a login: on 127.0.0.1, or in Docker on the network only ccs-bash is on | spend: the wallet is view-only |
+| `ccs-git` | owns the proposals checkout and pulls it | anything else: no shell |
+| `ccs` | runs ccs-bash; owns the state and the JSON (the host setup: holds the push key too) | write the proposals; log in |
+| `ccs-front` | makes the site (no network) | write anything but the site |
+| `ccs-push` (Docker) | holds the push key; pushes the site; owns the copy of what was pushed and each run's result | write the state or the site |
+| `ccs-send` (Docker) | holds the backup key; sends the state when it changes | write the state |
+| `ccs-watch` (Docker; the host setup: `ccs`) | runs ccs-watch: reads alert.conf, owns its counters | write the state, the site or what was pushed |
+
+**The web server:** 80 and 443 open to everyone; 22 to you; to the backend, 22 (the host setup)
+or 2223, the gate's own sshd (Docker, [the web server in Docker](docker.md#the-web-server-in-docker)).
 
 | Account | Does | Can't |
 |---|---|---|
 | `ccs-data` | receives the push: its key (root's file, outside its home) works only from the backend's address and only runs the gate; runs the heartbeat check | delete, write outside the site, get a shell, change its key |
 | nginx | serves the files | run code: they are static |
 
-**The backup machine:** 22 to the backend and you.
+**The backup machine:** 22 to you; to the backend, 22 (the host setup) or 2224, the backup
+receiver's own sshd (Docker).
 
 | Account | Does | Can't |
 |---|---|---|
@@ -389,8 +402,8 @@ agreeing, answering) and changes nothing.
 | `/etc/ccs-front/` | `subaddresses.txt` and its `.asc`, `.key.asc`, `.pin` | made by a Core Team member, signed with their own key (binaryFate's or luigi1111's), checked with `tools/verify-subaddresses.sh` | 4 |
 | | `list-signers` | `81AC591FE9C4B65C5806AFC3F0AF4D462A0BDF92  # binaryFate` and `8777AB8F778EE89487A2F8E7F4ACA0183641E010  # luigi1111`, from the Monero repository's `utils/gpg_keys/` | 4 |
 | | `subaddresses.txt.viewkey` | as in step 4 | 4 |
-| `/var/lib/ccs/.ssh/` | `id_ed25519` (the push key), `known_hosts` | the web server's host key, from its `/etc/ssh/ssh_host_ed25519_key.pub` | 6 |
-| `/etc/ccs/backup/` (the host setup: `/root/.ssh/`) | `id_ed25519` (the host setup: `ccs-backup_ed25519`), `known_hosts` | the backup key, the backup machine's host key; `ccs`, 600 | 7 |
+| `/etc/ccs/push/` (the host setup: `/var/lib/ccs/.ssh/`) | `id_ed25519` (the push key), `known_hosts` | the web server's host key: in Docker its gate's (`/etc/ccs-gate/ssh/ssh_host_ed25519_key.pub` there, as `[<web server>]:2223 ssh-ed25519 …`); the host setup, its `/etc/ssh/ssh_host_ed25519_key.pub`; `ccs-push` (the host setup: `ccs`), 600 | 6 |
+| `/etc/ccs/backup/` (the host setup: `/root/.ssh/`) | `id_ed25519` (the host setup: `ccs-backup_ed25519`), `known_hosts` | the backup key, the backup machine's host key (in Docker its receiver's, as `[<backup machine>]:2224 ssh-ed25519 …`); `ccs-send` (the host setup: root), 600 | 7 |
 | `/etc/ccs/alert.conf` | `ALERT_URL` | the IRC bot's URL (below) | 8 |
 | | `SUBADDRESSES`, `WATCH_PROXY`, `WATCH_THEMES`, `WATCH_SAMPLE` | `/etc/ccs-front/subaddresses.txt`; `socks5h://127.0.0.1:9050` (Tor) and a clearnet proxy elsewhere; `1`; `10` (other pages checked each run, at random) | 8 |
 | `/etc/ccs/trusted-signers` | the attesters you trust | their keys' fingerprints, one a line | upgrading |
@@ -408,7 +421,8 @@ agreeing, answering) and changes nothing.
 |---|---|---|---|
 | `/etc/ssh/authorized_keys/ccs-data` | `from=`, the key | the backend's address and its push key, `command="/usr/local/bin/ccs-receive"`; `sshd_config`'s `Match User ccs-data` reads only it | 6 |
 | `/etc/ccs-gate/` | `subaddresses.txt` and its `.pin`, `.asc`, `.key.asc` | the same files as the backend's | 6 |
-| | `design.sha256` | the design release's files, from its zip (two-machines, "The gate"); `apt install zbar-tools` | 6 |
+| | `design.sha256` | the design release's files, from its zip (two-machines, "The gate") | 6 |
+| the host setup's packages | the gate's tools | `apt install rsync python3 curl qrencode git libzbar0 libpng16-16 libturbojpeg0 libgif7` (in Docker: none, the gate's image has them) | 6 |
 | | `design/<release>/` | the design's release zip, unpacked (the same as the backend's); `design.sha256` from it | 6 |
 | | `markdown.awk` | `lib/markdown.awk` of the ccs-front-bash release the backend runs | 6 |
 | | `proposals.conf` | `PROPOSALS_GIT=https://repo.getmonero.org/monero-project/ccs-proposals.git`, `PROPOSALS_BRANCH=master` (and `LINK_HOSTS`, other repositories a proposal's merge request link may be in, as host/path) | 6 |
@@ -495,10 +509,11 @@ label (the run stops on a subaddress whose label names another proposal), and in
 ## Upgrading
 
 Images are built on the backend from the attested commit (the same commit gives the same ID, so it
-can be checked); the design comes as its zip, checked by sha256. An image holds only `ccs-back.sh`
-and `lib/` (ccs-front-bash's: its own): the scripts that run on the machines themselves (the gate,
-ccs-watch, `ccs-backup-receive`, `container/build.sh`) aren't in it, so another commit with the same
-`lib/` would build the same ID. They are trusted because they come from the commit the signers
+can be checked); the design comes as its zip, checked by sha256. ccs-bash's image holds
+`ccs-back.sh`, `lib/`, the compose's stage runner (`step`) and ccs-watch; the gate's image the gate
+and `ccs-backup-receive` (ccs-front-bash's: its own). What runs on the machines from the checkout
+(the host setup's scripts, `ccs`, the compose files, the front's `step`, `container/build.sh`)
+isn't in an image, so another commit with the same image files would build the same ID. They are trusted because they come from the commit the signers
 attested: check that commit out, never only the tag. For each release:
 
 1. **Attested.** From a ccs-sigs checkout on the backend, counting only signers you trust (their

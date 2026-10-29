@@ -4,7 +4,8 @@
 # pages and parts) and a proposals repository. A good push goes live; a page that isn't the
 # design's filled as ccs-front-bash fills it, an address that is neither the wallet's nor allowed,
 # or a list that isn't the pinned one, leaves the live file as it was and says why. Needs docker
-# and network.
+# and network. With GATE_IMAGE, the web server is the gate's image (contrib/docker/web): its own
+# ccs-receive, its sshd as compose.yml starts it, its users from its init.
 set -euo pipefail
 here=$(dirname "$(readlink -f "$0")")
 name=ccs-gate-test
@@ -23,13 +24,24 @@ cleanup; files=$(mktemp -d)
 # Debian 12, as in the docs (the same pinned image as tests/rrsync.sh)
 docker buildx build -q --load -t "$name" - > /dev/null <<IMG
 FROM debian@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
-RUN apt-get update -q && apt-get install -y -q --no-install-recommends openssh-server openssh-client rsync python3 curl qrencode zbar-tools git \
+RUN apt-get update -q && apt-get install -y -q --no-install-recommends openssh-server openssh-client rsync python3 curl qrencode git \
+    libzbar0 libpng16-16 libturbojpeg0 libgif7 \
     && rm -rf /var/lib/apt/lists/*
 IMG
 docker network create --subnet "$net.0/24" "$name" > /dev/null
-for h in web:$web backend:$backend; do
-    docker run -d --name "$name-${h%%:*}" --network "$name" --ip "${h#*:}" "$name" sleep infinity > /dev/null
-done
+img=${GATE_IMAGE:-}
+if [[ $img ]]; then
+    docker run -d --name "$name-web" --network "$name" --ip "$web" --tmpfs /etc/ccs-ssh:mode=755 --entrypoint sleep "$img" infinity > /dev/null
+    docker exec -e CCS_DATA_UID=997:997 -e CCS_BACKUP_UID=998:998 "$name-web" /usr/local/bin/ccs-web-init > /dev/null
+    # (ccs-data by its id for docker exec: the image's passwd is a link Docker doesn't follow)
+    keys=/etc/ccs-ssh/authorized_keys hostkey=/etc/ccs-ssh/keys/ssh_host_ed25519_key.pub adduser=: data=997:997
+    sshd='/usr/sbin/sshd -p 22 -o AllowUsers=ccs-data -o ForceCommand=/usr/local/bin/ccs-receive'
+else
+    docker run -d --name "$name-web" --network "$name" --ip "$web" "$name" sleep infinity > /dev/null
+    keys=/etc/ssh/authorized_keys hostkey=/etc/ssh/ssh_host_ed25519_key.pub adduser='useradd --system --create-home --shell /bin/sh ccs-data' data=ccs-data
+    sshd="printf 'Match User ccs-data\\n    AuthorizedKeysFile /etc/ssh/authorized_keys/%%u\\n' >> /etc/ssh/sshd_config && mkdir -p /run/sshd && ssh-keygen -A && /usr/sbin/sshd"
+fi
+docker run -d --name "$name-backend" --network "$name" --ip "$backend" "$name" sleep infinity > /dev/null
 on() { local h=$1; shift; docker exec "$name-$h" bash -c "$@"; }
 
 # a wallet of three subaddresses, and the General Fund allowed
@@ -100,12 +112,12 @@ PY
 
 on backend 'mkdir -p ~/.ssh && ssh-keygen -q -t ed25519 -N "" -f ~/.ssh/id_ed25519'
 key=$(on backend 'cat ~/.ssh/id_ed25519.pub')
-docker cp "$here/../contrib/ccs-receive" "$name-web:/usr/local/bin/ccs-receive"
+[[ $img ]] || docker cp "$here/../contrib/ccs-receive" "$name-web:/usr/local/bin/ccs-receive"
 docker cp "$d" "$name-web:/tmp/design" && docker cp "$files/markdown.awk" "$name-web:/tmp/markdown.awk"
 docker cp "$d" "$name-backend:/design" && docker cp "$files/gen.py" "$name-backend:/gen.py"
 on web "
     chown root:root /usr/local/bin/ccs-receive && chmod 755 /usr/local/bin/ccs-receive
-    useradd --system --create-home --shell /bin/sh ccs-data
+    $adduser
     install -d -o ccs-data -m 755 /var/lib/ccs-data /var/lib/ccs-staging
     install -d -m 755 /etc/ccs-gate /etc/ccs-gate/design
     install -o ccs-data -m 644 /dev/null /var/log/ccs-gate.log
@@ -129,13 +141,12 @@ on web "
     chown -R ccs-data /srv/proposals   # git reads a local repository only as its owner
     printf 'PROPOSALS_GIT=file:///srv/proposals\nLINK_HOSTS=forge.test/ccs-proposals\n' > /etc/ccs-gate/proposals.conf
     chmod -R a+rX /etc/ccs-gate && chmod 644 /etc/ccs-gate/*.* /etc/ccs-gate/allowed
-    install -d -m 755 /etc/ssh/authorized_keys
-    echo 'from=\"$backend\",command=\"/usr/local/bin/ccs-receive\",restrict $key' > /etc/ssh/authorized_keys/ccs-data
-    chmod 644 /etc/ssh/authorized_keys/ccs-data
-    printf 'Match User ccs-data\n    AuthorizedKeysFile /etc/ssh/authorized_keys/%%u\n' >> /etc/ssh/sshd_config
-    mkdir -p /run/sshd && ssh-keygen -A && /usr/sbin/sshd
+    install -d -m 755 $keys
+    echo 'from=\"$backend\",command=\"/usr/local/bin/ccs-receive\",restrict $key' > $keys/ccs-data
+    chmod 644 $keys/ccs-data
+    $sshd
 "
-on backend "echo '$web $(on web 'cat /etc/ssh/ssh_host_ed25519_key.pub')' > ~/.ssh/known_hosts"
+on backend "echo '$web $(on web "cat $hostkey")' > ~/.ssh/known_hosts"
 # a fake bot on the web server, keeping what it is sent (the gate's alerts)
 docker exec -d "$name-web" python3 -c '
 import http.server
@@ -333,22 +344,23 @@ else on web 'grep -c "could not be read in time" /var/log/ccs-gate.log || true';
 docker update --cpus 0 "$name-web" > /dev/null
 # ---- end review 5 ----
 # ---- review 5, low ----
-# G5 / G7: what reaches zbarimg. A wrapper logs the first bytes of each image it is given.
-on web 'mv /usr/bin/zbarimg /usr/bin/zbarimg.real && printf "%s\n" "#!/bin/bash" "f=\"\${@: -1}\"; f=\"\${f#*:}\"" "head -c 4 \"\$f\" | od -An -c | tr -d \" \\\\n\" >> /tmp/zbar.log; echo >> /tmp/zbar.log" "exec /usr/bin/zbarimg.real \"\$@\"" > /usr/bin/zbarimg && chmod 755 /usr/bin/zbarimg && install -m 666 /dev/null /tmp/zbar.log'
+# G5 / G7: what reaches a QR decoder. The gate notes each image it reads (its first bytes) in
+# its state folder's scan.log, when there is one.
+on web 'install -o ccs-data -m 644 /dev/null /var/lib/ccs-gate/scan.log'
 v=$((v + 1)); site "$v" "$good"
 svg64=$(printf '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>' | base64 -w0)
 change "$p" "$(qr64 "$good")" "$svg64"
 held "$v" "$p" "review 5: an SVG as a donation box's QR code" "$svg64"
-if on web '! grep -qv "^211PNG" /tmp/zbar.log'; then ok "review 5 (G5): zbarimg was given only PNGs"; else on web 'sort /tmp/zbar.log | uniq -c'; fail "review 5 (G5): zbarimg (ImageMagick) parsed a file that is not a PNG, from the backend, before any PNG check"; fi
+if on web '! grep -qv "^211PNG png$" /var/lib/ccs-gate/scan.log'; then ok "review 5 (G5): the QR decoder was given only PNGs, as PNGs"; else on web 'sort /var/lib/ccs-gate/scan.log | uniq -c'; fail "review 5 (G5): a file that is not a PNG, from the backend, reached a decoder before any PNG check"; fi
 # G7: the same QR code on 5 proposal pages: read once (scan), or once per page (the box check)?
 on web 'cd /srv/proposals && for q in q1 q2 q3 q4; do cp p.md $q.md; done && git -c safe.directory=* add -A && git -c safe.directory=* -c user.name=t -c user.email=t@t commit -q -m more && chown -R ccs-data /srv/proposals'
 v=$((v + 1)); site "$v" "$good"
 on backend 'for q in q1 q2 q3 q4; do cp /out/proposals/p.html /out/proposals/$q.html; done'
-on web ': > /tmp/zbar.log'
+on web ': > /var/lib/ccs-gate/scan.log'
 push > /dev/null || true
-n=$(on web 'grep -c . /tmp/zbar.log || true')
-if ((n <= 2)); then ok "review 5 (G7): one QR code on 5 pages read $n time(s)"; else fail "review 5 (G7): one QR code on 5 pages read $n times by zbarimg (the box check reads it again on each page, with no deadline)"; fi
-on web 'mv /usr/bin/zbarimg.real /usr/bin/zbarimg'
+n=$(on web 'grep -c . /var/lib/ccs-gate/scan.log || true')
+if ((n <= 2)); then ok "review 5 (G7): one QR code on 5 pages read $n time(s)"; else fail "review 5 (G7): one QR code on 5 pages read $n times (the box check reads it again on each page, with no deadline)"; fi
+on web 'rm /var/lib/ccs-gate/scan.log'
 on backend 'rm -f /out/proposals/q?.html'
 # a folder pushed without read permission: its pages can't be listed by the checks, nor copied
 v=$((v + 1)); site "$v" "$good"
@@ -446,7 +458,7 @@ held "$v" proposals/img.html "a PNG named .html" "PNG"
 v=$((v + 1)); site "$v" "$good"; on backend "qrencode -s 10 -o /out/projects.json 'monero:$fake'"
 rc=0; push > /dev/null || rc=$?
 if ((rc)) && [[ $(live) == "$v" && $(livefile projects.json) == '[{'* ]]; then ok "held back: a PNG as projects.json (its last good copy stays)"; else fail "a PNG as projects.json"; fi
-# a good QR code with more beside it: zbarimg reads the good one, the rest is another's
+# a good QR code with more beside it: the QR reader reads the good one, the rest is another's
 v=$((v + 1)); site "$v" "$good"
 docker exec -i "$name-backend" sh -c "python3 - '$good' > /tmp/two.b64" <<'PY'
 import base64, subprocess, sys, zlib, struct
@@ -460,7 +472,9 @@ rows = [r + [255] * 200 + [0 if (x // 10) % 2 else 255 for x in range(200)] for 
 print(base64.b64encode(png(len(rows[0]), len(rows), rows)).decode())
 PY
 change "$p" "$(qr64 "$good")" "$(on backend 'cat /tmp/two.b64')"
-if on backend 'base64 -d /tmp/two.b64 > /tmp/two.png && zbarimg -q --raw /tmp/two.png' | grep -qx "monero:$good"; then held "$v" "$p" "a good QR code with more drawn beside it" "$(on backend 'cat /tmp/two.b64')"; else fail "the two-part test image doesn't read"; fi
+# (read on the backend by the gate's own reader, ccs-receive's qrscan_py)
+qrpy=$(sed -n "/^qrscan_py='/,/^'\$/p" "$here/../contrib/ccs-receive" | sed "1s/^qrscan_py='//; \$d")
+if on backend 'base64 -d /tmp/two.b64 > /tmp/two.png' && docker exec "$name-backend" python3 -I -c "$qrpy" png /tmp/two.png | grep -qx "monero:$good"; then held "$v" "$p" "a good QR code with more drawn beside it" "$(on backend 'cat /tmp/two.b64')"; else fail "the two-part test image doesn't read"; fi
 # two pushes at once: the second waits for the first (one staging folder, one at a time)
 v=$((v + 1)); site "$v" "$good"
 on backend "(rsync -a -e 'ssh -o BatchMode=yes' /out/ ccs-data@$web: > /tmp/a 2>&1; echo \$? >> /tmp/a) & (rsync -a -e 'ssh -o BatchMode=yes' /out/ ccs-data@$web: > /tmp/b 2>&1; echo \$? >> /tmp/b) & wait"
@@ -501,7 +515,7 @@ fi
 # the key still runs nothing but the gate
 if ! on backend "ssh -o BatchMode=yes ccs-data@$web 'cat /etc/passwd' 2>&1" | grep -q root; then ok "the key runs nothing else"; else fail "the key ran a command"; fi
 # the heartbeat: pushes are the backend's; the web server's timer alerts when none arrive
-hb() { on web 'su -s /bin/bash ccs-data -c "/usr/local/bin/ccs-receive --heartbeat"'; }
+hb() { docker exec -u "$data" "$name-web" /usr/local/bin/ccs-receive --heartbeat; }
 late() { bot | grep -c 'no push from the backend' || true; }
 on web "printf 'sha256 %s\nkey %040d\n' \"\$(sha256sum < /etc/ccs-gate/subaddresses.txt | cut -d' ' -f1)\" 0 > /etc/ccs-gate/subaddresses.txt.pin"   # the list above, pinned again
 on web 'rm -f /var/lib/ccs-data/keep.txt'   # root's, from the test above: ccs-data can't copy it
@@ -563,7 +577,7 @@ on backend "rsync -a --delay-updates -e 'ssh -o BatchMode=yes' /out/ ccs-data@$w
 # received (the gate stamps last-push once rrsync is done): hang up while it checks
 for _ in $(seq 100); do [[ $(on web 'stat -c %Y /var/lib/ccs-gate/last-push 2> /dev/null || echo 0') != "$before" ]] && break; sleep 0.1; done
 on backend 'pkill -x ssh || true'
-for _ in $(seq 100); do on web 'pgrep -f ccs-receive > /dev/null' || break; sleep 0.2; done
+for _ in $(seq 100); do on web 'for p in /proc/[0-9]*/cmdline; do { tr "\0" " " < $p; } 2> /dev/null; echo; done | grep -q "[c]cs-receive"' || break; sleep 0.2; done
 if (($(bot | grep -c . || true) > alerts)); then ok "a backend that hangs up mid-check: the gate still alerts"; else on web 'tail -n 3 /var/log/ccs-gate.log'; fail "a backend that hangs up mid-check: no alert from the gate"; fi
 
 exit "$status"

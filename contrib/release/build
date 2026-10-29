@@ -78,17 +78,18 @@ start=$(date +%s)
 # step TEXT: what is happening now, and how long since the start
 step() { printf '\n==> [%s] %s\n' "$(date -u -d "@$(($(date +%s) - start))" +%M:%S)" "$*"; }
 
-# published: the value the release notes publish for this release (empty if unreadable, "several"
-# if they name more than one: a release made by hand keeps its text, and CI's notes come after it,
-# so a value written in by hand mustn't be taken for the built one)
+# published [LABEL]: the value the release notes publish for this release (empty if unreadable,
+# "several" if they name more than one: a release made by hand keeps its text, and CI's notes come
+# after it, so a value written in by hand mustn't be taken for the built one); LABEL: the image's
+# ("Image ID", or ccs-bash's gate image: "Gate image ID")
 published() {
-    local body vals
+    local body vals label=${1:-Image ID}
     body=$(curl -fsS --max-time 20 "https://api.github.com/repos/plowsof/$what/releases/tags/$tag" 2> /dev/null \
         | jq -r '.body // empty' 2> /dev/null) || return 0
     if [[ $what == ccs-front-hugo ]]; then
         vals=$(grep -oE '[0-9a-f]{64}' <<<"$body" | sort -u || true)
     else
-        vals=$(grep -oE 'Image ID: `sha256:[0-9a-f]{64}' <<<"$body" | grep -oE '[0-9a-f]{64}' | sort -u || true)
+        vals=$(grep -oE "$label"': `sha256:[0-9a-f]{64}' <<<"$body" | grep -oE '[0-9a-f]{64}' | sort -u || true)
     fi
     if [[ $vals == *$'\n'* ]]; then echo several; else printf '%s\n' "$vals"; fi
 }
@@ -123,18 +124,32 @@ case $what in
             result=${id#sha256:}
             line="$result  $name-$commit.image-id"                # the image ID; the commit it came from
         fi
-        step "Comparing with the release notes"
-        pub=$(published)
-        if [[ -z $pub ]]; then
-            echo "Couldn't read the release notes: compare it yourself with https://github.com/plowsof/$what/releases/tag/$tag"
-        elif [[ $pub == several ]]; then
-            echo "!! The release notes name more than one: compare it yourself with https://github.com/plowsof/$what/releases/tag/$tag"
-        elif [[ $pub == "$result" ]]; then
-            echo "The same as the release notes publish."
-        else
-            echo "!! DIFFERENT from the release notes: they publish $pub."
-            echo "!! Please attest what you got all the same (that is the point), and say so in your pull request."
+        # ccs-bash's other image, the gate's (contrib/docker/web), from the same tag: attested on
+        # a line of its own in the same file, ccs-gate-<tag>-<commit>.image-id
+        gate=''
+        if [[ $what == ccs-bash && -f $tmp/src/container/gate.Dockerfile ]]; then
+            step "Building ccs-bash $tag's gate image (container/gate.Dockerfile)"
+            NO_CACHE=1 "$tmp/src/container/build.sh" "$name-gate-attest" gate.Dockerfile
+            gate=$(docker image inspect "$name-gate-attest" --format '{{.Id}}')
+            docker image rm "$name-gate-attest" > /dev/null
+            gate=${gate#sha256:}
+            line+=$'\n'"$gate  ccs-gate-$tag-$commit.image-id"
         fi
+        step "Comparing with the release notes"
+        for kind in image gate; do
+            [[ $kind == image ]] && { got=$result pub=$(published); }
+            [[ $kind == gate ]] && { [[ $gate ]] || continue; got=$gate pub=$(published "Gate image ID"); echo "The gate image:"; }
+            if [[ -z $pub ]]; then
+                echo "Couldn't read the release notes: compare it yourself with https://github.com/plowsof/$what/releases/tag/$tag"
+            elif [[ $pub == several ]]; then
+                echo "!! The release notes name more than one: compare it yourself with https://github.com/plowsof/$what/releases/tag/$tag"
+            elif [[ $pub == "$got" ]]; then
+                echo "The same as the release notes publish."
+            else
+                echo "!! DIFFERENT from the release notes: they publish $pub."
+                echo "!! Please attest what you got all the same (that is the point), and say so in your pull request."
+            fi
+        done
         ;;
     *) usage ;;
 esac
