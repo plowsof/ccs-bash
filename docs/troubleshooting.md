@@ -11,13 +11,14 @@ reads the rest; only `proposal:process` changes anything:
 
 | ccs-back | Here | Says |
 |---|---|---|
-| `php artisan proposal:process` | `ccs proposal:process` | one run by hand (the loop paused for it, started again after): this run's lines |
+| `php artisan proposal:process` | `ccs proposal:process` | one run by hand: this run's lines (the host setup: the loop paused for it, started again after; in Docker: the next run starts at once) |
 | `php artisan proposal:update` | `ccs proposal:update` | the Ideas shown, and each open MR looked at: an idea, merged already, no proposal, or why its file doesn't read |
 | `php artisan generate:addresses` | `ccs generate:addresses [file.md]` | which proposal has which subaddress and address, funding since when |
 | `php artisan wallet:notify` | `ccs wallet:notify [N]` | the funding-required proposals' raised and donations, and the last N donations |
 | `php artisan deposit:list` | `ccs deposit:list [file.md]` | every deposit as JSON: the live wallet's and each retired one's |
 | `laravel.log` | `ccs log [N]` | the errors and warnings of the last N runs (3), each once, with what this page says of it; then the proposal files left out, and why |
-| | `ccs status` | the loop, the last run (ok, or the steps that failed), the forge, the backup, the web server, the wallet, the releases |
+| | `ccs status` | the loop (in Docker: each service and its health), the last run (ok, or the steps that failed), the forge, the backup, the web server, the wallet, the releases |
+| | `ccs config:check` | every file the setup needs: there, owned as setup makes it, filled in, agreeing, answering ([the examples](../contrib/examples/backend/README.md)); changes nothing |
 
 It is `/opt/ccs-bash/contrib/ccs` ([setup](setup.md) step 3 links it as `/usr/local/bin/ccs`): it
 reads this page from the same checkout, so its hints are the release's.
