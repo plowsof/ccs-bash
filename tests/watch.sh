@@ -12,6 +12,18 @@ ok() { echo "ok   $1"; }
 fail() { echo "FAIL $1"; status=1; }
 port() { python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])'; }
 
+# ccs-watch here, or with CCS_WATCH_IMAGE, the one in that image (ccs-bash's: its busybox), on the
+# host's network (the test's servers on 127.0.0.1), as this user, the test's folder at its path
+ccs_watch() {
+    if [[ ${CCS_WATCH_IMAGE:-} ]]; then
+        docker run --rm --network host --read-only --tmpfs /tmp -u "$(id -u):$(id -g)" -v "$tmp:$tmp" \
+            -e CCS_WATCH_STATE -e CCS_WATCH_PULL -e CCS_WATCH_FORGE -e CCS_WATCH_WAITS \
+            --entrypoint /opt/ccs-bash/contrib/ccs-watch "$CCS_WATCH_IMAGE" "$@"
+    else
+        "$here/../contrib/ccs-watch" "$@"
+    fi
+}
+
 addr() { printf '%s%094d' "${2:-9}" "$1" | tr 0 1; }
 mkdir -p "$tmp/local/proposals" "$tmp/local/funding-required" "$tmp/local/donate" "$tmp/local/verify"
 for i in 0 1 2; do echo "$i $(addr "$i")"; done > "$tmp/list.txt"
@@ -60,10 +72,11 @@ class H(http.server.BaseHTTPRequestHandler):
 http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()' "$bot" "$tmp/bot.txt" & pids+=($!)
 sleep 1
 printf 'ALERT_URL=http://127.0.0.1:%s/simple?channel=%%23ccs\nSUBADDRESSES=%s\nALERT_PLAIN=1\nWATCH_THEMES=1\n' "$bot" "$tmp/list.txt" > "$tmp/alert.conf"
-watch() { CCS_WATCH_STATE=$tmp/state "$here/../contrib/ccs-watch" "http://127.0.0.1:$web" "$tmp/local" "$tmp/alert.conf" 2> "$tmp/log"; }
+watch() { CCS_WATCH_STATE=$tmp/state ccs_watch "http://127.0.0.1:$web" "$tmp/local" "$tmp/alert.conf" 2> "$tmp/log"; }
 alerts() { [[ -f $tmp/bot.txt ]] && wc -l < "$tmp/bot.txt" || echo 0; }
 
-export CCS_WATCH_WAITS="0.2 0.2"
+# (busybox's sleep: whole seconds)
+if [[ ${CCS_WATCH_IMAGE:-} ]]; then export CCS_WATCH_WAITS="1 1"; else export CCS_WATCH_WAITS="0.2 0.2"; fi
 page=$tmp/remote/proposals/a\ b.html
 if watch && [[ $(alerts) == 0 ]] && grep -q "the 5 pages on .*, and the 6 other pages and files, are what was pushed" "$tmp/log"; then ok "nothing changed: no alert (5 pages: 4 fixed, 1 with a donation box; 6 others: the page without one, theme.css and its dark and light ones, the QR code, the icon)"; else cat "$tmp/log"; fail "unchanged site"; fi
 
@@ -168,12 +181,12 @@ fi
 
 # The backend stopping: ccs-bash-update reports each run (--run). Nothing for one or two failed
 # runs; the third alerts, once; the first good run after it says so; a good run before that, nothing.
-run() { CCS_WATCH_STATE=$tmp/runstate CCS_WATCH_PULL=$tmp/pull-ok CCS_WATCH_FORGE=$tmp/forge-ok "$here/../contrib/ccs-watch" --run "$1" "$tmp/alert.conf" 2>> "$tmp/log"; }
+run() { CCS_WATCH_STATE=$tmp/runstate CCS_WATCH_PULL=$tmp/pull-ok CCS_WATCH_FORGE=$tmp/forge-ok ccs_watch --run "$1" "$tmp/alert.conf" 2>> "$tmp/log"; }
 before=$(alerts)
 run ccs-bash; run ccs-bash
 if [[ $(alerts) == "$before" ]]; then ok "the backend failing twice in a row: no alert"; else fail "two failed runs"; fi
 run "ccs-bash, the push"
-if [[ $(alerts) == $((before + 1)) ]] && tail -n 1 "$tmp/bot.txt" | grep -qE "\[CCS-watch\] the backend has failed 3 runs in a row since [0-9-]+ [0-9:]+ UTC: ccs-bash, the push \(see /var/log/ccs-bash.log\)"; then
+if [[ $(alerts) == $((before + 1)) ]] && tail -n 1 "$tmp/bot.txt" | grep -qE "\[CCS-watch\] the backend has failed 3 runs in a row since [0-9-]+ [0-9:]+ UTC: ccs-bash, the push \(ccs log on the backend\)"; then
     ok "the third failed run in a row: one alert, with what failed"
 else
     tail -n 2 "$tmp/bot.txt" 2> /dev/null; fail "three failed runs"
@@ -216,7 +229,7 @@ sed -i '/^FORGE_HOURS=/d' "$tmp/alert.conf"
 # in any command line ps shows), and --test sends one message to check the setup
 printf 'ALERT_URL=http://127.0.0.1:%s/directedMessage\nALERT_TARGET=#irc-room\nALERT_PASSWORD=s3cr3t\n' "$bot" > "$tmp/wmb.conf"
 : > "$tmp/bot.txt"
-if "$here/../contrib/ccs-watch" --test https://ccs.test/ "$tmp/wmb.conf" > /dev/null \
+if ccs_watch --test https://ccs.test/ "$tmp/wmb.conf" > /dev/null \
     && jq -e '.Target == "#irc-room" and .IncomingMessage.Password == "s3cr3t"
               and (.IncomingMessage.Message == "[\u000312CCS-watch\u0003] test, please ignore @ https://ccs.test/")' \
         <(cut -d' ' -f2- "$tmp/bot.txt") > /dev/null \
@@ -237,7 +250,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *a): pass
 os.chdir(sys.argv[3]); http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()' "$hdr" "$tmp/h/seen" "$tmp/h/site" & pids+=($!)
 sleep 1
-CCS_WATCH_STATE=$tmp/h/state "$here/../contrib/ccs-watch" "http://127.0.0.1:$hdr" "$tmp/h/site" /nonexistent 2> /dev/null || true
+CCS_WATCH_STATE=$tmp/h/state ccs_watch "http://127.0.0.1:$hdr" "$tmp/h/site" /nonexistent 2> /dev/null || true
 if grep -qE '^/ .*Sec-Fetch-Dest: document\|Sec-Fetch-Mode: navigate\|Sec-Fetch-Site: (none|same-origin|cross-site)\|Sec-Fetch-User: \?1' "$tmp/h/seen" \
     && grep -q '^/ .*Upgrade-Insecure-Requests: 1' "$tmp/h/seen" && grep -q '^/assets/s.css .*Sec-Fetch-Dest: style' "$tmp/h/seen" \
     && ! grep -q '^/assets/s.css .*Sec-Fetch-User' "$tmp/h/seen" && grep -q '^/assets/f.woff2 .*Sec-Fetch-Dest: font' "$tmp/h/seen"; then
@@ -250,7 +263,7 @@ fi
 # those must not be invisible to the watcher. Over ten runs, some fetches of it as a click-through.
 mkdir -p "$tmp/h/site/proposals"; echo '<details class="contribute">x</details>' > "$tmp/h/site/proposals/p.html"
 : > "$tmp/h/seen"
-for _ in $(seq 10); do CCS_WATCH_STATE=$tmp/h/state "$here/../contrib/ccs-watch" "http://127.0.0.1:$hdr" "$tmp/h/site" /nonexistent 2> /dev/null || true; done
+for _ in $(seq 10); do CCS_WATCH_STATE=$tmp/h/state ccs_watch "http://127.0.0.1:$hdr" "$tmp/h/site" /nonexistent 2> /dev/null || true; done
 if grep -qE '^/proposals/p.html .*Sec-Fetch-Site: (same-origin|cross-site)' "$tmp/h/seen"; then
     ok "a donation page is sometimes asked for as a visitor clicking through to it"
 else
@@ -273,7 +286,7 @@ class H(http.server.SimpleHTTPRequestHandler):
 os.chdir(sys.argv[3]); http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()' "$nf" "$tmp/n/FAKE" "$tmp/n/site" & pids+=($!)
 sleep 1
 printf 'ALERT_URL=http://127.0.0.1:%s/simple?channel=%%23ccs\nALERT_PLAIN=1\n' "$bot" > "$tmp/n/alert.conf"
-nwatch() { CCS_WATCH_STATE=$tmp/n/state "$here/../contrib/ccs-watch" "http://127.0.0.1:$nf" "$tmp/n/site" "$tmp/n/alert.conf" 2> "$tmp/n/log"; }
+nwatch() { CCS_WATCH_STATE=$tmp/n/state ccs_watch "http://127.0.0.1:$nf" "$tmp/n/site" "$tmp/n/alert.conf" 2> "$tmp/n/log"; }
 before=$(alerts)
 nwatch; nwatch
 if [[ $(alerts) == "$before" ]] && grep -q "and the 2 other pages and files, are what was pushed" "$tmp/n/log"; then
@@ -340,7 +353,7 @@ echo none > "$tmp/e/MODE"; touch "$tmp/e/PUSH"
 sleep 1
 printf 'ALERT_URL=http://127.0.0.1:%s/simple?channel=%%23ccs\nALERT_PLAIN=1\nWATCH_SAMPLE=0\nWATCH_THEMES=1\n' "$bot" > "$tmp/e/alert.conf"
 # a run right after a push (the update script's), and one between pushes (ccs-watch.timer's)
-ewatch() { CCS_WATCH_STATE=$tmp/e/state "$here/../contrib/ccs-watch" "http://127.0.0.1:$ep" "$tmp/e/site" "$tmp/e/${econf:-alert.conf}" 2> "$tmp/e/log" || true; }
+ewatch() { CCS_WATCH_STATE=$tmp/e/state ccs_watch "http://127.0.0.1:$ep" "$tmp/e/site" "$tmp/e/${econf:-alert.conf}" 2> "$tmp/e/log" || true; }
 push() { touch "$tmp/e/PUSH"; sleep 0.05; ewatch; }
 # a visitor (Chrome) asking for the donation page: does it get the foreign address?
 visitor() { curl -s -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36' "http://127.0.0.1:$ep/proposals/p.html" | grep -c "$(addr 7 B)" || true; }

@@ -2,19 +2,25 @@
 # sed, sleep, touch, tr and wc for the tests, so they run against exactly what ships.
 # Nothing else is compiled into busybox.
 # chown, sha256sum and timeout: the backend compose (contrib/docker/backend/step)
+# basename, cmp, comm, find, head, paste, shuf, sort and stat: ccs-watch, its watch stage
 awk
 base64
+basename
 cat
 chmod
 chown
+cmp
+comm
 cp
 cut
 date
 diff
 dirname
 env
+find
 flock
 grep
+head
 id
 ln
 ls
@@ -22,11 +28,15 @@ mkdir
 mkfifo
 mktemp
 mv
+paste
 readlink
 rm
 sed
 sha256sum
+shuf
 sleep
+sort
+stat
 sync
 timeout
 touch
