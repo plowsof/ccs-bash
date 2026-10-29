@@ -90,11 +90,15 @@ F() { call "http://127.0.0.1:$FPORT/json_rpc" "$1" "${2:-"{}"}"; }
 K() { call "http://127.0.0.1:$KPORT/json_rpc" "$1" "${2:-"{}"}"; }
 C() { call "http://127.0.0.1:$CPORT/json_rpc" "$1" "${2:-"{}"}" --digest -u "ccs:$RPC_PW"; }
 
-wait_for() { # wait_for NAME COMMAND...: up to 60 s
-    local i
-    for ((i = 0; i < 240; i++)); do
+wait_for() { # wait_for NAME COMMAND...: up to 3 minutes (a CI runner can be slow to start one)
+    local i log
+    for ((i = 0; i < 720; i++)); do
         "${@:2}" > /dev/null 2>&1 && return 0
         sleep 0.25
+    done
+    # what it said, to tell a slow start from one that failed
+    for log in "$T"/*/wallet-rpc.log "$T"/*/monerod.log "$T"/*/stdout; do
+        [[ -f $log ]] && { echo "--- ${log#"$T"/}"; tail -n 5 "$log"; }
     done
     die "$1 did not start"
 }
