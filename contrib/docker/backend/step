@@ -1,0 +1,158 @@
+#!/usr/bin/env bash
+# step STAGE [ARG...]: one stage of the backend's update, looping, in its own container of the
+# backend compose (contrib/docker/backend/compose.yml): what ccs-bash-update (docs/handover.md,
+# step 9) does in one script on the host, each stage here with only its own user, network and
+# folders. Each run of the update is a number N; the stages take it in turn:
+#
+#   pull      git pull of the proposals (ccs-git; the forge only), N+1 every CCS_EVERY seconds
+#             (120), or at once when something writes a line to its "now" pipe (the wallet's
+#             tx-notify, ccs proposal:process), never before the last run's push is done
+#   ccs-bash  ccs-back.sh (ccs; the wallet, the forge's API), when pull has done N
+#   backup    the state to the backup machine (ccs; that machine only), when ccs-bash has done N
+#   front     ccs-front-bash (ccs-front; no network), when ccs-bash has done N; its arguments
+#             are ccs-front-bash.sh's (the compose file gives them)
+#   push      the site to the web server (ccs; that machine only), when front and backup have
+#             done N; then writes the run's result ("ok", or the steps that failed, as
+#             ccs-bash-update says them) to its "watch" pipe, for ccs-watch on the host
+#   init      as root, once: the run folder, a folder for each stage, owned by its user
+#
+# The run folder (CCS_RUN, /run/ccs) has a folder for each stage: "done" (the last N it
+# finished), "status" ("N ok" or "N failed[: why]"), and "wake" (a pipe: a stage waiting on it
+# reads a line when another finishes, and looks again every 5 s anyway). No stage starts or
+# controls another (no Docker socket): it only waits for their "done". Output goes to the log
+# (CCS_LOG, /var/log/ccs-bash.log, the host's, so ccs log and ccs status read it as before) and to
+# docker compose logs.
+set -uo pipefail
+R=${CCS_RUN:-/run/ccs}
+LOG=${CCS_LOG:-/var/log/ccs-bash.log}
+EVERY=${CCS_EVERY:-120}
+STAGES="pull ccs-bash backup front push"
+stage=${1:?STAGE: init $STAGES}
+shift
+
+say() { printf '%s\n' "$*"; printf '%s\n' "$*" >> "$LOG" 2> /dev/null || true; }
+# run CMD...: its output (and errors) to the log and to docker's; its exit status
+run() {
+    "$@" 2>&1 | while IFS= read -r line; do printf '%s\n' "$line"; printf '%s\n' "$line" >> "$LOG" 2> /dev/null || true; done
+    return "${PIPESTATUS[0]}"
+}
+num() { local v; v=$(cat "$1" 2> /dev/null) || v=0; [[ $v =~ ^[0-9]+$ ]] || v=0; printf '%s\n' "$v"; }
+# put FILE TEXT: FILE written whole (a stage reading it never sees half of it)
+put() { printf '%s\n' "$2" > "$1.tmp" && mv -f "$1.tmp" "$1"; }
+# wake STAGE...: a line to each one's pipe, opened read-write so it never blocks
+wake() { local s; for s; do [[ -p $R/$s/wake ]] && { printf 'go\n' 1<> "$R/$s/wake"; } 2> /dev/null; done; return 0; }
+# wait_for STAGE N: until STAGE has done N
+wait_for() { while (($(num "$R/$1/done") < $2)); do read -r -t 5 _ <> "$R/$stage/wake" || true; done; }
+# finish N STATUS: this stage has done N
+finish() { put "$R/$stage/status" "$1 $2"; put "$R/$stage/done" "$1"; }
+# failed STAGE N: why STAGE failed run N ("" if it didn't)
+failed() { local s; s=$(cat "$R/$1/status" 2> /dev/null) || s=''; [[ $s == "$2 failed"* ]] && printf '%s\n' "${s#"$2 failed"}" | sed 's/^: //'; return 0; }
+
+case $stage in
+init)
+    # CCS_UIDS: "stage=uid:gid ..." (the compose file passes the host's users)
+    mkdir -p "$R" && chmod 755 "$R" || exit 1
+    for pair in ${CCS_UIDS:?CCS_UIDS: stage=uid:gid ...}; do
+        s=${pair%%=*} owner=${pair#*=}
+        [[ " $STAGES " == *" $s "* && $owner =~ ^[0-9]+:[0-9]+$ ]] || { echo "init: bad CCS_UIDS entry $pair" >&2; exit 1; }
+        mkdir -p "$R/$s" || exit 1
+        # its pipes: "wake" for every stage, the pull's "now" (the wallet's tx-notify, ccs
+        # proposal:process), the push's "watch" (ccs-watch on the host)
+        for p in wake $([[ $s == pull ]] && echo now) $([[ $s == push ]] && echo watch); do
+            if [[ ! -p $R/$s/$p ]]; then rm -f "$R/$s/$p" && mkfifo -m 622 "$R/$s/$p" || exit 1; fi
+        done
+        chown -R "$owner" "$R/$s" && chmod 755 "$R/$s" || exit 1
+    done
+    echo "init: $R ready"
+    ;;
+pull)
+    while :; do
+        n=$(($(num "$R/pull/done") + 1))
+        wait_for push $((n - 1))
+        # EVERY seconds after the last run started, or at once when woken through "now"
+        until (($(date +%s) >= $(num "$R/pull/started") + EVERY)); do
+            read -r -t $(($(num "$R/pull/started") + EVERY - $(date +%s))) _ <> "$R/pull/now" && break
+        done
+        put "$R/pull/started" "$(date +%s)"
+        say "== run $(date -u '+%F %T')"
+        # the proposals; the forge down: give up, not a failed run (the last checkout stays);
+        # pull-ok when one went through (ccs-watch --run alerts when that's FORGE_HOURS ago)
+        if run timeout -k 5 40 git -C "${CCS_PROPOSALS:-/var/lib/ccs/proposals}" pull -q --ff-only; then
+            touch "${CCS_PULL_OK:-/var/lib/ccs/pull-ok}" 2> /dev/null || true
+            finish "$n" ok
+        else
+            finish "$n" "failed: the pull"
+        fi
+        wake ccs-bash
+    done
+    ;;
+ccs-bash)
+    while :; do
+        n=$(($(num "$R/ccs-bash/done") + 1))
+        wait_for pull "$n"
+        if run "${CCS_BACK:-/opt/ccs-bash/ccs-back.sh}" "${CCS_CONFIG:-/etc/ccs/ccs.conf}"; then finish "$n" ok; else finish "$n" "failed: ccs-bash"; fi
+        wake backup front
+    done
+    ;;
+backup)
+    # CCS_BACKUP: user@host of the backup machine; its key and known_hosts in CCS_BACKUP_KEYS
+    keys=${CCS_BACKUP_KEYS:-/etc/ccs/backup}
+    while :; do
+        n=$(($(num "$R/backup/done") + 1))
+        wait_for ccs-bash "$n"
+        why=''
+        # proposals.csv, deposits.csv (its deposits, not its first line, whose height changes
+        # every run) and each retired wallet's file, when it changed since it was last sent
+        for f in "${STATE_DIR:-/var/lib/ccs/state}"/proposals.csv "${STATE_DIR:-/var/lib/ccs/state}"/deposits.csv "${STATE_DIR:-/var/lib/ccs/state}"/retired/*.csv; do
+            [[ -f $f ]] || continue
+            name=${f##*/}; [[ $f == */retired/* ]] && name=retired-$name
+            sum=$(sed '/^# final /d' "$f" | sha256sum | cut -c1-64)
+            [[ $sum == "$(cat "$R/backup/sent-$name" 2> /dev/null)" ]] && continue
+            if run timeout -k 5 30 ssh -T -i "$keys/id_ed25519" -o UserKnownHostsFile="$keys/known_hosts" -o BatchMode=yes \
+                -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 "${CCS_BACKUP:?}" < "$f"; then
+                put "$R/backup/sent-$name" "$sum"
+            else
+                why="${why:+$why, }the backup (${f##*/})"
+            fi
+        done
+        if [[ $why ]]; then finish "$n" "failed: $why"; else finish "$n" ok; fi
+        wake push
+    done
+    ;;
+front)
+    while :; do
+        n=$(($(num "$R/front/done") + 1))
+        wait_for ccs-bash "$n"
+        if run "${CCS_FRONT:-/opt/ccs-front-bash/ccs-front-bash.sh}" "$@"; then finish "$n" ok; else finish "$n" "failed: ccs-front-bash"; fi
+        wake push
+    done
+    ;;
+push)
+    # CCS_PUSH: user@host of the web server's push account; PUSHED: the copy ccs-watch compares
+    site=${CCS_SITE:-/var/lib/ccs/www/site} pushed=${CCS_PUSHED:-/var/lib/ccs/pushed}
+    while :; do
+        n=$(($(num "$R/push/done") + 1))
+        wait_for front "$n"
+        wait_for backup "$n"
+        # the push and the copy of what went, under ccs-watch's lock (opened read-only: any open
+        # file can be locked), so a check between pushes never sees one without the other.
+        # (busybox's flock has no -w: timeout's flock takes the lock for this shell's fd 9)
+        rc=0
+        {
+            timeout 600 flock 9 || say "warning: ccs-watch's lock not had in 10 minutes, pushing all the same"
+            run timeout -k 5 120 rsync -a --delay-updates \
+                -e "ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15" "$site/" "${CCS_PUSH:?}:" || rc=$?
+            if ((rc == 0 || rc == 7)); then rsync -a --delete "$site/" "$pushed/"; fi
+        } 9< "${CCS_WATCH_LOCK:-/run/ccs-watch.lock}"
+        # the run's result, as ccs-bash-update says it (a failed pull is no failed run)
+        result=''
+        for s in ccs-bash backup front; do w=$(failed "$s" "$n"); [[ $w ]] && result="${result:+$result, }$w"; done
+        ((rc == 7)) && result="${result:+$result, }the push (the web server held a file back)"
+        ((rc == 0 || rc == 7)) || result="${result:+$result, }the push"
+        if ((rc == 0 || rc == 7)); then finish "$n" "pushed${result:+ failed: $result}"; else finish "$n" "failed: $result"; fi
+        { printf '%s %s %s\n' "$n" "$( ((rc == 0 || rc == 7)) && echo pushed || echo not-pushed)" "${result:-ok}" 1<> "$R/push/watch"; } 2> /dev/null
+        wake pull
+    done
+    ;;
+*) echo "step: no stage $stage ($STAGES, init)" >&2; exit 2 ;;
+esac

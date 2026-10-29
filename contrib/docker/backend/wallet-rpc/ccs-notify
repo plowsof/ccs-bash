@@ -1,0 +1,4 @@
+#!/bin/sh
+# ccs-notify: the wallet's tx-notify (compose.yml): a new transaction starts the next run at once
+# (a line to the pull stage's "now" pipe, opened read-write so it never blocks)
+printf 'tx\n' 1<> /run/ccs/pull/now

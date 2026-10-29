@@ -31,6 +31,18 @@ STATE_DIR=$(conf STATE_DIR /var/lib/ccs/state)
 OUTPUT_DIR=$(conf OUTPUT_DIR /var/lib/ccs/out)
 PROPOSALS_DIR=$(conf PROPOSALS_DIR /var/lib/ccs/proposals)
 read_ccs() { "${as_ccs[@]}" cat -- "$1"; }
+# the backend compose (docs/docker.md): its run folder, when the host's loop isn't running
+RUN_DIR=${CCS_RUN_DIR:-/var/lib/ccs/run}
+compose() { [[ -d $RUN_DIR/push ]] && ! systemctl is-active -q ccs-bash 2> /dev/null; }
+stage_num() { local v; v=$(cat "$RUN_DIR/$1/${2:-done}" 2> /dev/null) || v=0; [[ $v =~ ^[0-9]+$ ]] && echo "$v" || echo 0; }
+# a run going now: the host's update script, or the compose's pull past its push
+running() {
+    if compose; then
+        (($(stage_num pull) > $(stage_num push))) || (($(stage_num pull started) > $(stat -c %Y "$RUN_DIR/push/done" 2> /dev/null || echo 0)))
+    else
+        pgrep -x ccs-bash-update > /dev/null
+    fi
+}
 
 # the state as JSON: {"file.md": {index, address, since, url}}
 state_json() {
@@ -50,7 +62,7 @@ runs_range() {
     marks=$(grep -n '^== run ' "$LOG" | cut -d: -f1)
     if [[ -z $marks ]]; then echo "$((total > 400 ? total - 399 : 1)) $total"; return; fi
     to=$total
-    if pgrep -x ccs-bash-update > /dev/null; then to=$(($(tail -n 1 <<<"$marks") - 1)); marks=$(sed '$d' <<<"$marks"); fi
+    if running; then to=$(($(tail -n 1 <<<"$marks") - 1)); marks=$(sed '$d' <<<"$marks"); fi
     echo "$(tail -n "$n" <<<"$marks" | head -n 1) $to"
 }
 
@@ -73,8 +85,26 @@ hints() {
         | .rows | sort_by(-.lit)' "$DOCS/troubleshooting.md"
 }
 
+# the compose's: a line on the pull's "now" pipe; this run is the one that starts after it, and
+# its lines are printed once its push is done (10 minutes at most)
+compose_process() {
+    local started before n at
+    started=$(stage_num pull started) before=$(stage_num pull)
+    printf 'now\n' 1<> "$RUN_DIR/pull/now"
+    for _ in $(seq 600); do (($(stage_num pull started) != started)) && break; sleep 1; done
+    (($(stage_num pull started) != started)) || die "no run started in 10 minutes: look at the compose (ccs status, docker compose logs)"
+    at=$(grep -n '^== run ' "$LOG" | tail -n 1 | cut -d: -f1)
+    for _ in $(seq 600); do (($(stage_num pull) > before)) && break; sleep 1; done
+    n=$(stage_num pull)
+    for _ in $(seq 600); do (($(stage_num push) >= n)) && break; sleep 1; done
+    (($(stage_num push) >= n)) || die "run $n isn't done after 10 minutes: look at the compose (ccs status, docker compose logs)"
+    tail -n +"${at:-1}" "$LOG" | grep -vE '^\s*$|^(skipping|ignoring) ' || true
+    echo "(run $n of the compose; $(tail -n +"${at:-1}" "$LOG" | grep -cE '^(skipping|ignoring) ' || true) proposal files skipped or ignored: ccs log shows why)"
+}
+
 cmd_process() {
     local was start
+    if compose; then compose_process; return; fi
     was=$(systemctl is-active ccs-bash 2> /dev/null || true)
     for _ in $(seq 60); do pgrep -x ccs-bash-update > /dev/null || break; sleep 5; done
     if [[ $was == active ]]; then
@@ -165,7 +195,12 @@ cmd_log() {
 cmd_status() {
     local last at failed f
     age() { local t; t=$("${as_ccs[@]}" stat -c %Y "$1" 2> /dev/null) || { echo "never"; return; }; echo "$(( ($(date +%s) - t) / 60 )) min ago"; }
-    echo "the loop: $(systemctl is-active ccs-bash 2> /dev/null || true)$(pgrep -x ccs-bash-update > /dev/null && echo ", a run going now")"
+    if compose; then
+        echo "the loop: the backend compose ($(docker ps --filter label=com.docker.compose.project=backend --format '{{.Label "com.docker.compose.service"}} {{.State}}' 2> /dev/null | sort | paste -sd ',' - | sed 's/,/, /g'))$(running && echo ", a run going now")"
+        echo "the stages: $(for s in pull ccs-bash backup front push; do printf '%s %s; ' "$s" "$(cat "$RUN_DIR/$s/status" 2> /dev/null || echo '?')"; done)"
+    else
+        echo "the loop: $(systemctl is-active ccs-bash 2> /dev/null || true)$(running && echo ", a run going now")"
+    fi
     at=$(grep -n '^== run ' "$LOG" | tail -n 1) || at=''
     if [[ $at ]]; then
         read -r f last <<<"$(runs_range 1)"
@@ -177,12 +212,21 @@ cmd_status() {
         if [[ $last == *"this run failed"* ]]; then echo "the last run: ${last#*ccs-watch: }"; else echo "the last run: ok (${last:0:19})"; fi
     fi
     echo "the proposals pulled: $(age /var/lib/ccs/pull-ok); GitLab/Forgejo answered: $(age "$STATE_DIR/forge-ok")"
-    echo "the state backed up: $(age /var/lib/ccs/backup-sent) (sent when it changes)"
+    if compose; then
+        f=$(find "$RUN_DIR/backup" -maxdepth 1 -name 'sent-*' -printf '%T@ %p\n' 2> /dev/null | sort -rn | head -n 1 | cut -d' ' -f2-)
+        echo "the state backed up: $(age "${f:-/nonexistent}") (sent when it changes; the backup stage: $(cat "$RUN_DIR/backup/status" 2> /dev/null || echo '?'))"
+    else
+        echo "the state backed up: $(age /var/lib/ccs/backup-sent) (sent when it changes)"
+    fi
     echo "the web server: $(grep -E 'ccs-watch: (the [0-9]+ pages|ALERT)' "$LOG" | tail -n 1 | cut -c1-160)"
     f=$(read_ccs "$OUTPUT_DIR/projects.json" 2> /dev/null | jq -r '[length, (map(select(.state == "FUNDING-REQUIRED")) | length)] | "\(.[0]) proposals, \(.[1]) funding required"' 2> /dev/null || echo "no projects.json")
     echo "the site: $f"
     echo "the wallet: $(wallet_line)"
-    echo "the releases: ccs-bash $(release /usr/local/bin/ccs-bash-run), ccs-front-bash $(release /usr/local/bin/ccs-front-run), design $(cut -d' ' -f1 /opt/ccs-front-hugo/VERSION 2> /dev/null || echo '?')"
+    if compose; then
+        echo "the releases: the compose's images: $(docker ps --filter label=com.docker.compose.project=backend --format '{{.Label "com.docker.compose.service"}}={{.Image}}' 2> /dev/null | sort -u -t= -k2,2 | sed 's/sha256:\(.\{12\}\).*/\1/' | paste -sd ' ' -), design $(cut -d' ' -f1 /opt/ccs-front-hugo/VERSION 2> /dev/null || echo '?')"
+    else
+        echo "the releases: ccs-bash $(release /usr/local/bin/ccs-bash-run), ccs-front-bash $(release /usr/local/bin/ccs-front-run), design $(cut -d' ' -f1 /opt/ccs-front-hugo/VERSION 2> /dev/null || echo '?')"
+    fi
 }
 # release RUN_SCRIPT: the version its comment names ("# v0.2.29, by ID"), else the image ID it starts
 release() {
