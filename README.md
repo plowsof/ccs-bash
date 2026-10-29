@@ -116,7 +116,7 @@ Docker on the host and gets Debian's security updates automatically.
 - [Handover](docs/handover.md): start here, from ccs-back and Jekyll to this, step by step; what you fill in
 - [Recommended design](docs/design.md): bash renders the site on the backend, the web server only serves files
 - [Setup](docs/setup.md): dependencies, installing step by step, backing up the state
-- [The backend in Docker](docs/docker.md): the update and ccs-watch as one container a stage (its own user, network, folders and secret) and monero-wallet-rpc, with docker compose; its design: [docker-design.svg](docs/docker-design.svg)
+- [The backend in Docker](docs/docker.md): the update and ccs-watch as one container a stage (its own user, network, folders and secret) and monero-wallet-rpc, with docker compose; its design: [docker-design.svg](docs/docker-design.svg); and [the web server's side](docs/docker.md#the-web-server-in-docker) (the gate and the backup receiver behind their own sshd, from one attested image; nginx on the host)
 - [Two machines](docs/two-machines.md): the backend pushes, the web server only receives; the gate, the alerts, the theme
 - [The pinned image](docs/image.md): how B is built and checked, changing the pin, releases
 - [Attesting a release](contrib/release/README.md): rebuild a release, sign what came out into ccs-sigs, as Feather Wallet does
@@ -130,5 +130,7 @@ Docker on the host and gets Debian's security updates automatically.
 tests/run.sh             # end-to-end on tests/fixtures, fake wallet and GitLab
 UPDATE=1 tests/run.sh    # rewrite tests/expected after an intended change
 tests/rrsync.sh          # the two-machine setup, attacked from the wallet machine (docker)
+tests/gate.sh            # the web server's gate (docker); GATE_IMAGE=ccs-gate: the gate's image as the web server
+tests/web.sh             # the web server compose's sshd, attacked from the backend's keys (docker, the gate's image)
 shellcheck -x ccs-back.sh notify-loop.sh lib/*.sh tests/*.sh container/*.sh
 ```
