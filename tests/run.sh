@@ -1023,6 +1023,18 @@ if command -v gpg > /dev/null && command -v gpgconf > /dev/null; then
     attest ccs-bash-v9.9.8 alice "$(printf '%064d  ccs-bash-v9.9.8-%040d.image-id\r' 1 2)"
     if ! { ! v2 --min-signers 1 ccs-bash-v9.9.8 && grep -q "has no line for ccs-bash-v9.9.8" "$TEST_TMP/v.out"; }; then cat "$TEST_TMP/v.out"; echo "FAIL release/verify: a CRLF line"; vok=''; fi
     rm -rf "$sigs/ccs-bash-v9.9.8"
+    # the gate's image, attested as a second line of ccs-bash's: verify ccs-gate-v9.9.6 finds it in
+    # ccs-bash-v9.9.6's sets, and a set with it still lists exactly its releases
+    gset=ccs-bash-v9.9.6+ccs-front-bash-v9.9.6+ccs-front-hugo-v9.9.6
+    mkdir -p "$sigs/$gset"
+    attest "$gset" alice "$(printf '%064d  ccs-bash-v9.9.6-%040d.image-id' 6 2)" "$(printf '%064d  ccs-gate-v9.9.6-%040d.image-id' 7 2)" \
+        "$(printf '%064d  ccs-front-bash-v9.9.6-%040d.image-id' 8 5)" "$(printf '%064d  ccs-front-hugo-v9.9.6.zip' 9)"
+    if ! { v2 --min-signers 1 ccs-gate-v9.9.6 && grep -q "ccs-gate-v9.9.6: $(printf '%064d' 7) (1 signer(s) agree)" "$TEST_TMP/v.out" \
+        && v2 --min-signers 1 "$gset" && grep -q "$gset: 1 signer(s) agree" "$TEST_TMP/v.out"; }; then cat "$TEST_TMP/v.out"; echo "FAIL release/verify: the gate image's line"; vok=''; fi
+    attest "$gset" alice "$(printf '%064d  ccs-bash-v9.9.6-%040d.image-id' 6 2)" "$(printf '%064d  ccs-gate-v9.9.6-%040d.image-id' 7 2)" \
+        "$(printf '%064d  ccs-gate-v9.9.6-%040d.image-id' 8 2)" "$(printf '%064d  ccs-front-bash-v9.9.6-%040d.image-id' 8 5)" "$(printf '%064d  ccs-front-hugo-v9.9.6.zip' 9)"
+    if ! { ! v2 --min-signers 1 "$gset" && grep -q "has several lines for ccs-gate-v9.9.6" "$TEST_TMP/v.out"; }; then cat "$TEST_TMP/v.out"; echo "FAIL release/verify: two gate lines in a set"; vok=''; fi
+    rm -rf "${sigs:?}/${gset:?}"
     if ! { ! v2 --min-signers 1 ccs-bash-v9.9.9 ccs-bash-v9.9.7 && grep -q "ERR: no attestation of ccs-bash-v9.9.7" "$TEST_TMP/v.out"; }; then cat "$TEST_TMP/v.out"; echo "FAIL release/verify: a named release no one attested passes beside one that is"; vok=''; fi
     GNUPGHOME=$k gpgconf --kill all 2> /dev/null || true
     if [[ $vok ]]; then echo "ok   release/verify: trusted signers agree on the commit too; an untrusted one changes nothing; a set lists exactly its releases; a revoked key doesn't count"; else status=1; fi
