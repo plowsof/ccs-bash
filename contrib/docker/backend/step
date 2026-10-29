@@ -78,8 +78,8 @@ init)
     # root, ccs proposal:process, by being root); "watch" (each run's result) read by the watch
     # alone (CCS_WATCH_GID, likewise). A "wake" pipe only has its stage look at the others' "done" again: any
     # stage may write it.
-    if [[ -p $R/pull/now ]]; then g=${CCS_NOW_GID:?CCS_NOW_GID, the gid of the wallet}; chgrp "${g#*:}" "$R/pull/now" && chmod 660 "$R/pull/now" || exit 1; fi
-    if [[ -p $R/push/watch ]]; then g=${CCS_WATCH_GID:?CCS_WATCH_GID, the gid of the watch}; chgrp "${g#*:}" "$R/push/watch" && chmod 660 "$R/push/watch" || exit 1; fi
+    if [[ -p $R/pull/now ]]; then g=${CCS_NOW_GID:?CCS_NOW_GID, the gid of the wallet}; chown ":${g#*:}" "$R/pull/now" && chmod 660 "$R/pull/now" || exit 1; fi
+    if [[ -p $R/push/watch ]]; then g=${CCS_WATCH_GID:?CCS_WATCH_GID, the gid of the watch}; chown ":${g#*:}" "$R/push/watch" && chmod 660 "$R/push/watch" || exit 1; fi
     # the lock the push takes (and the watch, shared) around the push and its copy: root's,
     # opened read-only (any open file can be locked)
     [[ -f $R/watch.lock ]] || { : > "$R/watch.lock" && chmod 644 "$R/watch.lock"; } || exit 1
