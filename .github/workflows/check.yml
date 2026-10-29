@@ -25,7 +25,8 @@ jobs:
         run: tests/run.sh
       - name: the backend compose's stages (contrib/docker/backend/step)
         run: tests/compose.sh
-      - name: tests with gawk
+      - name: tests with gawk (on one Ubuntu, as the awk is what differs)
+        if: matrix.os == 'ubuntu-24.04'
         run: |
           sudo apt-get install -y gawk
           mkdir -p "$RUNNER_TEMP/gawk" && ln -s "$(command -v gawk)" "$RUNNER_TEMP/gawk/awk"
@@ -38,6 +39,11 @@ jobs:
       id: ${{ steps.id.outputs.id }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, pinned by commit
+      - name: the source tarballs, kept from the last run (each still checked by its sha256)
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3, pinned by commit
+        with:
+          path: container/sources
+          key: sources-${{ hashFiles('container/sources.lock') }}
       - name: build (download, then install offline)
         run: container/build.sh ccs-bash
       - name: tests inside the image, no network
@@ -61,6 +67,11 @@ jobs:
       id: ${{ steps.id.outputs.id }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, pinned by commit
+      - name: the source tarballs, kept from the last run (each still checked by its sha256)
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3, pinned by commit
+        with:
+          path: container/sources
+          key: sources-${{ hashFiles('container/sources.lock') }}
       - id: id
         run: |
           id=$(umask 077 && container/check-pinned.sh warm | sed -n 's/^id: //p')
@@ -81,11 +92,18 @@ jobs:
   gate-image:
     # The gate's image (container/gate.Dockerfile, the web server compose): built as the ccs-bash
     # image is, its QR reader and tools tested inside it, the gate's tests with it as the web
-    # server, its sshd as compose.yml runs it attacked from the backend's keys; and a second clean
-    # build, from a clone made under umask 077, gives the same ID.
+    # server, its sshd as compose.yml runs it attacked from the backend's keys. (gate-pinned: a
+    # second clean build, from a clone made under umask 077, gives the same ID.)
     runs-on: ubuntu-24.04
+    outputs:
+      id: ${{ steps.id.outputs.id }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, pinned by commit
+      - name: the source tarballs, kept from the last run (each still checked by its sha256)
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3, pinned by commit
+        with:
+          path: container/sources
+          key: sources-${{ hashFiles('container/sources.lock') }}
       - name: build (download, then install offline)
         run: container/build.sh ccs-gate gate.Dockerfile
       - name: its QR reader and tools, inside it, no network
@@ -96,13 +114,38 @@ jobs:
         run: CCS_GATE_IMAGE=ccs-gate tests/web.sh
       - name: the image's size (Python, git, sshd, GNU userland; about 160 MB)
         run: size=$(docker image inspect ccs-gate --format '{{.Size}}'); echo "$size bytes"; [ "$size" -lt 200000000 ]
-      - name: pinned (a clean build from a clone made under umask 077, the same ID)
+      - id: id
+        run: echo "id=$(docker image inspect ccs-gate --format '{{.Id}}')" >> "$GITHUB_OUTPUT"
+  # its second build, beside the first (not after it): a clean one, from a clone made under umask 077
+  gate-clean:
+    runs-on: ubuntu-24.04
+    outputs:
+      id: ${{ steps.id.outputs.id }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, pinned by commit
+      - name: the source tarballs, kept from the last run (each still checked by its sha256)
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3, pinned by commit
+        with:
+          path: container/sources
+          key: sources-${{ hashFiles('container/sources.lock') }}
+      - id: id
         run: |
-          a=$(docker image inspect ccs-gate --format '{{.Id}}')
-          b=$(umask 077 && CHECK_DOCKERFILE=gate.Dockerfile container/check-pinned.sh clean 077 | sed -n 's/^id: //p')
-          echo "this build: $a"; echo "a clean one: $b"
-          [[ $a == sha256:* && $a == "$b" ]] || { echo "error: the gate image's builds differ" >&2; exit 1; }
-  rrsync:
+          id=$(umask 077 && CHECK_DOCKERFILE=gate.Dockerfile container/check-pinned.sh clean 077 | sed -n 's/^id: //p')
+          echo "clean: $id"
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+  gate-pinned:
+    needs: [gate-image, gate-clean]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: the gate's image hash (the tested build and a clean one, one ID)
+        env:
+          IDS: ${{ needs.gate-image.outputs.id }} ${{ needs.gate-clean.outputs.id }}
+        run: |
+          read -r a b <<<"$IDS"
+          echo "the tested build: $a"; echo "a clean one: $b"
+          [[ $a == sha256:* && $a == "$b" ]] || { echo "error: the gate image's builds differ, or one is missing" >&2; exit 1; }
+  host-tests:
+    name: host tests (rrsync, the gate, the watcher)
     # The two-machine setup (docs/two-machines.md, rrsync), attacked from the wallet machine's key.
     runs-on: ubuntu-24.04
     steps:

@@ -35,7 +35,7 @@ if ! q png "$t/s.png" inverted > /dev/null && ! q png "$t/j.png" inverted > /dev
     ok "read as the format its name says, nothing else: an SVG or a JPEG named .png, a PNG of 30000x30000 pixels: nothing"
 else fail "a file not the format its name says, or too large, was read"; fi
 if [[ $(qrencode -s 10 -o - "$a" | head -c 8 | od -An -c | tr -d ' ') == '211PNG\r\n032\n' ]]; then ok "qrencode writes PNG (StageX's doesn't: built here)"; else fail "qrencode's PNG"; fi
-if rrsync -help 2>&1 | grep -q 'rrsync' && /usr/sbin/sshd -V 2>&1 | grep -q OpenSSH; then ok "rrsync, sshd"; else fail "rrsync or sshd"; fi
+if grep -q rrsync <<<"$(rrsync -help 2>&1)" && grep -q OpenSSH <<<"$(/usr/sbin/sshd -V 2>&1)"; then ok "rrsync, sshd"; else fail "rrsync or sshd"; fi
 present=''
 for c in ssh scp sftp git-daemon git-shell ssh-agent; do command -v "$c" > /dev/null && present+=" $c"; done
 [[ -e /usr/lib/ssh/sftp-server ]] && present+=" sftp-server"
