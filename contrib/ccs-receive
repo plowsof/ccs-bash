@@ -20,8 +20,9 @@
 # The push goes live, except a file that fails: that one keeps its last good copy (a new one stays
 # out), IRC is told (alert.conf), and it exits 7 (the backend's rsync exits 7 too). A list that
 # isn't the pinned one, or no design.sha256, design or markdown.awk, refuses the whole push. Needs
-# bash, awk, grep, rsync (rrsync), coreutils, curl, zbarimg (zbar-tools), qrencode, git, python3
-# (as rrsync). Root-owned, 755.
+# bash, awk, grep, rsync (rrsync), coreutils, curl, qrencode, git, python3 (as rrsync), and for
+# reading QR codes libzbar, libpng, libturbojpeg and giflib (Debian: libzbar0 libpng16-16
+# libturbojpeg0 libgif7; no ImageMagick). Root-owned, 755.
 set -euo pipefail
 export LC_ALL=C
 staging=/var/lib/ccs-staging live=/var/lib/ccs-data conf=/etc/ccs-gate state=/var/lib/ccs-gate
@@ -65,7 +66,7 @@ refuse() {
 
 # The pages' and JSON's addresses, as written (pages() says what can be on a page at all), as
 # "file<TAB>address" lines; "file<TAB>!reason" for what the gate can't accept; "file<TAB>?qr<TAB>
-# base64" for each data: image, for zbarimg (below). An address is a run of 95 (standard) or 106
+# base64" for each data: image, for qrscan_py (below). An address is a run of 95 (standard) or 106
 # (integrated) base58 characters, tags and attributes included (a monero: link, an alt text),
 # entities read as a browser reads them (&#56; is 8). A byte that isn't ASCII, or a control
 # character, is read twice: dropped (a zero-width space mustn't split an address) and as a space
@@ -161,7 +162,7 @@ for f in sys.argv[1:]:
     if not re.match(r"[ \t\n\r]*[<\[{]", d):
         out.add(f + "\t!not text that starts as a page or JSON does (<, [ or {): a browser would show it as an image")
     d = ENT.sub(entity, re.sub(r"[\x80-\xff\x00-\x08\x0b\x0e-\x1f\x7f]", "\x01", d))
-    # each data: image (the QR codes: pages() allows them nowhere else) to zbarimg; not text
+    # each data: image (the QR codes: pages() allows them nowhere else) to qrscan_py; not text
     for m in QR.finditer(d): print(f + "\t?qr\t" + m.group(0)[22:])
     d = QR.sub(" ", d)
     start()
@@ -174,15 +175,118 @@ for f in sys.argv[1:]:
     for l in sorted(out): print(l)
 '
 
+# qrscan_py KIND IMAGE [inverted]: what libzbar reads in IMAGE, each code's text on a line; exit 1
+# if there is none, or IMAGE isn't a KIND its decoder reads. No ImageMagick, which picks a decoder
+# by the bytes (an SVG, a format with a decoder of its own to get wrong): KIND, the format its
+# name says, decoded by that format's own library to 8-bit grey (png: libpng, jpeg:
+# libturbojpeg, gif: giflib, every frame), its size checked before; then libzbar's scanner, as
+# zbarimg had it, and with "inverted", on nothing found, the image inverted (light on dark, which
+# phones read: zbarimg's -Stest-inverted). Python's ctypes: no compiled code of the gate's own.
+# --check: the libraries load. (A test's: with CCS_GATE_SCANLOG, each image read is noted there:
+# its kind and first bytes.)
+qrscan_py='
+import ctypes as C, os, sys
+L = lambda n: C.CDLL(n)
+if sys.argv[1:] == ["--check"]:
+    for n in ("libzbar.so.0", "libpng16.so.16", "libturbojpeg.so.0", "libgif.so.7"): L(n)
+    sys.exit(0)
+kind, path, inverted = sys.argv[1], sys.argv[2], sys.argv[3:] == ["inverted"]
+MAXPX = 40000000
+data = open(path, "rb").read(4 << 20)
+if os.environ.get("CCS_GATE_SCANLOG"):
+    with open(os.environ["CCS_GATE_SCANLOG"], "a") as f: f.write("".join(chr(b) if 32 < b < 127 else "%03o" % b for b in data[:4]) + " " + kind + "\n")
+P = C.POINTER
+def png():
+    lib = L("libpng16.so.16")
+    class Img(C.Structure):
+        _fields_ = [("opaque", C.c_void_p), ("version", C.c_uint32), ("width", C.c_uint32), ("height", C.c_uint32), ("format", C.c_uint32),
+                    ("flags", C.c_uint32), ("colormap_entries", C.c_uint32), ("warning_or_error", C.c_uint32), ("message", C.c_char * 64)]
+    lib.png_image_begin_read_from_memory.argtypes = [P(Img), C.c_char_p, C.c_size_t]
+    lib.png_image_finish_read.argtypes = [P(Img), C.c_void_p, C.c_void_p, C.c_int32, C.c_void_p]
+    lib.png_image_free.argtypes = [P(Img)]
+    im = Img(version=1)   # PNG_IMAGE_VERSION
+    if not lib.png_image_begin_read_from_memory(C.byref(im), data, len(data)): return []
+    w, h = im.width, im.height
+    if not 0 < w * h <= MAXPX: lib.png_image_free(C.byref(im)); return []
+    im.format = 0   # PNG_FORMAT_GRAY: any alpha laid on white, as a browser on a white page
+    buf, white = C.create_string_buffer(w * h), (C.c_ubyte * 3)(255, 255, 255)
+    if not lib.png_image_finish_read(C.byref(im), white, buf, w, None): return []
+    return [(w, h, buf.raw)]
+def jpeg():
+    lib = L("libturbojpeg.so.0")
+    lib.tjInitDecompress.restype = C.c_void_p
+    lib.tjDecompressHeader3.argtypes = [C.c_void_p, C.c_char_p, C.c_ulong] + [P(C.c_int)] * 4
+    lib.tjDecompress2.argtypes = [C.c_void_p, C.c_char_p, C.c_ulong, C.c_void_p, C.c_int, C.c_int, C.c_int, C.c_int, C.c_int]
+    lib.tjDestroy.argtypes = [C.c_void_p]
+    t = lib.tjInitDecompress(); w, h, ss, cs = C.c_int(), C.c_int(), C.c_int(), C.c_int()
+    try:
+        if lib.tjDecompressHeader3(t, data, len(data), C.byref(w), C.byref(h), C.byref(ss), C.byref(cs)) != 0: return []
+        if not 0 < w.value * h.value <= MAXPX: return []
+        buf = C.create_string_buffer(w.value * h.value)
+        if lib.tjDecompress2(t, data, len(data), buf, w.value, 0, h.value, 6, 0) != 0: return []   # TJPF_GRAY
+        return [(w.value, h.value, buf.raw)]
+    finally: lib.tjDestroy(t)
+def gif():
+    lib = L("libgif.so.7")
+    class Color(C.Structure): _fields_ = [("r", C.c_ubyte), ("g", C.c_ubyte), ("b", C.c_ubyte)]
+    class Map(C.Structure): _fields_ = [("count", C.c_int), ("bits", C.c_int), ("sort", C.c_bool), ("colors", P(Color))]
+    class Desc(C.Structure): _fields_ = [("left", C.c_int), ("top", C.c_int), ("width", C.c_int), ("height", C.c_int), ("interlace", C.c_bool), ("map", P(Map))]
+    class Saved(C.Structure): _fields_ = [("desc", Desc), ("raster", P(C.c_ubyte)), ("next", C.c_int), ("ext", C.c_void_p)]
+    class Gif(C.Structure):
+        _fields_ = [("swidth", C.c_int), ("sheight", C.c_int), ("res", C.c_int), ("bg", C.c_int), ("aspect", C.c_ubyte), ("map", P(Map)),
+                    ("count", C.c_int), ("image", Desc), ("saved", P(Saved)), ("next", C.c_int), ("ext", C.c_void_p), ("error", C.c_int),
+                    ("user", C.c_void_p), ("private", C.c_void_p)]
+    lib.DGifOpenFileName.argtypes = [C.c_char_p, P(C.c_int)]; lib.DGifOpenFileName.restype = P(Gif)
+    lib.DGifSlurp.argtypes = [P(Gif)]; lib.DGifCloseFile.argtypes = [P(Gif), P(C.c_int)]
+    err = C.c_int(); g = lib.DGifOpenFileName(os.fsencode(path), C.byref(err))
+    if not g: return []
+    try:
+        if not 0 < g.contents.swidth * g.contents.sheight <= MAXPX or lib.DGifSlurp(g) != 1: return []
+        out = []
+        for i in range(min(g.contents.count, 100)):
+            s = g.contents.saved[i]; w, h = s.desc.width, s.desc.height
+            m = s.desc.map or g.contents.map
+            if not (m and s.raster and 0 < w * h <= MAXPX): continue
+            grey = bytes((c.r * 299 + c.g * 587 + c.b * 114) // 1000 for c in m.contents.colors[:m.contents.count])
+            out.append((w, h, C.string_at(s.raster, w * h).translate(grey + b"\xff" * (256 - len(grey)))))
+        return out
+    finally: lib.DGifCloseFile(g, C.byref(err))
+Z = L("libzbar.so.0")
+Z.zbar_image_scanner_create.restype = Z.zbar_image_create.restype = C.c_void_p
+Z.zbar_image_set_format.argtypes = [C.c_void_p, C.c_ulong]
+Z.zbar_image_set_size.argtypes = [C.c_void_p, C.c_uint, C.c_uint]
+Z.zbar_image_set_data.argtypes = [C.c_void_p, C.c_void_p, C.c_ulong, C.c_void_p]
+Z.zbar_scan_image.argtypes = [C.c_void_p, C.c_void_p]
+Z.zbar_image_first_symbol.argtypes = Z.zbar_symbol_next.argtypes = Z.zbar_symbol_get_data.argtypes = Z.zbar_symbol_get_data_length.argtypes = [C.c_void_p]
+Z.zbar_image_first_symbol.restype = Z.zbar_symbol_next.restype = Z.zbar_symbol_get_data.restype = C.c_void_p
+Z.zbar_image_destroy.argtypes = [C.c_void_p]
+scanner = Z.zbar_image_scanner_create()
+def scan(w, h, grey):
+    img, buf = Z.zbar_image_create(), C.create_string_buffer(grey, len(grey))
+    Z.zbar_image_set_format(img, 0x30303859)   # Y800: 8-bit grey
+    Z.zbar_image_set_size(img, w, h); Z.zbar_image_set_data(img, buf, len(grey), None)
+    Z.zbar_scan_image(scanner, img)
+    out, s = [], Z.zbar_image_first_symbol(img)
+    while s: out.append(C.string_at(Z.zbar_symbol_get_data(s), Z.zbar_symbol_get_data_length(s))); s = Z.zbar_symbol_next(s)
+    Z.zbar_image_destroy(img)
+    return out
+found = []
+for w, h, grey in {"png": png, "jpeg": jpeg, "gif": gif}[kind]():
+    got = scan(w, h, grey)
+    if not got and inverted: got = scan(w, h, grey.translate(bytes(range(255, -1, -1))))
+    found += got
+for t in found: sys.stdout.buffer.write(t + b"\n")
+sys.exit(0 if found else 1)
+'
+qrscan() { CCS_GATE_SCANLOG=$([[ -e $state/scan.log ]] && echo "$state/scan.log") timeout 20 python3 -I -c "$qrscan_py" "$@"; }
+
 # qr FILE IMAGE: the addresses in every QR code in IMAGE as "FILE<TAB>address" lines (none if it
-# has no QR code). zbarimg reads it, as ccs-data, with a time limit; inverted codes (light on dark)
-# too, which it skips by default and phones read. Read as the format its name says (png:, jpeg:,
-# gif:): ImageMagick, under zbarimg, would otherwise pick a decoder by the bytes (an SVG, a format
-# with a decoder of its own to get wrong).
+# has no QR code). qrscan_py reads it, as ccs-data, with a time limit; inverted codes (light on
+# dark) too. Read as the format its name says.
 qr() {
     local out kind=${2##*.}
     case ${kind,,} in png) kind=png ;; jpg | jpeg) kind=jpeg ;; gif) kind=gif ;; *) return 1 ;; esac
-    out=$(timeout 20 zbarimg -q --raw -Stest-inverted -- "$kind:$2" 2> /dev/null) || return 1
+    out=$(qrscan "$kind" "$2" inverted 2> /dev/null) || return 1
     grep -oE '[0-9A-Za-z]+' <<<"$out" | awk -v f="$1" '(length($0) == 95 || length($0) == 106) && !/[0OIl]/ { print f "\t" $0; n++ } END { exit !n }'
 }
 
@@ -240,14 +344,13 @@ pixels() { timeout 20 python3 -I -c "$pixels_py" < "$1" 2> /dev/null; }
 
 # qrdata FILE IMAGE: "FILE<TAB>address" if IMAGE is exactly the QR code of one address that
 # qrencode makes (as ccs-front-bash does: qrencode -s 10 "monero:<address>"), pixel for pixel;
-# else 1. zbarimg finding a good address isn't enough: the backend draws these, and one
-# could hold a good QR code beside a piece of another. The backend's bytes reach zbarimg only
-# once pixels_py has read them as a plain PNG, and then as png: (never a format ImageMagick
-# picks by the bytes).
+# else 1. qrscan_py finding a good address isn't enough: the backend draws these, and one
+# could hold a good QR code beside a piece of another. The backend's bytes reach a decoder other
+# than pixels_py's only once pixels_py has read them as a plain PNG, and then libpng's.
 qrdata() {
     local text ref got
     got=$(pixels "$2") && [[ $got ]] || return 1
-    text=$(timeout 20 zbarimg -q --raw -- "png:$2" 2> /dev/null) || return 1
+    text=$(qrscan png "$2" 2> /dev/null) || return 1
     [[ $text =~ ^monero:[1-9A-HJ-NP-Za-km-z]+$ && (${#text} == 102 || ${#text} == 113) ]] || return 1
     ref=$(qrencode -s 10 -o - -- "$text" | pixels /dev/stdin) && [[ $ref == "$got" ]] || return 1
     printf '%s\t%s\n' "$1" "${text#monero:}"
@@ -616,7 +719,7 @@ forge_up() {
 
 # repo_images: "blob path" for each proposal image in the fetched repository, as git ls-tree has
 # them: a backend that isn't the one it was can't add an image of its own (a QR code cut into
-# pieces, shown side by side, that zbarimg reads in none of them)
+# pieces, shown side by side, that a QR reader reads in none of them)
 repo_images() {
     git -C "$git" ls-tree -r refs/heads/ccs -- images/ | awk -F '\t' '{ split($1, m, " ") } m[2] == "blob" { print m[3] " " $2 }'
 }
@@ -797,7 +900,8 @@ list=$conf/subaddresses.txt
 command -v qrencode > /dev/null || refuse "it has no qrencode to check the QR codes with (apt install qrencode)" qrencode
 command -v python3 > /dev/null || refuse "it has no python3 to check the pages with" python3
 command -v git > /dev/null || refuse "it has no git to read the proposals repository with (apt install git)" git
-command -v zbarimg > /dev/null || refuse "it has no zbarimg to read the QR codes with (apt install zbar-tools)" zbarimg
+python3 -I -c "$qrscan_py" --check > /dev/null 2>&1 \
+    || refuse "it can't load libzbar, libpng, libturbojpeg and giflib to read the QR codes with (apt install libzbar0 libpng16-16 libturbojpeg0 libgif7)" zbar
 # the design's files, "sha256  path" as sha256sum writes them (./ and binary-mode * dropped);
 # several releases' may be in it
 [[ -s $conf/design.sha256 ]] || refuse "it has no $conf/design.sha256 (the design release's files)" design
