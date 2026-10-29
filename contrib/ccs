@@ -13,6 +13,8 @@
 #                                 what troubleshooting.md says of them
 #   ccs status                    the loop, the last run, the wallet, the forge, the backup, the
 #                                 web server, the releases
+#   ccs config:check              every file setup needs (contrib/examples/backend): there, as
+#                                 setup makes it, filled in, agreeing, and answering
 #
 # It reads the state as ccs, its owner (root never opens a file another account controls: it
 # could be a link to any file), prints no password or key, and changes nothing else.
@@ -266,6 +268,118 @@ wallet_line() {
     echo "${a:0:6}…${a: -4} at height $h$( [[ $a == "$(conf WALLET_ADDRESS '')" ]] || echo ", NOT the config's WALLET_ADDRESS")"
 }
 
+# config:check: every file the backend needs (contrib/examples/backend), as setup makes it, and
+# whether its parts agree and answer. Reads only; never prints a password, key or alert URL.
+# CCS_CHECK_ROOT: the files under another folder, CCS_CHECK_OFFLINE=1: nothing asked (the tests)
+# shellcheck disable=SC2015  # (ok, bad and warn always succeed: A && ok || bad is if-then-else)
+cmd_check() {
+    local root=${CCS_CHECK_ROOT:-} cdir=${CCS_COMPOSE_DIR:-/opt/ccs-bash/contrib/docker/backend} fails=0 warns=0
+    local env wconf aconf url port host hostmode='' f v
+    ok() { echo "ok   $*"; }
+    bad() { echo "FAIL $*"; fails=$((fails + 1)); }
+    warn() { echo "warn $*"; warns=$((warns + 1)); }
+    # kv FILE KEY: KEY's value in FILE (KEY=value lines; quotes dropped), the last one
+    kv() { local v; v=$(sed -n "s/^$2=//p" "$root$1" 2> /dev/null | tail -n 1); v=${v%\"}; v=${v#\"}; printf '%s' "$v"; }
+    # file PATH OWNER GROUP MODE: there, owned as setup makes it, its mode no looser than MODE
+    # (a stricter one is fine), no <placeholder> left
+    file() {
+        local p=$root$1 o g m n r=0
+        [[ -e $p ]] || { bad "$1: missing (contrib/examples/backend$1)"; return 1; }
+        read -r o g m <<<"$(stat -c '%U %G %a' "$p")"
+        if [[ $CCS_AS != none && "$o $g" != "$2 $3" ]]; then bad "$1: owned by $o:$g, not $2:$3"; r=1; fi
+        if ((8#$m & ~8#$4)); then bad "$1: mode $m, looser than $4"; r=1; fi
+        # (the keys named, never their values)
+        n=$(grep -vE '^\s*#' "$p" | grep -cE '<[^>]+>|=change-me$|^WALLET_ADDRESS=4\.\.\.$' || true)
+        if ((n)); then bad "$1: $n line(s) still to fill in ($(grep -vE '^\s*#' "$p" | grep -E '<[^>]+>|=change-me$|=4\.\.\.$' | cut -d= -f1 | sort -u | paste -sd ' ' -))"; r=1; fi
+        return "$r"
+    }
+    CCS_AS=${CCS_AS:-}
+    env=/${cdir#/}/.env wconf=/etc/ccs-wallet/wallet-rpc.conf aconf=/etc/ccs/alert.conf
+    echo "== the files"
+    file /etc/ccs/ccs.conf root ccs 640 && ok "/etc/ccs/ccs.conf"
+    file $wconf root ccs-wallet 640 && ok "$wconf"
+    file $aconf root ccs 640 && ok "$aconf"
+    file /etc/ccs/trusted-signers root root 644 && ok "/etc/ccs/trusted-signers"
+    for f in subaddresses.txt subaddresses.txt.asc subaddresses.txt.key.asc subaddresses.txt.pin list-signers; do
+        file "/etc/ccs-front/$f" root root 644 && ok "/etc/ccs-front/$f"
+    done
+    file /var/lib/ccs/.ssh/id_ed25519 ccs ccs 600 && ok "/var/lib/ccs/.ssh/id_ed25519 (the push key)"
+    file /var/lib/ccs/.ssh/known_hosts ccs ccs 644 && ok "/var/lib/ccs/.ssh/known_hosts"
+    if [[ -e $root$env ]]; then
+        file "$env" root root 600 && ok "$env (the compose)"
+        file /etc/ccs/backup/id_ed25519 ccs ccs 600 && ok "/etc/ccs/backup/id_ed25519 (the backup key)"
+        file /etc/ccs/backup/known_hosts ccs ccs 600 && ok "/etc/ccs/backup/known_hosts"
+        [[ $(kv "$env" COMPOSE_FILE) == *compose.host.yml* ]] && hostmode=1
+    else
+        warn "no $env: the host setup (setup.md), not the compose; its run scripts aren't checked here"
+    fi
+
+    echo "== they agree"
+    url=$(kv /etc/ccs/ccs.conf RPC_URL) port=$(kv $wconf rpc-bind-port)
+    host=${url#*://} host=${host%%[:/]*}
+    [[ $url == *":$port/"* ]] && ok "RPC_URL's port is wallet-rpc.conf's ($port)" || bad "RPC_URL's port isn't wallet-rpc.conf's rpc-bind-port ($port)"
+    [[ $(kv $wconf rpc-login) == "$(kv /etc/ccs/ccs.conf RPC_USER):$(kv /etc/ccs/ccs.conf RPC_PASSWORD)" ]] \
+        && ok "RPC_USER and RPC_PASSWORD are wallet-rpc.conf's rpc-login" || bad "RPC_USER:RPC_PASSWORD isn't wallet-rpc.conf's rpc-login"
+    v=$(kv /etc/ccs/ccs.conf WALLET_ADDRESS)
+    if [[ $v =~ ^4[1-9A-HJ-NP-Za-km-z]{94}$ ]]; then ok "WALLET_ADDRESS: a mainnet address"
+    elif [[ $v =~ ^[9A][1-9A-HJ-NP-Za-km-z]{94}$ ]]; then warn "WALLET_ADDRESS: a testnet address"
+    else bad "WALLET_ADDRESS: not a main address (95 characters, 4...)"; fi
+    if [[ -e $root$env ]]; then
+        [[ $(kv "$env" WALLET_PORT) == "${port:-x}" || ( -z $(kv "$env" WALLET_PORT) && $port == 18182 ) ]] \
+            && ok ".env's WALLET_PORT is the wallet's port (its healthcheck)" || bad ".env's WALLET_PORT isn't rpc-bind-port ($port): the wallet never shows healthy, ccs-bash never starts"
+        for v in CCS_BASH_IMAGE CCS_FRONT_IMAGE WALLET_IMAGE; do [[ $(kv "$env" $v) =~ ^sha256:[0-9a-f]{64}$ ]] || bad ".env's $v: not an image ID (sha256:...)"; done
+        if [[ $hostmode ]]; then
+            [[ $host == 127.0.0.1 || $host == localhost ]] && ok "RPC_URL on 127.0.0.1 (compose.host.yml)" || bad "RPC_URL: with compose.host.yml, http://127.0.0.1:$port/json_rpc"
+        else
+            [[ $host == wallet-rpc ]] && ok "RPC_URL: wallet-rpc, on the compose's wallet network" || bad "RPC_URL: http://wallet-rpc:$port/json_rpc (or compose.host.yml)"
+            # what a container can't reach on this machine's 127.0.0.1
+            [[ $(kv $wconf daemon-address) == 127.0.0.1:* || $(kv $wconf daemon-address) == localhost:* ]] \
+                && bad "daemon-address on 127.0.0.1: the wallet's container can't reach it (compose.host.yml, or another address)"
+            grep -qE '^(ALERT_URL|WATCH_PROXY)=.*(127\.0\.0\.1|localhost)' "$root$aconf" 2> /dev/null \
+                && bad "alert.conf: the bot or a proxy on 127.0.0.1: the watch's container can't reach it (compose.host.yml)"
+        fi
+    fi
+    [[ $(kv $aconf SUBADDRESSES) == /etc/ccs-front/subaddresses.txt ]] && ok "alert.conf's SUBADDRESSES" || warn "alert.conf: no SUBADDRESSES=/etc/ccs-front/subaddresses.txt (an alert won't name a foreign address)"
+    [[ $(kv $aconf WATCH_PROXY) ]] && ok "alert.conf's WATCH_PROXY" || warn "alert.conf: no WATCH_PROXY (the web server can tell the watcher by its address)"
+
+    [[ ${CCS_CHECK_OFFLINE:-} ]] && { echo "($fails failed, $warns warnings; nothing asked: CCS_CHECK_OFFLINE)"; ((fails == 0)); return; }
+    echo "== they answer"
+    local in=() user pass a k
+    if compose; then in=(docker exec -i "$(container ccs-bash)"); fi
+    user=$(kv /etc/ccs/ccs.conf RPC_USER) pass=$(kv /etc/ccs/ccs.conf RPC_PASSWORD)
+    rq() { printf 'user = "%s:%s"\n' "$user" "$pass" | "${in[@]}" curl -fsS -m 20 --digest -K - "$url" -d "{\"jsonrpc\":\"2.0\",\"id\":\"0\",\"method\":\"$1\"$2}"; }
+    if a=$(rq get_address ',"params":{"account_index":0}' | jq -er .result.address); then
+        [[ $a == "$(kv /etc/ccs/ccs.conf WALLET_ADDRESS)" ]] && ok "the wallet answers, with WALLET_ADDRESS" || bad "the wallet answers with another address than WALLET_ADDRESS"
+        # view-only: asking for its spend key must fail (the answer is never printed)
+        k=$(rq query_key ',"params":{"key_type":"spend_key"}' | jq -r '.result.key // empty' 2> /dev/null || true)
+        if [[ -z $k ]]; then ok "the wallet is view-only"
+        elif [[ $(kv /etc/ccs/ccs.conf WALLET_ADDRESS) == [9A]* ]]; then warn "the wallet can spend (a testnet wallet: allowed)"
+        else bad "the wallet can spend: use a view-only one (handover, 1)"; fi
+    else bad "the wallet doesn't answer at RPC_URL"; fi
+    v=$(kv /etc/ccs/ccs.conf REPOSITORY_URL)
+    curl -fsS -m 20 -o /dev/null "$v" && ok "REPOSITORY_URL answers" || bad "REPOSITORY_URL doesn't answer ($v)"
+    v=$(runuser -u ccs-git -- git -C "$(kv /etc/ccs/ccs.conf PROPOSALS_DIR)" remote get-url origin 2> /dev/null || true)
+    [[ $v ]] && ok "the proposals checkout, from $v" || bad "PROPOSALS_DIR: not a checkout ccs-git can read"
+    if [[ -e $env ]]; then
+        local who kh
+        for who in CCS_PUSH:/var/lib/ccs/.ssh/known_hosts CCS_BACKUP:/etc/ccs/backup/known_hosts; do
+            v=$(kv "$env" "${who%%:*}") kh=${who#*:} host=${v#*@}
+            if timeout 10 bash -c ": > /dev/tcp/$host/22" 2> /dev/null; then ok "${who%%:*}: $host answers on 22"; else bad "${who%%:*}: $host doesn't answer on 22"; fi
+            ssh-keygen -F "$host" -f "$kh" > /dev/null 2>&1 && ok "${who%%:*}: $host's host key in $kh" || bad "${who%%:*}: no host key for $host in $kh"
+        done
+        local sigs=${CCS_SIGS_REPO:-/opt/ccs-sigs} id
+        for v in CCS_BASH_IMAGE CCS_FRONT_IMAGE; do
+            id=$(kv "$env" $v); id=${id#sha256:}
+            docker image inspect "sha256:$id" > /dev/null 2>&1 || { bad ".env's $v: no such image here"; continue; }
+            grep -rqs --include='*SHA256SUMS*' "^$id " "$sigs" && ok ".env's $v: attested in ccs-sigs (contrib/release/verify checks by whom)" \
+                || bad ".env's $v: in no attestation in $sigs (a dev build?)"
+        done
+        docker image inspect "$(kv "$env" WALLET_IMAGE)" > /dev/null 2>&1 && ok ".env's WALLET_IMAGE is here" || bad ".env's WALLET_IMAGE: no such image here"
+    fi
+    echo "($fails failed, $warns warnings)"
+    ((fails == 0))
+}
+
 case ${1:-} in
     proposal:process) cmd_process ;;
     proposal:update) cmd_ideas ;;
@@ -274,5 +388,6 @@ case ${1:-} in
     deposit:list) cmd_deposits "${2:-}" ;;
     log) cmd_log "${2:-}" ;;
     status) cmd_status ;;
+    config:check) cmd_check ;;
     *) sed -n '2,/^set -euo/{/^#/s/^# \{0,1\}//p}' "$0" | sed '/^set /d'; exit 1 ;;
 esac
