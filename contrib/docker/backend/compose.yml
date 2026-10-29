@@ -62,7 +62,9 @@ services:
     user: "0:0"
     entrypoint: [*step, "init"]
     environment:
-      CCS_UIDS: "pull=${GIT_UID:?} ccs-bash=${CCS_UID:?} backup=${CCS_UID} front=${FRONT_UID:?} push=${CCS_UID} watch=${CCS_UID}"
+      CCS_UIDS: "pull=${GIT_UID:?} ccs-bash=${CCS_UID:?} backup=${SEND_UID:?} front=${FRONT_UID:?} push=${PUSH_UID:?} watch=${WATCH_UID:?}"
+      CCS_NOW_GID: ${WALLET_UID:?}
+      CCS_WATCH_GID: ${WATCH_UID}
     volumes: [*run]
     restart: "no"
     profiles: [init]
@@ -81,7 +83,7 @@ services:
               "--tx-notify", "/usr/local/bin/ccs-notify %s"]
     # answering: its RPC port open (bash's /dev/tcp; the image has no curl)
     healthcheck:
-      test: ["CMD", "bash", "-c", ": > /dev/tcp/127.0.0.1/${WALLET_PORT:-18182}"]
+      test: ["CMD", "bash", "-c", ": > /dev/tcp/127.0.0.1/${WALLET_PORT:-18082}"]
       interval: 10s
       timeout: 5s
       retries: 30
@@ -94,7 +96,7 @@ services:
   pull:
     <<: *hardened
     image: ${CCS_BASH_IMAGE}
-    # the forge only (the default network: out, nothing in)
+    # out to the forge (the default network: out, nothing in; no egress filter)
     user: "${GIT_UID}"
     entrypoint: [*step, "pull"]
     environment: &every
@@ -128,12 +130,14 @@ services:
   backup:
     <<: *hardened
     image: ${CCS_BASH_IMAGE}
-    # the backup machine only (ssh)
-    user: "${CCS_UID}"
+    # its own user (its key, its sums: no other stage's); out over ssh (no egress filter: any
+    # address, like every stage with a way out)
+    user: "${SEND_UID}"
     entrypoint: [*step, "backup"]
     environment:
       <<: *every
       CCS_BACKUP: ${CCS_BACKUP:?ccs-backup@<the backup machine>}
+      CCS_BACKUP_PORT: ${CCS_BACKUP_PORT:-22}
     healthcheck: {<<: *health, test: ["CMD", *step, "health", "backup"]}
     volumes:
       - /etc/passwd:/etc/passwd:ro
@@ -164,17 +168,18 @@ services:
   push:
     <<: *hardened
     image: ${CCS_BASH_IMAGE}
-    # the web server only (ssh)
-    user: "${CCS_UID}"
+    # its own user (its key, the copy of what was pushed, each run's result); out over ssh
+    user: "${PUSH_UID}"
     entrypoint: [*step, "push"]
     environment:
       <<: *every
       CCS_PUSH: ${CCS_PUSH:?ccs-data@<the web server>}
+      CCS_PUSH_PORT: ${CCS_PUSH_PORT:-22}
     healthcheck: {<<: *health, test: ["CMD", *step, "health", "push"]}
     volumes:
       - /etc/passwd:/etc/passwd:ro
-      # the push key and known_hosts, in the ccs user's home as on the host
-      - ${CCS_HOME:-/var/lib/ccs}/.ssh:${CCS_HOME:-/var/lib/ccs}/.ssh:ro
+      # the push key and the web server's host key (id_ed25519, known_hosts; ccs-push, 600)
+      - ${CCS_PUSH_KEYS:-/etc/ccs/push}:/etc/ccs/push:ro
       # the folder above the site: ccs-front-bash replaces www/site each run, and a mount of it
       # would keep the one replaced (empty, once deleted)
       - /var/lib/ccs/www:/var/lib/ccs/www:ro
@@ -186,17 +191,20 @@ services:
   watch:
     <<: *hardened
     image: ${CCS_BASH_IMAGE}
-    user: "${CCS_UID}"
+    # its own user: its state and the results it counts out of the other stages' reach
+    user: "${WATCH_UID}"
     entrypoint: [*step, "watch", "${CCS_SITE_URL:?the site's address, https://...}"]
-    environment: *every
+    environment:
+      <<: *every
+      CCS_WATCH_STATE: /var/lib/ccs/watch
     healthcheck: {<<: *health, test: ["CMD", *step, "health", "watch"]}
     volumes:
       - ${CCS_ALERT_CONF:-/etc/ccs/alert.conf}:/etc/ccs/alert.conf:ro
       # alert.conf's SUBADDRESSES
       - /etc/ccs-front:/etc/ccs-front:ro
       - /var/lib/ccs/pushed:/var/lib/ccs/pushed:ro
-      # forge-ok, read; its own state, written
+      # forge-ok, read; its own state, written (ccs-watch's)
       - /var/lib/ccs/state:/var/lib/ccs/state:ro
-      - /var/lib/ccs/state/watch:/var/lib/ccs/state/watch
+      - ${CCS_WATCH_DIR:-/var/lib/ccs/watch}:/var/lib/ccs/watch
       - ${CCS_PULL_OK:-/var/lib/ccs/pull-ok}:/var/lib/ccs/pull-ok:ro
       - *run

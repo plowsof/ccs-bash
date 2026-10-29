@@ -31,7 +31,7 @@ reads this page from the same checkout, so its hints are the release's.
 | | the update loop and the wallet | `systemctl status ccs-bash ccs-wallet-rpc`, `journalctl -u ccs-bash -u ccs-wallet-rpc -n 50` |
 | | what the site was made from | `/var/lib/ccs/out/*.json` (ccs-bash's JSON), `/var/lib/ccs/www/site/` (the pages pushed) |
 | | the state: which proposal has which subaddress | `/var/lib/ccs/state/proposals.csv` (the one file nothing can make again); `deposits.csv` and `ideas.cache` beside it are caches |
-| **web server** | the gate: each push, what it held back and why | `journalctl -t ccs-gate -n 50` (and `/var/log/ccs-gate.log` if created) |
+| **web server** | the gate: each push, what it held back and why | `journalctl -t ccs-gate -n 50` (and `/var/log/ccs-gate.log` if created); in Docker `/var/log/ccs-web/ccs-gate.log` |
 | | the live site, and its settings | `/var/lib/ccs-data/` (live), `/etc/ccs-gate/` (the list, `allowed`, the design, `markdown.awk`, `proposals.conf`) |
 | **backup machine** | the copies of the state | `ls -l /var/lib/ccs-backup/` (`proposals-<time>.csv`, every version; `deposits.csv`, one copy) |
 
@@ -64,7 +64,7 @@ run ends with `ccs-watch: the N pages on https://… and the M other pages and f
 ## A proposal's page isn't updating (old text, old totals)
 
 The gate held it back; its last good copy stays live. On the **web server**,
-`journalctl -t ccs-gate -n 50` says why:
+`journalctl -t ccs-gate -n 50` says why (in Docker: `tail -n 50 /var/log/ccs-web/ccs-gate.log`):
 
 | The gate says | Meaning | Fix |
 |---|---|---|
@@ -156,7 +156,10 @@ A title with a long run of address characters is shortened (`9ZqZqZ…ZqZq`).
 ## Doing things by hand
 
 On the backend, as root. **Pause the loop** before changing anything it reads; check one run
-before resuming.
+before resuming. The commands below are the host setup's; in Docker ([docker](docker.md),
+running it): pause with `docker compose stop pull` (then `ccs status` until no run is going),
+resume with `docker compose start pull`, and `ccs proposal:process` starts one run whether
+paused or not.
 
 | Job | How |
 |---|---|

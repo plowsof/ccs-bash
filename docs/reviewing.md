@@ -135,7 +135,7 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
 
 - [`contrib/ccs-receive`](../contrib/ccs-receive), the push key's forced command, as `ccs-data`,
   one push at a time (`flock`), into staging, a copy of the live site (rrsync `-wo -no-del -munge`).
-  Refuses the whole push without its pinned list, `zbarimg`, `qrencode`, `python3`, `git`,
+  Refuses the whole push without its pinned list, the QR reader's libraries, `qrencode`, `python3`, `git`,
   `design.sha256`, the design, `markdown.awk` or `proposals.conf`, or for a control character in a
   file name. Then, per file:
   - `fetch`: the proposals repository's last two commits (the last fetch if it can't);
@@ -150,7 +150,7 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
     non-ASCII or control character read both as nothing and as a space; in groups split by up to
     three spaces or punctuation, by its checksum: `check_py`, a budget of checksums and time a
     file), the JSON as JSON too (`json_py`, its strings read the same way); every `data:` image (`qrdata`: first read as a plain PNG by
-    `pixels_py`, only then by zbarimg, as `png:`: one listed address, the pixels `qrencode -s 10`'s
+    `pixels_py`, only then by `qrscan_py` (libzbar on libpng's pixels): one listed address, the pixels `qrencode -s 10`'s
     of it; each image read once, within 5 minutes, the donation boxes' too); pages and JSON start with `<`, `[` or `{`;
   - `changes`: any other file is the design's (`design.sha256`), a proposal image the repository
     has at that path (`repo_images`: `git hash-object` against `ls-tree`; its QR codes checked),
@@ -175,7 +175,7 @@ key; its `.pin` (sha256 and key) is what each machine trusts, installed by hand 
 | 5. The page holds them | ccs-front-bash `lib/pages.jq`, the donation box | the donation box gets that address and that QR code, else the run stops | the run stops |
 | 6. The web server's list is the pinned one | `contrib/ccs-receive`, before the push is received | the gate's own copy (installed by hand) is the one its `.pin` names | every push refused, IRC told |
 | 7. Every address on every page is on the list | `contrib/ccs-receive` `scan` (`scan_py`, `json_py`) | every 95- or 106-character address in a page or JSON, as written (entities read, a non-ASCII character as nothing and as a space), is a line of the list or in `allowed` | that file held back, its last good copy stays, IRC told |
-| 8. Every QR code is of a listed address | `contrib/ccs-receive` `qrdata` (`pixels_py`) | each `data:` image is, pixel for pixel, `qrencode -s 10` of the `monero:` address zbarimg reads in it, and that address goes through step 7 | held back |
+| 8. Every QR code is of a listed address | `contrib/ccs-receive` `qrdata` (`pixels_py`) | each `data:` image is, pixel for pixel, `qrencode -s 10` of the `monero:` address libzbar reads in it, and that address goes through step 7 | held back |
 | 9. Addresses only where the design puts them | `contrib/ccs-receive` `pages` (`pages_py`, the `address` and `qr` slots) | a page is the design's, filled: a whole address can only be in the donation box's slots, each one address; one in groups is found by `scan` (any slot), by its checksum | held back |
 | 10. What is live is what was pushed | `contrib/ccs-watch`, the page comparison (`differs`) | the live donation pages (and others at random) byte for byte; a live address not on the list is named in the alert | IRC told |
 | 11. The visitor | the Verify page (`parts/verify.html`, filled by `check_addresses`) | the wallet's address and view key, and where they were published: a view-only copy of the wallet says whether an address is its own (`get_address_index`) | the visitor doesn't pay |

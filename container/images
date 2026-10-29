@@ -16,6 +16,24 @@ git                        stagex/core-git@sha256:b416d4b29eb7c3b5ebcb4906ebce50
 rsync                      stagex/user-rsync@sha256:17962b9271cc6134c1aa5edc6a3fafe18e27bdc8786f1fd400bbf82208fa2fb4
 openssh                    stagex/user-openssh@sha256:0881c9ba25e4f5d7efabbb639a6a2e4ad25847d6de42738f56e44cfa60081f38
 xxhash                     stagex/core-xxhash@sha256:630d2e562bdb65c3006d481bbc8c093f39cc378a8fd64084865fe966360ce208
+# the gate's image (gate.Dockerfile, the web server compose: contrib/docker/web): python and
+# libffi (the page checks, rrsync, ctypes), GNU userland as the gate was written for, the image
+# libraries its QR reader decodes with
+python                     stagex/core-python@sha256:4ad7a54356440c3cb09cac8c256ce30f000838cc9e5c6e9863016faa8ca997a7
+libffi                     stagex/core-libffi@sha256:9970a8f65b70569ed6b33f39f8895c4cc62de1bd1a79166609a770e160101d9f
+coreutils                  stagex/core-coreutils@sha256:4941d68c446516fbe639dc711d6aad2c662f3899abf56aa5a936764f79da4d1f
+findutils                  stagex/core-findutils@sha256:d13601b0ff403c44bc5a6504ebe1215302de88de95ba1a7a4fdaf3b4991c5350
+grep                       stagex/core-grep@sha256:9622f4f6cb5e4a897782573e7a7287ed2cc2e8e36ea4140cc2731530aec9f391
+sed                        stagex/core-sed@sha256:fa6fcaa2f37d66045b3677d56695b5ca5fa33748d5f816716b02af5caed72c7a
+gawk                       stagex/core-gawk@sha256:0e66dcf083a4de152d7b710bdd0624887959d5fe0fb74949b5d76b59a09bf52e
+diffutils                  stagex/core-diffutils@sha256:41cd16b99eac8acae840912cefa728210bef1a759b7e2696c284382e75183e38
+tar                        stagex/core-tar@sha256:2f799a1b404cbaf831e2bf26f3a0af06b94100dbf75b0f39522fd30f6f715ddd
+util-linux                 stagex/core-util-linux@sha256:3fb52dc65ef1c441de100512bc980bdcb5127cbd3f41e37dbff39d5743d9ab65
+acl                        stagex/core-acl@sha256:391bb96f0b9cdcf1b8b31c3a47f53f47a71b1e617b70e72cd301c152a15c6a12
+attr                       stagex/core-attr@sha256:0bc3969c19f015f6408b7b952abca973f745e066120554f77038ea3d52f6d061
+libpng                     stagex/core-libpng@sha256:60ad8b2685cdc0766fa476b63855a22a0dc6f69998fb697f9d3a783e957e4785
+libjpeg                    stagex/core-libjpeg@sha256:c811a528bd8393a3d8afdb6e53c66f1fe1750ef09b1e7d06200d95cc59422805
+giflib                     stagex/core-giflib@sha256:3456d97c680a39090899fa028d50818356f536048cc1431a2ecc67f2af04eec2
 # the builder (builder.Dockerfile): BuildKit, and runc with its library for the RUN steps
 buildkit                   stagex/user-buildkit@sha256:91bff9810facddaa795fe3173d190b25b1919bd4eb21dc8e81ce4d632161faa7
 runc                       stagex/user-runc@sha256:8bbf5810f80422827c085f653aecbdf3c4f0b673f0c27129e634379177443857
