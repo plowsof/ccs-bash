@@ -121,6 +121,7 @@ the host and gets Debian's security updates automatically.
 - [Setup](docs/setup.md): dependencies, installing step by step, backing up the state
 - [The backend in Docker](docs/docker.md): the update and ccs-watch as one container a stage (its own user, network, folders and secret) and monero-wallet-rpc, with docker compose; its design: [docker-design.svg](docs/docker-design.svg); and [the web server's side](docs/docker.md#the-web-server-in-docker) (the gate and the backup receiver behind their own sshd, from one attested image; nginx on the host)
 - [Two machines](docs/two-machines.md): the backend pushes, the web server only receives; the gate, the alerts, the theme
+- [Admin access](docs/admin-access.md): your own ssh to the machines: a VPN or an allowlist, the risks, a way back in
 - [The pinned image](docs/image.md): how B is built and checked, changing the pin, releases
 - [Attesting a release](contrib/release/README.md): rebuild a release, sign what came out into ccs-sigs, as Feather Wallet does
 - [When something is wrong](docs/troubleshooting.md): what the log lines mean
