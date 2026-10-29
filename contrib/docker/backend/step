@@ -29,6 +29,8 @@
 # (journalctl -t ccs; ccs log and ccs status read it).
 set -uo pipefail
 R=${CCS_RUN:-/run/ccs}
+# the push's and the backup's ports: numbers (they go into an ssh command line)
+for p in "${CCS_PUSH_PORT:-22}" "${CCS_BACKUP_PORT:-22}"; do [[ $p =~ ^[1-9][0-9]{0,4}$ ]] || { echo "step: a port that isn't one: $p" >&2; exit 2; }; done
 EVERY=${CCS_EVERY:-120}
 STAGES="pull ccs-bash backup front push"
 stage=${1:?STAGE: init $STAGES}

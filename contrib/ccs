@@ -362,10 +362,13 @@ cmd_check() {
     [[ $v ]] && ok "the proposals checkout, from $v" || bad "PROPOSALS_DIR: not a checkout ccs-git can read"
     if [[ -e $env ]]; then
         local who kh
+        local p name
         for who in CCS_PUSH:/var/lib/ccs/.ssh/known_hosts CCS_BACKUP:/etc/ccs/backup/known_hosts; do
-            v=$(kv "$env" "${who%%:*}") kh=${who#*:} host=${v#*@}
-            if timeout 10 bash -c ": > /dev/tcp/$host/22" 2> /dev/null; then ok "${who%%:*}: $host answers on 22"; else bad "${who%%:*}: $host doesn't answer on 22"; fi
-            ssh-keygen -F "$host" -f "$kh" > /dev/null 2>&1 && ok "${who%%:*}: $host's host key in $kh" || bad "${who%%:*}: no host key for $host in $kh"
+            v=$(kv "$env" "${who%%:*}") kh=${who#*:} host=${v#*@} p=$(kv "$env" "${who%%:*}_PORT") p=${p:-22}
+            # (known_hosts names a host on another port than 22 as [host]:port)
+            name=$host; [[ $p == 22 ]] || name="[$host]:$p"
+            if timeout 10 bash -c ": > /dev/tcp/$host/$p" 2> /dev/null; then ok "${who%%:*}: $host answers on $p"; else bad "${who%%:*}: $host doesn't answer on $p"; fi
+            ssh-keygen -F "$name" -f "$kh" > /dev/null 2>&1 && ok "${who%%:*}: $name's host key in $kh" || bad "${who%%:*}: no host key for $name in $kh"
         done
         local sigs=${CCS_SIGS_REPO:-/opt/ccs-sigs} id
         for v in CCS_BASH_IMAGE CCS_FRONT_IMAGE; do
