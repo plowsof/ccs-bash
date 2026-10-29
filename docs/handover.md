@@ -88,12 +88,16 @@ for each in turn, or wallet-rpc's `generate_from_keys` with `address`, `viewkey`
 (kept in the wallet's keys file). Moving from ccs-back, `compare-deposits` (step 2) shows whether
 the wallet found every deposit ccs-back had.
 
-Why 1, not more: a known monero limit, not abused so far. A payment to a subaddress within
-the lookahead makes the wallet create every one up to it, and look a lookahead further. Anyone can
-pay a listed address, so dust payments can grow the wallet's cache without limit (the bigger the
-lookahead, the cheaper). 1 is enough, as ccs-bash creates a proposal's subaddress before showing
-it. ccs-bash keeps the list from being used up (a new proposal gets the index after the state's
-highest), not the cache.
+Why 1, not more: a payment to a subaddress within the lookahead makes the wallet create every one
+up to it, and look a lookahead further, so a small lookahead keeps how many subaddresses the
+wallet makes small; 1 is enough, as ccs-bash creates a proposal's subaddress before showing it.
+What it doesn't bound (measured on regtest, `tests/regtest.sh`): a wallet made from its keys
+keeps the default table it was made with (200 subaddresses deep in account 0), whatever `set_subaddress_lookahead`
+says afterwards, so it still sees payments up to 200 past the last one; and every payment, even
+one piconero to a proposal's own address, adds about 0.5 KB to the wallet's cache. Nothing in the
+wallet limits that: only the fee each payment costs (a known monero limit, not abused so far).
+ccs-bash keeps the list from being used up (a new proposal gets the index after the state's
+highest), and counts nothing paid to a subaddress before it was handed out, not the cache.
 
 ## 2. ccs-bash and its state (the backend)
 
