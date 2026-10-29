@@ -32,9 +32,14 @@ STATE_DIR=$(conf STATE_DIR /var/lib/ccs/state)
 OUTPUT_DIR=$(conf OUTPUT_DIR /var/lib/ccs/out)
 PROPOSALS_DIR=$(conf PROPOSALS_DIR /var/lib/ccs/proposals)
 read_ccs() { "${as_ccs[@]}" cat -- "$1"; }
-# the backend compose (docs/docker.md): its run folder, when the host's loop isn't running
+# the backend compose (docs/docker.md): its run folder, and its containers running (or, all of
+# them stopped, the host's loop not running either)
 RUN_DIR=${CCS_RUN_DIR:-/var/lib/ccs/run}
-compose() { [[ -d $RUN_DIR/push ]] && ! systemctl is-active -q ccs-bash 2> /dev/null; }
+compose() {
+    [[ -d $RUN_DIR/push ]] || return 1
+    docker ps -q --filter label=com.docker.compose.project=backend 2> /dev/null | grep -q . && return 0
+    ! systemctl is-active -q ccs-bash 2> /dev/null
+}
 # the log: the host loop's file; the compose's is journald's (journalctl -t ccs), its last lines
 # copied to a file here and read as the host's is. CCS_LOG: a file, either way
 LOG=${CCS_LOG:-} LOG_NAME=''
@@ -273,7 +278,10 @@ wallet_line() {
 # CCS_CHECK_ROOT: the files under another folder, CCS_CHECK_OFFLINE=1: nothing asked (the tests)
 # shellcheck disable=SC2015  # (ok, bad and warn always succeed: A && ok || bad is if-then-else)
 cmd_check() {
-    local root=${CCS_CHECK_ROOT:-} cdir=${CCS_COMPOSE_DIR:-/opt/ccs-bash/contrib/docker/backend} fails=0 warns=0
+    local root=${CCS_CHECK_ROOT:-} cdir=${CCS_COMPOSE_DIR:-} fails=0 warns=0
+    # the compose's folder: the running one's (Docker's label), else the setup's
+    [[ $cdir || $root ]] || cdir=$(docker ps --filter label=com.docker.compose.project=backend --format '{{.Label "com.docker.compose.project.working_dir"}}' 2> /dev/null | head -n 1)
+    cdir=${cdir:-/opt/ccs-bash/contrib/docker/backend}
     local env wconf aconf url port host hostmode='' f v
     ok() { echo "ok   $*"; }
     bad() { echo "FAIL $*"; fails=$((fails + 1)); }
@@ -295,20 +303,26 @@ cmd_check() {
     }
     CCS_AS=${CCS_AS:-}
     env=/${cdir#/}/.env wconf=/etc/ccs-wallet/wallet-rpc.conf aconf=/etc/ccs/alert.conf
+    # the compose's users own what the host setup's ccs does: the push key (ccs-push), the backup
+    # key (ccs-send), alert.conf and ccs-watch's state (ccs-watch)
+    local pkeys=/var/lib/ccs/.ssh pu=ccs bu=ccs wu=ccs
+    [[ -e $root$env ]] && pkeys=/etc/ccs/push pu=ccs-push bu=ccs-send wu=ccs-watch
     echo "== the files"
     file /etc/ccs/ccs.conf root ccs 640 && ok "/etc/ccs/ccs.conf"
     file $wconf root ccs-wallet 640 && ok "$wconf"
-    file $aconf root ccs 640 && ok "$aconf"
+    file $aconf root $wu 640 && ok "$aconf"
     file /etc/ccs/trusted-signers root root 644 && ok "/etc/ccs/trusted-signers"
     for f in subaddresses.txt subaddresses.txt.asc subaddresses.txt.key.asc subaddresses.txt.pin list-signers; do
         file "/etc/ccs-front/$f" root root 644 && ok "/etc/ccs-front/$f"
     done
-    file /var/lib/ccs/.ssh/id_ed25519 ccs ccs 600 && ok "/var/lib/ccs/.ssh/id_ed25519 (the push key)"
-    file /var/lib/ccs/.ssh/known_hosts ccs ccs 644 && ok "/var/lib/ccs/.ssh/known_hosts"
+    file $pkeys/id_ed25519 $pu $pu 600 && ok "$pkeys/id_ed25519 (the push key)"
+    file $pkeys/known_hosts $pu $pu 644 && ok "$pkeys/known_hosts"
     if [[ -e $root$env ]]; then
         file "$env" root root 600 && ok "$env (the compose)"
-        file /etc/ccs/backup/id_ed25519 ccs ccs 600 && ok "/etc/ccs/backup/id_ed25519 (the backup key)"
-        file /etc/ccs/backup/known_hosts ccs ccs 600 && ok "/etc/ccs/backup/known_hosts"
+        file /etc/ccs/backup/id_ed25519 $bu $bu 600 && ok "/etc/ccs/backup/id_ed25519 (the backup key)"
+        file /etc/ccs/backup/known_hosts $bu $bu 600 && ok "/etc/ccs/backup/known_hosts"
+        file /var/lib/ccs/watch $wu $wu 755 && ok "/var/lib/ccs/watch (ccs-watch's state)"
+        file /var/lib/ccs/pushed $pu $pu 755 && ok "/var/lib/ccs/pushed (what was pushed)"
         [[ $(kv "$env" COMPOSE_FILE) == *compose.host.yml* ]] && hostmode=1
     else
         warn "no $env: the host setup (setup.md), not the compose; its run scripts aren't checked here"
@@ -362,10 +376,13 @@ cmd_check() {
     [[ $v ]] && ok "the proposals checkout, from $v" || bad "PROPOSALS_DIR: not a checkout ccs-git can read"
     if [[ -e $env ]]; then
         local who kh
-        for who in CCS_PUSH:/var/lib/ccs/.ssh/known_hosts CCS_BACKUP:/etc/ccs/backup/known_hosts; do
-            v=$(kv "$env" "${who%%:*}") kh=${who#*:} host=${v#*@}
-            if timeout 10 bash -c ": > /dev/tcp/$host/22" 2> /dev/null; then ok "${who%%:*}: $host answers on 22"; else bad "${who%%:*}: $host doesn't answer on 22"; fi
-            ssh-keygen -F "$host" -f "$kh" > /dev/null 2>&1 && ok "${who%%:*}: $host's host key in $kh" || bad "${who%%:*}: no host key for $host in $kh"
+        local p name
+        for who in CCS_PUSH:$pkeys/known_hosts CCS_BACKUP:/etc/ccs/backup/known_hosts; do
+            v=$(kv "$env" "${who%%:*}") kh=${who#*:} host=${v#*@} p=$(kv "$env" "${who%%:*}_PORT") p=${p:-22}
+            # (known_hosts names a host on another port than 22 as [host]:port)
+            name=$host; [[ $p == 22 ]] || name="[$host]:$p"
+            if timeout 10 bash -c ": > /dev/tcp/$host/$p" 2> /dev/null; then ok "${who%%:*}: $host answers on $p"; else bad "${who%%:*}: $host doesn't answer on $p"; fi
+            ssh-keygen -F "$name" -f "$kh" > /dev/null 2>&1 && ok "${who%%:*}: $name's host key in $kh" || bad "${who%%:*}: no host key for $name in $kh"
         done
         local sigs=${CCS_SIGS_REPO:-/opt/ccs-sigs} id
         for v in CCS_BASH_IMAGE CCS_FRONT_IMAGE; do

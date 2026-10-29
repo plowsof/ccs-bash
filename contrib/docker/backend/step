@@ -29,6 +29,8 @@
 # (journalctl -t ccs; ccs log and ccs status read it).
 set -uo pipefail
 R=${CCS_RUN:-/run/ccs}
+# the push's and the backup's ports: numbers (they go into an ssh command line)
+for p in "${CCS_PUSH_PORT:-22}" "${CCS_BACKUP_PORT:-22}"; do [[ $p =~ ^[1-9][0-9]{0,4}$ ]] || { echo "step: a port that isn't one: $p" >&2; exit 2; }; done
 EVERY=${CCS_EVERY:-120}
 STAGES="pull ccs-bash backup front push"
 stage=${1:?STAGE: init $STAGES}
@@ -71,6 +73,13 @@ init)
         done
         chown -R "$owner" "$R/$s" && chmod 755 "$R/$s" || exit 1
     done
+    # the two pipes whose lines mean something: written only by their one writer. "now" (a line
+    # starts a run) by the wallet's tx-notify (CCS_NOW_GID, the wallet's group, or its uid:gid;
+    # root, ccs proposal:process, by being root); "watch" (each run's result) read by the watch
+    # alone (CCS_WATCH_GID, likewise). A "wake" pipe only has its stage look at the others' "done" again: any
+    # stage may write it.
+    if [[ -p $R/pull/now ]]; then g=${CCS_NOW_GID:?CCS_NOW_GID, the gid of the wallet}; chown ":${g#*:}" "$R/pull/now" && chmod 660 "$R/pull/now" || exit 1; fi
+    if [[ -p $R/push/watch ]]; then g=${CCS_WATCH_GID:?CCS_WATCH_GID, the gid of the watch}; chown ":${g#*:}" "$R/push/watch" && chmod 660 "$R/push/watch" || exit 1; fi
     # the lock the push takes (and the watch, shared) around the push and its copy: root's,
     # opened read-only (any open file can be locked)
     [[ -f $R/watch.lock ]] || { : > "$R/watch.lock" && chmod 644 "$R/watch.lock"; } || exit 1
@@ -106,7 +115,8 @@ ccs-bash)
     done
     ;;
 backup)
-    # CCS_BACKUP: user@host of the backup machine; its key and known_hosts in CCS_BACKUP_KEYS
+    # CCS_BACKUP: user@host of the backup machine (CCS_BACKUP_PORT, 22: 2224 for the web server
+    # compose's); its key and known_hosts in CCS_BACKUP_KEYS
     keys=${CCS_BACKUP_KEYS:-/etc/ccs/backup}
     while :; do
         n=$(($(num "$R/backup/done") + 1))
@@ -119,7 +129,7 @@ backup)
             name=${f##*/}; [[ $f == */retired/* ]] && name=retired-$name
             sum=$(sed '/^# final /d' "$f" | sha256sum | cut -c1-64)
             [[ $sum == "$(cat "$R/backup/sent-$name" 2> /dev/null)" ]] && continue
-            if run timeout -k 5 30 ssh -T -i "$keys/id_ed25519" -o UserKnownHostsFile="$keys/known_hosts" -o BatchMode=yes \
+            if run timeout -k 5 30 ssh -T -p "${CCS_BACKUP_PORT:-22}" -i "$keys/id_ed25519" -o UserKnownHostsFile="$keys/known_hosts" -o BatchMode=yes \
                 -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 "${CCS_BACKUP:?}" < "$f"; then
                 put "$R/backup/sent-$name" "$sum"
             else
@@ -139,8 +149,10 @@ front)
     done
     ;;
 push)
-    # CCS_PUSH: user@host of the web server's push account; PUSHED: the copy ccs-watch compares
-    site=${CCS_SITE:-/var/lib/ccs/www/site} pushed=${CCS_PUSHED:-/var/lib/ccs/pushed}
+    # CCS_PUSH: user@host of the web server's push account (CCS_PUSH_PORT, 22: 2223 for the web
+    # server compose's gate); its key and known_hosts in CCS_PUSH_KEYS; PUSHED: the copy
+    # ccs-watch compares
+    site=${CCS_SITE:-/var/lib/ccs/www/site} pushed=${CCS_PUSHED:-/var/lib/ccs/pushed} pkeys=${CCS_PUSH_KEYS:-/etc/ccs/push}
     while :; do
         n=$(($(num "$R/push/done") + 1))
         wait_for front "$n"
@@ -152,7 +164,7 @@ push)
         {
             timeout 600 flock 9 || say "warning: ccs-watch's lock not had in 10 minutes, pushing all the same"
             run timeout -k 5 120 rsync -a --delay-updates \
-                -e "ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15" "$site/" "${CCS_PUSH:?}:" || rc=$?
+                -e "ssh -p ${CCS_PUSH_PORT:-22} -i $pkeys/id_ed25519 -o UserKnownHostsFile=$pkeys/known_hosts -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15" "$site/" "${CCS_PUSH:?}:" || rc=$?
             if ((rc == 0 || rc == 7)); then rsync -a --delete "$site/" "$pushed/"; fi
         } 9< "$(lock)"
         # the run's result, as ccs-bash-update says it (a failed pull is no failed run)
@@ -167,7 +179,9 @@ push)
     ;;
 watch)
     # CCS_WATCH: ccs-watch; CCS_PUSHED: the copy of what was pushed; between pushes, every
-    # CCS_WATCH_EVERY seconds (300) and up to 8 minutes more at random (as ccs-watch.timer)
+    # CCS_WATCH_EVERY seconds (300) and up to 8 minutes more at random (as ccs-watch.timer).
+    # No run's result for CCS_WATCH_STALL seconds (300: two runs and more) is a failed run, and
+    # again every as long after: a stage stopped or stuck alerts as a failing one does (three)
     site=${1:?watch SITE_URL} w=${CCS_WATCH:-/opt/ccs-bash/contrib/ccs-watch} pushed=${CCS_PUSHED:-/var/lib/ccs/pushed}
     # check: the live pages against what was pushed, under the lock (shared: the push's is
     # exclusive), when something was
@@ -178,14 +192,24 @@ watch)
         return 0
     }
     next=$(($(now) + ${CCS_WATCH_EVERY:-300} + RANDOM % ${CCS_WATCH_RANDOM:-480}))
+    stall=${CCS_WATCH_STALL:-300} last=$(now)
     exec 3<> "$R/push/watch" || exit 1
     while :; do
-        if IFS=' ' read -r -t $((next > $(now) ? next - $(now) : 1)) n pushed_or_not result <&3; then
+        wake_at=$((next < last + stall ? next : last + stall))
+        if IFS=' ' read -r -t $((wake_at > $(now) ? wake_at - $(now) : 1)) n pushed_or_not result <&3; then
             [[ $n =~ ^[0-9]+$ ]] || continue
+            last=$(now)
             [[ $pushed_or_not == pushed ]] && check
             run "$w" --run "${result:-ok}"
             finish "$n" ok
-        elif (($(now) >= next)); then
+            continue
+        fi
+        if (($(now) >= last + stall)); then
+            run "$w" --run "no run finished for $((($(now) - last) / 60)) min (a stage stopped or stuck: ccs status)"
+            last=$(now)
+            put "$R/watch/at" "$(now)"
+        fi
+        if (($(now) >= next)); then
             check
             put "$R/watch/at" "$(now)"
             next=$(($(now) + ${CCS_WATCH_EVERY:-300} + RANDOM % ${CCS_WATCH_RANDOM:-480}))

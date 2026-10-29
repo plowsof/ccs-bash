@@ -1,0 +1,28 @@
+# sshd for the web server compose (contrib/docker/web/compose.yml): one sshd for the gate
+# (ccs-data, port 2223) and one for the backup receiver (ccs-backup, port 2224); compose.yml gives
+# each its port, its one user and its forced command. Keys only, in root-owned files outside any
+# home (the host's /etc/ssh/authorized_keys, as docs/two-machines.md has them, with their from=
+# and command=); no shell, forwarding, terminal, agent, tunnel, environment, rc or subsystem.
+HostKey /etc/ccs-ssh/keys/ssh_host_ed25519_key
+AuthorizedKeysFile /etc/ccs-ssh/authorized_keys/%u
+AuthenticationMethods publickey
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitRootLogin no
+DisableForwarding yes
+AllowTcpForwarding no
+AllowStreamLocalForwarding no
+AllowAgentForwarding no
+X11Forwarding no
+GatewayPorts no
+PermitTTY no
+PermitTunnel no
+PermitUserEnvironment no
+PermitUserRC no
+StrictModes yes
+PrintMotd no
+PidFile none
+MaxAuthTries 3
+MaxStartups 4:50:10
+LoginGraceTime 30
+LogLevel VERBOSE

@@ -1,0 +1,112 @@
+# The web server's side in Docker (docs/docker.md, "The web server in Docker"): the gate
+# (ccs-receive) behind its own sshd on port 2223, the gate's heartbeat; and, for the backup
+# machine, the backup receiver (ccs-backup-receive) behind another sshd on 2224 (the profile
+# "backup": on a machine of its own, not the web server, whose root could rewrite every copy;
+# a test setup may run both on one, COMPOSE_PROFILES=backup); nginx stays on the host, serving
+# /var/lib/ccs-data as before (docs/two-machines.md). The image by ID, never pulled
+# (container/gate.Dockerfile, attested as ccs-bash's). The host's folders, users and key files
+# are the host setup's, so either one can run them, never both. Its settings: .env (env.example).
+#
+#   docker compose --profile init run --rm -T init     once: the host key, passwd (and after an upgrade)
+#   docker compose up -d                               start
+#   journalctl -t ccs-web -f                           sshd's lines (the gate's own: /var/log/ccs-web/)
+
+x-hardened: &hardened
+  image: ${CCS_GATE_IMAGE:?the attested ccs-gate image ID}
+  pull_policy: never
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  restart: unless-stopped
+  init: true
+  # the host's network: sshd sees the backend's own address, which authorized_keys' from= checks
+  # (published ports would show it Docker's for IPv6)
+  network_mode: host
+  logging:
+    driver: journald
+    options:
+      tag: ccs-web
+
+# sshd runs as root and needs only (tested: without any one of them no login gets past
+# pre-authentication): SETUID and SETGID, to become its sshd user for pre-authentication and
+# ccs-data or ccs-backup for the forced command (setresuid, setgroups); SYS_CHROOT, for that
+# pre-authentication, chrooted in /var/empty. Not DAC_OVERRIDE: what it reads is root's; not
+# NET_BIND_SERVICE: the ports are over 1024; not KILL: its children end on their own.
+x-sshd-caps: &sshd-caps [SETUID, SETGID, SYS_CHROOT]
+
+x-health: &health
+  interval: 5m
+  timeout: 10s
+  retries: 2
+  start_period: 30s
+
+services:
+  # once, as root, and after an upgrade: sshd's host key (the first time only) and passwd, group
+  init:
+    <<: *hardened
+    network_mode: none
+    restart: "no"
+    user: "0:0"
+    entrypoint: ["/usr/local/bin/ccs-web-init"]
+    environment:
+      CCS_DATA_UID: ${CCS_DATA_UID:?id -u ccs-data:id -g ccs-data}
+      CCS_BACKUP_UID: ${CCS_BACKUP_UID:?id -u ccs-backup:id -g ccs-backup}
+    volumes:
+      - ${CCS_SSH_DIR:-/etc/ccs-gate/ssh}:/etc/ccs-ssh/keys
+    profiles: [init]
+
+  # the gate: the push account, ccs-data, may run only ccs-receive
+  gate:
+    <<: *hardened
+    user: "0:0"
+    cap_add: *sshd-caps
+    # a push checked at a time (the gate's lock); its decoders capped at 1 GB each as well
+    mem_limit: 2g
+    pids_limit: 256
+    command: ["-p", "${CCS_GATE_PORT:-2223}", "-o", "AllowUsers=ccs-data", "-o", "ForceCommand=/usr/local/bin/ccs-receive"]
+    healthcheck: {<<: *health, test: ["CMD", "bash", "-c", ": > /dev/tcp/127.0.0.1/${CCS_GATE_PORT:-2223}"]}
+    volumes:
+      # sshd's host key, passwd and group (init writes them), read-only here; the key files,
+      # root-owned, outside any home: the host setup's, with their from= and command=
+      - ${CCS_SSH_DIR:-/etc/ccs-gate/ssh}:/etc/ccs-ssh/keys:ro
+      - ${CCS_AUTHORIZED_KEYS:-/etc/ssh/authorized_keys}:/etc/ccs-ssh/authorized_keys:ro
+      - /etc/ccs-gate:/etc/ccs-gate:ro
+      - /var/lib/ccs-staging:/var/lib/ccs-staging
+      - /var/lib/ccs-data:/var/lib/ccs-data
+      - /var/lib/ccs-gate:/var/lib/ccs-gate
+      # the gate's log, /var/log/ccs-gate.log in here (a folder: a rotated file stays the old one)
+      - ${CCS_WEB_LOG:-/var/log/ccs-web}:/var/log
+
+  # the backup receiver: the backup account, ccs-backup, may run only ccs-backup-receive. Its own
+  # machine: there, "docker compose --profile backup up -d backup" (its own .env: the image,
+  # CCS_BACKUP_UID; the gate and heartbeat not started)
+  backup:
+    <<: *hardened
+    profiles: [backup]
+    user: "0:0"
+    cap_add: *sshd-caps
+    mem_limit: 256m
+    pids_limit: 64
+    command: ["-p", "${CCS_BACKUP_PORT:-2224}", "-o", "AllowUsers=ccs-backup", "-o", "ForceCommand=/usr/local/bin/ccs-backup-receive"]
+    healthcheck: {<<: *health, test: ["CMD", "bash", "-c", ": > /dev/tcp/127.0.0.1/${CCS_BACKUP_PORT:-2224}"]}
+    volumes:
+      # sshd's host key, passwd and group (init writes them), read-only here; the key files,
+      # root-owned, outside any home: the host setup's, with their from= and command=
+      - ${CCS_SSH_DIR:-/etc/ccs-gate/ssh}:/etc/ccs-ssh/keys:ro
+      - ${CCS_AUTHORIZED_KEYS:-/etc/ssh/authorized_keys}:/etc/ccs-ssh/authorized_keys:ro
+      - /etc/ccs-backup:/etc/ccs-backup:ro
+      - /var/lib/ccs-backup:/var/lib/ccs-backup
+      - ${CCS_WEB_LOG:-/var/log/ccs-web}:/var/log
+
+  # the heartbeat (docs/two-machines.md): every 5 minutes, as ccs-data, an alert when no push
+  # has come for HEARTBEAT_MINUTES (alert.conf)
+  heartbeat:
+    <<: *hardened
+    user: "${CCS_DATA_UID}"
+    entrypoint: ["bash", "-c", "while :; do /usr/local/bin/ccs-receive --heartbeat; date +%s > /tmp/beat; sleep 300; done"]
+    healthcheck: {<<: *health, test: ["CMD", "bash", "-c", "(( $$(date +%s) - $$(cat /tmp/beat) < 900 ))"]}
+    volumes:
+      - /etc/ccs-gate:/etc/ccs-gate:ro
+      - /var/lib/ccs-gate:/var/lib/ccs-gate
+      - ${CCS_WEB_LOG:-/var/log/ccs-web}:/var/log

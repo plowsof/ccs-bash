@@ -1,9 +1,10 @@
 # The pinned image
 
-Option B's image holds only pinned, source-built parts (about 28 MB):
+Option B's image holds only pinned, source-built parts (about 71 MB: git, rsync and ssh for the
+compose's pull, push and backup make most of it):
 
 - **[StageX](https://stagex.tools) packages**, pinned by digest in `container/images`: bash, curl,
-  jq, ca-certificates and their libraries. StageX builds everything from source from a tiny
+  jq, ca-certificates, git, rsync, openssh (ssh only) and their libraries. StageX builds everything from source from a tiny
   bootstrap; two or more maintainers reproduce and sign each release, which every build checks.
 - **busybox, built here** from upstream source pinned by sha256 in `container/sources.lock`
   (StageX's sum), with only the applets in `container/busybox-applets` (no shell, `nc`, `wget`...).

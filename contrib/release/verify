@@ -106,7 +106,7 @@ counts() { [[ -z ${TRUSTED_KEYS:-} ]] || grep -qxF "$1" <<<"$trusted"; }
 
 # a release's name, exactly (a name that is only the start of one, ccs-bash-v9.9 of
 # ccs-bash-v9.9.9, is none), or a set of them joined by +
-release_re='(ccs-bash|ccs-front-bash|ccs-front-hugo)-v[0-9]+\.[0-9]+\.[0-9]+'
+release_re='(ccs-bash|ccs-front-bash|ccs-front-hugo|ccs-gate)-v[0-9]+\.[0-9]+\.[0-9]+'
 for name in "$@"; do
     [[ $name =~ ^$release_re(\+$release_re)*$ ]] || { echo "ERR: '$name' is not a release (ccs-bash-v1.2.3, ...) or a set of them joined by +"; exit 1; }
 done
@@ -125,10 +125,12 @@ fi
 # can't change what is printed (a folder of theirs with a bad signature, or two lines for a
 # release, still fails the check: look at it, it accepts nothing).
 release() {
-    local name=$1 set m line key base='' basefrom='' n=0 seen=0 commit counted=' '
+    local name=$1 set m line key base='' basefrom='' n=0 seen=0 commit counted=' ' in=$1
+    # (the gate's image is ccs-bash's other: attested in ccs-bash's sets, from the same tag)
+    [[ $name == ccs-gate-* ]] && in=ccs-bash-${name#ccs-gate-}
     for set in "$CCS_SIGS_REPO"/*/; do
         set=$(basename "$set")
-        [[ +$set+ == *"+$name+"* ]] || continue
+        [[ +$set+ == *"+$in+"* ]] || continue
         for m in "$CCS_SIGS_REPO/$set"/*/all.SHA256SUMS; do
             # a signer who doesn't count is passed over before anything is checked: their folder,
             # whatever is in it, can't stop the others agreeing
@@ -210,6 +212,12 @@ for name in "${names[@]}"; do
                 for part in ${name//+/ }; do
                     parts=$((parts + 1))
                     [[ $(grep -cE "$(line_re "$part")" "$m") == 1 ]] || { echo "ERR: '$m' has no line, or several, for $part"; ok=''; }
+                    # ccs-bash's gate image (container/gate.Dockerfile), from the same tag: one more line, or none
+                    if [[ $part == ccs-bash-* ]]; then
+                        case $(grep -cE "$(line_re "ccs-gate-${part#ccs-bash-}")" "$m") in
+                            0) ;; 1) parts=$((parts + 1)) ;; *) echo "ERR: '$m' has several lines for ccs-gate-${part#ccs-bash-}"; ok='' ;;
+                        esac
+                    fi
                 done
                 [[ $(grep -c . "$m") == "$parts" ]] || { echo "ERR: '$m' has other lines than the $parts release(s) in '$name'"; ok=''; }
                 [ -n "$ok" ] || { failure=1; continue; }
