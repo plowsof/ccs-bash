@@ -166,7 +166,9 @@ push: [the handover](handover.md), steps 3–9.
 
 5. **Optional, instant updates.** wallet-rpc's hook only touches a file; `notify-loop.sh`
    (root, instead of the cron line) runs `ccs-bash-update` every 2 minutes, or sooner when the
-   file appears, but at most once per 30 seconds however many notifications come.
+   file appears, or 30 seconds after a run that left a donation pending, but at most once per
+   30 seconds however many notifications come (the compose's pull stage paces its runs the
+   same way).
 
    ```
    install -d -o ccs-wallet -g ccs-wallet -m 755 /var/lib/ccs-notify
