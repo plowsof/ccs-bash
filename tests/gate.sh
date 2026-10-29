@@ -105,7 +105,7 @@ cards = [fill(part("card-idea"), {"url": "https://forge.test/ccs-proposals/pulls
 write("ideas/index.html", region(read(design + "/ideas/index.html"), "list idea", "\n".join(cards) or part("empty")))
 page = fill(read(design + "/parts/proposal-fr.html"), {"name": "A proposal", "author": "someone", "tag_links": "",
              "body": "<p>Monero: a guide, in 2 parts.</p>"})
-page = region(page, "donate", fill(part("donate"), {"raised": "1.5", "amount": "10", "pending_note": "", "address": addr,
+page = region(page, "donate", fill(part("donate"), {"raised": "1.5", "amount": "10", "pending_note": os.environ.get("PENDING_NOTE", ""), "address": addr,
              "qr": "data:image/png;base64," + qr, "verify_link": read(design + "/parts/verify-link.html").rstrip("\n")}))
 write("proposals/p.html", region(page, "milestones", part("no-milestones")) + "\n")
 PY
@@ -172,7 +172,7 @@ site() {
     qr=$(qr64 "${3:-$a}")
     shift $(($# < 3 ? $# : 3))
     on backend "rm -rf /out && mkdir -p /out/assets && cp /design/assets/style.css /out/assets/"
-    docker exec "$name-backend" python3 /gen.py /design /out "$v" "$a" "$qr" "$@"
+    docker exec -e PENDING_NOTE="${PENDING_NOTE:-}" "$name-backend" python3 /gen.py /design /out "$v" "$a" "$qr" "$@"
     on backend "echo '[{\"address\": \"$a\"}]' > /out/projects.json"
     put subaddresses.txt < <(on web 'cat /etc/ccs-gate/subaddresses.txt')
     put subaddresses.txt.asc <<<sig
@@ -260,6 +260,10 @@ math=$(python3 -c 'import sys; print("".join(chr(0x1D7E2 + int(c)) if c.isdigit(
 # keeps its last good copy, the rest of the push goes live, the push fails.
 p=proposals/p.html
 box="<div class=\"address\">$good</div>"
+# a donation not yet counted (in the pool, or short of MIN_CONFIRMATIONS): ccs-front-bash's note
+# beside the total, as the design's donate part has its slot
+v=$((v + 1)); PENDING_NOTE=" · 0.01 XMR pending" site "$v" "$good"
+passes "$v" "$p" "a donation pending, its note beside the total" "XMR · 0.01 XMR pending"
 for attack in \
     "new page|proposals/sneaky.html||<p>pay $fake here</p>|a new page the design doesn't have, with another address" \
     "body|$p|<p>Monero: a guide|<p>Pay $fake: a guide|another proposal text than the repository's" \

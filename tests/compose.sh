@@ -28,6 +28,7 @@ echo "a.md,1" > "$t/state/proposals.csv"
 cat > "$t/bin/ccs-back" <<'EOF'
 #!/usr/bin/env bash
 [[ ! -e $T/fail-bash ]] || { echo "error: the stand-in fails"; exit 1; }
+[[ ! -e $T/slow ]] || sleep 3
 echo "ccs-bash ran"
 EOF
 cat > "$t/bin/ccs-front" <<'EOF'
@@ -103,6 +104,18 @@ start
 n=$(cat "$t/run/push/done"); sleep 1
 printf 'tx\n' 1<> "$t/run/pull/now"
 if until_pushed $((n + 1)); then ok "a line on the pull's now pipe (a new tx): the next run at once"; else fail "the now pipe"; fi
+
+# a line on "now" while a run is going (the wallet sees a transaction mid-run): kept, and the
+# next run starts as soon as this one is pushed, not CCS_EVERY (an hour) later; two lines, one run
+touch "$t/slow"
+n=$(cat "$t/run/push/done") s=$(cat "$t/run/pull/started")
+printf 'tx\n' 1<> "$t/run/pull/now"
+for ((i = 0; i < 30; i++)); do [[ $(cat "$t/run/pull/started") != "$s" ]] && break; sleep 1; done
+sleep 1; printf 'tx\n' 1<> "$t/run/pull/now"; printf 'tx\n' 1<> "$t/run/pull/now"
+rm -f "$t/slow"
+if until_pushed $((n + 2)) && sleep 3 && (($(cat "$t/run/push/done") == n + 2)); then
+    ok "a line on now during a run: the next run right after it (two lines: one run)"
+else fail "now during a run: pushed $(cat "$t/run/push/done"), wanted $((n + 2))"; fi
 
 # the healthcheck: every stage finished something within CCS_HEALTH seconds
 unhealthy=''
