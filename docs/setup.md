@@ -29,6 +29,8 @@ Either way: `monero-wallet-rpc` from [getmonero.org](https://www.getmonero.org/d
 
 ## Steps
 
+(Or the backend in Docker, one container a stage: [docker](docker.md), after steps 2-3.)
+
 The same for A and B except where marked. The site itself (ccs-front-bash), the web server and the
 push: [the handover](handover.md), steps 3–9.
 
