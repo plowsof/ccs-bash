@@ -95,7 +95,7 @@ jq '.in += [range(25) as $k | {txid: ("d0" + ("0" * 60) + ($k | tostring | if le
 dust() { jq -r '.[] | select(.address == "8'"$(printf '%094d' 4)"'") | "\(.filename) \(.raised_amount) \(.contributions)"' "$d/out/projects.json" 2> /dev/null; }
 r5_run "$d" TEST_TRANSFERS="$TEST_TMP/r5-dust.json" || true; first=$(dust)
 r5_run "$d" TEST_TRANSFERS="$TEST_TMP/r5-dust.json" || true; second=$(dust)
-if [[ $first == *" 0.0000 0" && $second == "$first" ]] && grep -qE $'^4\t[0-9]+$' "$d/state/assigned.tsv" 2> /dev/null; then
+if [[ $first == *" 0 0" && $second == "$first" ]] && grep -qE $'^4\t[0-9]+$' "$d/state/assigned.tsv" 2> /dev/null; then
     echo "ok   review 5: dust sent to a subaddress before it was handed out isn't the new proposal's ($first), on later runs either"
 else echo "FAIL review 5: dust before a subaddress was handed out: '$first' then '$second'; assigned: $(cat "$d/state/assigned.tsv" 2>&1)"; status=1; fi
 
