@@ -35,11 +35,11 @@ RUN_DIR=${CCS_RUN_DIR:-/var/lib/ccs/run}
 compose() { [[ -d $RUN_DIR/push ]] && ! systemctl is-active -q ccs-bash 2> /dev/null; }
 # the log: the host loop's file; the compose's is journald's (journalctl -t ccs), its last lines
 # copied to a file here and read as the host's is. CCS_LOG: a file, either way
-LOG=${CCS_LOG:-}
+LOG=${CCS_LOG:-} LOG_NAME=''
 journal() { journalctl -q -o cat -t ccs "$@" > "$LOG" 2> /dev/null || true; }
 if [[ -z $LOG ]]; then
     if compose; then
-        LOG=$(mktemp); trap 'rm -f "$LOG"' EXIT
+        LOG=$(mktemp) LOG_NAME="the journal's last lines (journalctl -t ccs)"; trap 'rm -f "$LOG"' EXIT
         journal -n 20000
     else
         LOG=/var/log/ccs-bash.log
@@ -190,7 +190,7 @@ cmd_log() {
     local n=${1:-3} from to
     [[ $n =~ ^[0-9]+$ && $n -gt 0 ]] || die "log N: a number"
     read -r from to <<<"$(runs_range "$n")"
-    echo "The errors and warnings of the last $n run(s), lines $from to $to of $LOG (each once, the last time it was said):"
+    echo "The errors and warnings of the last $n run(s), lines $from to $to of ${LOG_NAME:-$LOG} (each once, the last time it was said):"
     # (and the gate's reason for each file it held back: "ccs-gate:   <file>: <why>")
     sed -n "${from},${to}p" "$LOG" | grep -iE 'error|warning|fail|refus|held back|alert|could not|can.t |cannot|denied|timed out|not ok|stop|^ccs-gate:   ' \
         | grep -vE 'ccs-watch: the [0-9]+ pages on .* are what was pushed|^(skipping|ignoring) ' \
