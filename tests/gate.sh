@@ -23,7 +23,8 @@ cleanup; files=$(mktemp -d)
 # Debian 12, as in the docs (the same pinned image as tests/rrsync.sh)
 docker buildx build -q --load -t "$name" - > /dev/null <<IMG
 FROM debian@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
-RUN apt-get update -q && apt-get install -y -q --no-install-recommends openssh-server openssh-client rsync python3 curl qrencode zbar-tools git \
+RUN apt-get update -q && apt-get install -y -q --no-install-recommends openssh-server openssh-client rsync python3 curl qrencode git \
+    libzbar0 libpng16-16 libturbojpeg0 libgif7 zbar-tools \
     && rm -rf /var/lib/apt/lists/*
 IMG
 docker network create --subnet "$net.0/24" "$name" > /dev/null
@@ -103,6 +104,8 @@ key=$(on backend 'cat ~/.ssh/id_ed25519.pub')
 docker cp "$here/../contrib/ccs-receive" "$name-web:/usr/local/bin/ccs-receive"
 docker cp "$d" "$name-web:/tmp/design" && docker cp "$files/markdown.awk" "$name-web:/tmp/markdown.awk"
 docker cp "$d" "$name-backend:/design" && docker cp "$files/gen.py" "$name-backend:/gen.py"
+# (zbar-tools for the backend's own test images only: the gate reads QR codes with libzbar itself)
+on web 'rm /usr/bin/zbarimg'
 on web "
     chown root:root /usr/local/bin/ccs-receive && chmod 755 /usr/local/bin/ccs-receive
     useradd --system --create-home --shell /bin/sh ccs-data
@@ -333,22 +336,23 @@ else on web 'grep -c "could not be read in time" /var/log/ccs-gate.log || true';
 docker update --cpus 0 "$name-web" > /dev/null
 # ---- end review 5 ----
 # ---- review 5, low ----
-# G5 / G7: what reaches zbarimg. A wrapper logs the first bytes of each image it is given.
-on web 'mv /usr/bin/zbarimg /usr/bin/zbarimg.real && printf "%s\n" "#!/bin/bash" "f=\"\${@: -1}\"; f=\"\${f#*:}\"" "head -c 4 \"\$f\" | od -An -c | tr -d \" \\\\n\" >> /tmp/zbar.log; echo >> /tmp/zbar.log" "exec /usr/bin/zbarimg.real \"\$@\"" > /usr/bin/zbarimg && chmod 755 /usr/bin/zbarimg && install -m 666 /dev/null /tmp/zbar.log'
+# G5 / G7: what reaches a QR decoder. The gate notes each image it reads (its first bytes) in
+# its state folder's scan.log, when there is one.
+on web 'install -o ccs-data -m 644 /dev/null /var/lib/ccs-gate/scan.log'
 v=$((v + 1)); site "$v" "$good"
 svg64=$(printf '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>' | base64 -w0)
 change "$p" "$(qr64 "$good")" "$svg64"
 held "$v" "$p" "review 5: an SVG as a donation box's QR code" "$svg64"
-if on web '! grep -qv "^211PNG" /tmp/zbar.log'; then ok "review 5 (G5): zbarimg was given only PNGs"; else on web 'sort /tmp/zbar.log | uniq -c'; fail "review 5 (G5): zbarimg (ImageMagick) parsed a file that is not a PNG, from the backend, before any PNG check"; fi
+if on web '! grep -qv "^211PNG png$" /var/lib/ccs-gate/scan.log'; then ok "review 5 (G5): the QR decoder was given only PNGs, as PNGs"; else on web 'sort /var/lib/ccs-gate/scan.log | uniq -c'; fail "review 5 (G5): a file that is not a PNG, from the backend, reached a decoder before any PNG check"; fi
 # G7: the same QR code on 5 proposal pages: read once (scan), or once per page (the box check)?
 on web 'cd /srv/proposals && for q in q1 q2 q3 q4; do cp p.md $q.md; done && git -c safe.directory=* add -A && git -c safe.directory=* -c user.name=t -c user.email=t@t commit -q -m more && chown -R ccs-data /srv/proposals'
 v=$((v + 1)); site "$v" "$good"
 on backend 'for q in q1 q2 q3 q4; do cp /out/proposals/p.html /out/proposals/$q.html; done'
-on web ': > /tmp/zbar.log'
+on web ': > /var/lib/ccs-gate/scan.log'
 push > /dev/null || true
-n=$(on web 'grep -c . /tmp/zbar.log || true')
-if ((n <= 2)); then ok "review 5 (G7): one QR code on 5 pages read $n time(s)"; else fail "review 5 (G7): one QR code on 5 pages read $n times by zbarimg (the box check reads it again on each page, with no deadline)"; fi
-on web 'mv /usr/bin/zbarimg.real /usr/bin/zbarimg'
+n=$(on web 'grep -c . /var/lib/ccs-gate/scan.log || true')
+if ((n <= 2)); then ok "review 5 (G7): one QR code on 5 pages read $n time(s)"; else fail "review 5 (G7): one QR code on 5 pages read $n times (the box check reads it again on each page, with no deadline)"; fi
+on web 'rm /var/lib/ccs-gate/scan.log'
 on backend 'rm -f /out/proposals/q?.html'
 # a folder pushed without read permission: its pages can't be listed by the checks, nor copied
 v=$((v + 1)); site "$v" "$good"
