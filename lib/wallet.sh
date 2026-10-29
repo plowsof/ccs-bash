@@ -298,6 +298,12 @@ check_known_subaddresses() {
     [[ $unknown != '[]' ]] || return 0
     labelled=$(rpc get_address "{\"account_index\": 0, \"address_index\": $unknown}" \
         | jq -r '[.addresses[] | select((.label // "") != "") | .address_index] | join(" ")') || return 1
+    # (a mirror's state is made from the other site's feed, whose proposals it may not all match:
+    # the labels are that site's, or an earlier mirror's, so a warning, not a lost state file)
+    if [[ $labelled && ${MIRROR_URL:-} ]]; then
+        log "warning: donations at subaddress $labelled, which this wallet gave a proposal that MIRROR_URL matches none of here: not shown"
+        return 0
+    fi
     [[ -z $labelled ]] || die "donations at subaddress $labelled, which this wallet gave a proposal but $STATE_DIR/proposals.csv doesn't have (lost or wrong state file?)"
     log "warning: donations at subaddress $(jq -r 'join(" ")' <<<"$unknown"), which no proposal was given (no label): someone sent to an address of the wallet's that isn't on the site; not counted"
 }
@@ -348,7 +354,7 @@ retired_totals() {
 # rounded down (100% means really reached).
 proposal_funds() {
     local idx c p n file amount target raised pct
-    local -A conf=() pend=() cnt=() rconf=() rcnt=()
+    local -A conf=() pend=() cnt=() rconf=() rcnt=() hconf=() hcnt=()
     while IFS=$'\t' read -r idx c p n; do
         conf[$idx]=$c pend[$idx]=$p cnt[$idx]=$n
     done < "$WORK/totals.tsv"
@@ -357,16 +363,20 @@ proposal_funds() {
     while IFS=$'\t' read -r file c n; do
         rconf[$file]=$c rcnt[$file]=$n
     done < "$WORK/retired.tsv"
+    # a mirror's: the other site's totals for proposals this wallet can't see (lib/mirror.sh)
+    while IFS=$'\t' read -r file c n; do
+        hconf[$file]=$c hcnt[$file]=$n
+    done < <(historic_totals)
     jq -r --slurpfile state "$WORK/state.json" \
         '.[] | [.file, .amount, ($state[0][.file].subaddr_index // -1)] | @tsv' "$WORK/props.json" |
         while IFS=$'\t' read -r file amount idx; do
             target=$(to_atomic "$amount")
-            raised=$((${conf[$idx]:-0} + ${rconf[$file]:-0}))
+            raised=$((${conf[$idx]:-0} + ${rconf[$file]:-0} + ${hconf[$file]:-0}))
             pct=0
             ((target > 0)) && pct=$((raised * 100 / target))
             ((pct > 100)) && pct=100
             printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$file" "$(xmr4 "$target")" "$(xmr4 "$raised")" \
-                "$(xmr4_number "${pend[$idx]:-0}")" "$((${cnt[$idx]:-0} + ${rcnt[$file]:-0}))" "$pct"
+                "$(xmr4_number "${pend[$idx]:-0}")" "$((${cnt[$idx]:-0} + ${rcnt[$file]:-0} + ${hcnt[$file]:-0}))" "$pct"
         done | jq -R -s 'split("\n") | map(select(. != "") | split("\t") | {key: .[0], value: {
             amount: .[1], raised: .[2], pending: (.[3] | tonumber), count: (.[4] | tonumber), percentage: (.[5] | tonumber)
         }}) | from_entries'
