@@ -144,6 +144,7 @@ its port: `[<web server>]:2223 ssh-ed25519 AAAA...`, from its `/etc/ccs-gate/ssh
 all have arrived), with `-p 22` in full, as the backend's `ssh_config` may default to another port
 (a push that hangs is the sign). The web server needs 22 open to the backend and 80/443 to
 everyone, in its firewall *and* a cloud provider's (an Oracle security list, an AWS security group).
+The admins' own ssh: [admin access](admin-access.md).
 
 `tests/rrsync.sh` tries all of the above from the backend's key in containers (commands,
 forwarding, reading back, `..`, `--temp-dir`, `--backup-dir`, `--link-dest`, deleting, symlinks,

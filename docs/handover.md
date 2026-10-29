@@ -24,6 +24,8 @@ still missing or wrong ([what you fill in](#what-you-fill-in)).
 - **The wallet**, view-only. Its address and view key are public: luigi1111 published them in
   [monero-project/meta #935](https://github.com/monero-project/meta/issues/935#issuecomment-1867257410).
 - **A Core Team member** to make and sign the subaddress list (step 4), and **an IRC bot** (step 8).
+- **How you yourselves get in:** each machine's admin ssh behind a VPN or an allowlist, and a
+  way back in without ssh: [admin access](admin-access.md).
 
 ## The releases
 
