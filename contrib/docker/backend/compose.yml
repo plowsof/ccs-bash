@@ -134,6 +134,7 @@ services:
     environment:
       <<: *every
       CCS_BACKUP: ${CCS_BACKUP:?ccs-backup@<the backup machine>}
+      CCS_BACKUP_PORT: ${CCS_BACKUP_PORT:-22}
     healthcheck: {<<: *health, test: ["CMD", *step, "health", "backup"]}
     volumes:
       - /etc/passwd:/etc/passwd:ro
@@ -170,6 +171,7 @@ services:
     environment:
       <<: *every
       CCS_PUSH: ${CCS_PUSH:?ccs-data@<the web server>}
+      CCS_PUSH_PORT: ${CCS_PUSH_PORT:-22}
     healthcheck: {<<: *health, test: ["CMD", *step, "health", "push"]}
     volumes:
       - /etc/passwd:/etc/passwd:ro

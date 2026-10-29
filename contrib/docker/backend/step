@@ -106,7 +106,8 @@ ccs-bash)
     done
     ;;
 backup)
-    # CCS_BACKUP: user@host of the backup machine; its key and known_hosts in CCS_BACKUP_KEYS
+    # CCS_BACKUP: user@host of the backup machine (CCS_BACKUP_PORT, 22: 2224 for the web server
+    # compose's); its key and known_hosts in CCS_BACKUP_KEYS
     keys=${CCS_BACKUP_KEYS:-/etc/ccs/backup}
     while :; do
         n=$(($(num "$R/backup/done") + 1))
@@ -119,7 +120,7 @@ backup)
             name=${f##*/}; [[ $f == */retired/* ]] && name=retired-$name
             sum=$(sed '/^# final /d' "$f" | sha256sum | cut -c1-64)
             [[ $sum == "$(cat "$R/backup/sent-$name" 2> /dev/null)" ]] && continue
-            if run timeout -k 5 30 ssh -T -i "$keys/id_ed25519" -o UserKnownHostsFile="$keys/known_hosts" -o BatchMode=yes \
+            if run timeout -k 5 30 ssh -T -p "${CCS_BACKUP_PORT:-22}" -i "$keys/id_ed25519" -o UserKnownHostsFile="$keys/known_hosts" -o BatchMode=yes \
                 -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 "${CCS_BACKUP:?}" < "$f"; then
                 put "$R/backup/sent-$name" "$sum"
             else
@@ -139,7 +140,8 @@ front)
     done
     ;;
 push)
-    # CCS_PUSH: user@host of the web server's push account; PUSHED: the copy ccs-watch compares
+    # CCS_PUSH: user@host of the web server's push account (CCS_PUSH_PORT, 22: 2223 for the web
+    # server compose's gate); PUSHED: the copy ccs-watch compares
     site=${CCS_SITE:-/var/lib/ccs/www/site} pushed=${CCS_PUSHED:-/var/lib/ccs/pushed}
     while :; do
         n=$(($(num "$R/push/done") + 1))
@@ -152,7 +154,7 @@ push)
         {
             timeout 600 flock 9 || say "warning: ccs-watch's lock not had in 10 minutes, pushing all the same"
             run timeout -k 5 120 rsync -a --delay-updates \
-                -e "ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15" "$site/" "${CCS_PUSH:?}:" || rc=$?
+                -e "ssh -p ${CCS_PUSH_PORT:-22} -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15" "$site/" "${CCS_PUSH:?}:" || rc=$?
             if ((rc == 0 || rc == 7)); then rsync -a --delete "$site/" "$pushed/"; fi
         } 9< "$(lock)"
         # the run's result, as ccs-bash-update says it (a failed pull is no failed run)
