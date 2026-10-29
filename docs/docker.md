@@ -141,8 +141,7 @@ both on the same port.
   reproducible, attested in the same release (`contrib/release/build ccs-bash vX` builds both; its
   second line is `ccs-gate-vX`; `contrib/release/verify ccs-gate-vX`). GNU userland, as the gate
   was written and tested for; sshd (no ssh client, sftp or agent); Python; git; and the QR reader's
-  libraries, with no ImageMagick: libzbar built here (StageX publishes none; one undefined
-  behaviour in it fixed, which crashed every scan under clang), on pixels libpng, libturbojpeg or
+  libraries: libzbar built here (StageX publishes none; with zbar's own fix of a crash under clang), on pixels libpng, libturbojpeg or
   giflib decode; qrencode built with PNG output, as ccs-front-bash builds it, so its QR codes are
   the backend's, pixel for pixel. About 160 MB.
 - **sshd** as root, read-only, every capability dropped but the three it can't log anyone in

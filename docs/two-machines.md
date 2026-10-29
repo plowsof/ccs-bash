@@ -216,7 +216,7 @@ sounds when the backend is the one lying.
 Set it up once, as root:
 
 ```
-apt install libzbar0 libpng16-16 libturbojpeg0 libgif7 qrencode git  # the QR codes, read (libzbar on pixels the formats' own libraries decode; no ImageMagick) and remade; git, for the proposals
+apt install libzbar0 libpng16-16 libturbojpeg0 libgif7 qrencode git  # the QR codes, read (libzbar on pixels the formats' own libraries decode) and remade; git, for the proposals
 install -m 755 contrib/ccs-receive /usr/local/bin/ccs-receive        # from this repository at the attested commit, checked out here (handover: Upgrading, 1-2)
 install -d -o ccs-data -m 755 /var/lib/ccs-staging
 install -d -m 755 /etc/ccs-gate /etc/ccs-gate/design
@@ -295,7 +295,7 @@ server itself is taken over: then ccs-watch and visitors are the defence. The QR
 (`qrscan_py`: libzbar, through Python's ctypes, on 8-bit grey pixels) reads what the backend
 sends, as ccs-data, but only images the gate has read as a plain PNG first, and each image as the
 format its name says, by that format's own library (libpng, libturbojpeg, giflib), its size
-checked before it is decoded; no ImageMagick, nothing that picks a decoder by the bytes. Keep those
+checked before it is decoded, never a decoder picked by the bytes. Keep those
 libraries updated (`unattended-upgrades`), or run the gate in its image
 ([the web server in Docker](docker.md#the-web-server-in-docker)), which pins and attests them.
 

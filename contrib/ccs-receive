@@ -22,7 +22,7 @@
 # isn't the pinned one, or no design.sha256, design or markdown.awk, refuses the whole push. Needs
 # bash, awk, grep, rsync (rrsync), coreutils, curl, qrencode, git, python3 (as rrsync), and for
 # reading QR codes libzbar, libpng, libturbojpeg and giflib (Debian: libzbar0 libpng16-16
-# libturbojpeg0 libgif7; no ImageMagick). Root-owned, 755.
+# libturbojpeg0 libgif7). Root-owned, 755.
 set -euo pipefail
 export LC_ALL=C
 staging=/var/lib/ccs-staging live=/var/lib/ccs-data conf=/etc/ccs-gate state=/var/lib/ccs-gate
@@ -176,12 +176,11 @@ for f in sys.argv[1:]:
 '
 
 # qrscan_py KIND IMAGE [inverted]: what libzbar reads in IMAGE, each code's text on a line; exit 1
-# if there is none, or IMAGE isn't a KIND its decoder reads. No ImageMagick, which picks a decoder
-# by the bytes (an SVG, a format with a decoder of its own to get wrong): KIND, the format its
-# name says, decoded by that format's own library to 8-bit grey (png: libpng, jpeg:
-# libturbojpeg, gif: giflib, every frame), its size checked before; then libzbar's scanner, as
-# zbarimg had it, and with "inverted", on nothing found, the image inverted (light on dark, which
-# phones read: zbarimg's -Stest-inverted). Python's ctypes: no compiled code of the gate's own.
+# if there is none, or IMAGE isn't a KIND its decoder reads. KIND is the format its name says
+# (never one picked by the bytes), decoded by that format's own library to 8-bit grey (png:
+# libpng, jpeg: libturbojpeg, gif: giflib, every frame), its size checked before; then libzbar's
+# scanner, and with "inverted", on nothing found, the image inverted (light on dark, which phones
+# read). Python's ctypes: no compiled code of the gate's own.
 # --check: the libraries load. (A test's: with CCS_GATE_SCANLOG, each image read is noted there:
 # its kind and first bytes.)
 qrscan_py='
