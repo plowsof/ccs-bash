@@ -273,7 +273,10 @@ wallet_line() {
 # CCS_CHECK_ROOT: the files under another folder, CCS_CHECK_OFFLINE=1: nothing asked (the tests)
 # shellcheck disable=SC2015  # (ok, bad and warn always succeed: A && ok || bad is if-then-else)
 cmd_check() {
-    local root=${CCS_CHECK_ROOT:-} cdir=${CCS_COMPOSE_DIR:-/opt/ccs-bash/contrib/docker/backend} fails=0 warns=0
+    local root=${CCS_CHECK_ROOT:-} cdir=${CCS_COMPOSE_DIR:-} fails=0 warns=0
+    # the compose's folder: the running one's (Docker's label), else the setup's
+    [[ $cdir || $root ]] || cdir=$(docker ps --filter label=com.docker.compose.project=backend --format '{{.Label "com.docker.compose.project.working_dir"}}' 2> /dev/null | head -n 1)
+    cdir=${cdir:-/opt/ccs-bash/contrib/docker/backend}
     local env wconf aconf url port host hostmode='' f v
     ok() { echo "ok   $*"; }
     bad() { echo "FAIL $*"; fails=$((fails + 1)); }
