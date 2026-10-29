@@ -136,6 +136,10 @@ runuser -u ccs -- ssh-keygen -t ed25519 -N '' -f /var/lib/ccs/.ssh/id_ed25519
 echo "<web server> ssh-ed25519 AAAA..." > /var/lib/ccs/.ssh/known_hosts
 ```
 
+In Docker the key is in `/etc/ccs/push/` (`ccs-push`'s), and the host key is the gate's own on
+its port: `[<web server>]:2223 ssh-ed25519 AAAA...`, from its `/etc/ccs-gate/ssh/ssh_host_ed25519_key.pub`
+([the web server in Docker](docker.md#the-web-server-in-docker)).
+
 [The handover's update script](handover.md#9-the-update) pushes (`--delay-updates`: swapped in once
 all have arrived), with `-p 22` in full, as the backend's `ssh_config` may default to another port
 (a push that hangs is the sign). The web server needs 22 open to the backend and 80/443 to

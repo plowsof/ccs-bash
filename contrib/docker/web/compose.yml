@@ -1,6 +1,8 @@
 # The web server's side in Docker (docs/docker.md, "The web server in Docker"): the gate
-# (ccs-receive) behind its own sshd on port 2223, the backup receiver (ccs-backup-receive)
-# behind another on 2224, the gate's heartbeat; nginx stays on the host, serving
+# (ccs-receive) behind its own sshd on port 2223, the gate's heartbeat; and, for the backup
+# machine, the backup receiver (ccs-backup-receive) behind another sshd on 2224 (the profile
+# "backup": on a machine of its own, not the web server, whose root could rewrite every copy;
+# a test setup may run both on one, COMPOSE_PROFILES=backup); nginx stays on the host, serving
 # /var/lib/ccs-data as before (docs/two-machines.md). The image by ID, never pulled
 # (container/gate.Dockerfile, attested as ccs-bash's). The host's folders, users and key files
 # are the host setup's, so either one can run them, never both. Its settings: .env (env.example).
@@ -76,9 +78,12 @@ services:
       # the gate's log, /var/log/ccs-gate.log in here (a folder: a rotated file stays the old one)
       - ${CCS_WEB_LOG:-/var/log/ccs-web}:/var/log
 
-  # the backup receiver: the backup account, ccs-backup, may run only ccs-backup-receive
+  # the backup receiver: the backup account, ccs-backup, may run only ccs-backup-receive. Its own
+  # machine: there, "docker compose --profile backup up -d backup" (its own .env: the image,
+  # CCS_BACKUP_UID; the gate and heartbeat not started)
   backup:
     <<: *hardened
+    profiles: [backup]
     user: "0:0"
     cap_add: *sshd-caps
     mem_limit: 256m

@@ -58,12 +58,17 @@ export T=$t PATH="$t/bin:$PATH" CCS_RUN=$t/run CCS_EVERY=1 STATE_DIR=$t/state \
     CCS_BACKUP=backup@test CCS_BACKUP_KEYS=$t CCS_PUSH=data@test CCS_SITE=$t/www/site CCS_PUSHED=$t/pushed \
     CCS_WATCH=$t/bin/ccs-watch
 me="$(id -u):$(id -g)"
-if ! CCS_UIDS="pull=$me ccs-bash=$me backup=$me front=$me push=$me watch=$me" "$step" init > /dev/null; then
+if ! CCS_UIDS="pull=$me ccs-bash=$me backup=$me front=$me push=$me watch=$me" CCS_NOW_GID=$me CCS_WATCH_GID=$(id -g) "$step" init > /dev/null; then
     fail "init"; exit 1
 fi
 if [[ -p $t/run/pull/now && -p $t/run/push/watch && -p $t/run/front/wake && -d $t/run/watch && -f $t/run/watch.lock ]]; then
     ok "init: a folder and pipes for each stage, the push's lock"
 else fail "init's pipes"; fi
+# the two pipes whose lines mean something writable by their one writer's group only; the others
+# by any stage (a line there only has a stage look at the "done" counters again)
+if [[ $(stat -c %a "$t/run/pull/now") == 660 && $(stat -c %a "$t/run/push/watch") == 660 && $(stat -c %a "$t/run/front/wake") == 622 ]]; then
+    ok "init: now and watch 660 (the wallet's group, the watch's), the wake pipes 622"
+else fail "the pipes' modes: $(stat -c '%n %a' "$t/run/pull/now" "$t/run/push/watch" "$t/run/front/wake" | tr '\n' ' ')"; fi
 exec 3<> "$t/run/push/watch"
 start
 # until run N is pushed (90 s at most)
@@ -126,6 +131,16 @@ sleep 4
 if (($(grep -cx "https://site.test $t/pushed" "$t/watched") >= 2)) && ! grep -q -- --run "$t/watched" && "$step" health watch > /dev/null; then
     ok "watch: between pushes, the pages again and again (no run's result); healthy"
 else fail "watch between pushes"; cat "$t/watched"; fi
+
+# no run's result for CCS_WATCH_STALL (2 s here): a failed run, with why, again as long after
+stop
+: > "$t/watched"
+exec 3<> "$t/run/push/watch"; while IFS= read -r -t 1 _ <&3; do :; done; exec 3<&-
+CCS_WATCH_STALL=2 CCS_WATCH_EVERY=3600 "$step" watch https://site.test >> "$t/out-watch" 2>&1 & pids+=($!)
+sleep 5
+if (($(grep -c -- '^--run no run finished for 0 min (a stage stopped or stuck: ccs status)$' "$t/watched") >= 2)); then
+    ok "watch: no run's result for CCS_WATCH_STALL, a failed run (a stage stopped or stuck), again after as long"
+else fail "the stall"; cat "$t/watched"; fi
 
 # no lock file (init not run again since it was added): the push goes all the same, and says so
 stop
