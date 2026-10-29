@@ -10,6 +10,11 @@ releases](handover.md#the-releases). Nothing here is part of the setup: don't co
   own wallet and signed list ([subaddresses/testnet2](../subaddresses/testnet2/README.md)): every
   address the site shows is the testnet wallet's. A full wallet (its spend key too), so testnet
   donations can be sent from it.
+- **The backend in Docker** (since 2026-10-29, [docker](docker.md)): the compose from
+  `/opt/ccs-bash` at the release's tag, its `.env` beside `compose.yml`, with
+  `compose.host.yml`: node3's monerod, Tor (ccs-watch's proxy) and the alert bot listen on its
+  127.0.0.1 only, so the wallet, ccs-bash and the watch run on the host's network. The host's
+  `ccs-bash`, `ccs-wallet-rpc` and ccs-watch units are disabled, kept for going back.
 - **A retired wallet, rehearsed** (2026-10-28, [retiring a wallet](handover.md#retiring-a-wallet)):
   the first testnet wallet ([subaddresses/testnet](../subaddresses/testnet/README.md), `fresh_test`)
   retired as `testnet` while still receiving, then a donation to one of its old addresses after

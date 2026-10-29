@@ -51,16 +51,29 @@ COPY --from=xxhash / /
 COPY ccs-back.sh /opt/ccs-bash/
 COPY lib/ /opt/ccs-bash/lib/
 COPY contrib/docker/backend/step /opt/ccs-bash/contrib/docker/backend/step
+COPY contrib/ccs-watch /opt/ccs-bash/contrib/ccs-watch
 
 # Drop headers, static libraries and manuals, fix our files' modes (whatever the umask),
-# give every file the commit's time.
+# give every file the commit's time. And only the programs something here runs: of git, git
+# itself (it runs its commands itself) and its https transport; of openssh, ssh (no sshd, agent
+# or keys tools); none of the packages' other tools. (git's commands are hard links to git in
+# StageX's, which COPY would make into copies: 17 MB each, 2.8 GB in all.)
 FROM toolchain AS fix
 ARG SOURCE_DATE_EPOCH
 COPY --from=tree / /rootfs/
 RUN cd /rootfs \
     && rm -rf usr/include usr/lib/pkgconfig usr/lib/*.a usr/share/man usr/share/doc usr/share/info \
+    && mv usr/libexec/git-core/git-remote-https usr/libexec/git-remote-https \
+    && rm -rf usr/libexec/git-core usr/share/git-core usr/bin/git-* usr/bin/scalar \
+    && mkdir usr/libexec/git-core && mv usr/libexec/git-remote-https usr/libexec/git-core/ \
+    && ln -s git-remote-https usr/libexec/git-core/git-remote-http && mkdir -p usr/share/git-core/templates \
+    && rm -rf usr/sbin/sshd usr/lib/ssh usr/bin/scp usr/bin/sftp usr/bin/ssh-add usr/bin/ssh-agent \
+        usr/bin/ssh-keygen usr/bin/ssh-keyscan usr/bin/rsync-ssl usr/bin/xxh*sum usr/bin/*zstd* \
+        usr/bin/curl-config usr/bin/wcurl usr/bin/*-config usr/bin/bashbug usr/bin/c_rehash usr/bin/ldd \
+        usr/sbin/update-ca-certificates usr/bin/captoinfo usr/bin/clear usr/bin/infocmp \
+        usr/bin/infotocap usr/bin/reset usr/bin/tabs usr/bin/tic usr/bin/toe usr/bin/tput usr/bin/tset \
     && chmod 755 opt/ccs-bash opt/ccs-bash/lib opt/ccs-bash/ccs-back.sh && chmod 644 opt/ccs-bash/lib/* \
-    && chmod 755 opt/ccs-bash/contrib opt/ccs-bash/contrib/docker opt/ccs-bash/contrib/docker/backend opt/ccs-bash/contrib/docker/backend/step \
+    && chmod 755 opt/ccs-bash/contrib opt/ccs-bash/contrib/docker opt/ccs-bash/contrib/docker/backend opt/ccs-bash/contrib/docker/backend/step opt/ccs-bash/contrib/ccs-watch \
     && find . -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
 
 FROM scratch AS image
