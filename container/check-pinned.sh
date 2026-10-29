@@ -3,10 +3,11 @@
 # paths, umasks, times) and one on a cache left by another commit all give the same hash.
 # One of those builds alone, printing "id: <image id>": check-pinned.sh clean UMASK | warm (CI
 # runs warm, under umask 077, on a second machine and compares it with its clean build).
+# CHECK_DOCKERFILE=gate.Dockerfile: the gate's image instead (contrib/docker/web).
 set -euo pipefail
 here=$(dirname "$(readlink -f "$0")")
 repo=$(git -C "$here" rev-parse --show-toplevel)
-name=$(basename "$repo")
+name=$(basename "$repo") dockerfile=${CHECK_DOCKERFILE:-Dockerfile}
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"; docker image rm -f "$name:other" "$name:warm" "$name:repro1" "$name:repro2" > /dev/null 2>&1 || true' EXIT
 
@@ -16,7 +17,7 @@ trap 'rm -rf "$tmp"; docker image rm -f "$name:other" "$name:warm" "$name:repro1
 clean() {
     (umask "$2" && git clone -q "$repo" "$tmp/clone$1")
     cp -r "$tmp/sources" "$tmp/clone$1/container/sources"
-    NO_CACHE=1 "$tmp/clone$1/container/build.sh" "$name:repro$1" > /dev/null 2>&1
+    NO_CACHE=1 "$tmp/clone$1/container/build.sh" "$name:repro$1" "$dockerfile" > /dev/null 2>&1
     docker image inspect "$name:repro$1" --format '{{.Id}}'
 }
 # warm: a build of another commit (a day older), then this one on the cache it left; prints its ID
@@ -28,8 +29,8 @@ warm() {
     done
     GIT_COMMITTER_DATE="@$(($(git -C "$repo" log -1 --format=%ct) - 86400)) +0000" \
         git -C "$tmp/other" -c user.name=check -c user.email=check@invalid commit -q --allow-empty -m other
-    "$tmp/other/container/build.sh" "$name:other" > /dev/null 2>&1
-    "$tmp/warm/container/build.sh" "$name:warm" > /dev/null 2>&1
+    "$tmp/other/container/build.sh" "$name:other" "$dockerfile" > /dev/null 2>&1
+    "$tmp/warm/container/build.sh" "$name:warm" "$dockerfile" > /dev/null 2>&1
     docker image inspect "$name:warm" --format '{{.Id}}'
 }
 
