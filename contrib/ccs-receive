@@ -263,6 +263,10 @@ Z.zbar_image_first_symbol.argtypes = Z.zbar_symbol_next.argtypes = Z.zbar_symbol
 Z.zbar_image_first_symbol.restype = Z.zbar_symbol_next.restype = Z.zbar_symbol_get_data.restype = C.c_void_p
 Z.zbar_image_destroy.argtypes = [C.c_void_p]
 scanner = Z.zbar_image_scanner_create()
+# QR codes only: every kind of code off (symbology 0, all of them), then QR (64) on, so none of
+# the readers for the others (EAN, Code 128, DataBar, PDF417...) ever sees these bytes
+Z.zbar_image_scanner_set_config.argtypes = [C.c_void_p, C.c_int, C.c_int, C.c_int]
+if Z.zbar_image_scanner_set_config(scanner, 0, 0, 0) or Z.zbar_image_scanner_set_config(scanner, 64, 0, 1): sys.exit(1)
 def scan(w, h, grey):
     img, buf = Z.zbar_image_create(), C.create_string_buffer(grey, len(grey))
     Z.zbar_image_set_format(img, 0x30303859)   # Y800: 8-bit grey
