@@ -32,6 +32,9 @@ R=${CCS_RUN:-/run/ccs}
 # the push's and the backup's ports: numbers (they go into an ssh command line)
 for p in "${CCS_PUSH_PORT:-22}" "${CCS_BACKUP_PORT:-22}"; do [[ $p =~ ^[1-9][0-9]{0,4}$ ]] || { echo "step: a port that isn't one: $p" >&2; exit 2; }; done
 EVERY=${CCS_EVERY:-120}
+# the least time between two runs' starts (CCS_MIN_GAP, 30 s; never more than EVERY)
+GAP=${CCS_MIN_GAP:-30}
+((GAP <= EVERY)) || GAP=$EVERY
 STAGES="pull ccs-bash backup front push"
 stage=${1:?STAGE: init $STAGES}
 shift
@@ -93,11 +96,17 @@ pull)
     while :; do
         n=$(($(num "$R/pull/done") + 1))
         wait_for push $((n - 1))
-        # EVERY seconds after the last run started, or at once when woken through "now"
-        until (($(now) >= $(num "$R/pull/started") + EVERY)); do
-            read -r -t $(($(num "$R/pull/started") + EVERY - $(now))) _ <&4 && break
+        # EVERY seconds after the last run started (GAP when that run left a donation pending: its
+        # confirmation is shown a run after it), or at once when woken through "now"; never
+        # sooner than GAP after the last start, so a stream of transactions can't make the runs
+        # follow each other faster than that
+        last=$(num "$R/pull/started") every=$EVERY
+        [[ $(cat "$R/ccs-bash/pending" 2> /dev/null) == 1 ]] && every=$GAP
+        until (($(now) >= last + every)); do
+            read -r -t $((last + every - $(now))) _ <&4 && break
         done
-        # the lines that came with it: one run for all of them
+        while (($(now) < last + GAP)); do sleep $((last + GAP - $(now))); done
+        # the lines that came with it, or while it waited: one run for all of them
         while read -r -t 0.1 _ <&4; do :; done
         put "$R/pull/started" "$(now)"
         say "== run $(date -u '+%F %T')"
@@ -117,6 +126,11 @@ ccs-bash)
         n=$(($(num "$R/ccs-bash/done") + 1))
         wait_for pull "$n"
         if run "${CCS_BACK:-/opt/ccs-bash/ccs-back.sh}" "${CCS_CONFIG:-/etc/ccs/ccs.conf}"; then finish "$n" ok; else finish "$n" "failed: ccs-bash"; fi
+        # a donation left pending (in the pool, or short of MIN_CONFIRMATIONS): the pull's next
+        # run sooner (GAP, not EVERY)
+        if jq -e '[.. | objects | ."amount-pending"? // 0] | any(. > 0)' "${CCS_OUT:-/var/lib/ccs/out}/proposals.json" > /dev/null 2>&1; then
+            put "$R/ccs-bash/pending" 1
+        else put "$R/ccs-bash/pending" 0; fi
         wake backup front
     done
     ;;
@@ -191,10 +205,16 @@ watch)
     site=${1:?watch SITE_URL} w=${CCS_WATCH:-/opt/ccs-bash/contrib/ccs-watch} pushed=${CCS_PUSHED:-/var/lib/ccs/pushed}
     # check: the live pages against what was pushed, under the lock (shared: the push's is
     # exclusive), when something was
+    # (the lock held only to copy what was pushed, a moment: the comparison, a minute of fetches,
+    # on the copy, so a push never waits for it)
     check() {
         [[ -f $pushed/index.html ]] || return 0
+        local copy
+        copy=$(mktemp -d) || return 0
         { timeout 600 flock -s 9 || say "warning: the push's lock not had in 10 minutes, checking all the same"
-          run "$w" "$site" "$pushed"; } 9< "$(lock)"
+          cp -a "$pushed/." "$copy/"; } 9< "$(lock)"
+        run "$w" "$site" "$copy"
+        rm -rf "$copy"
         return 0
     }
     next=$(($(now) + ${CCS_WATCH_EVERY:-300} + RANDOM % ${CCS_WATCH_RANDOM:-480}))

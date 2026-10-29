@@ -29,6 +29,9 @@ cat > "$t/bin/ccs-back" <<'EOF'
 #!/usr/bin/env bash
 [[ ! -e $T/fail-bash ]] || { echo "error: the stand-in fails"; exit 1; }
 [[ ! -e $T/slow ]] || sleep 3
+# a donation pending, when $T/pending exists: proposals.json says so, as ccs-bash's does
+p=0; [[ -e $T/pending ]] && p=0.5
+mkdir -p "$T/out" && echo "[{\"stage\": \"Funding Required\", \"proposals\": [{\"amount-pending\": $p}]}]" > "$T/out/proposals.json"
 echo "ccs-bash ran"
 EOF
 cat > "$t/bin/ccs-front" <<'EOF'
@@ -57,7 +60,7 @@ chmod 755 "$t/bin"/*
 export T=$t PATH="$t/bin:$PATH" CCS_RUN=$t/run CCS_EVERY=1 STATE_DIR=$t/state \
     CCS_BACK=$t/bin/ccs-back CCS_FRONT=$t/bin/ccs-front CCS_PROPOSALS=$t/proposals CCS_PULL_OK=$t/pull-ok \
     CCS_BACKUP=backup@test CCS_BACKUP_KEYS=$t CCS_PUSH=data@test CCS_SITE=$t/www/site CCS_PUSHED=$t/pushed \
-    CCS_WATCH=$t/bin/ccs-watch
+    CCS_WATCH=$t/bin/ccs-watch CCS_OUT=$t/out
 me="$(id -u):$(id -g)"
 if ! CCS_UIDS="pull=$me ccs-bash=$me backup=$me front=$me push=$me watch=$me" CCS_NOW_GID=$me CCS_WATCH_GID=$(id -g) "$step" init > /dev/null; then
     fail "init"; exit 1
@@ -117,6 +120,24 @@ if until_pushed $((n + 2)) && sleep 3 && (($(cat "$t/run/push/done") == n + 2));
     ok "a line on now during a run: the next run right after it (two lines: one run)"
 else fail "now during a run: pushed $(cat "$t/run/push/done"), wanted $((n + 2))"; fi
 
+# the pace: a stream of notifications, runs at least CCS_MIN_GAP apart (3 s here); a donation
+# left pending, the next run CCS_MIN_GAP after (no notification), until nothing is pending
+stop
+export CCS_MIN_GAP=3
+start
+starts() { grep -c '^== run ' "$t/out-pull"; }
+s0=$(starts); t0=$(date +%s)
+while (($(date +%s) < t0 + 9)); do printf 'tx\n' 1<> "$t/run/pull/now"; sleep 1; done
+flood=$(($(starts) - s0))
+if ((flood >= 2 && flood <= 4)); then ok "pace: 9 s of notifications, $flood runs (at most one per CCS_MIN_GAP)"
+else fail "pace: $flood runs in 9 s of notifications, CCS_MIN_GAP 3"; fi
+# (one run sees it pending, from a notification; the next ones come by themselves)
+sleep 4; touch "$t/pending"; s1=$(starts); printf 'tx\n' 1<> "$t/run/pull/now"; sleep 12; pend=$(($(starts) - s1))
+rm -f "$t/pending"; sleep 5; s2=$(starts); sleep 8; settled=$(($(starts) - s2))
+if ((pend >= 3 && settled == 0)); then ok "pace: a donation pending, the next run CCS_MIN_GAP after it ($pend in 12 s from one notification); none pending, none until CCS_EVERY"
+else fail "pace: $pend runs while pending, $settled after"; fi
+unset CCS_MIN_GAP
+
 # the healthcheck: every stage finished something within CCS_HEALTH seconds
 unhealthy=''
 for s in pull ccs-bash backup front push; do "$step" health "$s" > /dev/null || unhealthy+=" $s"; done
@@ -133,7 +154,7 @@ CCS_WATCH_EVERY=3600 CCS_WATCH_RANDOM=1 "$step" watch https://site.test >> "$t/o
 n=$(cat "$t/run/push/done"); sleep 1
 printf 'tx\n' 1<> "$t/run/pull/now"
 for ((i = 0; i < 30; i++)); do (($(cat "$t/run/watch/done" 2> /dev/null || echo 0) > n)) && break; sleep 1; done
-if [[ $(cat "$t/watched") == "https://site.test $t/pushed"$'\n'"--run ok" ]]; then
+if [[ $(sed -n 1p "$t/watched") == "https://site.test /"* && $(sed -n 2p "$t/watched") == "--run ok" && $(wc -l < "$t/watched") == 2 ]]; then
     ok "watch: after a push, the live pages against what was pushed, then the run's result"
 else fail "watch after a push"; cat "$t/watched" "$t/out-watch"; fi
 stop
@@ -141,7 +162,7 @@ stop
 exec 3<> "$t/run/push/watch"; while IFS= read -r -t 1 _ <&3; do :; done; exec 3<&-
 CCS_WATCH_EVERY=1 CCS_WATCH_RANDOM=1 "$step" watch https://site.test >> "$t/out-watch" 2>&1 & pids+=($!)
 sleep 4
-if (($(grep -cx "https://site.test $t/pushed" "$t/watched") >= 2)) && ! grep -q -- --run "$t/watched" && "$step" health watch > /dev/null; then
+if (($(grep -cE '^https://site\.test /' "$t/watched") >= 2)) && ! grep -q -- --run "$t/watched" && "$step" health watch > /dev/null; then
     ok "watch: between pushes, the pages again and again (no run's result); healthy"
 else fail "watch between pushes"; cat "$t/watched"; fi
 
