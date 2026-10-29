@@ -56,6 +56,7 @@ mirror_assign() {
         fi
         addr=$(jq -r .address <<<"$m")
         have=$(jq -r --arg f "$file" '.[$f].address // ""' "$WORK/state.json")
+        : > "$WORK/rpc.err" # this proposal's answer only (none at all for one the feed has no address for)
         if [[ $addr =~ ^[0-9A-Za-z]{95}$ ]] && res=$(rpc get_address_index "$(jq -nc --arg a "$addr" '{address: $a}')" 2> "$WORK/rpc.err") \
             && [[ $(jq -r '.index.major' <<<"$res") == 0 ]]; then
             idx=$(jq -r '.index.minor' <<<"$res")
@@ -71,7 +72,7 @@ mirror_assign() {
         fi
         # not this wallet's address: wallet-rpc says so (an earlier wallet's), or it has none.
         # Anything else (the wallet not answering) stops the run, not taken for history
-        err=$(cat "$WORK/rpc.err" 2> /dev/null)
+        err=$(< "$WORK/rpc.err")
         if [[ $addr =~ ^[0-9A-Za-z]{95}$ && $err != *"belong"* ]]; then
             [[ $have ]] && continue
             log "error: the wallet couldn't say whose $file's address is: $err"; return 1
