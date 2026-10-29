@@ -645,14 +645,16 @@ other=$(printf '8%094d' 0 | tr 0 A)
 printf '# retired old wallet %s height 80 time 1\n70,%064d,3,2000000000000,0,b-wip.md\n' "$(printf '8%094d' 0 | tr 0 B)" 9 > "$d/state/retired/old.csv"
 feed() {   # feed NEW-FUND-INDEX: the other site's /projects
     jq -n --arg nf "$(printf '8%094d' "$1")" --arg a1 "$(printf '8%094d' 1)" --arg n9 "$(printf '8%094d' 9)" --arg o "$other" '{data: [
+        {title: "Ends with dots", author: "lee", address: "", raised_amount: 0.25, contributions: 1, state: "COMPLETED"},
         {title: "Brand new", author: "dave", address: $nf, raised_amount: 0, contributions: 0, state: "FUNDING-REQUIRED"},
         {title: "Fund <b>this</b> & that", author: "alice", address: $a1, raised_amount: 1.5, contributions: 3, state: "FUNDING-REQUIRED"},
         {title: "Finished thing", author: "carol", address: $o, raised_amount: 12.5, contributions: 4, state: "COMPLETED"},
         {title: "Work in progress", author: "bob", address: $o, raised_amount: 99, contributions: 9, state: "WORK-IN-PROGRESS"},
         {title: "Nearly funded", author: "judy", date: "October 5, 2026", address: $n9, raised_amount: 0, contributions: 0, state: "FUNDING-REQUIRED"},
         {title: "Nearly funded", author: "judy", date: "May 1, 2020", address: $a1, raised_amount: 0, contributions: 0, state: "COMPLETED"},
-        {title: "Name starts with a space", author: "ivan", date: "January 2, 2025", address: $a1, raised_amount: 0, contributions: 0, state: "FUNDING-REQUIRED"},
-        {title: "Name starts with a space", author: "ivan", date: "January 2, 2025", address: $a1, raised_amount: 0, contributions: 0, state: "FUNDING-REQUIRED"}]}' > "$d/feed.json"
+        {title: "Name starts with a space", author: "ivan", address: "", raised_amount: 0, contributions: 0, state: "FUNDING-REQUIRED"},
+        {title: "Name with a quote", author: "kim", date: "X", address: $a1, raised_amount: 0, contributions: 0, state: "COMPLETED"},
+        {title: "Name with a quote", author: "kim", date: "X", address: $a1, raised_amount: 0, contributions: 0, state: "COMPLETED"}]}' > "$d/feed.json"
 }
 feed 7
 sed "s|$TEST_TMP/state|$d/state|; s|$TEST_TMP/out|$d/out|" "$TEST_TMP/ccs.conf" > "$d/ccs.conf"
@@ -662,10 +664,10 @@ mrun() { bash -c 'source "$1/../ccs-back.sh" && source "$1/stubs.sh" && main "$2
 p() { jq -r --arg f "$1" '.[] | select(.filename == $f) | "\(.raised_amount) \(.contributions)"' "$d/out/projects.json"; }
 if mrun && [[ $(cat "$TEST_TMP/wallet-count") == "$had" ]] \
     && grep -q '^"new-fund.md",[^,]*,7,' "$d/state/proposals.csv" && grep -q '^"a-fund.md",[^,]*,1,' "$d/state/proposals.csv" \
-    && [[ $(p "c done, (old).md") == "12.5 4" && $(p "b-wip.md") == "2 1" ]] \
+    && [[ $(p "c done, (old).md") == "12.5 4" && $(p "b-wip.md") == "2 1" && $(p "dots-end.md") == "0.25 1" ]] \
     && grep -q '^"near-funded.md",[^,]*,9,' "$d/state/proposals.csv" && [[ -z $(p " leading-space.md") ]] \
     && grep -q '^skipping  leading-space.md: no address from MIRROR_URL yet' "$d/log" \
-    && grep -q 'MIRROR_URL has more than one proposal with the title and author of  leading-space.md, and of its date' "$d/log"; then
+    && grep -q "MIRROR_URL has more than one proposal with the title and author of o'quote.md, and of its date" "$d/log"; then
     cp "$d/out/projects.json" "$d/projects.before"
     feed 8
     if ! mrun && grep -q "MIRROR_URL gives it $(printf '8%094d' 8): stopped" "$d/log" && cmp -s "$d/out/projects.json" "$d/projects.before"; then
