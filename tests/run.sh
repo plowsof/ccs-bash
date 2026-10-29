@@ -796,7 +796,7 @@ done
 if bash -c 'source "$1/../contrib/migrate/retire-from-ccs-back" && source "$1/stubs.sh" && retire_db_main old0 "$2" "$3"' _ "$here" "$d/ccs.conf" "$d/export" > "$d/db.out" 2>&1 \
     && [[ $(awk 'NR == 1' "$d/state/retired/old0.csv") =~ ^#\ retired\ old0\ wallet\ ccs-back-database\  ]] \
     && [[ $(awk 'NR > 1' "$d/state/retired/old0.csv" | wc -l) == 2 ]] \
-    && dep db && [[ $(jq -r '.[] | select(.filename == "c done, (old).md") | "\(.raised_amount) \(.contributions)"' "$d/out/projects.json") == "3.5000 2" ]]; then
+    && dep db && [[ $(jq -r '.[] | select(.filename == "c done, (old).md") | "\(.raised_amount) \(.contributions)"' "$d/out/projects.json") == "3.5 2" ]]; then
     # an index two of ccs-back's proposals share: refused, its deposits can't be told apart
     printf '"b-wip.md","",900,"%s",""\n' "$(printf '8%094d' 2)" >> "$d/export/proposals.csv"
     cp "$d/state/proposals.csv.before-retire-old0" "$d/state/proposals.csv"
@@ -1048,4 +1048,8 @@ source "$here/review5.sh"
 for f in proposals.json completed-proposals.json projects.json proposals.csv log; do
     if diff -u "$here/expected/$f" "$TEST_TMP/out/$f"; then echo "ok   $f"; else echo "FAIL $f"; status=1; fi
 done
+# /projects: the amounts numbers, as ccs-back's are (its readers add them up)
+if jq -e 'length > 0 and all(.[]; (.raised_amount | type) == "number" and (.target_amount | type) == "number")' "$TEST_TMP/out/projects.json" > /dev/null; then
+    echo "ok   /projects: raised_amount and target_amount are numbers, as ccs-back's"
+else echo "FAIL /projects: an amount that isn't a number"; status=1; fi
 exit "$status"
