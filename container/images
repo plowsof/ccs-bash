@@ -10,6 +10,12 @@ openssl                    stagex/core-openssl@sha256:0ea25b654c044622a62c0a8707
 libzstd                    stagex/core-libzstd@sha256:84c78c0000a4134df8a45661ab7e8ecb91dead720ff6b46c315380fb33cd0607
 zlib                       stagex/core-zlib@sha256:6b843e1875989a330d0b2051ddd1ab0178f01c9f476fb64727c8bd388eda9839
 jq                         stagex/user-jq@sha256:4148299a2beb46fa5f0494ea456f1968500ca99c7fd96298be766195cf716855
+# the backend compose (contrib/docker/backend): git for the proposals, rsync and ssh for the
+# push and the backups
+git                        stagex/core-git@sha256:b416d4b29eb7c3b5ebcb4906ebce509abee7a9442abb769d95e3fae08de3142e
+rsync                      stagex/user-rsync@sha256:17962b9271cc6134c1aa5edc6a3fafe18e27bdc8786f1fd400bbf82208fa2fb4
+openssh                    stagex/user-openssh@sha256:0881c9ba25e4f5d7efabbb639a6a2e4ad25847d6de42738f56e44cfa60081f38
+xxhash                     stagex/core-xxhash@sha256:630d2e562bdb65c3006d481bbc8c093f39cc378a8fd64084865fe966360ce208
 # the builder (builder.Dockerfile): BuildKit, and runc with its library for the RUN steps
 buildkit                   stagex/user-buildkit@sha256:91bff9810facddaa795fe3173d190b25b1919bd4eb21dc8e81ce4d632161faa7
 runc                       stagex/user-runc@sha256:8bbf5810f80422827c085f653aecbdf3c4f0b673f0c27129e634379177443857

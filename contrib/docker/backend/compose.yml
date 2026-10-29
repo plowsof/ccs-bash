@@ -1,0 +1,164 @@
+# The backend in Docker (docs/docker.md): the update of docs/handover.md, step 9, as one service
+# a stage (contrib/docker/backend/step), each with only its own user, network and folders, and
+# monero-wallet-rpc. No service has the Docker socket: they take turns through the run folder.
+# The images by ID, never pulled: ccs-bash's and ccs-front-bash's as their releases and ccs-sigs
+# attest them, the wallet's as built here (wallet-rpc/Dockerfile). The host's folders are the
+# same as the host setup's (docs/setup.md), so either one can run them, never both at once.
+# Its settings: .env beside this file (env.example).
+#
+#   docker compose up -d          start (after "docker compose run --rm init" once)
+#   docker compose logs -f        every stage's output (also in /var/log/ccs-bash.log)
+#   docker compose down           stop
+
+x-hardened: &hardened
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  restart: unless-stopped
+  pull_policy: never
+  init: true
+
+x-log-group: &log-group
+  # the log's group (ccs-log: root's file, group-writable), so every stage can append to it
+  group_add: ["${LOG_GID:?the log's group id}"]
+
+x-run: &run
+  # the run folder: each stage's "done", "status" and pipes
+  type: bind
+  source: ${CCS_RUN_DIR:-/var/lib/ccs/run}
+  target: /run/ccs
+
+x-log: &log
+  type: bind
+  source: ${CCS_LOG:-/var/log/ccs-bash.log}
+  target: /var/log/ccs-bash.log
+
+services:
+  # once, as root: the run folder, a folder for each stage owned by its user
+  init:
+    image: ${CCS_BASH_IMAGE:?the attested ccs-bash image ID}
+    pull_policy: never
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]
+    security_opt: ["no-new-privileges:true"]
+    network_mode: none
+    user: "0:0"
+    entrypoint: ["/opt/ccs-bash/contrib/docker/backend/step", "init"]
+    environment:
+      CCS_UIDS: "pull=${GIT_UID:?} ccs-bash=${CCS_UID:?} backup=${CCS_UID} front=${FRONT_UID:?} push=${CCS_UID}"
+    volumes: [*run]
+    restart: "no"
+    profiles: [init]
+
+  wallet-rpc:
+    <<: *hardened
+    image: ${WALLET_IMAGE:?the wallet-rpc image ID}
+    # the host's network: the wallet on 127.0.0.1 (rpc-bind-ip), an external monerod
+    # (daemon-address in wallet-rpc.conf), nothing published to the docker networks
+    network_mode: host
+    user: "${WALLET_UID:?}"
+    environment:
+      # its shared ring database (~/.shared-ringdb) beside the wallet, the rest is read-only
+      HOME: ${WALLET_DIR:-/var/lib/ccs/wallet}
+    command: ["--config-file", "/etc/ccs-wallet/wallet-rpc.conf", "--non-interactive",
+              "--tx-notify", "/usr/local/bin/ccs-notify %s"]
+    # answering: its RPC port open (bash's /dev/tcp; the image has no curl)
+    healthcheck:
+      test: ["CMD", "bash", "-c", ": > /dev/tcp/127.0.0.1/${WALLET_PORT:-18182}"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+    volumes:
+      - ${WALLET_CONF:-/etc/ccs-wallet/wallet-rpc.conf}:/etc/ccs-wallet/wallet-rpc.conf:ro
+      - ${WALLET_DIR:-/var/lib/ccs/wallet}:${WALLET_DIR:-/var/lib/ccs/wallet}
+      - *run
+
+  pull:
+    <<: [*hardened, *log-group]
+    image: ${CCS_BASH_IMAGE}
+    # the forge only (the default network: out, nothing in)
+    user: "${GIT_UID}"
+    entrypoint: ["/opt/ccs-bash/contrib/docker/backend/step", "pull"]
+    environment:
+      HOME: /tmp
+      CCS_EVERY: ${CCS_EVERY:-120}
+    volumes:
+      - /var/lib/ccs/proposals:/var/lib/ccs/proposals
+      - ${CCS_PULL_OK:-/var/lib/ccs/pull-ok}:/var/lib/ccs/pull-ok
+      - *run
+      - *log
+
+  ccs-bash:
+    <<: [*hardened, *log-group]
+    image: ${CCS_BASH_IMAGE}
+    # the host's network: wallet-rpc on 127.0.0.1, the forge's API
+    network_mode: host
+    user: "${CCS_UID}"
+    entrypoint: ["/opt/ccs-bash/contrib/docker/backend/step", "ccs-bash"]
+    depends_on:
+      wallet-rpc:
+        condition: service_healthy
+    volumes:
+      - /etc/ccs/ccs.conf:/etc/ccs/ccs.conf:ro
+      - /var/lib/ccs/proposals:/var/lib/ccs/proposals:ro
+      - /var/lib/ccs/state:/var/lib/ccs/state
+      - /var/lib/ccs/out:/var/lib/ccs/out
+      - *run
+      - *log
+
+  backup:
+    <<: [*hardened, *log-group]
+    image: ${CCS_BASH_IMAGE}
+    # the backup machine only (ssh)
+    user: "${CCS_UID}"
+    entrypoint: ["/opt/ccs-bash/contrib/docker/backend/step", "backup"]
+    environment:
+      CCS_BACKUP: ${CCS_BACKUP:?ccs-backup@<the backup machine>}
+    volumes:
+      - /etc/passwd:/etc/passwd:ro
+      - /var/lib/ccs/state:/var/lib/ccs/state:ro
+      - ${CCS_BACKUP_KEYS:-/etc/ccs/backup}:/etc/ccs/backup:ro
+      - *run
+      - *log
+
+  front:
+    <<: [*hardened, *log-group]
+    image: ${CCS_FRONT_IMAGE:?the attested ccs-front-bash image ID}
+    network_mode: none
+    user: "${FRONT_UID}"
+    # the stage runner from ccs-bash's checkout at its attested commit (the image has bash)
+    entrypoint: ["/step", "front", "/design/public", "/data", "/proposals", "/www/site", "/subaddresses/subaddresses.txt"]
+    volumes:
+      - ${CCS_BASH_DIR:-/opt/ccs-bash}/contrib/docker/backend/step:/step:ro
+      # the folder above the design: an upgrade renames public (public.old, public.new), and
+      # a mount of public itself would keep the old one
+      - ${CCS_DESIGN_DIR:-/opt/ccs-front-hugo}:/design:ro
+      - /var/lib/ccs/out:/data:ro
+      - /var/lib/ccs/proposals:/proposals:ro
+      - /var/lib/ccs/www:/www
+      - /etc/ccs-front:/subaddresses:ro
+      - *run
+      - *log
+
+  push:
+    <<: [*hardened, *log-group]
+    image: ${CCS_BASH_IMAGE}
+    # the web server only (ssh)
+    user: "${CCS_UID}"
+    entrypoint: ["/opt/ccs-bash/contrib/docker/backend/step", "push"]
+    environment:
+      CCS_PUSH: ${CCS_PUSH:?ccs-data@<the web server>}
+    volumes:
+      - /etc/passwd:/etc/passwd:ro
+      # the push key and known_hosts, in the ccs user's home as on the host
+      - ${CCS_HOME:-/var/lib/ccs}/.ssh:${CCS_HOME:-/var/lib/ccs}/.ssh:ro
+      # the folder above the site: ccs-front-bash replaces www/site each run, and a mount of it
+      # would keep the one replaced (empty, once deleted)
+      - /var/lib/ccs/www:/var/lib/ccs/www:ro
+      - /var/lib/ccs/pushed:/var/lib/ccs/pushed
+      - /run/ccs-watch.lock:/run/ccs-watch.lock:ro
+      - *run
+      - *log
