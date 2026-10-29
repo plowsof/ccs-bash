@@ -24,7 +24,6 @@ libffi                     stagex/core-libffi@sha256:9970a8f65b70569ed6b33f39f88
 coreutils                  stagex/core-coreutils@sha256:4941d68c446516fbe639dc711d6aad2c662f3899abf56aa5a936764f79da4d1f
 findutils                  stagex/core-findutils@sha256:d13601b0ff403c44bc5a6504ebe1215302de88de95ba1a7a4fdaf3b4991c5350
 grep                       stagex/core-grep@sha256:9622f4f6cb5e4a897782573e7a7287ed2cc2e8e36ea4140cc2731530aec9f391
-pcre2                      stagex/core-pcre2@sha256:27efd73260db81c816009e995572aaaed037cef645df58416e963d6328a16eca
 sed                        stagex/core-sed@sha256:fa6fcaa2f37d66045b3677d56695b5ca5fa33748d5f816716b02af5caed72c7a
 gawk                       stagex/core-gawk@sha256:0e66dcf083a4de152d7b710bdd0624887959d5fe0fb74949b5d76b59a09bf52e
 diffutils                  stagex/core-diffutils@sha256:41cd16b99eac8acae840912cefa728210bef1a759b7e2696c284382e75183e38
