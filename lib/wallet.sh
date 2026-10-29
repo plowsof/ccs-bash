@@ -87,14 +87,21 @@ assign_addresses() {
         log "$file: subaddress $idx $addr"
         # Deposits it had before it was handed out (the next one is easy to guess, the list
         # publishes it: someone's dust) aren't this proposal's: dropped from this run's totals, and
-        # those up to this height from every later run's (ASSIGNED: "index<TAB>height")
-        if [[ -n ${ASSIGNED:-} ]] && grep -q "^$idx"$'\t' "$WORK/totals.tsv"; then
+        # those in blocks up to the wallet's last one from every later run's (ASSIGNED:
+        # "index<TAB>height"). Kept for every subaddress handed out, not only one this run's
+        # totals have deposits at: they lack those still time-locked, and those at a subaddress
+        # past the ones the wallet counts as created (a wallet made from its keys still scans the
+        # default lookahead's 200, whatever set_subaddress_lookahead says). The height is the last
+        # block's (get_height is one more): a donation in the next block is the proposal's.
+        if [[ -n ${ASSIGNED:-} ]]; then
             local h
             h=$(rpc get_height | jq -r .height) || return 1
-            [[ $h =~ ^$NUM$ ]] || die "unexpected get_height result: '$h'"
-            printf '%s\t%s\n' "$idx" "$h" >> "$ASSIGNED"
-            log "warning: subaddress $idx had $(awk -F'\t' -v i="$idx" '$1 == i { print $4 }' "$WORK/totals.tsv") deposit(s) before $file was given it (sent to an address the list publishes): not counted"
-            awk -F'\t' -v i="$idx" '$1 != i' "$WORK/totals.tsv" > "$WORK/totals.tmp" && mv "$WORK/totals.tmp" "$WORK/totals.tsv"
+            [[ $h =~ ^$NUM$ && $h != 0 ]] || die "unexpected get_height result: '$h'"
+            printf '%s\t%s\n' "$idx" "$((h - 1))" >> "$ASSIGNED"
+            if grep -q "^$idx"$'\t' "$WORK/totals.tsv"; then
+                log "warning: subaddress $idx had $(awk -F'\t' -v i="$idx" '$1 == i { print $4 }' "$WORK/totals.tsv") deposit(s) before $file was given it (sent to an address the list publishes): not counted"
+                awk -F'\t' -v i="$idx" '$1 != i' "$WORK/totals.tsv" > "$WORK/totals.tmp" && mv "$WORK/totals.tmp" "$WORK/totals.tsv"
+            fi
         fi
     done < <(jq -r --slurpfile state "$WORK/state.json" '
         .[] | select(.layout == "fr") | .file | select($state[0][.] and $state[0][.].address == null)' "$WORK/props.json")
