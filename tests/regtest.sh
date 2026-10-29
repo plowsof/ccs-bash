@@ -235,8 +235,9 @@ card() { # the Funding Required card: "N contributors|Raised ..."
         on && /class="progress-label"/ { sub(/.*<p class="progress-label">/, ""); sub(/<\/p>.*/, ""); r = $0 }
         on && /<\/a>/ { on = 0; print c "|" r; exit }' "${2:-$SITE}/funding-required/index.html"
 }
-project() { # /projects: raised_amount contributions percentage_funded
-    jq -r --arg f "$1" '.[] | select(.filename == $f) | "\(.raised_amount) \(.contributions) \(.percentage_funded)"' "${2:-$OUT}/projects.json"
+project() { # /projects: raised_amount (in ten-thousandths of an XMR: the same whether a number
+    # or text) contributions percentage_funded
+    jq -r --arg f "$1" '.[] | select(.filename == $f) | "\(.raised_amount | tonumber * 10000 | round) \(.contributions) \(.percentage_funded)"' "${2:-$OUT}/projects.json"
 }
 
 # ---- the expected numbers, from what was sent ----
@@ -314,7 +315,7 @@ shows() {
     got_page=$(page_raised "$f" "$site")
     got_card=$(card "$f" "$site")
     got_proj=$(project "$f" "$out")
-    if [[ $got_page == "$want" && $got_card == "$n contributors|$want" && $got_proj == "$(xmr4 "$r") $n $pct" ]]; then
+    if [[ $got_page == "$want" && $got_card == "$n contributors|$want" && $got_proj == "$((r / 100000000)) $n $pct" ]]; then
         ok "$label: $f: \"$want\", $n contributors, /projects $got_proj"
     else
         fail "$label: $f: expected \"$want\", $n contributors, /projects $(xmr4 "$r") $n $pct; shown: page \"$got_page\", card \"$got_card\", /projects $got_proj"
