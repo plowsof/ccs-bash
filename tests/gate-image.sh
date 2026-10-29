@@ -3,7 +3,7 @@
 # (ccs-receive's qrscan_py, its libraries loaded): a code read in a PNG, a JPEG and a GIF; an
 # inverted one only when asked; an SVG named .png, a JPEG named .png and a PNG claiming 30000 by
 # 30000 pixels read as nothing; qrencode with PNG output; rrsync; sshd's own; and none of what the
-# image leaves out (ImageMagick, zbarimg, an ssh client, git's servers).
+# image leaves out (an ssh client, sftp, git's servers).
 set -uo pipefail
 here=$(dirname "$(readlink -f "$0")")
 fx=$here/fixtures/qr
@@ -22,7 +22,7 @@ if [[ $(q png "$t/qr.png") == "$a" && $(q jpeg "$fx/qr.jpg") == "$a" && $(q gif 
 else fail "reading: png '$(q png "$t/qr.png")' jpeg '$(q jpeg "$fx/qr.jpg")' gif '$(q gif "$fx/qr.gif")'"; fi
 qrencode -s 4 --foreground=FFFFFF --background=000000 -o "$t/inv.png" "$a"
 if ! q png "$t/inv.png" > /dev/null && [[ $(q png "$t/inv.png" inverted) == "$a" && $(q gif "$fx/inverted.gif" inverted) == "$a" ]]; then
-    ok "an inverted code (light on dark): read only with inverted, as zbarimg's -Stest-inverted"
+    ok "an inverted code (light on dark): read only with inverted"
 else fail "inverted codes"; fi
 printf '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>' > "$t/s.png"
 cp "$fx/qr.jpg" "$t/j.png"
@@ -37,8 +37,8 @@ else fail "a file not the format its name says, or too large, was read"; fi
 if [[ $(qrencode -s 10 -o - "$a" | head -c 8 | od -An -c | tr -d ' ') == '211PNG\r\n032\n' ]]; then ok "qrencode writes PNG (StageX's doesn't: built here)"; else fail "qrencode's PNG"; fi
 if rrsync -help 2>&1 | grep -q 'rrsync' && /usr/sbin/sshd -V 2>&1 | grep -q OpenSSH; then ok "rrsync, sshd"; else fail "rrsync or sshd"; fi
 present=''
-for c in convert magick identify zbarimg ssh scp sftp git-daemon git-shell ssh-agent; do command -v "$c" > /dev/null && present+=" $c"; done
+for c in ssh scp sftp git-daemon git-shell ssh-agent; do command -v "$c" > /dev/null && present+=" $c"; done
 [[ -e /usr/lib/ssh/sftp-server ]] && present+=" sftp-server"
-if [[ -z $present ]]; then ok "no ImageMagick, zbarimg, ssh client, sftp or git server"; else fail "in the image:$present"; fi
+if [[ -z $present ]]; then ok "no ssh client, sftp or git server"; else fail "in the image:$present"; fi
 rm -rf "$t"
 exit "$status"

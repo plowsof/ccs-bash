@@ -25,7 +25,7 @@ cleanup; files=$(mktemp -d)
 docker buildx build -q --load -t "$name" - > /dev/null <<IMG
 FROM debian@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
 RUN apt-get update -q && apt-get install -y -q --no-install-recommends openssh-server openssh-client rsync python3 curl qrencode git \
-    libzbar0 libpng16-16 libturbojpeg0 libgif7 zbar-tools \
+    libzbar0 libpng16-16 libturbojpeg0 libgif7 \
     && rm -rf /var/lib/apt/lists/*
 IMG
 docker network create --subnet "$net.0/24" "$name" > /dev/null
@@ -115,8 +115,6 @@ key=$(on backend 'cat ~/.ssh/id_ed25519.pub')
 [[ $img ]] || docker cp "$here/../contrib/ccs-receive" "$name-web:/usr/local/bin/ccs-receive"
 docker cp "$d" "$name-web:/tmp/design" && docker cp "$files/markdown.awk" "$name-web:/tmp/markdown.awk"
 docker cp "$d" "$name-backend:/design" && docker cp "$files/gen.py" "$name-backend:/gen.py"
-# (zbar-tools for the backend's own test images only: the gate reads QR codes with libzbar itself)
-[[ $img ]] || on web 'rm /usr/bin/zbarimg'
 on web "
     chown root:root /usr/local/bin/ccs-receive && chmod 755 /usr/local/bin/ccs-receive
     $adduser
@@ -460,7 +458,7 @@ held "$v" proposals/img.html "a PNG named .html" "PNG"
 v=$((v + 1)); site "$v" "$good"; on backend "qrencode -s 10 -o /out/projects.json 'monero:$fake'"
 rc=0; push > /dev/null || rc=$?
 if ((rc)) && [[ $(live) == "$v" && $(livefile projects.json) == '[{'* ]]; then ok "held back: a PNG as projects.json (its last good copy stays)"; else fail "a PNG as projects.json"; fi
-# a good QR code with more beside it: zbarimg reads the good one, the rest is another's
+# a good QR code with more beside it: the QR reader reads the good one, the rest is another's
 v=$((v + 1)); site "$v" "$good"
 docker exec -i "$name-backend" sh -c "python3 - '$good' > /tmp/two.b64" <<'PY'
 import base64, subprocess, sys, zlib, struct
@@ -474,7 +472,9 @@ rows = [r + [255] * 200 + [0 if (x // 10) % 2 else 255 for x in range(200)] for 
 print(base64.b64encode(png(len(rows[0]), len(rows), rows)).decode())
 PY
 change "$p" "$(qr64 "$good")" "$(on backend 'cat /tmp/two.b64')"
-if on backend 'base64 -d /tmp/two.b64 > /tmp/two.png && zbarimg -q --raw /tmp/two.png' | grep -qx "monero:$good"; then held "$v" "$p" "a good QR code with more drawn beside it" "$(on backend 'cat /tmp/two.b64')"; else fail "the two-part test image doesn't read"; fi
+# (read on the backend by the gate's own reader, ccs-receive's qrscan_py)
+qrpy=$(sed -n "/^qrscan_py='/,/^'\$/p" "$here/../contrib/ccs-receive" | sed "1s/^qrscan_py='//; \$d")
+if on backend 'base64 -d /tmp/two.b64 > /tmp/two.png' && docker exec "$name-backend" python3 -I -c "$qrpy" png /tmp/two.png | grep -qx "monero:$good"; then held "$v" "$p" "a good QR code with more drawn beside it" "$(on backend 'cat /tmp/two.b64')"; else fail "the two-part test image doesn't read"; fi
 # two pushes at once: the second waits for the first (one staging folder, one at a time)
 v=$((v + 1)); site "$v" "$good"
 on backend "(rsync -a -e 'ssh -o BatchMode=yes' /out/ ccs-data@$web: > /tmp/a 2>&1; echo \$? >> /tmp/a) & (rsync -a -e 'ssh -o BatchMode=yes' /out/ ccs-data@$web: > /tmp/b 2>&1; echo \$? >> /tmp/b) & wait"
