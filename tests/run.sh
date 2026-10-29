@@ -873,6 +873,31 @@ if command -v sort > /dev/null && command -v runuser > /dev/null; then
         && st=$(cc status 2> /dev/null) && grep -q '^the last run (ended): 2026-10-28 10:02:00 UTC, this run failed (the push), 1 in a row' <<<"$st"; then
         echo "ok   ccs: deposit:list (the live wallet's and the retired ones'), generate:addresses, log (the last runs, each message once, its troubleshooting line, the files left out), status"
     else echo "FAIL ccs"; cc deposit:list; cc generate:addresses; cc log 1; cc status; status=1; fi
+    # config:check against contrib/examples/backend: as shipped, every <placeholder> a failure
+    # (its key named, not its value); filled in, with the files setup adds, nothing fails
+    r=$TEST_TMP/check; cp -a "$here/../contrib/examples/backend" "$r"
+    ck() { CCS_AS=none CCS_CHECK_ROOT=$r CCS_CHECK_OFFLINE=1 CCS_CONFIG=$r/etc/ccs/ccs.conf "$here/../contrib/ccs" config:check; }
+    chmod 640 "$r"/etc/ccs/ccs.conf "$r"/etc/ccs/alert.conf "$r"/etc/ccs-wallet/wallet-rpc.conf
+    chmod 644 "$r"/etc/ccs/trusted-signers "$r"/etc/ccs-front/list-signers
+    chmod 600 "$r"/opt/ccs-bash/contrib/docker/backend/.env
+    mkdir -p "$r/var/lib/ccs/.ssh" "$r/etc/ccs/backup"
+    for f in subaddresses.txt subaddresses.txt.asc subaddresses.txt.key.asc subaddresses.txt.pin; do install -m 644 /dev/null "$r/etc/ccs-front/$f"; done
+    for f in var/lib/ccs/.ssh/id_ed25519 var/lib/ccs/.ssh/known_hosts etc/ccs/backup/id_ed25519 etc/ccs/backup/known_hosts; do install -m 600 /dev/null "$r/$f"; done
+    out=$(ck) && rc=0 || rc=$?
+    if ((rc == 1)) && grep -q '^FAIL /etc/ccs/ccs.conf: 1 line(s) still to fill in (RPC_PASSWORD)$' <<<"$out" \
+        && grep -q '^FAIL /etc/ccs-wallet/wallet-rpc.conf: 3 line(s) still to fill in (daemon-address password rpc-login)$' <<<"$out" \
+        && grep -q '^FAIL /etc/ccs/alert.conf: 2 line(s) still to fill in (ALERT_URL WATCH_PROXY)$' <<<"$out" \
+        && grep -q '^ok   WALLET_ADDRESS: a mainnet address$' <<<"$out" && ! grep -q 'rpc password' <<<"$out"; then
+        sed -i 's/<rpc password[^>]*>/s3cret/' "$r"/etc/ccs/ccs.conf "$r"/etc/ccs-wallet/wallet-rpc.conf
+        sed -i 's/<wallet password[^>]*>/w4llet/; s/<monerod host>/node.example/' "$r"/etc/ccs-wallet/wallet-rpc.conf
+        sed -i 's#^ALERT_URL=.*#ALERT_URL=https://bot.example/x#; s#^WATCH_PROXY=.*#WATCH_PROXY=socks5h://tor.example:9050#' "$r"/etc/ccs/alert.conf
+        printf '%040d  # someone\n' 1 > "$r"/etc/ccs/trusted-signers
+        sed -i "s/<[^>]*ID[^>]*>/$(printf '%064d' 7)/; s/=<uid:gid of [a-z-]*>/=1:1/; s/<web server>/web.example/; s/<backup machine>/backup.example/" "$r"/opt/ccs-bash/contrib/docker/backend/.env
+        sed -i "s/sha256:<docker build[^>]*>/sha256:$(printf '%064d' 8)/" "$r"/opt/ccs-bash/contrib/docker/backend/.env
+        if out=$(ck) && ! grep -q '^FAIL' <<<"$out" && grep -q '^ok   RPC_URL: wallet-rpc, on the compose' <<<"$out"; then
+            echo "ok   ccs config:check: the examples as shipped fail at each placeholder (its key named, not its value); filled in, nothing fails"
+        else echo "FAIL ccs config:check, filled in"; echo "$out"; status=1; fi
+    else echo "FAIL ccs config:check, as shipped"; echo "$out"; status=1; fi
 else
     echo "ok   ccs: skipped (a host script, its tools are not in the image)"
 fi

@@ -1,0 +1,4 @@
+# /etc/ccs/trusted-signers (root 644): the attesters whose signatures in ccs-sigs a release
+# needs (contrib/release/verify --min-signers N; handover, "Upgrading"). Their keys'
+# fingerprints, one a line, with a name: the people you trust now, checked with each of them.
+<FINGERPRINT 40 hex>  # <name>
