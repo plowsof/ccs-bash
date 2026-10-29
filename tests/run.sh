@@ -530,7 +530,7 @@ fi
 
 # notify-loop.sh: a flood of notifications gives at most one run per GAP, and none without one.
 nl=$(mktemp -d)
-FLAG=$nl/new-tx GAP=2 EVERY=1000 "$here/../notify-loop.sh" bash -c "echo run >> $nl/runs" &
+FLAG=$nl/new-tx GAP=2 EVERY=1000 CCS_AS=none PROPOSALS_JSON=$nl/none.json "$here/../notify-loop.sh" bash -c "echo run >> $nl/runs" &
 loop=$!
 end=$((SECONDS + 6))
 n=0
@@ -545,6 +545,21 @@ if ((spam >= 3 && spam <= 5 && quiet == spam)); then
     echo "ok   notify-loop: $n notifications in 6s gave $spam runs, none after"
 else
     echo "FAIL notify-loop: $spam runs during the flood, $quiet after"; status=1
+fi
+# and a run that left a donation pending: the next GAP after it, no notification needed, until
+# nothing is pending
+echo '[{"stage": "Funding Required", "proposals": [{"amount-pending": 0.5}]}]' > "$nl/p.json"
+: > "$nl/runs2"
+FLAG=$nl/new-tx GAP=2 EVERY=1000 CCS_AS=none PROPOSALS_JSON=$nl/p.json "$here/../notify-loop.sh" bash -c "echo run >> $nl/runs2" &
+loop=$!
+sleep 7; npend=$(wc -l < "$nl/runs2")
+echo '[{"stage": "Funding Required", "proposals": [{"amount-pending": 0}]}]' > "$nl/p.json"
+sleep 3; settled=$(wc -l < "$nl/runs2"); sleep 4; after=$(wc -l < "$nl/runs2")
+kill "$loop"
+if ((npend >= 3 && npend <= 5 && after == settled)); then
+    echo "ok   notify-loop: a donation pending, a run every GAP ($npend in 7s); none pending, none until EVERY"
+else
+    echo "FAIL notify-loop: $npend runs while pending, $settled then $after after"; status=1
 fi
 rm -rf "$nl"
 
