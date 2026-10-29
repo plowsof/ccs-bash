@@ -3,14 +3,14 @@
 # (container/build.sh ccs-gate gate.Dockerfile): StageX images by digest (container/images,
 # signatures checked), sources by sha256 (sources.lock), no network in the steps, every file the
 # commit's time, one layer in an empty image. GNU userland, as the gate was written and tested
-# for (Debian's); QR codes read by libzbar (built here, without ImageMagick: StageX publishes no
-# zbar) on pixels the formats' own libraries decode.
+# for (Debian's); QR codes read by libzbar (built here: StageX publishes no zbar) on pixels the
+# formats' own libraries decode.
 
 # libzbar alone, as StageX's user/zbar recipe builds its libzbar: no image library, no video, no
-# X, no bindings; zbarimg and zbarcam aren't built (they need ImageMagick, video). One fix: its
-# movedelta() steps the pointer back by adding (uintptr_t)(dy)*w for a negative dy, undefined
-# behaviour that gcc happens to wrap and clang (this toolchain's) doesn't: every scan crashed.
-# Signed arithmetic instead; the build stops if the line isn't there to change.
+# X, no bindings, no programs. With zbar's own fix from 0.23.94 (8f4f7ff, movedelta in signed
+# arithmetic: built with clang, this toolchain's, 0.23.93 crashes at every scan), as intptr_t
+# (0.23.93's file has no ptrdiff_t); 0.23.94 and later build with meson, which this toolchain
+# hasn't. The build stops if the line isn't there.
 FROM toolchain AS zbar
 ARG SOURCE_DATE_EPOCH
 COPY --from=bash / /
@@ -19,8 +19,8 @@ RUN --mount=type=bind,source=container,target=/pin \
     bash /pin/verify.sh /pin/sources.lock /pin/sources \
     && tar -xzf /pin/sources/0.23.93.tar.gz -C / \
     && cd /zbar-0.23.93 \
-    && sed -i 's/p += (dx) + ((uintptr_t)(dy)\*w); \\/p += (intptr_t)(dx) + (intptr_t)(dy) * (intptr_t)w; \\/' zbar/img_scanner.c \
-    && grep -q 'p += (intptr_t)(dx) + (intptr_t)(dy) \* (intptr_t)w;' zbar/img_scanner.c \
+    && sed -i 's/p += (dx) + ((uintptr_t)(dy)\*w); \\/p += (intptr_t)(dx) + (intptr_t)(dy) * (intptr_t)(w); \\/' zbar/img_scanner.c \
+    && grep -q 'p += (intptr_t)(dx) + (intptr_t)(dy) \* (intptr_t)(w);' zbar/img_scanner.c \
     && autoreconf -fi > /dev/null \
     && CFLAGS="-O2 -ffile-prefix-map=/zbar-0.23.93=." ./configure -q --prefix=/usr --disable-nls --disable-video \
         --disable-doc --without-x --without-xshm --without-dbus --without-jpeg --without-imagemagick \
