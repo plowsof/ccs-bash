@@ -3,7 +3,7 @@
 # BuildKit a builder, build with no network in the steps. NO_CACHE=1 rebuilds everything.
 set -euo pipefail
 here=$(dirname "$(readlink -f "$0")")
-tag=${1:-ccs-bash}
+tag=${1:-ccs-bash} dockerfile=${2:-Dockerfile}   # gate.Dockerfile: the gate's image (contrib/docker/web)
 
 # Image IDs, as the releases and ccs-sigs name them, are the image config's digest: Docker's own
 # image store. Its containerd store (a fresh Docker 29's default) shows and runs images by their
@@ -40,5 +40,5 @@ cache=(--no-cache-filter fix --no-cache-filter image)
 [[ ${NO_CACHE:-} ]] && cache=(--no-cache)   # buildx refuses both together
 docker buildx build --builder "$builder" "${cache[@]}" --network none "${contexts[@]}" \
     --build-arg SOURCE_DATE_EPOCH="$epoch" \
-    --output type=docker,name="$tag",rewrite-timestamp=true -f "$here/Dockerfile" "$here/.."
+    --output type=docker,name="$tag",rewrite-timestamp=true -f "$here/$dockerfile" "$here/.."
 docker image inspect "$tag" --format "$tag {{.Id}}" >&2
