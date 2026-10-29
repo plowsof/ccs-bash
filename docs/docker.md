@@ -48,7 +48,11 @@ secret.
   so any stage may write one. The two that mean something are their writer's alone: each run's
   result (`push/watch`) only the push writes and the watch reads; a line on `pull/now` starts a run
   at once, and only the wallet (a new transaction) and root (`ccs proposal:process`) may write it.
-  A run starts every 2 minutes otherwise.
+  **The pace**, as the host setup's `notify-loop.sh` has it: a run every 2 minutes; sooner on a
+  new transaction (lines that come during a run: one run after it, however many); 30 seconds
+  after a run that left a donation pending, so its confirmation shows a run later; and never two
+  starts closer than 30 seconds (`CCS_MIN_GAP`), so a stream of transactions can't make the runs
+  follow each other faster than that.
 - **The images** by ID, never pulled: ccs-bash's and ccs-front-bash's as
   [their releases](handover.md#the-releases) attest them (the same checks:
   [upgrading](handover.md#upgrading)). ccs-bash's carries git and its https transport, ssh and
@@ -65,6 +69,8 @@ secret.
 - **The log:** every container's output to journald under one name, `ccs`: a run's lines in
   order, whichever stage said them, rotated by journald (`journalctl -t ccs`). `ccs log` and
   `ccs status` read it.
+- **The watch's check** holds the push's lock only while it copies what was pushed (6.5 MB on
+  the testnet, a moment), then compares the copy: a push never waits for its minute of fetches.
 - **Health:** each stage's healthcheck is that it finished a run lately (the watch: a check);
   `docker compose ps` shows it. A failed run still counts as finished: ccs-watch alerts on three.
   And no result at all for 5 minutes (a stage stopped or stuck, so no push and no result) counts
