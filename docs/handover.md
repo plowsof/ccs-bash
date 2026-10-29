@@ -10,6 +10,13 @@ address and `/projects`. **Goes:** PHP, MySQL, Jekyll, Ruby; the web server runs
 [the design](design.md). The testnet CCS, https://ccs.monerodevs.org, is this setup, running
 ([where it differs](testnet.md)).
 
+**Only looking after it?** `ccs` on the backend does what ccs-back's artisan commands did, by
+the same names (`ccs proposal:process`, `ccs wallet:notify`...), and `ccs status`, `ccs log`:
+[troubleshooting, Looking](troubleshooting.md#looking). **Setting it up:** the files to fill
+in, filled in already as far as they are public, are in
+[contrib/examples/backend](../contrib/examples/backend/README.md); `ccs config:check` says what is
+still missing or wrong ([what you fill in](#what-you-fill-in)).
+
 ## Before you start
 
 - **Machines:** the **backend** (private, no inbound connections), the **web server** (public),
@@ -361,16 +368,19 @@ web server's root and install its list and design.
 
 Everything that is yours to set, by machine. Values for ccs.getmonero.org are given where they are
 known; `<…>` is yours to choose. Secrets (the wallet and RPC passwords, the alert URLs) live only
-in these files, root-owned, never in a repository or on a command line.
+in these files, root-owned, never in a repository or on a command line. The backend's files are
+in [contrib/examples/backend](../contrib/examples/backend/README.md) at their paths, filled in
+with what is below; `ccs config:check` checks them (there, owned as setup makes them, filled in,
+agreeing, answering) and changes nothing.
 
-**The backend**
+**The backend** (in Docker, [docker](docker.md); the host setup's differences are marked)
 
 | File | Setting | For ccs.getmonero.org | Step |
 |---|---|---|---|
 | `/etc/ccs-wallet/wallet-rpc.conf` | `wallet-file`, `password` | the CCS wallet, view-only, and its password | 1 |
 | | `daemon-address` | a monerod you trust (mainnet: `…:18081`) | 1 |
 | | `rpc-bind-port`, `rpc-login` | `18082`, `ccs:<rpc password>` | 1 |
-| `/etc/ccs/ccs.conf` | `RPC_URL`, `RPC_USER`, `RPC_PASSWORD` | `http://127.0.0.1:18082/json_rpc`, and `rpc-login`'s user and password | 2 |
+| `/etc/ccs/ccs.conf` | `RPC_URL`, `RPC_USER`, `RPC_PASSWORD` | `http://wallet-rpc:18082/json_rpc` (the host setup, or `compose.host.yml`: `http://127.0.0.1:18082/json_rpc`), and `rpc-login`'s user and password | 2 |
 | | `WALLET_ADDRESS` | `41hzbgqgkrYijnRVBLzr1KHsYc1iUBBCJYeeT9d3eiYE2PhbohxxwJLZCNVbTzvAMkhtYGF3RQcr2Ea187AJn8af149UG1G` ([meta #935](https://github.com/monero-project/meta/issues/935#issuecomment-1867257410)) | 2 |
 | | `REPOSITORY_URL` | `https://repo.getmonero.org/api/v4/projects/54` | 2 |
 | | `MIN_CONFIRMATIONS` | `10` | 2 |
@@ -380,12 +390,17 @@ in these files, root-owned, never in a repository or on a command line.
 | | `list-signers` | `81AC591FE9C4B65C5806AFC3F0AF4D462A0BDF92  # binaryFate` and `8777AB8F778EE89487A2F8E7F4ACA0183641E010  # luigi1111`, from the Monero repository's `utils/gpg_keys/` | 4 |
 | | `subaddresses.txt.viewkey` | as in step 4 | 4 |
 | `/var/lib/ccs/.ssh/` | `id_ed25519` (the push key), `known_hosts` | the web server's host key, from its `/etc/ssh/ssh_host_ed25519_key.pub` | 6 |
-| `/root/.ssh/` | `ccs-backup_ed25519`, `known_hosts` | the backup machine's host key | 7 |
+| `/etc/ccs/backup/` (the host setup: `/root/.ssh/`) | `id_ed25519` (the host setup: `ccs-backup_ed25519`), `known_hosts` | the backup key, the backup machine's host key; `ccs`, 600 | 7 |
 | `/etc/ccs/alert.conf` | `ALERT_URL` | the IRC bot's URL (below) | 8 |
 | | `SUBADDRESSES`, `WATCH_PROXY`, `WATCH_THEMES`, `WATCH_SAMPLE` | `/etc/ccs-front/subaddresses.txt`; `socks5h://127.0.0.1:9050` (Tor) and a clearnet proxy elsewhere; `1`; `10` (other pages checked each run, at random) | 8 |
 | `/etc/ccs/trusted-signers` | the attesters you trust | their keys' fingerprints, one a line | upgrading |
-| `/usr/local/bin/ccs-bash-run`, `ccs-front-run` | the image they run | its ID, `--pull never`, the attested one of [the releases](#the-releases) | 2, 5, upgrading |
-| `/usr/local/bin/ccs-bash-update` | `<web server>`, `<backup machine>` | their addresses | 9 |
+| `/opt/ccs-bash/contrib/docker/backend/.env` | `CCS_BASH_IMAGE`, `CCS_FRONT_IMAGE`, `WALLET_IMAGE` | the attested IDs of [the releases](#the-releases); the wallet's, as built | docker, upgrading |
+| | `CCS_UID`, `GIT_UID`, `FRONT_UID`, `WALLET_UID` | the host's users, `uid:gid` | docker |
+| | `WALLET_PORT` | `18082`, `wallet-rpc.conf`'s `rpc-bind-port` (its healthcheck: without it the compose waits forever) | docker |
+| | `CCS_PUSH`, `CCS_BACKUP`, `CCS_SITE_URL` | `ccs-data@<web server>`, `ccs-backup@<backup machine>`, `https://ccs.getmonero.org` | docker |
+| | `COMPOSE_FILE` | only with a monerod, Tor or bot on the backend's 127.0.0.1: `compose.yml:compose.host.yml` | docker |
+| the host setup: `/usr/local/bin/ccs-bash-run`, `ccs-front-run` | the image they run | its ID, `--pull never`, the attested one of [the releases](#the-releases) | 2, 5, upgrading |
+| the host setup: `/usr/local/bin/ccs-bash-update` | `<web server>`, `<backup machine>` | their addresses | 9 |
 
 **The web server**
 
@@ -409,7 +424,10 @@ in these files, root-owned, never in a repository or on a command line.
 **The IRC bot.** Both machines send one line of text by HTTP POST to `ALERT_URL`: an IRC bot that
 posts it to the channel (CptHook's `simple` module, `https://<host>/<endpoint>?channel=%23<channel>`;
 or wmb, with `ALERT_TARGET` and `ALERT_PASSWORD`). Run it on its own machine, behind HTTPS: the
-backend and the web server reach out to it, and nothing reaches the backend.
+backend and the web server reach out to it, and nothing reaches the backend. Its port is
+whatever it answers on, in the URL. In Docker the backend's watch container posts to it, so it
+must be reachable from a container: a bot (or a Tor proxy) on the backend's own 127.0.0.1 needs
+`compose.host.yml` ([docker](docker.md)); `ccs config:check` says so.
 
 **Built into the design**, already right for ccs.getmonero.org: its address, the General Fund, the
 proposals repository and its "Submit idea" link (ccs-front-hugo's `hugo.toml`). Changing any of
