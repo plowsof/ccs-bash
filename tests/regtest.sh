@@ -90,13 +90,17 @@ F() { call "http://127.0.0.1:$FPORT/json_rpc" "$1" "${2:-"{}"}"; }
 K() { call "http://127.0.0.1:$KPORT/json_rpc" "$1" "${2:-"{}"}"; }
 C() { call "http://127.0.0.1:$CPORT/json_rpc" "$1" "${2:-"{}"}" --digest -u "ccs:$RPC_PW"; }
 
-wait_for() { # wait_for NAME COMMAND...: up to 60 s
-    local i
-    for ((i = 0; i < 240; i++)); do
+wait_for() { # wait_for NAME COMMAND...: on as soon as it answers; at once if one started has died; else up to 3 minutes (a CI runner can be slow)
+    local i p log why="did not start in 3 minutes"
+    for ((i = 0; i < 720; i++)); do
         "${@:2}" > /dev/null 2>&1 && return 0
+        for p in "${PIDS[@]}"; do kill -0 "$p" 2> /dev/null || { why="did not start: a daemon or wallet it needs exited"; break 2; }; done
         sleep 0.25
     done
-    die "$1 did not start"
+    for log in "$T"/*/wallet-rpc.log "$T"/*/monerod.log "$T"/*/stdout "$T"/*/*/wallet-rpc.log "$T"/*/*/monerod.log "$T"/*/*/stdout; do
+        [[ -f $log ]] && { echo "--- ${log#"$T"/}"; tail -n 5 "$log"; }
+    done
+    die "$1 $why"
 }
 
 start_daemon() { # start_daemon BIN DIR
