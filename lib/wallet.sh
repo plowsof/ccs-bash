@@ -10,6 +10,9 @@ rpc() {
     res=$(curl -fsS --max-time 60 \
         -K <([[ -z $RPC_USER ]] || printf 'digest\nuser = "%s:%s"\n' "$RPC_USER" "$RPC_PASSWORD") \
         -H 'Content-Type: application/json' -d "$body" "$RPC_URL") || return 1
+    # RPC_QUOTE=1: every "amount" made a string before jq reads it, which keeps the digits (jq's
+    # doubles can't hold one above 2^53, 9007.2 XMR: one such donation would stop every run)
+    [[ -z ${RPC_QUOTE:-} ]] || res=$(sed -E 's/"amount": *([0-9]+)/"amount": "\1"/g' <<<"$res") || return 1
     jq -e '.result // error("rpc '"$1"': \(.error.message // "no result")")' <<<"$res"
 }
 
@@ -193,16 +196,16 @@ donation_totals() {
     else
         params="{\"in\": true, \"pool\": true, \"account_index\": 0, \"subaddr_indices\": $indexes, \"filter_by_height\": true, \"min_height\": $H}"
     fi
-    transfers=$(rpc get_transfers "$params") || return 1
+    transfers=$(RPC_QUOTE=1 rpc get_transfers "$params") || return 1
     # kind height txid subaddress amount unlock_time confirmations; jq only passes amounts
-    # through, and stops above 2^53, where it can't read them exactly; an unlock_time past 18
+    # through, as strings (RPC_QUOTE), checked as numbers below; an unlock_time past 18
     # digits (anyone can send one: up to 2^64 - 1, locked for good) is the largest 18-digit time,
     # still locked, not a number bash would wrap negative (unlocked)
     transfers=$(jq -r '
         ((.in // []) | map(. + {kind: "in"})) + ((.pool // []) | map(. + {kind: "pool"}))
         | unique_by([.txid, .subaddr_index.minor])
         | .[]
-        | if .amount > 9007199254740992 then error("amount \(.amount) is too large for jq to read exactly") else . end
+        | if (.amount | type) == "string" or .amount <= 9007199254740992 then . else error("amount \(.amount) is too large for jq to read exactly") end
         | "\(.kind) \(.height // 0) \(.txid) \(.subaddr_index.minor) \(.amount) \(if (.unlock_time // 0) >= 1e18 then "999999999999999999" else (.unlock_time // 0) end) \(.confirmations // 0)"' <<<"$transfers") || return 1
     # every field checked before bash arithmetic (a subscript can run commands), and the txid
     # before it goes in the file

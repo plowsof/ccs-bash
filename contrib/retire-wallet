@@ -99,8 +99,8 @@ dup=$(awk -F'\t' 'seen[$1]++ { print $1; exit }' "$WORK/mine")
 indexes=$(cut -f1 "$WORK/mine" | jq -R -s -c 'split("\n") | map(select(. != "") | tonumber)')
 # a quiet wallet only: nothing in the pool or under MIN_CONFIRMATIONS, so what is recorded is final
 # (an offline copy can't be asked for the pool: it has none to wait for)
-if ! rpc get_transfers "{\"in\": true, \"pool\": true, \"account_index\": 0, \"subaddr_indices\": $indexes}" > "$WORK/transfers" 2> /dev/null; then
-    rpc get_transfers "{\"in\": true, \"account_index\": 0, \"subaddr_indices\": $indexes}" > "$WORK/transfers" \
+if ! RPC_QUOTE=1 rpc get_transfers "{\"in\": true, \"pool\": true, \"account_index\": 0, \"subaddr_indices\": $indexes}" > "$WORK/transfers" 2> /dev/null; then
+    RPC_QUOTE=1 rpc get_transfers "{\"in\": true, \"account_index\": 0, \"subaddr_indices\": $indexes}" > "$WORK/transfers" \
         || die "could not read the wallet's transfers"
     log "the wallet doesn't answer for the pool (an offline copy): its deposits only"
 fi
@@ -109,7 +109,7 @@ fi
 young=$(jq --argjson m "$MIN_CONFIRMATIONS" '[(.pool // [])[], ((.in // [])[] | select((.confirmations // 0) < $m or (.height // 0) == 0))] | length' "$WORK/transfers")
 jq -r --argjson m "$MIN_CONFIRMATIONS" '
     (.in // []) | unique_by([.txid, .subaddr_index.minor]) | sort_by(.height, .txid) | .[] | select((.height // 0) > 0 and (.confirmations // 0) >= $m)
-    | if .amount > 9007199254740992 then error("amount \(.amount) is too large for jq to read exactly") else . end
+    | if (.amount | type) == "string" or .amount <= 9007199254740992 then . else error("amount \(.amount) is too large for jq to read exactly") end
     | "\(.height) \(.txid) \(.subaddr_index.minor) \(.amount) \(.unlock_time // 0)"' "$WORK/transfers" > "$WORK/in" \
     || die "could not read the wallet's transfers"
 {
