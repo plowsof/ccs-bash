@@ -26,7 +26,8 @@ carried to the backend as a release zip whose sha256 is checked there.
 **Backend** (no inbound connections; out only to the forge, monerod, the web server, the backup
 machine and the IRC bot):
 
-- **monero-wallet-rpc**, view-only, its own user, on 127.0.0.1.
+- **monero-wallet-rpc**, view-only, its own user, on 127.0.0.1 (in Docker: on a network only
+  ccs-bash is on).
 - **ccs-bash**: the JSON and the state, every 2 minutes or on a new tx. It reads the network (the
   forge), so nothing it writes is trusted further on. A proposal's total counts the live wallet
   and every retired one (recorded in the state, each deposit counted once); no total can go down from one run to
@@ -52,7 +53,10 @@ machine and the IRC bot):
   machine can still rewrite them all: restore the first retired version, and check a restored
   `proposals.csv` against the live site.
 - **Pinned images:** ccs-bash and ccs-front-bash run in [StageX](https://stagex.tools) images
-  ([details](image.md)), read-only, no capabilities, ccs-front-bash without network.
+  ([details](image.md)), read-only, no capabilities, ccs-front-bash without network; in Docker,
+  each step in its own container, as its own user ([docker](docker.md)). The wallet's image is
+  getmonero.org's release binary on Debian, checked against its signed hashes, built on the
+  backend and not attested (monero isn't in StageX).
 - **Attested releases:** anyone can rebuild a release from its tag, byte for byte, and sign the
   result into [ccs-sigs](https://github.com/plowsof/ccs-sigs), as Feather Wallet does; a release is
   verified against those signatures before it is installed ([contrib/release](../contrib/release/README.md)).
@@ -60,11 +64,12 @@ machine and the IRC bot):
 
 **Web server:** the distribution's nginx (StageX has none, and builds for amd64 only) serving
 `/var/lib/ccs-data`, and a write-only push account whose key runs only the gate
-(`contrib/ccs-receive`). The gate holds back any page that isn't the design's own, filled as
+(`contrib/ccs-receive`): through the host's sshd, or in Docker through the gate image's own sshd
+on its own port (StageX, attested with ccs-bash's release). The gate holds back any page that isn't the design's own, filled as
 ccs-front-bash fills it (a proposal's text as the proposals repository has it), any file with an
 address that isn't the wallet's (as text, link or QR code), and any other file that isn't the
 design release's ([details](two-machines.md#the-gate-the-web-server-checks-every-page)). Nothing
-else runs there.
+else of the CCS runs there but the gate's heartbeat (an alert when pushes stop).
 
 ccs-front-bash runs on the backend: whatever writes the addresses into pages can redirect
 donations, so it belongs with ccs-bash, and pushing finished pages overwrites a page changed on
