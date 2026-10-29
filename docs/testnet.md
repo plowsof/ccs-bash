@@ -13,12 +13,14 @@ releases](handover.md#the-releases). Nothing here is part of the setup: don't co
 - **The backend in Docker** (since 2026-10-29, [docker](docker.md)), with `compose.host.yml`:
   node3's monerod, Tor (ccs-watch's proxy) and the alert bot listen on its 127.0.0.1 only, so the
   wallet, ccs-bash and the watch run on the host's network; `WALLET_PORT=18182`. The host's
-  `ccs-bash`, `ccs-wallet-rpc` and ccs-watch units are disabled, kept for going back. Until the
-  next release, a dev build of the branch being tested (`ccs status`'s image ID; `ccs
-  config:check` says it isn't attested).
+  `ccs-bash`, `ccs-wallet-rpc` and ccs-watch units are disabled, kept for going back. The
+  compose runs from `/opt/ccs-bash` at the release's commit, its images by their attested IDs
+  (`ccs config:check`: none failing).
 - **The web server's side in Docker** ([the web server in Docker](docker.md#the-web-server-in-docker)):
-  node2 is the web server and the backup machine both, so its compose runs the backup receiver
-  too (`COMPOSE_PROFILES=backup`), which production must not copy.
+  node2 is the web server and the backup machine both, so its compose (`/opt/ccs-bash-web`, at
+  the release's commit, the gate's attested image) runs the backup receiver too
+  (`COMPOSE_PROFILES=backup`), which production must not copy. Its host sshd takes no key of
+  `ccs-data` or `ccs-backup` (`AuthorizedKeysFile none` for them).
 - **A retired wallet, rehearsed** (2026-10-28, [retiring a wallet](handover.md#retiring-a-wallet)):
   the first testnet wallet ([subaddresses/testnet](../subaddresses/testnet/README.md), `fresh_test`)
   retired as `testnet` while still receiving, then a donation to one of its old addresses after
