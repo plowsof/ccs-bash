@@ -71,7 +71,9 @@ in `ccs.conf`, `RPC_URL=http://127.0.0.1:18182/json_rpc` (without it, `http://wa
 ## Setting it up
 
 On the backend, as root, after [setup](setup.md) steps 2-3 (users, folders, config; step 1's
-wallet files and `wallet-rpc.conf`, not its service):
+wallet files and `wallet-rpc.conf`, not its service). The config files, filled in as far as
+they are public: [contrib/examples/backend](../contrib/examples/backend/README.md), which also
+says how to install them; `ccs config:check` then says what is missing or wrong.
 
 1. **The images.** ccs-bash's and ccs-front-bash's: their attested IDs, built here
    (`container/build.sh`, as for the host setup) or loaded. The wallet's:
@@ -80,13 +82,15 @@ wallet files and `wallet-rpc.conf`, not its service):
    in `/etc/ccs/backup/` (`ccs`, 700; the files 600). The push key stays in ccs's `~/.ssh`.
 3. **`ccs.conf`'s `RPC_URL`:** `http://wallet-rpc:18182/json_rpc` (or 127.0.0.1, above), and
    `/etc/ccs/alert.conf` readable by ccs (the watch runs as ccs, as ccs-watch's unit did).
-4. **`.env`** beside `compose.yml` (root's, 600), from
-   [`env.example`](../contrib/docker/backend/env.example): the three image IDs, the users'
-   `uid:gid` (`id -u ccs`, `id -g ccs`...), the push and backup accounts, the site's address.
+4. **`.env`** beside `compose.yml` (root's, 600), from the examples (or
+   [`env.example`](../contrib/docker/backend/env.example)): the three image IDs, the users'
+   `uid:gid` (`id -u ccs`, `id -g ccs`...), the wallet's port, the push and backup accounts, the
+   site's address.
 5. **The run folder:** `install -d -m 755 /var/lib/ccs/run`, then
    `docker compose --profile init run --rm -T init`; `chown ccs-git /var/lib/ccs/pull-ok`.
-6. `docker compose up -d`; `ccs status` names the services, their health and each stage's last
-   run.
+6. `docker compose up -d`, then `ccs config:check` until nothing fails (it asks the wallet
+   through ccs-bash's container, so after the start); `ccs status` names the services, their
+   health and each stage's last run.
 
 **From the host setup:** between runs, `systemctl disable --now ccs-bash ccs-wallet-rpc
 ccs-watch.timer`; copy the backup's sums (`/var/lib/ccs/backup-sent*` to
