@@ -75,6 +75,37 @@ ccs-front-bash runs on the backend: whatever writes the addresses into pages can
 donations, so it belongs with ccs-bash, and pushing finished pages overwrites a page changed on
 the web server on the next run.
 
+## What one compromise can and can't do
+
+The two machines watch each other, and each one's alarm reaches IRC without passing through the
+other: the gate's goes from the web server to the bot, ccs-watch's from the backend.
+
+- **The web server taken over:** it can serve what it likes, but the backend's ccs-watch fetches
+  the live pages and compares them with what was pushed. It can tell the watcher from visitors
+  only by guessing (Tor and a clearnet proxy, three browsers' ways of asking, random times),
+  which is why the Verify page asks visitors to check too. It can't change the state, the
+  addresses or the backups.
+- **The backend taken over:** it can push anything, but the gate lets through only the design's
+  pages filled as ccs-front-bash fills them, the proposals' text as their repository has it, and
+  addresses from the signed list, made offline by a Core Team member. It can stop pushing: the
+  web server's heartbeat says so. It can't send a donation anywhere but the CCS wallet.
+
+What the watching doesn't cover is one flaw that opens both at once:
+
+- **The admins' own ssh**, the same sshd open to the internet on every machine: a flaw before its
+  key check opens them all. [Admin access](admin-access.md) puts it behind a VPN or an allowlist.
+- **The same packages on both sides** (StageX's ssh, rsync, curl, OpenSSL in both images):
+  reachable from outside only through what each machine exposes, but also by each machine from
+  the other: the web server answers the backend's push (rsync and ssh, as clients) and
+  ccs-watch's fetches (curl). Each runs in a container of its own, as its own user, so a flaw
+  there reaches that one stage, not the state or the wallet. Keep the pins current
+  (`container/update-images.sh`).
+- **One release for both sides:** the gate is in ccs-bash's repository and release, beside the
+  backend it checks. Attesters should read the gate's changes as their own diff, not as part of
+  the backend's.
+- **One forge:** both machines read the proposals from it, so a forge taken over feeds them the
+  same text; the signed list still holds the addresses.
+
 ## ccs-front-bash
 
 **The original** is the built design, with markers where content goes and "parts" (a card, the
