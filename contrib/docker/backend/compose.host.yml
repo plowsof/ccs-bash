@@ -1,0 +1,18 @@
+# With compose.yml, for a host whose monerod (wallet-rpc.conf's daemon-address), and the
+# watcher's proxy and alert bot (alert.conf), listen on its own 127.0.0.1 only, as on the
+# testnet: wallet-rpc, ccs-bash and watch on the host's network, the wallet's RPC on 127.0.0.1
+# (as the host setup has them), the other stages as in compose.yml. In .env:
+#   COMPOSE_FILE=compose.yml:compose.host.yml
+# and ccs.conf's RPC_URL=http://127.0.0.1:18182/json_rpc.
+services:
+  wallet-rpc:
+    network_mode: host
+    networks: !reset []
+    command: ["--config-file", "/etc/ccs-wallet/wallet-rpc.conf", "--non-interactive",
+              "--rpc-bind-ip", "127.0.0.1",
+              "--tx-notify", "/usr/local/bin/ccs-notify %s"]
+  ccs-bash:
+    network_mode: host
+    networks: !reset []
+  watch:
+    network_mode: host

@@ -215,7 +215,7 @@ if [[ $run_result ]]; then
     n=$((n + 1)); echo "$n" > "$state/failed-runs"
     [[ -f $state/failed-since ]] || date -u '+%F %H:%M UTC' > "$state/failed-since"
     log "this run failed ($run_result), $n in a row"
-    ((n < 3)) || alert backend "the backend has failed $n runs in a row since $(cat "$state/failed-since"): $run_result (see /var/log/ccs-bash.log)"
+    ((n < 3)) || alert backend "the backend has failed $n runs in a row since $(cat "$state/failed-since"): $run_result (ccs log on the backend)"
     exit 0
 fi
 
@@ -237,10 +237,21 @@ while IFS= read -r f; do pages+=("proposals/${f##*/}"); done \
 # theme.css files
 # local_ref DIR REF: REF, a link in the file DIR/..., as a path in the site, if it is one of its files
 local_ref() {
-    local ref=${2%%[?#]*} path
+    local ref=${2%%[?#]*} path part parts=()
     [[ $ref && $ref != *:* && $ref != //* && $ref != */ && $ref != *.html ]] || return 0
-    if [[ $ref == /* ]]; then path=${ref#/}; else path=$(realpath -m --relative-to="$local_site" "$local_site/$1/$ref"); fi
-    [[ $path != ../* && -f $local_site/$path ]] && printf '%s\n' "$path"
+    if [[ $ref == /* ]]; then path=${ref#/}; else path=$1/$ref; fi
+    # DIR/REF with its . and .. resolved, by name (realpath -m, which busybox's hasn't); a .. past
+    # the site's top is none of its files
+    local IFS=/
+    for part in $path; do
+        case $part in
+            '' | .) ;;
+            ..) ((${#parts[@]})) || return 0; unset 'parts[${#parts[@]}-1]' ;;
+            *) parts+=("$part") ;;
+        esac
+    done
+    path="${parts[*]}"
+    [[ $path && -f $local_site/$path ]] && printf '%s\n' "$path"
     return 0
 }
 uses() {
@@ -284,7 +295,7 @@ sample=${WATCH_SAMPLE:-10}
 [[ $sample =~ ^[0-9]+$ ]] || sample=10
 while IFS= read -r p; do
     checks+=("${prefixes[RANDOM % ${#prefixes[@]}]}${p%index.html}"$'\t'"$p")
-done < <(cd "$local_site" && find . -name '*.html' -printf '%P\n' | grep -vxF -f <(printf '%s\n' "${pages[@]}") | shuf -n "$sample")
+done < <(cd "$local_site" && find . -name '*.html' | sed 's#^\./##' | grep -vxF -f <(printf '%s\n' "${pages[@]}") | shuf -n "$sample")
 [[ -f $local_site/projects.json ]] && checks+=("projects"$'\t'"projects.json")
 fetches=$(printf '%s\n' "${checks[@]}" | grep -c .)
 # and, among them at random (no fixed last ask that a web server could switch after):
@@ -312,7 +323,7 @@ unpushed() {
     local names=() a b name='' try
     mapfile -t names < <(cd "$local_site" && for f in proposals/*.html; do [[ -f $f ]] && basename "$f" .html; done)
     for _ in 1 2 3 4 5 6; do
-        try=$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')
+        try=$(printf '%04x%04x%04x' $RANDOM $RANDOM $RANDOM)
         if ((${#names[@]})); then
             a=${names[RANDOM % ${#names[@]}]} b=${names[RANDOM % ${#names[@]}]}
             case $((RANDOM % 4)) in
@@ -325,7 +336,7 @@ unpushed() {
         case $((RANDOM % 5)) in 0) try=$try.html ;; 1) try=$try/ ;; *) try=proposals/$try.html ;; esac
         [[ -e $local_site/$try || -e $local_site/${try%/}.html ]] || { name=$try; break; }
     done
-    [[ $name ]] || name=proposals/$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n').html
+    [[ $name ]] || name=proposals/$(printf '%04x%04x%04x' $RANDOM $RANDOM $RANDOM).html
     name=${prefixes[RANDOM % ${#prefixes[@]}]}$name
     rc=0; fetch "$(urlof "$name")" "$tmp/page" || rc=$?
     if ((rc == 3)) && [[ $code == 404 ]] && cmp -s "$tmp/page" "$local_site/404.html"; then return; fi

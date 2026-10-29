@@ -4,10 +4,12 @@
 # The images by ID, never pulled: ccs-bash's and ccs-front-bash's as their releases and ccs-sigs
 # attest them, the wallet's as built here (wallet-rpc/Dockerfile). The host's folders are the
 # same as the host setup's (docs/setup.md), so either one can run them, never both at once.
-# Its settings: .env beside this file (env.example).
+# Its settings: .env beside this file (env.example). A host whose monerod listens on its
+# 127.0.0.1 only: compose.host.yml as well.
 #
-#   docker compose up -d          start (after "docker compose run --rm init" once)
-#   docker compose logs -f        every stage's output (also in /var/log/ccs-bash.log)
+#   docker compose up -d          start (after "docker compose --profile init run --rm init" once)
+#   journalctl -t ccs -f          every stage's output, in order (ccs log: its errors)
+#   docker compose ps             each service's health
 #   docker compose down           stop
 
 x-hardened: &hardened
@@ -18,24 +20,37 @@ x-hardened: &hardened
   restart: unless-stopped
   pull_policy: never
   init: true
-
-x-log-group: &log-group
-  # the log's group (ccs-log: root's file, group-writable), so every stage can append to it
-  group_add: ["${LOG_GID:?the log's group id}"]
+  # each line to journald, under one name: a run's lines in order, whichever stage said them
+  logging:
+    driver: journald
+    options:
+      tag: ccs
 
 x-run: &run
-  # the run folder: each stage's "done", "status" and pipes
+  # the run folder: each stage's "done", "status", "at", pipes, and the push's lock
   type: bind
   source: ${CCS_RUN_DIR:-/var/lib/ccs/run}
   target: /run/ccs
 
-x-log: &log
-  type: bind
-  source: ${CCS_LOG:-/var/log/ccs-bash.log}
-  target: /var/log/ccs-bash.log
+x-health: &health
+  interval: 1m
+  timeout: 10s
+  retries: 3
+  start_period: 15m
+
+x-step: &step /opt/ccs-bash/contrib/docker/backend/step
+
+networks:
+  # ccs-bash and the wallet, and no way out
+  wallet:
+    internal: true
+  # the wallet's way out: to monerod (wallet-rpc.conf's daemon-address)
+  monerod: {}
+  # the stages' way out: the forge, the web server, the backup machine
+  default: {}
 
 services:
-  # once, as root: the run folder, a folder for each stage owned by its user
+  # once, as root: the run folder, a folder for each stage owned by its user, the push's lock
   init:
     image: ${CCS_BASH_IMAGE:?the attested ccs-bash image ID}
     pull_policy: never
@@ -45,9 +60,9 @@ services:
     security_opt: ["no-new-privileges:true"]
     network_mode: none
     user: "0:0"
-    entrypoint: ["/opt/ccs-bash/contrib/docker/backend/step", "init"]
+    entrypoint: [*step, "init"]
     environment:
-      CCS_UIDS: "pull=${GIT_UID:?} ccs-bash=${CCS_UID:?} backup=${CCS_UID} front=${FRONT_UID:?} push=${CCS_UID}"
+      CCS_UIDS: "pull=${GIT_UID:?} ccs-bash=${CCS_UID:?} backup=${CCS_UID} front=${FRONT_UID:?} push=${CCS_UID} watch=${CCS_UID}"
     volumes: [*run]
     restart: "no"
     profiles: [init]
@@ -55,14 +70,14 @@ services:
   wallet-rpc:
     <<: *hardened
     image: ${WALLET_IMAGE:?the wallet-rpc image ID}
-    # the host's network: the wallet on 127.0.0.1 (rpc-bind-ip), an external monerod
-    # (daemon-address in wallet-rpc.conf), nothing published to the docker networks
-    network_mode: host
+    # its RPC on the wallet network only (ccs-bash), its login in wallet-rpc.conf; out to monerod
+    networks: [wallet, monerod]
     user: "${WALLET_UID:?}"
     environment:
       # its shared ring database (~/.shared-ringdb) beside the wallet, the rest is read-only
       HOME: ${WALLET_DIR:-/var/lib/ccs/wallet}
     command: ["--config-file", "/etc/ccs-wallet/wallet-rpc.conf", "--non-interactive",
+              "--rpc-bind-ip", "0.0.0.0", "--confirm-external-bind",
               "--tx-notify", "/usr/local/bin/ccs-notify %s"]
     # answering: its RPC port open (bash's /dev/tcp; the image has no curl)
     healthcheck:
@@ -77,27 +92,29 @@ services:
       - *run
 
   pull:
-    <<: [*hardened, *log-group]
+    <<: *hardened
     image: ${CCS_BASH_IMAGE}
     # the forge only (the default network: out, nothing in)
     user: "${GIT_UID}"
-    entrypoint: ["/opt/ccs-bash/contrib/docker/backend/step", "pull"]
-    environment:
+    entrypoint: [*step, "pull"]
+    environment: &every
       HOME: /tmp
       CCS_EVERY: ${CCS_EVERY:-120}
+    healthcheck: {<<: *health, test: ["CMD", *step, "health", "pull"]}
     volumes:
       - /var/lib/ccs/proposals:/var/lib/ccs/proposals
       - ${CCS_PULL_OK:-/var/lib/ccs/pull-ok}:/var/lib/ccs/pull-ok
       - *run
-      - *log
 
   ccs-bash:
-    <<: [*hardened, *log-group]
+    <<: *hardened
     image: ${CCS_BASH_IMAGE}
-    # the host's network: wallet-rpc on 127.0.0.1, the forge's API
-    network_mode: host
+    # the wallet (ccs.conf's RPC_URL: http://wallet-rpc:18182/json_rpc), and out to the forge's API
+    networks: [wallet, default]
     user: "${CCS_UID}"
-    entrypoint: ["/opt/ccs-bash/contrib/docker/backend/step", "ccs-bash"]
+    entrypoint: [*step, "ccs-bash"]
+    environment: *every
+    healthcheck: {<<: *health, test: ["CMD", *step, "health", "ccs-bash"]}
     depends_on:
       wallet-rpc:
         condition: service_healthy
@@ -107,30 +124,32 @@ services:
       - /var/lib/ccs/state:/var/lib/ccs/state
       - /var/lib/ccs/out:/var/lib/ccs/out
       - *run
-      - *log
 
   backup:
-    <<: [*hardened, *log-group]
+    <<: *hardened
     image: ${CCS_BASH_IMAGE}
     # the backup machine only (ssh)
     user: "${CCS_UID}"
-    entrypoint: ["/opt/ccs-bash/contrib/docker/backend/step", "backup"]
+    entrypoint: [*step, "backup"]
     environment:
+      <<: *every
       CCS_BACKUP: ${CCS_BACKUP:?ccs-backup@<the backup machine>}
+    healthcheck: {<<: *health, test: ["CMD", *step, "health", "backup"]}
     volumes:
       - /etc/passwd:/etc/passwd:ro
       - /var/lib/ccs/state:/var/lib/ccs/state:ro
       - ${CCS_BACKUP_KEYS:-/etc/ccs/backup}:/etc/ccs/backup:ro
       - *run
-      - *log
 
   front:
-    <<: [*hardened, *log-group]
+    <<: *hardened
     image: ${CCS_FRONT_IMAGE:?the attested ccs-front-bash image ID}
     network_mode: none
     user: "${FRONT_UID}"
     # the stage runner from ccs-bash's checkout at its attested commit (the image has bash)
     entrypoint: ["/step", "front", "/design/public", "/data", "/proposals", "/www/site", "/subaddresses/subaddresses.txt"]
+    environment: *every
+    healthcheck: {<<: *health, test: ["CMD", "/step", "health", "front"]}
     volumes:
       - ${CCS_BASH_DIR:-/opt/ccs-bash}/contrib/docker/backend/step:/step:ro
       # the folder above the design: an upgrade renames public (public.old, public.new), and
@@ -141,16 +160,17 @@ services:
       - /var/lib/ccs/www:/www
       - /etc/ccs-front:/subaddresses:ro
       - *run
-      - *log
 
   push:
-    <<: [*hardened, *log-group]
+    <<: *hardened
     image: ${CCS_BASH_IMAGE}
     # the web server only (ssh)
     user: "${CCS_UID}"
-    entrypoint: ["/opt/ccs-bash/contrib/docker/backend/step", "push"]
+    entrypoint: [*step, "push"]
     environment:
+      <<: *every
       CCS_PUSH: ${CCS_PUSH:?ccs-data@<the web server>}
+    healthcheck: {<<: *health, test: ["CMD", *step, "health", "push"]}
     volumes:
       - /etc/passwd:/etc/passwd:ro
       # the push key and known_hosts, in the ccs user's home as on the host
@@ -159,6 +179,24 @@ services:
       # would keep the one replaced (empty, once deleted)
       - /var/lib/ccs/www:/var/lib/ccs/www:ro
       - /var/lib/ccs/pushed:/var/lib/ccs/pushed
-      - /run/ccs-watch.lock:/run/ccs-watch.lock:ro
       - *run
-      - *log
+
+  # ccs-watch: after each run, and between pushes at random times (out to the web server, and
+  # to alert.conf's ALERT_URL and WATCH_PROXY)
+  watch:
+    <<: *hardened
+    image: ${CCS_BASH_IMAGE}
+    user: "${CCS_UID}"
+    entrypoint: [*step, "watch", "${CCS_SITE_URL:?the site's address, https://...}"]
+    environment: *every
+    healthcheck: {<<: *health, test: ["CMD", *step, "health", "watch"]}
+    volumes:
+      - ${CCS_ALERT_CONF:-/etc/ccs/alert.conf}:/etc/ccs/alert.conf:ro
+      # alert.conf's SUBADDRESSES
+      - /etc/ccs-front:/etc/ccs-front:ro
+      - /var/lib/ccs/pushed:/var/lib/ccs/pushed:ro
+      # forge-ok, read; its own state, written
+      - /var/lib/ccs/state:/var/lib/ccs/state:ro
+      - /var/lib/ccs/state/watch:/var/lib/ccs/state/watch
+      - ${CCS_PULL_OK:-/var/lib/ccs/pull-ok}:/var/lib/ccs/pull-ok:ro
+      - *run
