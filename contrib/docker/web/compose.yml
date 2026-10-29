@@ -59,6 +59,9 @@ services:
     <<: *hardened
     user: "0:0"
     cap_add: *sshd-caps
+    # a push checked at a time (the gate's lock); its decoders capped at 1 GB each as well
+    mem_limit: 2g
+    pids_limit: 256
     command: ["-p", "${CCS_GATE_PORT:-2223}", "-o", "AllowUsers=ccs-data", "-o", "ForceCommand=/usr/local/bin/ccs-receive"]
     healthcheck: {<<: *health, test: ["CMD", "bash", "-c", ": > /dev/tcp/127.0.0.1/${CCS_GATE_PORT:-2223}"]}
     volumes:
@@ -78,6 +81,8 @@ services:
     <<: *hardened
     user: "0:0"
     cap_add: *sshd-caps
+    mem_limit: 256m
+    pids_limit: 64
     command: ["-p", "${CCS_BACKUP_PORT:-2224}", "-o", "AllowUsers=ccs-backup", "-o", "ForceCommand=/usr/local/bin/ccs-backup-receive"]
     healthcheck: {<<: *health, test: ["CMD", "bash", "-c", ": > /dev/tcp/127.0.0.1/${CCS_BACKUP_PORT:-2224}"]}
     volumes:
