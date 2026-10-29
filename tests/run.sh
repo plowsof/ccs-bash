@@ -634,6 +634,60 @@ else
 fi
 rm -rf "$img"
 
+# A mirror (MIRROR_URL, lib/mirror.sh): a fresh state, each address the other site's feed gives
+# (matched by title and author), never one of its own; totals from this wallet, an earlier
+# wallet's retired record, and the feed only for a proposal in neither; a title the feed has twice,
+# or not at all, kept off the site while it has no address; an address that changes in the feed
+# stops the run.
+d=$TEST_TMP/mirror
+mkdir -p "$d/state/retired" "$d/out" && : > "$d/state/proposals.csv"
+other=$(printf '8%094d' 0 | tr 0 A)
+printf '# retired old wallet %s height 80 time 1\n70,%064d,3,2000000000000,0,b-wip.md\n' "$(printf '8%094d' 0 | tr 0 B)" 9 > "$d/state/retired/old.csv"
+feed() {   # feed NEW-FUND-INDEX: the other site's /projects
+    jq -n --arg nf "$(printf '8%094d' "$1")" --arg a1 "$(printf '8%094d' 1)" --arg n9 "$(printf '8%094d' 9)" --arg o "$other" '{data: [
+        {title: "Brand new", author: "dave", address: $nf, raised_amount: 0, contributions: 0, state: "FUNDING-REQUIRED"},
+        {title: "Fund <b>this</b> & that", author: "alice", address: $a1, raised_amount: 1.5, contributions: 3, state: "FUNDING-REQUIRED"},
+        {title: "Finished thing", author: "carol", address: $o, raised_amount: 12.5, contributions: 4, state: "COMPLETED"},
+        {title: "Work in progress", author: "bob", address: $o, raised_amount: 99, contributions: 9, state: "WORK-IN-PROGRESS"},
+        {title: "Nearly funded", author: "judy", date: "October 5, 2026", address: $n9, raised_amount: 0, contributions: 0, state: "FUNDING-REQUIRED"},
+        {title: "Nearly funded", author: "judy", date: "May 1, 2020", address: $a1, raised_amount: 0, contributions: 0, state: "COMPLETED"},
+        {title: "Name starts with a space", author: "ivan", date: "January 2, 2025", address: $a1, raised_amount: 0, contributions: 0, state: "FUNDING-REQUIRED"},
+        {title: "Name starts with a space", author: "ivan", date: "January 2, 2025", address: $a1, raised_amount: 0, contributions: 0, state: "FUNDING-REQUIRED"}]}' > "$d/feed.json"
+}
+feed 7
+sed "s|$TEST_TMP/state|$d/state|; s|$TEST_TMP/out|$d/out|" "$TEST_TMP/ccs.conf" > "$d/ccs.conf"
+printf 'MIRROR_URL=file://%s/feed.json\n' "$d" >> "$d/ccs.conf" && chmod 444 "$d/ccs.conf"
+had=$(cat "$TEST_TMP/wallet-count")
+mrun() { bash -c 'source "$1/../ccs-back.sh" && source "$1/stubs.sh" && main "$2"' _ "$here" "$d/ccs.conf" 2> "$d/log"; }
+p() { jq -r --arg f "$1" '.[] | select(.filename == $f) | "\(.raised_amount) \(.contributions)"' "$d/out/projects.json"; }
+if mrun && [[ $(cat "$TEST_TMP/wallet-count") == "$had" ]] \
+    && grep -q '^"new-fund.md",[^,]*,7,' "$d/state/proposals.csv" && grep -q '^"a-fund.md",[^,]*,1,' "$d/state/proposals.csv" \
+    && [[ $(p "c done, (old).md") == "12.5 4" && $(p "b-wip.md") == "2 1" ]] \
+    && grep -q '^"near-funded.md",[^,]*,9,' "$d/state/proposals.csv" && [[ -z $(p " leading-space.md") ]] \
+    && grep -q '^skipping  leading-space.md: no address from MIRROR_URL yet' "$d/log" \
+    && grep -q 'MIRROR_URL has more than one proposal with the title and author of  leading-space.md, and of its date' "$d/log"; then
+    cp "$d/out/projects.json" "$d/projects.before"
+    feed 8
+    if ! mrun && grep -q "MIRROR_URL gives it $(printf '8%094d' 8): stopped" "$d/log" && cmp -s "$d/out/projects.json" "$d/projects.before"; then
+        echo "ok   mirror: the other site's addresses (none of its own; a title and author twice told apart by the date), this wallet's and a retired record's totals, the feed's only for one in neither; one it can't tell apart kept off; a changed address stops the run"
+    else echo "FAIL mirror: a changed address"; tail -n 5 "$d/log"; status=1; fi
+else
+    echo "FAIL mirror"; tail -n 8 "$d/log"; jq -c '.[] | {filename, raised_amount, contributions}' "$d/out/projects.json" 2> /dev/null; cat "$d/state/proposals.csv"; status=1
+fi
+echo "$had" > "$TEST_TMP/wallet-count"
+
+# TARGET_BRANCH: only the merge requests to it (GitLab's target_branch; Forgejo's base.ref)
+# shellcheck disable=SC2016
+tb=$(bash -c 'source "$1/../lib/common.sh" && source "$1/../lib/gitlab.sh"; calls=$2
+    gitlab_get() { echo "$1" >> "$calls"; echo "[]"; }
+    REPOSITORY_URL=https://gitlab.test/api/v4/projects/1 TARGET_BRANCH=master gitlab_mrs opened > /dev/null
+    REPOSITORY_URL=https://gitlab.test/api/v4/projects/1 gitlab_mrs opened > /dev/null
+    gitlab_get() { echo "[{\"number\": 1, \"merged\": false, \"base\": {\"ref\": \"testnet\"}}, {\"number\": 2, \"merged\": false, \"base\": {\"ref\": \"master\"}}]"; }
+    REPOSITORY_URL=https://forgejo.test/api/v1/repos/o/r TARGET_BRANCH=master gitlab_mrs opened | jq -c "map(.iid)"' _ "$here" "$TEST_TMP/tb.calls")
+if [[ $(sed -n 1p "$TEST_TMP/tb.calls") == *"&target_branch=master" && $(sed -n 2p "$TEST_TMP/tb.calls") != *target_branch* && $tb == "[2]" ]]; then
+    echo "ok   TARGET_BRANCH: only the merge requests to it, on GitLab and Forgejo; without it, all"
+else echo "FAIL TARGET_BRANCH: $(cat "$TEST_TMP/tb.calls" 2> /dev/null) / $tb"; status=1; fi
+
 # Security review 2026-10-25 (fails until fixed): anyone can send a little to a subaddress no
 # proposal has (the signed list publishes 15,000 of them); the wallet then knows it, and a run that
 # stops on it stops the site updating for as long as that donation is there, which is for good.
