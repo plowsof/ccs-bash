@@ -41,6 +41,9 @@ $props[0] as $props | $state[0] as $state | $funds[0] as $funds
         tags: (.tags | map(nobidi | @html))
       };
 
+  # "12.3400" -> 12.34, "5.0000" -> 5
+  def xmr_number: (if test("\\.") then sub("0+$"; "") | sub("\\.$"; "") else . end) | tonumber;
+
   def project:
     $funds[.file] as $f
     | {
@@ -49,9 +52,12 @@ $props[0] as $props | $state[0] as $state | $funds[0] as $funds
         contributions: $f.count,
         date: (if .ts > 0 then .ts | strftime("%B %-d, %Y") else null end),
         percentage_funded: $f.percentage,
-        raised_amount: $f.raised,
+        # numbers, as ccs-back's /projects has them (its readers add them up), from the exact
+        # 4-decimal text, its trailing zeros dropped first (every jq then prints the same digits:
+        # 1.8 keeps a number's text as written, 1.6 prints the shortest)
+        raised_amount: ($f.raised | xmr_number),
         state: {fr: "FUNDING-REQUIRED", wip: "WORK-IN-PROGRESS", cp: "COMPLETED"}[.layout],
-        target_amount: $f.amount,
+        target_amount: ($f.amount | xmr_number),
         title: (.title | @html),
         filename: .file,
         # the proposal's merge request, wherever the proposals are (GitLab, Forgejo): as the site's own
