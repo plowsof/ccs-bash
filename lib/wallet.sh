@@ -10,6 +10,9 @@ rpc() {
     res=$(curl -fsS --max-time 60 \
         -K <([[ -z $RPC_USER ]] || printf 'digest\nuser = "%s:%s"\n' "$RPC_USER" "$RPC_PASSWORD") \
         -H 'Content-Type: application/json' -d "$body" "$RPC_URL") || return 1
+    # RPC_QUOTE=1: every "amount" made a string before jq reads it, which keeps the digits (jq's
+    # doubles can't hold one above 2^53, 9007.2 XMR: one such donation would stop every run)
+    [[ -z ${RPC_QUOTE:-} ]] || res=$(sed -E 's/"amount": *([0-9]+)/"amount": "\1"/g' <<<"$res") || return 1
     jq -e '.result // error("rpc '"$1"': \(.error.message // "no result")")' <<<"$res"
 }
 
@@ -87,14 +90,21 @@ assign_addresses() {
         log "$file: subaddress $idx $addr"
         # Deposits it had before it was handed out (the next one is easy to guess, the list
         # publishes it: someone's dust) aren't this proposal's: dropped from this run's totals, and
-        # those up to this height from every later run's (ASSIGNED: "index<TAB>height")
-        if [[ -n ${ASSIGNED:-} ]] && grep -q "^$idx"$'\t' "$WORK/totals.tsv"; then
+        # those in blocks up to the wallet's last one from every later run's (ASSIGNED:
+        # "index<TAB>height"). Kept for every subaddress handed out, not only one this run's
+        # totals have deposits at: they lack those still time-locked, and those at a subaddress
+        # past the ones the wallet counts as created (a wallet made from its keys still scans the
+        # default lookahead's 200, whatever set_subaddress_lookahead says). The height is the last
+        # block's (get_height is one more): a donation in the next block is the proposal's.
+        if [[ -n ${ASSIGNED:-} ]]; then
             local h
             h=$(rpc get_height | jq -r .height) || return 1
-            [[ $h =~ ^$NUM$ ]] || die "unexpected get_height result: '$h'"
-            printf '%s\t%s\n' "$idx" "$h" >> "$ASSIGNED"
-            log "warning: subaddress $idx had $(awk -F'\t' -v i="$idx" '$1 == i { print $4 }' "$WORK/totals.tsv") deposit(s) before $file was given it (sent to an address the list publishes): not counted"
-            awk -F'\t' -v i="$idx" '$1 != i' "$WORK/totals.tsv" > "$WORK/totals.tmp" && mv "$WORK/totals.tmp" "$WORK/totals.tsv"
+            [[ $h =~ ^$NUM$ && $h != 0 ]] || die "unexpected get_height result: '$h'"
+            printf '%s\t%s\n' "$idx" "$((h - 1))" >> "$ASSIGNED"
+            if grep -q "^$idx"$'\t' "$WORK/totals.tsv"; then
+                log "warning: subaddress $idx had $(awk -F'\t' -v i="$idx" '$1 == i { print $4 }' "$WORK/totals.tsv") deposit(s) before $file was given it (sent to an address the list publishes): not counted"
+                awk -F'\t' -v i="$idx" '$1 != i' "$WORK/totals.tsv" > "$WORK/totals.tmp" && mv "$WORK/totals.tmp" "$WORK/totals.tsv"
+            fi
         fi
     done < <(jq -r --slurpfile state "$WORK/state.json" '
         .[] | select(.layout == "fr") | .file | select($state[0][.] and $state[0][.].address == null)' "$WORK/props.json")
@@ -186,16 +196,16 @@ donation_totals() {
     else
         params="{\"in\": true, \"pool\": true, \"account_index\": 0, \"subaddr_indices\": $indexes, \"filter_by_height\": true, \"min_height\": $H}"
     fi
-    transfers=$(rpc get_transfers "$params") || return 1
+    transfers=$(RPC_QUOTE=1 rpc get_transfers "$params") || return 1
     # kind height txid subaddress amount unlock_time confirmations; jq only passes amounts
-    # through, and stops above 2^53, where it can't read them exactly; an unlock_time past 18
+    # through, as strings (RPC_QUOTE), checked as numbers below; an unlock_time past 18
     # digits (anyone can send one: up to 2^64 - 1, locked for good) is the largest 18-digit time,
     # still locked, not a number bash would wrap negative (unlocked)
     transfers=$(jq -r '
         ((.in // []) | map(. + {kind: "in"})) + ((.pool // []) | map(. + {kind: "pool"}))
         | unique_by([.txid, .subaddr_index.minor])
         | .[]
-        | if .amount > 9007199254740992 then error("amount \(.amount) is too large for jq to read exactly") else . end
+        | if (.amount | type) == "string" or .amount <= 9007199254740992 then . else error("amount \(.amount) is too large for jq to read exactly") end
         | "\(.kind) \(.height // 0) \(.txid) \(.subaddr_index.minor) \(.amount) \(if (.unlock_time // 0) >= 1e18 then "999999999999999999" else (.unlock_time // 0) end) \(.confirmations // 0)"' <<<"$transfers") || return 1
     # every field checked before bash arithmetic (a subscript can run commands), and the txid
     # before it goes in the file
