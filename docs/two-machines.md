@@ -3,6 +3,9 @@
 The backend takes no incoming connections; after each run it pushes the site to the web server,
 whose push account can only write into one folder, through the gate.
 
+The web server's side can also run in Docker, from the gate's attested image, with nginx on the
+host as below: [the web server in Docker](docker.md#the-web-server-in-docker).
+
 **The push account** (rsync 3.2.4+ for `rrsync`; `apt install rsync python3`):
 
 ```
@@ -197,7 +200,8 @@ what it is sent; it knows what a page may be. Each push, one at a time, it
    repository. The push can't delete, so the gate takes it, and its `images/<name>/`, off the live
    site, and the push is good;
 6. refuses the whole push without its pinned list, `design.sha256`, the design, `markdown.awk`,
-   `proposals.conf`, `zbarimg`, `qrencode`, `python3` or `git`.
+   `proposals.conf`, the QR reader's libraries (libzbar, libpng, libturbojpeg, giflib),
+   `qrencode`, `python3` or `git`.
 
 With `/etc/ccs-gate/alert.conf` it tells IRC itself (once an hour per address or file, three a
 push, a foreign address first, also when the backend hangs up mid-check): the alarm that still
@@ -212,7 +216,7 @@ sounds when the backend is the one lying.
 Set it up once, as root:
 
 ```
-apt install zbar-tools qrencode git                                  # the QR codes, read and remade; git, for the proposals
+apt install libzbar0 libpng16-16 libturbojpeg0 libgif7 qrencode git  # the QR codes, read (libzbar on pixels the formats' own libraries decode; no ImageMagick) and remade; git, for the proposals
 install -m 755 contrib/ccs-receive /usr/local/bin/ccs-receive        # from this repository at the attested commit, checked out here (handover: Upgrading, 1-2)
 install -d -o ccs-data -m 755 /var/lib/ccs-staging
 install -d -m 755 /etc/ccs-gate /etc/ccs-gate/design
@@ -287,10 +291,13 @@ a number; an idea that is no merge request (still escaped text linking to the re
 the wallet's subaddresses on another proposal's page (the money stays in the CCS wallet); a
 proposal's name, author, dates, goal or stage as ccs-bash read its front matter (a renamed
 proposal, a completed one with a donation box, a listed address still). Nor anything once the web
-server itself is taken over: then ccs-watch and visitors are the defence. zbarimg reads what the
-backend sends, as ccs-data, but only images the gate has read as a plain PNG first, and then as
-`png:` (a proposal's image as the format its name says): ImageMagick never picks a decoder by the
-bytes. Keep zbar-tools and ImageMagick updated (`unattended-upgrades`).
+server itself is taken over: then ccs-watch and visitors are the defence. The QR reader
+(`qrscan_py`: libzbar, through Python's ctypes, on 8-bit grey pixels) reads what the backend
+sends, as ccs-data, but only images the gate has read as a plain PNG first, and each image as the
+format its name says, by that format's own library (libpng, libturbojpeg, giflib), its size
+checked before it is decoded; no ImageMagick, nothing that picks a decoder by the bytes. Keep those
+libraries updated (`unattended-upgrades`), or run the gate in its image
+([the web server in Docker](docker.md#the-web-server-in-docker)), which pins and attests them.
 
 ### The heartbeat: the web server notices a silent backend
 
