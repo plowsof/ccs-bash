@@ -15,6 +15,8 @@ source "$CCS_LIB/proposals.sh"
 source "$CCS_LIB/gitlab.sh"
 # shellcheck source=lib/wallet.sh
 source "$CCS_LIB/wallet.sh"
+# shellcheck source=lib/mirror.sh
+source "$CCS_LIB/mirror.sh"
 # shellcheck source=lib/images.sh
 source "$CCS_LIB/images.sh"
 
@@ -108,6 +110,7 @@ main() {
     DEPOSITS=$STATE_DIR/deposits.csv     # lib/wallet.sh, donation_totals
     ASSIGNED=$STATE_DIR/assigned.tsv     # lib/wallet.sh, assign_addresses and donation_totals
     RETIRED_DIR=$STATE_DIR/retired       # lib/wallet.sh, retired_totals (contrib/retire-wallet)
+    HISTORIC=$STATE_DIR/historic.tsv     # lib/mirror.sh: a mirror's totals from MIRROR_URL
 
     exec 9> "$STATE_DIR/lock"
     flock -n 9 || { log "another run is still going, skipping"; exit 0; }
@@ -133,7 +136,14 @@ main() {
     donation_totals > "$WORK/totals.tsv"
     check_known_subaddresses
     record_new_proposals
-    assign_addresses
+    if [[ ${MIRROR_URL:-} ]]; then
+        # a mirror: the other site's addresses, never one of its own (lib/mirror.sh); its feed
+        # not answering, the addresses and history as they were
+        if mirror_load; then mirror_assign; else log "warning: MIRROR_URL not answering: no new addresses this run"; fi
+        mirror_hide
+    else
+        assign_addresses
+    fi
     proposal_funds > "$WORK/funds.json"
     check_never_lower
     # STATE_DIR/forge-ok: when GitLab last answered (ccs-watch --run alerts when that's long ago)

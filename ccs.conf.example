@@ -34,3 +34,13 @@ MIN_CONFIRMATIONS=10
 # Ideas: at most this many open MRs, the most recently updated, are looked at each run (anyone
 # can open them). Optional, default 100.
 #IDEAS_MAX=100
+
+# Only the merge requests to this branch, for the ideas and the merged-MR links. Optional; a
+# repository whose other branches take others' (a test instance's) needs it.
+#TARGET_BRANCH=master
+
+# A mirror: this CCS shown beside another on the same wallet (ccs.getmonero.org's), to compare
+# them. Each proposal's address comes from that site's /projects, matched by title and author:
+# the mirror never hands out a subaddress of its own. A proposal whose address isn't this
+# wallet's (an earlier wallet's) shows that site's raised amount and contributions. Optional.
+#MIRROR_URL=https://ccs.getmonero.org/projects/
