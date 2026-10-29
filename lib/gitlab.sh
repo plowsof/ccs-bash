@@ -23,7 +23,9 @@ gitlab_mrs() {
         return
     fi
     while :; do
-        batch=$(gitlab_get "merge_requests?state=$1&scope=all&order_by=updated_at&per_page=100&page=$page") || return 1
+        # TARGET_BRANCH (ccs.conf): only the merge requests to it (a repository whose other branches
+        # take others: a test instance's)
+        batch=$(gitlab_get "merge_requests?state=$1&scope=all&order_by=updated_at&per_page=100&page=$page${TARGET_BRANCH:+&target_branch=$TARGET_BRANCH}") || return 1
         all=$(jq -s 'add' <<<"$all $batch") || return 1
         [[ $(jq length <<<"$batch") -eq 100 ]] || break
         [[ -z ${2:-} ]] || (($(jq length <<<"$all") <= $2)) || break
@@ -39,7 +41,7 @@ forgejo_prs() {
     [[ $1 == opened ]] || state=closed
     while :; do
         batch=$(gitlab_get "pulls?state=$state&sort=recentupdate&limit=50&page=$page") || return 1
-        all=$(jq -s --arg want "$1" '.[0] + (.[1] | map(select($want == "opened" or .merged == true) | {
+        all=$(jq -s --arg want "$1" --arg tb "${TARGET_BRANCH:-}" '.[0] + (.[1] | map(select(($want == "opened" or .merged == true) and ($tb == "" or .base.ref == $tb)) | {
             iid: .number, web_url: .html_url, title, author: {username: .user.login}, sha: .head.sha,
             # 2026-10-16T15:20:32+02:00 -> 2026-10-16T13:20:32Z (jq reads only Z times)
             created_at: (.created_at | if . == null then null else capture("^(?<t>[0-9-]{10}T[0-9:]{8})(\\.[0-9]+)?(?<z>Z|(?<s>[+-])(?<h>[0-9]{2}):(?<m>[0-9]{2}))$")
