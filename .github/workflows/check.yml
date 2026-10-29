@@ -144,6 +144,23 @@ jobs:
           read -r a b <<<"$IDS"
           echo "the tested build: $a"; echo "a clean one: $b"
           [[ $a == sha256:* && $a == "$b" ]] || { echo "error: the gate image's builds differ, or one is missing" >&2; exit 1; }
+  regtest:
+    # The backend against a real monerod (regtest, offline) and monero-wallet-rpc: what a visitor
+    # sees (totals, pending, contributions) checked against what the test sent (tests/regtest.sh)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, pinned by commit
+      - name: the Monero releases and the design's zip, kept from the last run (each still checked by its sha256)
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3, pinned by commit
+        with:
+          path: ~/.cache/ccs-regtest
+          key: regtest-${{ hashFiles('tests/regtest.sh') }}
+      - name: ccs-front-bash, at the release the set runs, and qrencode for it
+        run: |
+          git clone -q --depth 1 -b v0.1.20 https://github.com/plowsof/ccs-front-bash "$RUNNER_TEMP/ccs-front-bash"
+          sudo apt-get install -y -q qrencode > /dev/null
+      - name: tests/regtest.sh
+        run: FRONT_BASH="$RUNNER_TEMP/ccs-front-bash" tests/regtest.sh
   host-tests:
     name: host tests (rrsync, the gate, the watcher)
     # The two-machine setup (docs/two-machines.md, rrsync), attacked from the wallet machine's key.
