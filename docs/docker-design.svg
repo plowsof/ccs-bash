@@ -1,0 +1,181 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 880" width="1200" height="880" font-family="Inter, Helvetica, Arial, sans-serif">
+  <defs>
+    <filter id="sh" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.12"/>
+    </filter>
+    <marker id="g" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#16a34a"/></marker>
+    <marker id="s" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#64748b"/></marker>
+    <marker id="p" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#7c3aed"/></marker>
+  </defs>
+
+  <rect width="1200" height="880" fill="#ffffff"/>
+
+  <!-- title -->
+  <text x="30" y="40" font-size="22" font-weight="700" fill="#0f172a">CCS: the backend in Docker</text>
+  <text x="30" y="62" font-size="13.5" fill="#475569">The recommended architecture's backend (design.svg), one container a step: read-only, no capabilities, its own user, network, folders and</text>
+  <text x="30" y="80" font-size="13.5" fill="#475569">secret, no Docker socket. It still only connects out; the web server, its gate and the backup machine are unchanged.</text>
+
+  <!-- the backend host -->
+  <rect x="20" y="100" width="850" height="760" rx="16" fill="#eef4ff" stroke="#3b6fd8" stroke-width="2" stroke-dasharray="7 5"/>
+  <rect x="20" y="100" width="850" height="40" rx="16" fill="#3b6fd8"/>
+  <rect x="20" y="120" width="850" height="20" fill="#3b6fd8"/>
+  <g transform="translate(40,110)" fill="none" stroke="#ffffff" stroke-width="2">
+    <rect x="0" y="8" width="16" height="12" rx="2" fill="#ffffff"/>
+    <path d="M3,8 V5 a5,5 0 0 1 10,0 V8"/>
+  </g>
+  <text x="66" y="126" font-size="15" font-weight="700" fill="#ffffff">BACKEND</text>
+  <text x="162" y="126" font-size="13" fill="#dbe7ff">compose.yml · images by attested ID, never pulled · journalctl -t ccs</text>
+
+  <!-- the wallet network -->
+  <rect x="285" y="180" width="565" height="172" rx="12" fill="#f5f0ff" stroke="#7c3aed" stroke-width="1.6" stroke-dasharray="5 4"/>
+  <text x="300" y="344" font-size="12" fill="#6d28d9">network "wallet": internal, no way out (ccs-bash and the wallet only)</text>
+
+  <!-- connections out (grey), drawn first -->
+  <g fill="none" stroke="#64748b" stroke-width="1.8" marker-end="url(#s)">
+    <path d="M150,200 V160 H900"/>
+    <path d="M480,200 V160"/>
+    <path d="M830,255 H900"/>
+    <path d="M520,430 V372 H900"/>
+    <path d="M830,475 H900"/>
+    <path d="M830,665 H860 V520 H900"/>
+    <path d="M830,705 H900"/>
+  </g>
+  <text x="160" y="154" font-size="11.5" fill="#475569">git pull</text>
+  <text x="490" y="154" font-size="11.5" fill="#475569">merge requests, Ideas (API)</text>
+  <text x="530" y="390" font-size="11.5" fill="#475569">ssh: the state, when it changes</text>
+  <text x="835" y="248" font-size="11" fill="#475569">RPC</text>
+
+  <!-- run order (green) -->
+  <g fill="none" stroke="#16a34a" stroke-width="2.4" marker-end="url(#g)">
+    <path d="M255,262 H300"/>
+    <path d="M360,325 L190,430"/>
+    <path d="M430,325 V425"/>
+    <path d="M555,492 H590"/>
+    <path d="M150,555 V585 H650 V560"/>
+    <path d="M710,560 V600"/>
+  </g>
+  <!-- ccs-bash to the wallet (purple) -->
+  <path d="M540,262 H585" fill="none" stroke="#7c3aed" stroke-width="2.4" marker-end="url(#p)"/>
+  <text x="543" y="254" font-size="11" fill="#6d28d9">RPC</text>
+
+  <!-- the stages -->
+  <g font-size="12" fill="#334155">
+    <!-- pull -->
+    <g filter="url(#sh)"><rect x="45" y="200" width="210" height="125" rx="10" fill="#ffffff" stroke="#94a3b8"/></g>
+    <circle cx="66" cy="222" r="11" fill="#16a34a"/><text x="62" y="226" font-size="12" font-weight="700" fill="#ffffff">1</text>
+    <text x="84" y="227" font-size="15" font-weight="700" fill="#0f172a">pull</text>
+    <text x="60" y="250">user ccs-git</text>
+    <text x="60" y="268">out: the forge only</text>
+    <text x="60" y="286">writes: the proposals checkout</text>
+    <text x="60" y="304">every 2 min, at once on a new tx</text>
+
+    <!-- ccs-bash -->
+    <g filter="url(#sh)"><rect x="300" y="200" width="240" height="125" rx="10" fill="#ffffff" stroke="#94a3b8"/></g>
+    <circle cx="321" cy="222" r="11" fill="#16a34a"/><text x="317" y="226" font-size="12" font-weight="700" fill="#ffffff">2</text>
+    <text x="339" y="227" font-size="15" font-weight="700" fill="#0f172a">ccs-bash</text>
+    <text x="315" y="250">user ccs · ccs-back.sh</text>
+    <text x="315" y="268">the wallet; out: the forge's API</text>
+    <text x="315" y="286">reads: proposals, ccs.conf</text>
+    <text x="315" y="304">writes: the state, the JSON</text>
+
+    <!-- wallet-rpc -->
+    <g filter="url(#sh)"><rect x="590" y="200" width="240" height="125" rx="10" fill="#ffffff" stroke="#94a3b8"/></g>
+    <text x="605" y="227" font-size="15" font-weight="700" fill="#0f172a">wallet-rpc</text>
+    <text x="605" y="250">user ccs-wallet · getmonero.org's</text>
+    <text x="605" y="268">release, its signed hashes checked</text>
+    <text x="605" y="286" fill="#b45309" font-weight="600">holds: the wallet</text>
+    <text x="605" y="304">tx-notify: a line on pull's "now"</text>
+
+    <!-- front -->
+    <g filter="url(#sh)"><rect x="45" y="430" width="210" height="125" rx="10" fill="#ffffff" stroke="#94a3b8"/></g>
+    <circle cx="66" cy="452" r="11" fill="#16a34a"/><text x="62" y="456" font-size="12" font-weight="700" fill="#ffffff">3</text>
+    <text x="84" y="457" font-size="15" font-weight="700" fill="#0f172a">front</text>
+    <text x="60" y="480">user ccs-front · ccs-front-bash</text>
+    <text x="60" y="498" font-weight="700" fill="#0f172a">network: none</text>
+    <text x="60" y="516">reads: the design, the JSON</text>
+    <text x="60" y="534">writes: the site</text>
+
+    <!-- backup -->
+    <g filter="url(#sh)"><rect x="315" y="430" width="240" height="125" rx="10" fill="#ffffff" stroke="#94a3b8"/></g>
+    <circle cx="336" cy="452" r="11" fill="#16a34a"/><text x="332" y="456" font-size="12" font-weight="700" fill="#ffffff">3</text>
+    <text x="354" y="457" font-size="15" font-weight="700" fill="#0f172a">backup</text>
+    <text x="330" y="480">user ccs</text>
+    <text x="330" y="498">out: the backup machine only</text>
+    <text x="330" y="516">reads: the state</text>
+    <text x="330" y="534" fill="#b45309" font-weight="600">holds: the backup key</text>
+
+    <!-- push -->
+    <g filter="url(#sh)"><rect x="590" y="430" width="240" height="125" rx="10" fill="#ffffff" stroke="#94a3b8"/></g>
+    <circle cx="611" cy="452" r="11" fill="#16a34a"/><text x="607" y="456" font-size="12" font-weight="700" fill="#ffffff">4</text>
+    <text x="629" y="457" font-size="15" font-weight="700" fill="#0f172a">push</text>
+    <text x="605" y="480">user ccs · rsync over ssh</text>
+    <text x="605" y="498">out: the web server only</text>
+    <text x="605" y="516">reads: the site; writes: pushed/</text>
+    <text x="605" y="534" fill="#b45309" font-weight="600">holds: the push key</text>
+
+    <!-- watch -->
+    <g filter="url(#sh)"><rect x="590" y="605" width="240" height="125" rx="10" fill="#ffffff" stroke="#94a3b8"/></g>
+    <circle cx="611" cy="627" r="11" fill="#16a34a"/><text x="607" y="631" font-size="12" font-weight="700" fill="#ffffff">5</text>
+    <text x="629" y="632" font-size="15" font-weight="700" fill="#0f172a">watch</text>
+    <text x="605" y="655">user ccs · ccs-watch</text>
+    <text x="605" y="673">after each push, and at random</text>
+    <text x="605" y="691">the live pages = pushed/ ?</text>
+    <text x="605" y="709" fill="#b45309" font-weight="600">holds: alert.conf</text>
+  </g>
+
+  <!-- what every container has -->
+  <rect x="45" y="620" width="510" height="110" rx="10" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="60" y="644" font-size="13.5" font-weight="700" fill="#0f172a">Every container</text>
+  <g font-size="12" fill="#334155">
+    <text x="60" y="666">read-only, no capabilities, no-new-privileges, a numeric user</text>
+    <text x="60" y="684">only its own folders of the host's (the host setup's: docs/setup.md)</text>
+    <text x="60" y="702">a healthcheck: it finished something lately (docker compose ps)</text>
+    <text x="60" y="720">its output to journald, one log in order (ccs log, ccs status)</text>
+  </g>
+
+  <!-- the run folder -->
+  <rect x="45" y="755" width="785" height="85" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.6"/>
+  <text x="60" y="780" font-size="13.5" font-weight="700" fill="#14532d">The run folder, /var/lib/ccs/run: how they take turns</text>
+  <g font-size="12" fill="#166534">
+    <text x="60" y="802">each stage's "done" (the last run it finished), "status", "at"; pipes that wake the next (only a speed-up:</text>
+    <text x="60" y="820">a waiting stage looks at the others' "done" every 5 s); the push's lock, shared with the watch. No stage starts another.</text>
+  </g>
+
+  <!-- outside -->
+  <g font-size="12" fill="#334155">
+    <g filter="url(#sh)"><rect x="905" y="130" width="270" height="62" rx="10" fill="#ffffff" stroke="#94a3b8"/></g>
+    <text x="920" y="156" font-size="14" font-weight="700" fill="#0f172a">GitLab / Forgejo</text>
+    <text x="920" y="176">the proposals repository</text>
+
+    <g filter="url(#sh)"><rect x="905" y="225" width="270" height="62" rx="10" fill="#ffffff" stroke="#94a3b8"/></g>
+    <text x="920" y="251" font-size="14" font-weight="700" fill="#0f172a">monerod</text>
+    <text x="920" y="271">network "monerod": the wallet's way out</text>
+
+    <rect x="905" y="340" width="270" height="62" rx="10" fill="#f1f5f9" stroke="#64748b" stroke-dasharray="5 4"/>
+    <text x="920" y="366" font-size="14" font-weight="700" fill="#0f172a">Backup machine</text>
+    <text x="920" y="386">ccs-backup-receive (unchanged)</text>
+
+    <rect x="905" y="440" width="270" height="100" rx="10" fill="#fff7ea" stroke="#d97706" stroke-width="2" stroke-dasharray="7 5"/>
+    <text x="920" y="466" font-size="14" font-weight="700" fill="#9a3412">WEB SERVER (unchanged)</text>
+    <text x="920" y="486">its gate checks every page against</text>
+    <text x="920" y="504">the design and the proposals, every</text>
+    <text x="920" y="522">address against the signed list</text>
+
+    <g filter="url(#sh)"><rect x="905" y="680" width="270" height="50" rx="10" fill="#ffffff" stroke="#94a3b8"/></g>
+    <text x="920" y="704" font-size="14" font-weight="700" fill="#0f172a">IRC (alerts)</text>
+    <text x="920" y="721">three failed runs; a page not as pushed</text>
+  </g>
+  <text x="838" y="468" font-size="11" fill="#475569">rsync</text>
+  <text x="880" y="640" font-size="11" fill="#475569" transform="rotate(-90 880 640)">fetch, as a visitor</text>
+
+  <!-- legend -->
+  <g font-size="12" fill="#334155">
+    <path d="M905,775 H945" stroke="#16a34a" stroke-width="2.4" marker-end="url(#g)"/>
+    <text x="955" y="779">the run, in turn (1 to 5)</text>
+    <path d="M905,800 H945" stroke="#64748b" stroke-width="1.8" marker-end="url(#s)"/>
+    <text x="955" y="804">out, each over its own way</text>
+    <path d="M905,825 H945" stroke="#7c3aed" stroke-width="2.4" marker-end="url(#p)"/>
+    <text x="955" y="829">the internal wallet network</text>
+    <text x="905" y="852" font-size="11.5" fill="#64748b">compose.host.yml: monerod on 127.0.0.1</text>
+  </g>
+</svg>

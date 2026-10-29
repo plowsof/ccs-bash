@@ -13,28 +13,36 @@
 #             are ccs-front-bash.sh's (the compose file gives them)
 #   push      the site to the web server (ccs; that machine only), when front and backup have
 #             done N; then writes the run's result ("ok", or the steps that failed, as
-#             ccs-bash-update says them) to its "watch" pipe, for ccs-watch on the host
+#             ccs-bash-update says them) to its "watch" pipe
+#   watch     ccs-watch (ccs; out to the web server): after each run, the live pages compared
+#             with what was pushed, and the run's result (three failed runs alert); between
+#             pushes, at random times, the pages again (ARG: the site's address)
 #   init      as root, once: the run folder, a folder for each stage, owned by its user
+#   health    STAGE: the compose's healthcheck, 0 if STAGE finished something lately
 #
 # The run folder (CCS_RUN, /run/ccs) has a folder for each stage: "done" (the last N it
-# finished), "status" ("N ok" or "N failed[: why]"), and "wake" (a pipe: a stage waiting on it
-# reads a line when another finishes, and looks again every 5 s anyway). No stage starts or
-# controls another (no Docker socket): it only waits for their "done". Output goes to the log
-# (CCS_LOG, /var/log/ccs-bash.log, the host's, so ccs log and ccs status read it as before) and to
-# docker compose logs.
+# finished), "status" ("N ok" or "N failed[: why]"), "at" (when), and "wake" (a pipe: a stage
+# waiting on it reads a line when another finishes). The pipes only make it quicker: a stage
+# waiting looks at the others' "done" every 5 s anyway, so a line written while no one read is
+# a few seconds lost, never a run. No stage starts or controls another (no Docker socket): it
+# only waits for their "done". Output goes to stdout: docker's log, journald's in compose.yml
+# (journalctl -t ccs; ccs log and ccs status read it).
 set -uo pipefail
 R=${CCS_RUN:-/run/ccs}
-LOG=${CCS_LOG:-/var/log/ccs-bash.log}
 EVERY=${CCS_EVERY:-120}
 STAGES="pull ccs-bash backup front push"
 stage=${1:?STAGE: init $STAGES}
 shift
 
-say() { printf '%s\n' "$*"; printf '%s\n' "$*" >> "$LOG" 2> /dev/null || true; }
-# run CMD...: its output (and errors) to the log and to docker's; its exit status
-run() {
-    "$@" 2>&1 | while IFS= read -r line; do printf '%s\n' "$line"; printf '%s\n' "$line" >> "$LOG" 2> /dev/null || true; done
-    return "${PIPESTATUS[0]}"
+say() { printf '%s\n' "$*"; }
+# run CMD...: its output and errors to stdout (one log, in order); its exit status
+run() { "$@" 2>&1; }
+now() { printf '%(%s)T\n' -1; }   # (bash's own: the front's image may have no date)
+# lock: the push's lock file (the watch shares it); /dev/null, with a warning, if init hasn't
+# made it: a missing file must not stop the push (a redirection that fails runs nothing)
+lock() {
+    local f=${CCS_WATCH_LOCK:-$R/watch.lock}
+    if [[ -r $f ]]; then printf '%s\n' "$f"; else say "warning: no lock $f (run init again): going on without it" >&2; echo /dev/null; fi
 }
 num() { local v; v=$(cat "$1" 2> /dev/null) || v=0; [[ $v =~ ^[0-9]+$ ]] || v=0; printf '%s\n' "$v"; }
 # put FILE TEXT: FILE written whole (a stage reading it never sees half of it)
@@ -44,7 +52,7 @@ wake() { local s; for s; do [[ -p $R/$s/wake ]] && { printf 'go\n' 1<> "$R/$s/wa
 # wait_for STAGE N: until STAGE has done N
 wait_for() { while (($(num "$R/$1/done") < $2)); do read -r -t 5 _ <> "$R/$stage/wake" || true; done; }
 # finish N STATUS: this stage has done N
-finish() { put "$R/$stage/status" "$1 $2"; put "$R/$stage/done" "$1"; }
+finish() { put "$R/$stage/status" "$1 $2"; put "$R/$stage/at" "$(now)"; put "$R/$stage/done" "$1"; }
 # failed STAGE N: why STAGE failed run N ("" if it didn't)
 failed() { local s; s=$(cat "$R/$1/status" 2> /dev/null) || s=''; [[ $s == "$2 failed"* ]] && printf '%s\n' "${s#"$2 failed"}" | sed 's/^: //'; return 0; }
 
@@ -54,15 +62,18 @@ init)
     mkdir -p "$R" && chmod 755 "$R" || exit 1
     for pair in ${CCS_UIDS:?CCS_UIDS: stage=uid:gid ...}; do
         s=${pair%%=*} owner=${pair#*=}
-        [[ " $STAGES " == *" $s "* && $owner =~ ^[0-9]+:[0-9]+$ ]] || { echo "init: bad CCS_UIDS entry $pair" >&2; exit 1; }
+        [[ " $STAGES watch " == *" $s "* && $owner =~ ^[0-9]+:[0-9]+$ ]] || { echo "init: bad CCS_UIDS entry $pair" >&2; exit 1; }
         mkdir -p "$R/$s" || exit 1
         # its pipes: "wake" for every stage, the pull's "now" (the wallet's tx-notify, ccs
-        # proposal:process), the push's "watch" (ccs-watch on the host)
+        # proposal:process), the push's "watch" (the watch stage)
         for p in wake $([[ $s == pull ]] && echo now) $([[ $s == push ]] && echo watch); do
             if [[ ! -p $R/$s/$p ]]; then rm -f "$R/$s/$p" && mkfifo -m 622 "$R/$s/$p" || exit 1; fi
         done
         chown -R "$owner" "$R/$s" && chmod 755 "$R/$s" || exit 1
     done
+    # the lock the push takes (and the watch, shared) around the push and its copy: root's,
+    # opened read-only (any open file can be locked)
+    [[ -f $R/watch.lock ]] || { : > "$R/watch.lock" && chmod 644 "$R/watch.lock"; } || exit 1
     echo "init: $R ready"
     ;;
 pull)
@@ -70,10 +81,10 @@ pull)
         n=$(($(num "$R/pull/done") + 1))
         wait_for push $((n - 1))
         # EVERY seconds after the last run started, or at once when woken through "now"
-        until (($(date +%s) >= $(num "$R/pull/started") + EVERY)); do
-            read -r -t $(($(num "$R/pull/started") + EVERY - $(date +%s))) _ <> "$R/pull/now" && break
+        until (($(now) >= $(num "$R/pull/started") + EVERY)); do
+            read -r -t $(($(num "$R/pull/started") + EVERY - $(now))) _ <> "$R/pull/now" && break
         done
-        put "$R/pull/started" "$(date +%s)"
+        put "$R/pull/started" "$(now)"
         say "== run $(date -u '+%F %T')"
         # the proposals; the forge down: give up, not a failed run (the last checkout stays);
         # pull-ok when one went through (ccs-watch --run alerts when that's FORGE_HOURS ago)
@@ -134,7 +145,7 @@ push)
         n=$(($(num "$R/push/done") + 1))
         wait_for front "$n"
         wait_for backup "$n"
-        # the push and the copy of what went, under ccs-watch's lock (opened read-only: any open
+        # the push and the copy of what went, under the watch's lock (opened read-only: any open
         # file can be locked), so a check between pushes never sees one without the other.
         # (busybox's flock has no -w: timeout's flock takes the lock for this shell's fd 9)
         rc=0
@@ -143,7 +154,7 @@ push)
             run timeout -k 5 120 rsync -a --delay-updates \
                 -e "ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15" "$site/" "${CCS_PUSH:?}:" || rc=$?
             if ((rc == 0 || rc == 7)); then rsync -a --delete "$site/" "$pushed/"; fi
-        } 9< "${CCS_WATCH_LOCK:-/run/ccs-watch.lock}"
+        } 9< "$(lock)"
         # the run's result, as ccs-bash-update says it (a failed pull is no failed run)
         result=''
         for s in ccs-bash backup front; do w=$(failed "$s" "$n"); [[ $w ]] && result="${result:+$result, }$w"; done
@@ -154,5 +165,39 @@ push)
         wake pull
     done
     ;;
-*) echo "step: no stage $stage ($STAGES, init)" >&2; exit 2 ;;
+watch)
+    # CCS_WATCH: ccs-watch; CCS_PUSHED: the copy of what was pushed; between pushes, every
+    # CCS_WATCH_EVERY seconds (300) and up to 8 minutes more at random (as ccs-watch.timer)
+    site=${1:?watch SITE_URL} w=${CCS_WATCH:-/opt/ccs-bash/contrib/ccs-watch} pushed=${CCS_PUSHED:-/var/lib/ccs/pushed}
+    # check: the live pages against what was pushed, under the lock (shared: the push's is
+    # exclusive), when something was
+    check() {
+        [[ -f $pushed/index.html ]] || return 0
+        { timeout 600 flock -s 9 || say "warning: the push's lock not had in 10 minutes, checking all the same"
+          run "$w" "$site" "$pushed"; } 9< "$(lock)"
+        return 0
+    }
+    next=$(($(now) + ${CCS_WATCH_EVERY:-300} + RANDOM % ${CCS_WATCH_RANDOM:-480}))
+    exec 3<> "$R/push/watch" || exit 1
+    while :; do
+        if IFS=' ' read -r -t $((next > $(now) ? next - $(now) : 1)) n pushed_or_not result <&3; then
+            [[ $n =~ ^[0-9]+$ ]] || continue
+            [[ $pushed_or_not == pushed ]] && check
+            run "$w" --run "${result:-ok}"
+            finish "$n" ok
+        elif (($(now) >= next)); then
+            check
+            put "$R/watch/at" "$(now)"
+            next=$(($(now) + ${CCS_WATCH_EVERY:-300} + RANDOM % ${CCS_WATCH_RANDOM:-480}))
+        fi
+    done
+    ;;
+health)
+    # STAGE finished a run (or the watch a check) within CCS_HEALTH seconds (5 runs, 10 minutes
+    # at least): the loop isn't stuck. A failed run is still one finished: ccs-watch alerts those.
+    s=${1:?health STAGE} limit=${CCS_HEALTH:-$((EVERY * 5 > 600 ? EVERY * 5 : 600))}
+    at=$(num "$R/$s/at")
+    (($(now) - at < limit)) || { echo "$s: nothing finished for $(($(now) - at)) s"; exit 1; }
+    ;;
+*) echo "step: no stage $stage ($STAGES, watch, init, health)" >&2; exit 2 ;;
 esac
