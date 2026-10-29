@@ -105,5 +105,8 @@ a=$(s other push 2223 "ccs-data@$web true < /dev/null") b=$(on other "printf 'x\
 if [[ $a == *"Permission denied"* && $b == *"Permission denied"* ]]; then ok "from=: the keys don't work from another machine"; else fail "from another machine: $a / $b"; fi
 
 # what sshd says, in docker's log (journald's, in compose.yml)
-if docker logs "$name-gate" 2>&1 | grep -q "Accepted publickey for ccs-data from $backend"; then ok "sshd logs to docker (journald in compose.yml)"; else fail "sshd's log"; fi
+# (the whole log first: grep -q, done at the first match, would cut docker logs short, which
+# pipefail counts as a failure)
+log=$(docker logs "$name-gate" 2>&1)
+if grep -q "Accepted publickey for ccs-data from $backend" <<<"$log"; then ok "sshd logs to docker (journald in compose.yml)"; else fail "sshd's log"; fi
 exit "$status"

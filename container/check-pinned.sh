@@ -11,7 +11,11 @@ name=$(basename "$repo") dockerfile=${CHECK_DOCKERFILE:-Dockerfile}
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"; docker image rm -f "$name:other" "$name:warm" "$name:repro1" "$name:repro2" > /dev/null 2>&1 || true' EXIT
 
-"$here/fetch.sh" "$tmp/sources"                # once; every build gets the same checked files
+# once; every build gets the same checked files (those already in container/sources, a cache's,
+# kept when their sha256 matches)
+mkdir -p "$tmp/sources"
+if [[ -d $here/sources ]]; then cp -r "$here/sources/." "$tmp/sources/"; fi
+"$here/fetch.sh" "$tmp/sources"
 
 # clean N UMASK: a build with no cache, from a fresh clone made under UMASK; prints its image ID
 clean() {
