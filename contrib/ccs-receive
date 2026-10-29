@@ -878,7 +878,7 @@ heartbeat() {
     ((up >= minutes)) || return 0
     [[ -f $d/heartbeat-late ]] || { touch "$d/heartbeat-late"; return 0; }
     say "no push from the backend for $age minutes"
-    alert heartbeat "no push from the backend for $age minutes: is it running? (its cron, its push key, its network) @ @SITE@"
+    alert heartbeat "no push from the backend for $age minutes: is it running? (its loop, its push key, its network) @ @SITE@"
     touch "$d/heartbeat-alerted"
 }
 

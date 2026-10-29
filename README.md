@@ -76,7 +76,8 @@ is why visitors can check an address against the signed list themselves.
 | `lib/frontmatter.awk` | the proposal format parser, spec at the top |
 | `lib/proposals.sh` | proposals to JSON, the state file |
 | `lib/gitlab.sh` | ideas, merged MR lookup |
-| `lib/wallet.sh` | wallet RPC, subaddresses, totals, QR codes |
+| `lib/wallet.sh` | wallet RPC, subaddresses, totals |
+| `lib/images.sh` | a proposal's images, from the proposals repository |
 | `lib/site.jq` | the JSON for ccs-front-bash and `/projects` |
 | `notify-loop.sh` | optional: also run on new txes ([setup](docs/setup.md) step 5) |
 
@@ -102,14 +103,16 @@ only replaced by one with every deposit it has. A wallet the CCS no longer uses 
 
 ## Two ways to run it
 
-| | A) packages on the host | B) the pinned container |
-|---|---|---|
-| Tools from | Debian's packages | [StageX](https://stagex.tools): source-built, pinned, signatures checked ([details](docs/image.md)) |
-| Host needs | the [dependencies](docs/setup.md#dependencies) | Docker with buildx, `git`; `gpg` and `jq` to build |
-| Updates | `apt upgrade` | [change the pin](docs/image.md#changing-the-pin) and rebuild |
+| | A) packages on the host | B) the pinned container | C) the compose |
+|---|---|---|---|
+| Tools from | Debian's packages | [StageX](https://stagex.tools): source-built, pinned, signatures checked ([details](docs/image.md)) | B's images, one container a step ([details](docs/docker.md)) |
+| Host needs | the [dependencies](docs/setup.md#dependencies) | Docker with buildx, `git`; `gpg` and `jq` to build | B's, and docker compose |
+| The loop | systemd, as root | systemd, as root | each stage its own container and user |
+| Updates | `apt upgrade` | [change the pin](docs/image.md#changing-the-pin) and rebuild | B's, then the IDs in `.env` |
 
-Same scripts, config and folders, so you can switch. B pins everything that runs; A avoids
-Docker on the host and gets Debian's security updates automatically.
+Same scripts, config and folders, so you can switch. B and C pin everything that runs; C also
+keeps each secret in the one container that needs it (the testnet runs it); A avoids Docker on
+the host and gets Debian's security updates automatically.
 
 ## Documentation
 
