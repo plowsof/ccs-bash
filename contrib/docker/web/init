@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# init (the web server compose's init service, as root, once and after an upgrade): in
+# CCS_SSH_DIR (/etc/ccs-ssh/keys, the host's /etc/ccs-gate/ssh), sshd's host key, made the first
+# time only (the backend's known_hosts has it), and the passwd and group the two sshd read: the
+# host's ccs-data and ccs-backup, by their ids (CCS_DATA_UID, CCS_BACKUP_UID: uid:gid), and
+# sshd's privilege separation user. Their shell is bash (the forced command runs through it).
+set -euo pipefail
+d=${CCS_SSH_DIR:-/etc/ccs-ssh/keys}
+[[ ${CCS_DATA_UID:-} =~ ^[0-9]+:[0-9]+$ && ${CCS_BACKUP_UID:-} =~ ^[0-9]+:[0-9]+$ ]] \
+    || { echo "init: CCS_DATA_UID and CCS_BACKUP_UID, uid:gid (id -u ccs-data, id -g ccs-data...)" >&2; exit 1; }
+[[ -f $d/ssh_host_ed25519_key ]] || ssh-keygen -q -t ed25519 -N '' -C ccs-web -f "$d/ssh_host_ed25519_key"
+chmod 600 "$d/ssh_host_ed25519_key" && chmod 644 "$d/ssh_host_ed25519_key.pub"
+data_u=${CCS_DATA_UID%:*} data_g=${CCS_DATA_UID#*:} backup_u=${CCS_BACKUP_UID%:*} backup_g=${CCS_BACKUP_UID#*:}
+printf '%s\n' "root:x:0:0::/:/bin/false" "sshd:x:${CCS_SSHD_UID:-65533}:${CCS_SSHD_UID:-65533}::/var/empty:/bin/false" \
+    "ccs-data:x:$data_u:$data_g::/var/lib/ccs-data:/bin/bash" "ccs-backup:x:$backup_u:$backup_g::/var/lib/ccs-backup:/bin/bash" > "$d/passwd.new"
+printf '%s\n' "root:x:0:" "sshd:x:${CCS_SSHD_UID:-65533}:" "ccs-data:x:$data_g:" "ccs-backup:x:$backup_g:" > "$d/group.new"
+chmod 644 "$d/passwd.new" "$d/group.new" && mv -f "$d/passwd.new" "$d/passwd" && mv -f "$d/group.new" "$d/group"
+echo "init: $d ready; the host key, for the backend's known_hosts:"
+cat "$d/ssh_host_ed25519_key.pub"
