@@ -4,7 +4,8 @@
 # pages and parts) and a proposals repository. A good push goes live; a page that isn't the
 # design's filled as ccs-front-bash fills it, an address that is neither the wallet's nor allowed,
 # or a list that isn't the pinned one, leaves the live file as it was and says why. Needs docker
-# and network.
+# and network. With GATE_IMAGE, the web server is the gate's image (contrib/docker/web): its own
+# ccs-receive, its sshd as compose.yml starts it, its users from its init.
 set -euo pipefail
 here=$(dirname "$(readlink -f "$0")")
 name=ccs-gate-test
@@ -28,9 +29,19 @@ RUN apt-get update -q && apt-get install -y -q --no-install-recommends openssh-s
     && rm -rf /var/lib/apt/lists/*
 IMG
 docker network create --subnet "$net.0/24" "$name" > /dev/null
-for h in web:$web backend:$backend; do
-    docker run -d --name "$name-${h%%:*}" --network "$name" --ip "${h#*:}" "$name" sleep infinity > /dev/null
-done
+img=${GATE_IMAGE:-}
+if [[ $img ]]; then
+    docker run -d --name "$name-web" --network "$name" --ip "$web" --tmpfs /etc/ccs-ssh:mode=755 --entrypoint sleep "$img" infinity > /dev/null
+    docker exec -e CCS_DATA_UID=997:997 -e CCS_BACKUP_UID=998:998 "$name-web" /usr/local/bin/ccs-web-init > /dev/null
+    # (ccs-data by its id for docker exec: the image's passwd is a link Docker doesn't follow)
+    keys=/etc/ccs-ssh/authorized_keys hostkey=/etc/ccs-ssh/keys/ssh_host_ed25519_key.pub adduser=: data=997:997
+    sshd='/usr/sbin/sshd -p 22 -o AllowUsers=ccs-data -o ForceCommand=/usr/local/bin/ccs-receive'
+else
+    docker run -d --name "$name-web" --network "$name" --ip "$web" "$name" sleep infinity > /dev/null
+    keys=/etc/ssh/authorized_keys hostkey=/etc/ssh/ssh_host_ed25519_key.pub adduser='useradd --system --create-home --shell /bin/sh ccs-data' data=ccs-data
+    sshd="printf 'Match User ccs-data\\n    AuthorizedKeysFile /etc/ssh/authorized_keys/%%u\\n' >> /etc/ssh/sshd_config && mkdir -p /run/sshd && ssh-keygen -A && /usr/sbin/sshd"
+fi
+docker run -d --name "$name-backend" --network "$name" --ip "$backend" "$name" sleep infinity > /dev/null
 on() { local h=$1; shift; docker exec "$name-$h" bash -c "$@"; }
 
 # a wallet of three subaddresses, and the General Fund allowed
@@ -101,14 +112,14 @@ PY
 
 on backend 'mkdir -p ~/.ssh && ssh-keygen -q -t ed25519 -N "" -f ~/.ssh/id_ed25519'
 key=$(on backend 'cat ~/.ssh/id_ed25519.pub')
-docker cp "$here/../contrib/ccs-receive" "$name-web:/usr/local/bin/ccs-receive"
+[[ $img ]] || docker cp "$here/../contrib/ccs-receive" "$name-web:/usr/local/bin/ccs-receive"
 docker cp "$d" "$name-web:/tmp/design" && docker cp "$files/markdown.awk" "$name-web:/tmp/markdown.awk"
 docker cp "$d" "$name-backend:/design" && docker cp "$files/gen.py" "$name-backend:/gen.py"
 # (zbar-tools for the backend's own test images only: the gate reads QR codes with libzbar itself)
-on web 'rm /usr/bin/zbarimg'
+[[ $img ]] || on web 'rm /usr/bin/zbarimg'
 on web "
     chown root:root /usr/local/bin/ccs-receive && chmod 755 /usr/local/bin/ccs-receive
-    useradd --system --create-home --shell /bin/sh ccs-data
+    $adduser
     install -d -o ccs-data -m 755 /var/lib/ccs-data /var/lib/ccs-staging
     install -d -m 755 /etc/ccs-gate /etc/ccs-gate/design
     install -o ccs-data -m 644 /dev/null /var/log/ccs-gate.log
@@ -132,13 +143,12 @@ on web "
     chown -R ccs-data /srv/proposals   # git reads a local repository only as its owner
     printf 'PROPOSALS_GIT=file:///srv/proposals\nLINK_HOSTS=forge.test/ccs-proposals\n' > /etc/ccs-gate/proposals.conf
     chmod -R a+rX /etc/ccs-gate && chmod 644 /etc/ccs-gate/*.* /etc/ccs-gate/allowed
-    install -d -m 755 /etc/ssh/authorized_keys
-    echo 'from=\"$backend\",command=\"/usr/local/bin/ccs-receive\",restrict $key' > /etc/ssh/authorized_keys/ccs-data
-    chmod 644 /etc/ssh/authorized_keys/ccs-data
-    printf 'Match User ccs-data\n    AuthorizedKeysFile /etc/ssh/authorized_keys/%%u\n' >> /etc/ssh/sshd_config
-    mkdir -p /run/sshd && ssh-keygen -A && /usr/sbin/sshd
+    install -d -m 755 $keys
+    echo 'from=\"$backend\",command=\"/usr/local/bin/ccs-receive\",restrict $key' > $keys/ccs-data
+    chmod 644 $keys/ccs-data
+    $sshd
 "
-on backend "echo '$web $(on web 'cat /etc/ssh/ssh_host_ed25519_key.pub')' > ~/.ssh/known_hosts"
+on backend "echo '$web $(on web "cat $hostkey")' > ~/.ssh/known_hosts"
 # a fake bot on the web server, keeping what it is sent (the gate's alerts)
 docker exec -d "$name-web" python3 -c '
 import http.server
@@ -505,7 +515,7 @@ fi
 # the key still runs nothing but the gate
 if ! on backend "ssh -o BatchMode=yes ccs-data@$web 'cat /etc/passwd' 2>&1" | grep -q root; then ok "the key runs nothing else"; else fail "the key ran a command"; fi
 # the heartbeat: pushes are the backend's; the web server's timer alerts when none arrive
-hb() { on web 'su -s /bin/bash ccs-data -c "/usr/local/bin/ccs-receive --heartbeat"'; }
+hb() { docker exec -u "$data" "$name-web" /usr/local/bin/ccs-receive --heartbeat; }
 late() { bot | grep -c 'no push from the backend' || true; }
 on web "printf 'sha256 %s\nkey %040d\n' \"\$(sha256sum < /etc/ccs-gate/subaddresses.txt | cut -d' ' -f1)\" 0 > /etc/ccs-gate/subaddresses.txt.pin"   # the list above, pinned again
 on web 'rm -f /var/lib/ccs-data/keep.txt'   # root's, from the test above: ccs-data can't copy it
@@ -567,7 +577,7 @@ on backend "rsync -a --delay-updates -e 'ssh -o BatchMode=yes' /out/ ccs-data@$w
 # received (the gate stamps last-push once rrsync is done): hang up while it checks
 for _ in $(seq 100); do [[ $(on web 'stat -c %Y /var/lib/ccs-gate/last-push 2> /dev/null || echo 0') != "$before" ]] && break; sleep 0.1; done
 on backend 'pkill -x ssh || true'
-for _ in $(seq 100); do on web 'pgrep -f ccs-receive > /dev/null' || break; sleep 0.2; done
+for _ in $(seq 100); do on web 'for p in /proc/[0-9]*/cmdline; do { tr "\0" " " < $p; } 2> /dev/null; echo; done | grep -q "[c]cs-receive"' || break; sleep 0.2; done
 if (($(bot | grep -c . || true) > alerts)); then ok "a backend that hangs up mid-check: the gate still alerts"; else on web 'tail -n 3 /var/log/ccs-gate.log'; fail "a backend that hangs up mid-check: no alert from the gate"; fi
 
 exit "$status"
