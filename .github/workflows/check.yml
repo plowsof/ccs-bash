@@ -20,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, pinned by commit
       - name: shellcheck
-        run: shellcheck -x ccs-back.sh notify-loop.sh lib/*.sh tests/*.sh container/*.sh contrib/ccs-receive contrib/ccs-watch contrib/ccs-backup-receive contrib/retire-wallet contrib/migrate/compare-deposits contrib/ccs contrib/docker/backend/step contrib/docker/backend/watch-after-push contrib/docker/backend/wallet-rpc/ccs-notify
+        run: shellcheck -x ccs-back.sh notify-loop.sh lib/*.sh tests/*.sh container/*.sh contrib/ccs-receive contrib/ccs-watch contrib/ccs-backup-receive contrib/retire-wallet contrib/migrate/compare-deposits contrib/ccs contrib/docker/backend/step contrib/docker/backend/wallet-rpc/ccs-notify
       - name: tests (Ubuntu's awk is mawk)
         run: tests/run.sh
       - name: the backend compose's stages (contrib/docker/backend/step)
@@ -44,6 +44,12 @@ jobs:
         run: docker run --rm --network none --read-only --tmpfs /tmp -v "$PWD:/src:ro" --entrypoint bash ccs-bash /src/tests/run.sh
       - name: the backend compose's stages, in the image (its busybox; the stand-ins run from /tmp)
         run: docker run --rm --network none --read-only --tmpfs /tmp:exec -v "$PWD:/src:ro" --entrypoint bash ccs-bash /src/tests/compose.sh
+      - name: the stages' own tools (git, ssh, rsync, openssl, ccs-watch's), and only those
+        run: docker run --rm --network none --read-only --tmpfs /tmp -v "$PWD:/src:ro" --entrypoint bash ccs-bash /src/tests/image.sh
+      - name: ccs-watch as the image runs it (its busybox; the test's servers on the host's 127.0.0.1)
+        run: CCS_WATCH_IMAGE=ccs-bash tests/watch.sh
+      - name: the image's size (only what is run; 71 MB with git and ssh)
+        run: size=$(docker image inspect ccs-bash --format '{{.Size}}'); echo "$size bytes"; [ "$size" -lt 90000000 ]
       - id: id
         run: echo "id=$(docker image inspect ccs-bash --format '{{.Id}}')" >> "$GITHUB_OUTPUT"
   # The same commit must build to the same image ID anywhere: a second machine, a fresh clone made

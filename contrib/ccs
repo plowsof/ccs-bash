@@ -19,7 +19,6 @@
 set -euo pipefail
 export LC_ALL=C.UTF-8
 CONFIG=${CCS_CONFIG:-/etc/ccs/ccs.conf}
-LOG=${CCS_LOG:-/var/log/ccs-bash.log}
 DOCS=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../docs
 as_ccs=(runuser -u ccs --)
 [[ ${CCS_AS:-} != none ]] || as_ccs=()   # (the tests: no ccs user)
@@ -34,6 +33,20 @@ read_ccs() { "${as_ccs[@]}" cat -- "$1"; }
 # the backend compose (docs/docker.md): its run folder, when the host's loop isn't running
 RUN_DIR=${CCS_RUN_DIR:-/var/lib/ccs/run}
 compose() { [[ -d $RUN_DIR/push ]] && ! systemctl is-active -q ccs-bash 2> /dev/null; }
+# the log: the host loop's file; the compose's is journald's (journalctl -t ccs), its last lines
+# copied to a file here and read as the host's is. CCS_LOG: a file, either way
+LOG=${CCS_LOG:-} LOG_NAME=''
+journal() { journalctl -q -o cat -t ccs "$@" > "$LOG" 2> /dev/null || true; }
+if [[ -z $LOG ]]; then
+    if compose; then
+        LOG=$(mktemp) LOG_NAME="the journal's last lines (journalctl -t ccs)"; trap 'rm -f "$LOG"' EXIT
+        journal -n 20000
+    else
+        LOG=/var/log/ccs-bash.log
+    fi
+fi
+# a compose service's container: SERVICE
+container() { docker ps -q --filter label=com.docker.compose.project=backend --filter "label=com.docker.compose.service=$1" | head -n 1; }
 stage_num() { local v; v=$(cat "$RUN_DIR/$1/${2:-done}" 2> /dev/null) || v=0; [[ $v =~ ^[0-9]+$ ]] && echo "$v" || echo 0; }
 # a run going now: the host's update script, or the compose's pull past its push
 running() {
@@ -88,8 +101,8 @@ hints() {
 # the compose's: a line on the pull's "now" pipe; this run is the one that starts after it, and
 # its lines are printed once its push is done (10 minutes at most)
 compose_process() {
-    local started before n at
-    started=$(stage_num pull started) before=$(stage_num pull)
+    local started before n at t0
+    started=$(stage_num pull started) before=$(stage_num pull) t0=$(date +%s)
     printf 'now\n' 1<> "$RUN_DIR/pull/now"
     for _ in $(seq 600); do (($(stage_num pull started) != started)) && break; sleep 1; done
     (($(stage_num pull started) != started)) || die "no run started in 10 minutes: look at the compose (ccs status, docker compose logs)"
@@ -98,6 +111,8 @@ compose_process() {
     n=$(stage_num pull)
     for _ in $(seq 600); do (($(stage_num push) >= n)) && break; sleep 1; done
     (($(stage_num push) >= n)) || die "run $n isn't done after 10 minutes: look at the compose (ccs status, docker compose logs)"
+    # (the journal's: its lines since, up to the next run's start, if that has begun)
+    if [[ -z ${CCS_LOG:-} ]]; then journal --since "@$t0"; awk '/^== run / { m++ } m == 1' "$LOG" > "$LOG.run" && mv "$LOG.run" "$LOG"; at=1; fi
     tail -n +"${at:-1}" "$LOG" | grep -vE '^\s*$|^(skipping|ignoring) ' || true
     echo "(run $n of the compose; $(tail -n +"${at:-1}" "$LOG" | grep -cE '^(skipping|ignoring) ' || true) proposal files skipped or ignored: ccs log shows why)"
 }
@@ -175,7 +190,7 @@ cmd_log() {
     local n=${1:-3} from to
     [[ $n =~ ^[0-9]+$ && $n -gt 0 ]] || die "log N: a number"
     read -r from to <<<"$(runs_range "$n")"
-    echo "The errors and warnings of the last $n run(s), lines $from to $to of $LOG (each once, the last time it was said):"
+    echo "The errors and warnings of the last $n run(s), lines $from to $to of ${LOG_NAME:-$LOG} (each once, the last time it was said):"
     # (and the gate's reason for each file it held back: "ccs-gate:   <file>: <why>")
     sed -n "${from},${to}p" "$LOG" | grep -iE 'error|warning|fail|refus|held back|alert|could not|can.t |cannot|denied|timed out|not ok|stop|^ccs-gate:   ' \
         | grep -vE 'ccs-watch: the [0-9]+ pages on .* are what was pushed|^(skipping|ignoring) ' \
@@ -196,8 +211,10 @@ cmd_status() {
     local last at failed f
     age() { local t; t=$("${as_ccs[@]}" stat -c %Y "$1" 2> /dev/null) || { echo "never"; return; }; echo "$(( ($(date +%s) - t) / 60 )) min ago"; }
     if compose; then
-        echo "the loop: the backend compose ($(docker ps --filter label=com.docker.compose.project=backend --format '{{.Label "com.docker.compose.service"}} {{.State}}' 2> /dev/null | sort | paste -sd ',' - | sed 's/,/, /g'))$(running && echo ", a run going now")"
-        echo "the stages: $(for s in pull ccs-bash backup front push; do printf '%s %s; ' "$s" "$(cat "$RUN_DIR/$s/status" 2> /dev/null || echo '?')"; done)"
+        # each service: running or not, and its healthcheck's last word
+        echo "the loop: the backend compose ($(docker ps -a --filter label=com.docker.compose.project=backend --format '{{.Label "com.docker.compose.service"}} {{.State}} {{.Status}}' 2> /dev/null \
+            | grep -v '^init ' | sed -E 's/^([^ ]+ [^ ]+) .*\((healthy|unhealthy|health: starting)\).*/\1 \2/; t; s/^([^ ]+ [^ ]+) .*/\1/' | sort | paste -sd ',' - | sed 's/,/, /g'))$(running && echo ", a run going now")"
+        echo "the stages: $(for s in pull ccs-bash backup front push watch; do printf '%s %s; ' "$s" "$(cat "$RUN_DIR/$s/status" 2> /dev/null || echo '?')"; done)"
     else
         echo "the loop: $(systemctl is-active ccs-bash 2> /dev/null || true)$(running && echo ", a run going now")"
     fi
@@ -239,8 +256,11 @@ release() {
 wallet_line() {
     local url user pass h a
     url=$(conf RPC_URL http://127.0.0.1:18082/json_rpc) user=$(conf RPC_USER '') pass=$(conf RPC_PASSWORD '')
-    # (the login on stdin, not in a command line other users could see)
-    r() { printf 'user = "%s:%s"\n' "$user" "$pass" | curl -fsS -m 20 --digest -K - "$url" -d "{\"jsonrpc\":\"2.0\",\"id\":\"0\",\"method\":\"$1\"$2}"; }
+    # (the login on stdin, not in a command line other users could see; the compose's wallet
+    # asked from ccs-bash's container, the one that can reach it)
+    local in=()
+    if compose; then in=(docker exec -i "$(container ccs-bash)"); fi
+    r() { printf 'user = "%s:%s"\n' "$user" "$pass" | "${in[@]}" curl -fsS -m 20 --digest -K - "$url" -d "{\"jsonrpc\":\"2.0\",\"id\":\"0\",\"method\":\"$1\"$2}"; }
     h=$(r get_height '' | jq -r .result.height) || { echo "doesn't answer at $url"; return; }
     a=$(r get_address ',"params":{"account_index":0}' | jq -r .result.address) || a='?'
     echo "${a:0:6}…${a: -4} at height $h$( [[ $a == "$(conf WALLET_ADDRESS '')" ]] || echo ", NOT the config's WALLET_ADDRESS")"
