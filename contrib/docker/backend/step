@@ -86,13 +86,19 @@ init)
     echo "init: $R ready"
     ;;
 pull)
+    # "now" held open the whole time: a line written while a run is going (the wallet's tx-notify
+    # comes at any moment) waits in the pipe for the next run, instead of being lost with no one
+    # holding it open
+    exec 4<> "$R/pull/now" || exit 1
     while :; do
         n=$(($(num "$R/pull/done") + 1))
         wait_for push $((n - 1))
         # EVERY seconds after the last run started, or at once when woken through "now"
         until (($(now) >= $(num "$R/pull/started") + EVERY)); do
-            read -r -t $(($(num "$R/pull/started") + EVERY - $(now))) _ <> "$R/pull/now" && break
+            read -r -t $(($(num "$R/pull/started") + EVERY - $(now))) _ <&4 && break
         done
+        # the lines that came with it: one run for all of them
+        while read -r -t 0.1 _ <&4; do :; done
         put "$R/pull/started" "$(now)"
         say "== run $(date -u '+%F %T')"
         # the proposals; the forge down: give up, not a failed run (the last checkout stays);
