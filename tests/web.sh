@@ -42,6 +42,11 @@ for v in keys ak backups; do docker volume create "$name-$v" > /dev/null; done
 # init, as compose.yml's: the host key and passwd in the keys folder
 docker run --rm --network none -u 0:0 -e CCS_DATA_UID=997:997 -e CCS_BACKUP_UID=998:998 -v "$name-keys:/etc/ccs-ssh/keys" \
     --entrypoint /usr/local/bin/ccs-web-init "$img" > /dev/null || { echo "FAIL init"; exit 1; }
+# their home a folder they can't write, with nothing in it (bash, git and curl read config from a
+# home: the live site, ccs-data's, was its home once)
+homes=$(docker run --rm --network none -v "$name-keys:/k:ro" --entrypoint bash "$img" -c \
+    'grep -E "^ccs-(data|backup):" /k/passwd | cut -d: -f6 | sort -u; stat -c "%u %a" /var/empty; ls -A /var/empty | wc -l')
+if [[ $homes == $'/var/empty\n0 755\n0' || $homes == $'/var/empty\n0 711\n0' ]]; then ok "init: ccs-data's and ccs-backup's home /var/empty, root's and empty"; else fail "the accounts' homes: $homes"; fi
 # the backend and another machine: Debian, ssh and rsync
 for h in backend:$backend other:$other; do
     docker run -d --name "$name-${h%%:*}" --network "$name" --ip "${h#*:}" "$debian" sleep infinity > /dev/null
