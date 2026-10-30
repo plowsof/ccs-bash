@@ -121,7 +121,7 @@ services:
   ccs-bash:
     <<: *hardened
     image: ${CCS_BASH_IMAGE}
-    # the wallet (ccs.conf's RPC_URL: http://wallet-rpc:18182/json_rpc), and out to the forge's API
+    # the wallet (ccs.conf's RPC_URL: http://wallet-rpc:18082/json_rpc, its port wallet-rpc.conf's), and out to the forge's API
     networks: [wallet, default]
     user: "${CCS_UID}"
     entrypoint: [*step, "ccs-bash"]
