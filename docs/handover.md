@@ -34,7 +34,7 @@ new set replaces the row (earlier sets: this file's history, and ccs-sigs).
 
 | Set | ccs-bash | ccs-front-bash | ccs-front-hugo | Running on |
 |---|---|---|---|---|
-| 2026-10-29 | v0.2.32 | v0.1.20 | v0.1.24 | testnet ([ccs.monerodevs.org](https://ccs.monerodevs.org)): the backend compose and the web server compose (the gate's image, attested with ccs-bash's) |
+| 2026-10-30 | v0.2.33 | v0.1.21 | v0.1.25 | [ccs.monerodevs.org](https://ccs.monerodevs.org), in mirror mode: the backend compose and the web server compose (the gate's image: master's, with `{{funding_date}}`, until the next release) |
 
 Each is reproducible, and attested in [ccs-sigs](https://github.com/plowsof/ccs-sigs) by those who
 rebuilt it: on the testnet so far by one throwaway key a set (one person; the CCS's should be two
