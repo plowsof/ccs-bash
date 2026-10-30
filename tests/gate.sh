@@ -128,8 +128,8 @@ on web "
     printf '%s  # the General Fund\n' '$fund' > /etc/ccs-gate/allowed
     echo sig > /etc/ccs-gate/subaddresses.txt.asc && echo key > /etc/ccs-gate/subaddresses.txt.key.asc
     # the design's release, unpacked; its files but the pages in design.sha256; markdown.awk
-    cp -r /tmp/design /etc/ccs-gate/design/test && cp /tmp/markdown.awk /etc/ccs-gate/markdown.awk
-    (cd /etc/ccs-gate/design/test && find . -type f ! -name '*.html' -exec sha256sum {} +) > /etc/ccs-gate/design.sha256
+    cp -r /tmp/design /etc/ccs-gate/design/v0.0.1 && cp /tmp/markdown.awk /etc/ccs-gate/markdown.awk
+    (cd /etc/ccs-gate/design/v0.0.1 && find . -type f ! -name '*.html' -exec sha256sum {} +) > /etc/ccs-gate/design.sha256
     # the proposals repository, with a proposal and the images that may go live (the same
     # qrencode makes them byte for byte on the backend)
     git init -q -b master /srv/proposals && mkdir -p /srv/proposals/images/p && cd /srv/proposals
@@ -444,6 +444,16 @@ push > /dev/null || true
 if on web 'test -e /var/lib/ccs-data/proposals/gone.html'; then ok "the repository can't be fetched: a page with no proposal in the last fetch stays"; else fail "a removed proposal's page, no fetch"; fi
 on web 'rm -rf /var/lib/ccs-data/proposals/gone.html /var/lib/ccs-data/images/gone'
 on web "sed -i 's#=file:///nowhere#=file:///srv/proposals#' /etc/ccs-gate/proposals.conf"
+# more than 3 at once (a branch emptied or rewritten): none taken, an alert, the push fails
+on web 'cd /var/lib/ccs-data && for n in 1 2 3 4; do cp proposals/p.html proposals/gone$n.html; done && chown ccs-data proposals/gone*.html'
+on web 'cd /srv/proposals && git -c safe.directory=* -c user.name=t -c user.email=t@t commit -q --allow-empty -m "four taken out" && chown -R ccs-data /srv/proposals'
+v=$((v + 1)); site "$v" "$good"
+rc=0; push > /dev/null || rc=$?
+if ((rc == 7)) && on web 'test -e /var/lib/ccs-data/proposals/gone1.html && test -e /var/lib/ccs-data/proposals/gone4.html' \
+    && bot | grep -q 'would take 4 proposal pages off the site at once'; then
+    ok "four proposal pages in neither commit at once: none taken off the site, IRC told, the push fails"
+else on web 'tail -n 5 /var/log/ccs-gate.log'; bot | tail -n 3; fail "many removed at once"; fi
+on web 'rm -f /var/lib/ccs-data/proposals/gone[1-4].html'
 # the repository can't be fetched: the last fetch is checked against, so the site goes on
 on web "sed -i 's#=file:///srv/proposals#=file:///nowhere#' /etc/ccs-gate/proposals.conf"
 v=$((v + 1)); site "$v" "$good"
@@ -514,16 +524,18 @@ v=$((v + 1)); site "$v" "$(addr 2)"
 if push > /dev/null && [[ $(live) == "$v" ]]; then ok "the next good push goes live again"; else fail "recovery"; fi
 last=$v
 
-for missing in "design/test:design release" "markdown.awk:markdown.awk"; do
-    f=${missing%%:*}
-    on web "mv /etc/ccs-gate/$f /tmp/moved"
+# (a design folder not named as a release, vX.Y.Z: a build of the design's left there, is none)
+for missing in "design/v0.0.1|design release|/tmp/moved" "design/v0.0.1|design release, but a build of it named dev-1|/etc/ccs-gate/design/dev-1" \
+    "markdown.awk|markdown.awk|/tmp/moved"; do
+    IFS='|' read -r f what to <<<"$missing"
+    on web "mv /etc/ccs-gate/$f $to && : > /var/log/ccs-gate.log"
     v=$((v + 1)); site "$v" "$(addr 2)"
     if ! push > /dev/null && [[ $(live) == "$last" ]] && on web "grep -q 'refused the push: it has no /etc/ccs-gate/' /var/log/ccs-gate.log"; then
-        ok "no ${missing#*:} installed: every push refused"
+        ok "no $what installed: every push refused"
     else
-        fail "no ${missing#*:}"
+        fail "no $what"
     fi
-    on web "mv /tmp/moved /etc/ccs-gate/$f"
+    on web "mv $to /etc/ccs-gate/$f"
 done
 
 on web "echo '3 $(addr 3)' >> /etc/ccs-gate/subaddresses.txt"

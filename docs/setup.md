@@ -305,7 +305,8 @@ On the **backup machine** (any but the web server, whose root could rewrite ever
 the site; the files are a few KB):
 
 ```
-useradd --system --create-home --home-dir /home/ccs-backup --shell /bin/sh ccs-backup
+install -d -m 755 /var/empty                                    # its home: root's and empty
+useradd --system --no-create-home --home-dir /var/empty --shell /bin/sh ccs-backup
 passwd -l ccs-backup
 install -d -o ccs-backup -g ccs-backup -m 700 /var/lib/ccs-backup
 install -m 755 ccs-backup-receive /usr/local/bin/              # from ccs-bash's contrib/

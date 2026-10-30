@@ -20,6 +20,8 @@
 # Nothing once the folder holds 256 MB, so it can't fill the disk either. Root-owned, 755. Copies in
 # /var/lib/ccs-backup (the ccs-backup user's, 700).
 set -euo pipefail
+# (no home of the account's: nothing reads config from there, whatever passwd says)
+export HOME=/nonexistent
 dir=${CCS_BACKUP_DIR:-/var/lib/ccs-backup}   # (the tests'; an ssh forced command gets no environment from the client)
 names=${CCS_BACKUP_RETIRED:-/etc/ccs-backup/retired-names}
 n='(0|[1-9][0-9]{0,17})'
