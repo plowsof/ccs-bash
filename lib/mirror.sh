@@ -11,13 +11,16 @@
 # proposal the feed has no address for yet isn't on the site (ccs-front-bash shows none without
 # one): it comes once the other site has given it one.
 
-# the key a proposal is matched by: its title and author, spaces at either end dropped; when the
+# the key a proposal is matched by: its title and author, spaces at either end dropped and HTML's
+# entities read (ccs.getmonero.org's feed writes "&" as "&amp;", the front matter as "&"); when the
 # feed has more than one of those (a proposal of the same name each quarter), its date too, as the
 # feed writes it ("February 14, 2017")
-MIRROR_KEY='((.title // "" | tostring | gsub("^\\s+|\\s+$"; "")) + "\u001f" + (.author // "" | tostring | gsub("^\\s+|\\s+$"; "")))'
+MIRROR_TEXT='tostring | gsub("&lt;"; "<") | gsub("&gt;"; ">") | gsub("&quot;"; "\"") | gsub("&#39;|&#x27;|&apos;"; "\u0027") | gsub("&amp;"; "&") | gsub("^\\s+|\\s+$"; "")'
+MIRROR_KEY="((.title // \"\" | $MIRROR_TEXT) + \"\\u001f\" + (.author // \"\" | $MIRROR_TEXT))"
 
 # mirror_load: MIRROR_URL's projects as WORK/mirror.json, {key: {address, atomic, count}} ({dup: N}
-# for a key N of them share: none of those is matched)
+# for a key N of them share; with the date too, {dup: N, cands: [...]}, which mirror_assign tells
+# apart by the wallet's label)
 mirror_load() {
     # (16 MB at most: ccs.getmonero.org's is about 100 KB, and jq reads it whole)
     curl -fsS --max-time 60 --max-filesize 16777216 "$MIRROR_URL" > "$WORK/mirror.raw" || { log "error: could not fetch MIRROR_URL ($MIRROR_URL), or over 16 MB"; return 1; }
@@ -27,7 +30,7 @@ mirror_load() {
         | map({key: $MIRROR_KEY, date: (.date // \"\" | tostring), address: (.address // \"\"),
                atomic: ((.raised_amount // 0 | tonumber) * 1000000000000 | round | tostring), count: (.contributions // 0)})
         | (group_by(.key) | map({key: .[0].key, value: (if length == 1 then .[0] | del(.key, .date) else {dup: length} end)}) | from_entries) as \$one
-        | (group_by(.key + \"\\u001f\" + .date) | map({key: (.[0].key + \"\\u001f\" + .[0].date), value: (if length == 1 then .[0] | del(.key, .date) else {dup: length} end)}) | from_entries) as \$dated
+        | (group_by(.key + \"\\u001f\" + .date) | map({key: (.[0].key + \"\\u001f\" + .[0].date), value: (if length == 1 then .[0] | del(.key, .date) else {dup: length, cands: map(del(.key, .date))} end)}) | from_entries) as \$dated
         | \$one + \$dated" \
         "$WORK/mirror.raw" > "$WORK/mirror.json" 2> "$WORK/mirror.err" \
         || { log "error: MIRROR_URL's answer isn't a list of projects: $(head -c 200 "$WORK/mirror.err")"; return 1; }
@@ -61,8 +64,10 @@ mirror_assign() {
                 m=$(jq -c --arg k "$key"$'\x1f'"$dated" '.[$k] // {dup: 2}' "$WORK/mirror.json")
             fi
         fi
+        # several of that title, author and day too: the one the wallet's label names
+        if jq -e '.cands' <<<"$m" > /dev/null; then m=$(mirror_pick "$file" "$m"); [[ $m ]] || m='{"dup": 2}'; fi
         if jq -e '.dup' <<<"$m" > /dev/null; then
-            log "warning: MIRROR_URL has more than one proposal with the title and author of $file, and of its date: none of them matched"
+            log "warning: MIRROR_URL has more than one proposal with the title and author of $file, and of its date, and the wallet's labels name none of them: none matched"
             continue
         fi
         addr=$(jq -r .address <<<"$m")
@@ -109,6 +114,30 @@ mirror_assign() {
     done < <(jq -r "(map($MIRROR_KEY) | group_by(.) | map({key: .[0], value: length}) | from_entries) as \$here
         | .[] | [.file, $MIRROR_KEY, (if .ts > 0 then .ts | strftime(\"%B %-d, %Y\") else \"\" end), (\$here[$MIRROR_KEY] | tostring)] | @tsv" "$WORK/props.json")
     mv "$hist" "$HISTORIC"
+}
+
+# mirror_pick FILE M: of M's candidates (the feed's proposals of one title, author and day), the
+# one whose address FILE already has here, else the one whose subaddress the wallet labels FILE
+# (an earlier mirror's labels, or ccs-back's where it used the file's name): if just one
+mirror_pick() {
+    local have c a res idx label pick='' n=0
+    have=$(jq -r --arg f "$1" '.[$f].address // ""' "$WORK/state.json")
+    while IFS= read -r c; do
+        a=$(jq -r .address <<<"$c")
+        [[ $a =~ ^[0-9A-Za-z]{95}$ ]] || continue
+        if [[ $have ]]; then
+            [[ $a == "$have" ]] && { pick=$c; n=1; break; }
+            continue
+        fi
+        res=$(rpc get_address_index "$(jq -nc --arg a "$a" '{address: $a}')" 2> /dev/null) || continue
+        [[ $(jq -r '.index.major' <<<"$res") == 0 ]] || continue
+        idx=$(jq -r '.index.minor' <<<"$res")
+        [[ $idx =~ ^$NUM$ ]] || continue
+        label=$(rpc get_address "{\"account_index\": 0, \"address_index\": [$idx]}" 2> /dev/null | jq -r '.addresses[0].label // ""') || continue
+        [[ $label == "$1" ]] && { pick=$c; n=$((n + 1)); }
+    done < <(jq -c '.cands[]' <<<"$2")
+    ((n == 1)) && printf '%s\n' "$pick"
+    return 0
 }
 
 # mirror_hide: a funding-required proposal with no address, not on the site until the feed has
