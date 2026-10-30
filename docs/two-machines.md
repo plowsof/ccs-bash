@@ -372,7 +372,8 @@ or from another at random; keep their versions current with `WATCH_FIREFOX_ESR`,
 `/dark/` or `/light/` at random (`WATCH_THEMES=1`), through a proxy picked at random each fetch;
 among them, at a random place, a page never pushed, named as the site's own are, and the theme
 button on a page. It runs right after each push and between pushes at random times
-(`ccs-watch.timer`, [handover](handover.md) step 9), so a web server that serves its own pages once
+(in Docker the compose's `watch` does both, [docker](docker.md); the host setup:
+`ccs-watch.timer`, [setup](setup.md#the-update-script-the-host-setup)), so a web server that serves its own pages once
 the check after a push is over is seen too.
 
 A web server can still tell it apart: a page fetched without its stylesheets and fonts, and curl's
