@@ -1,7 +1,9 @@
 #!/bin/bash
 # ccs-receive: the web server's last check (docs/two-machines.md, "The gate"). The backend's push
 # key runs only this (command= in authorized_keys). It receives the push as rrsync always did, but
-# into a staging folder, one push at a time; then
+# into a staging folder, one push at a time; then, for each page and JSON file the push changed
+# (and those held back last time; all of them when the list, design, markdown.awk, proposals
+# commit or this script changed, and once a day),
 #   - every page must be one of the design's own (the release zips unpacked in design/, installed
 #     here by hand), each region filled with the design's parts and each {{slot}} with a value of
 #     its kind (a number, escaped text that can't hold an address, a link into the proposals
@@ -630,6 +632,7 @@ for rp in sys.stdin.read().split("\0"):
 # image exactly the QR code of an address
 scan() {
     local file tag payload png out jsons=() texts=()
+    (($#)) || return 0
     png=$(mktemp) out=$(mktemp)
     # a NUL byte: HTML drops it from the text, so it could split an address
     # (Python, not grep -P: a grep without PCRE, the image's, has none)
@@ -770,18 +773,20 @@ bodies() {
     printf '%s' "$list"
 }
 
-# pages: every page in staging as pages_py checks it ("page<TAB>!reason"). Only a page it passed
-# goes live: one it didn't get to (out of time, or stopped) is held back too. A donation box's QR
-# code must be, pixel for pixel, qrencode's of the address the box shows.
+# pages FILE...: the pages among FILEs (in staging) as pages_py checks them ("page<TAB>!reason").
+# Only a page it passed goes live: one it didn't get to (out of time, or stopped) is held back
+# too. A donation box's QR code must be, pixel for pixel, qrencode's of the address the box shows.
 pages() {
-    local designs='' d b vk='' out png file tag a q
+    local designs='' d b vk='' out png file tag a q html=()
     local -A ok=() box=()
+    for file in "$@"; do [[ $file == *.html ]] && html+=("${file#"$staging"/}"); done
+    ((${#html[@]})) || return 0
     local end=$((SECONDS + 300))
     for d in "$conf"/design/*/; do [[ -d $d/parts ]] && designs+=${designs:+:}${d%/}; done
     b=$(bodies)
     [[ -f $list.viewkey ]] && vk=$list.viewkey
     out=$(mktemp) png=$(mktemp)
-    (cd "$staging" && find . -type f -name '*.html' -printf '%P\0') \
+    printf '%s\0' "${html[@]}" \
         | timeout 300 python3 -I -c "$pages_py" "$staging" "$designs" "$b" "$list" "$vk" "$hosts" > "$out" 2> /dev/null || true
     while IFS=$'\t' read -r file tag a q; do
         case $tag in
@@ -807,9 +812,9 @@ pages() {
     done < "$out"
     rm -f "$out" "$png"
     # (a page held back for a reason already says why; only one never checked gets this)
-    while IFS= read -r -d '' file; do
-        [[ ${ok[$file]:-} ]] || printf '%s\t%s\n' "$file" "!a page the gate could not check (in time)"
-    done < <(find "$staging" -type f -name '*.html' -print0)
+    for file in "${html[@]}"; do
+        [[ ${ok[$staging/$file]:-} ]] || printf '%s\t%s\n' "$staging/$file" "!a page the gate could not check (in time)"
+    done
 }
 
 # kinds: anything in the push that is neither a plain file nor a folder (a symlink: -munge makes
@@ -928,9 +933,36 @@ if find "$staging" -name '*[[:cntrl:]]*' -print -quit | grep -q .; then refuse "
 fetched='' fresh=''
 fetch && fetched=1
 
+# Which pages and JSON to check: the ones the push changed, and the ones held back last time
+# (their last good copy is live, so the same file sent again must fail again). The live site
+# holds only what passed, so a file the same as its live copy passed before, against the same
+# list, allowed file, design, markdown.awk, proposals commit and gate: when any of those changes
+# (a proposal taken out is a new commit), and once a day whatever happens, all are checked again.
+mapfile -d '' all < <(find "$staging" -type f \( -name '*.html' -o -name '*.json' \) -print0)
+inputs=$( {
+    cat -- "${BASH_SOURCE[0]}" "$list" "$list.pin" "$design" "$conf"/markdown*.awk "$conf/proposals.conf"
+    cat -- "$conf/allowed" "$list.viewkey" 2> /dev/null || true
+    (cd "$conf/design" && find . -type f -print0 | sort -z | xargs -0 -r sha256sum)
+    git -C "$git" rev-parse -q --verify refs/heads/ccs 2> /dev/null || true
+    qrencode -V 2>&1 || true
+} | sha256sum | cut -c1-64)
+full=''
+[[ $inputs == "$(cat "$state/checked-with" 2> /dev/null)" && $(find "$state/checked-with" -mmin -1440 2> /dev/null) ]] || full=1
+files=()
+if [[ $full ]]; then
+    files=("${all[@]}")
+else
+    declare -A again=()
+    if [[ -f $state/held ]]; then while IFS= read -r f; do [[ $f ]] && again[$f]=1; done < "$state/held"; fi
+    for f in "${all[@]}"; do
+        rel=${f#"$staging"/}
+        if [[ ${again[$rel]:-} ]] || ! cmp -s -- "$f" "$live/$rel"; then files+=("$f"); fi
+    done
+fi
+say "checking ${#files[@]} of ${#all[@]} pages and JSON files${full:+ (all of them: the list, design, markdown.awk, proposals, gate or day changed)}"
+
 # the list's addresses, then the allowed file's (first word of each line; # comments)
-mapfile -d '' files < <(find "$staging" -type f \( -name '*.html' -o -name '*.json' \) -print0)
-bad=$( { kinds; scan "${files[@]}"; pages; changes; } | awk -F '\t' 'NR == FNR { if ($1 !~ /^#/ && NF) ok[$1] = 1; next } !($2 in ok)' \
+bad=$( { kinds; scan "${files[@]}"; pages "${files[@]}"; changes; } | awk -F '\t' 'NR == FNR { if ($1 !~ /^#/ && NF) ok[$1] = 1; next } !($2 in ok)' \
     <(cut -d' ' -f2 "$list"; awk '{ print $1 }' "$conf/allowed" 2> /dev/null) - | sort -u)
 # A proposal taken out of the repository (troubleshooting.md, "Remove a proposal"): its page is
 # still live, and the push account can't delete it, so every push after would hold it back and
@@ -986,6 +1018,9 @@ if [[ $bad ]]; then
 fi
 # (modes fixed: a page pushed 600 would be a 403 for visitors, with no alert)
 rsync -a --chmod=D755,F644 --delay-updates "$staging/" "$live/"
+# what was held back, checked again next push; and, after checking all, what it was checked with
+awk -F '\t' -v s="$staging/" 'index($1, s) == 1 { print substr($1, length(s) + 1) }' <<<"$bad" | sort -u > "$state/held.new" && mv "$state/held.new" "$state/held"
+[[ ! $full ]] || printf '%s\n' "$inputs" > "$state/checked-with"
 # 7 (which rsync never uses, and passes on): it went live but for the files held back, so the
 # backend's ccs-watch still checks the live pages; a refused push is 1
 [[ ! $bad ]] || exit 7

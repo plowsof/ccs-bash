@@ -60,7 +60,9 @@ machine and the IRC bot):
 - **Attested releases:** anyone can rebuild a release from its tag, byte for byte, and sign the
   result into [ccs-sigs](https://github.com/plowsof/ccs-sigs), as Feather Wallet does; a release is
   verified against those signatures before it is installed ([contrib/release](../contrib/release/README.md)).
-- **The push:** the whole `site/` to the web server (`rsync --delay-updates`).
+- **The push:** `site/` to the web server, only the files whose contents changed (`rsync
+  --checksum --delay-updates`: ccs-front-bash makes every file anew each run, so their times
+  always differ).
 
 **Web server:** the distribution's nginx (StageX has none, and builds for amd64 only) serving
 `/var/lib/ccs-data`, and a write-only push account whose key runs only the gate
