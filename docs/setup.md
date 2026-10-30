@@ -146,7 +146,7 @@ push: [the handover](handover.md), steps 3–9.
 
 4. **One update** (pull, run, build the site, push it), from root's cron. Root only starts the
    steps: git and the site builder read merged proposals, so they run as their own users. The
-   script: [the handover](handover.md#9-the-update), step 9.
+   script: [the update script](#the-update-script-the-host-setup).
 
    ```
    */2 * * * * /usr/local/bin/ccs-bash-update
@@ -196,6 +196,103 @@ push: [the handover](handover.md), steps 3–9.
 
 The first run looks up the merged MR of every proposal, which takes a few minutes.
 
+## The update script (the host setup)
+
+The host setup's `ccs-bash-update` (the Docker setup runs the same stages as its compose:
+[docker](docker.md)). One run of everything, every 2 minutes and on each new donation ([step 5](#steps), with its log rotation
+from step 4), as root (it only starts each step as that step's own user):
+
+```
+#!/bin/sh
+# /usr/local/bin/ccs-bash-update (chmod 755)
+L=/var/log/ccs-bash.log W=/opt/ccs-bash/contrib/ccs-watch failed=''
+# where each run starts (ccs log and ccs status read the runs by it)
+echo "== run $(date -u '+%F %T')" >> $L
+
+# the proposals; GitLab down: give up, not a failed run (the last checkout stays); pull-ok: when
+# one last went through (ccs-watch --run alerts when that's FORGE_HOURS ago)
+timeout -k 5 40 runuser -u ccs-git -- env HOME=/ git -C /var/lib/ccs/proposals pull -q --ff-only \
+    && touch /var/lib/ccs/pull-ok
+
+# ccs-bash: totals, addresses, the JSON
+ccs-bash-run >> $L 2>&1 || failed="ccs-bash"
+
+# the state, to the backup machine when it changed (it keeps every version), and deposits.csv
+# (it keeps one copy, which only grows); read as ccs, whose files they are: root never opens a
+# file another account controls (it could be a link to any file)
+# (and each retired wallet's file, state like proposals.csv: "Retiring a wallet")
+for S in /var/lib/ccs/state/proposals.csv /var/lib/ccs/state/deposits.csv /var/lib/ccs/state/retired/*.csv; do
+[ -f "$S" ] || continue
+sent=/var/lib/ccs/backup-sent-${S##*/}; [ "$S" = /var/lib/ccs/state/proposals.csv ] && sent=/var/lib/ccs/backup-sent
+case $S in */retired/*) sent=/var/lib/ccs/backup-sent-retired-${S##*/} ;; esac
+# (deposits.csv: its deposits, not its first line, whose height changes every run)
+sum=$(runuser -u ccs -- sed '/^# final /d' "$S" | sha256sum | cut -c1-64)
+if [ "$sum" != "$(cat "$sent" 2>/dev/null)" ]; then
+    # a backup that doesn't go through is a failed run: three in a row tell IRC (the backup
+    # machine down, its folder full, a deposits.csv it refuses)
+    if runuser -u ccs -- cat "$S" | timeout -k 5 30 ssh -T -i /root/.ssh/ccs-backup_ed25519 -o BatchMode=yes \
+        -o IdentitiesOnly=yes -o ConnectTimeout=15 ccs-backup@<backup machine> >> $L 2>&1; then
+        echo "$sum" > "$sent"
+    else
+        failed="${failed:+$failed, }the backup (${S##*/})"
+    fi
+fi
+done
+
+# ccs-front-bash makes the site; it goes to the web server, which must then serve exactly that.
+ccs-front-run >> $L 2>&1 || failed="${failed:+$failed, }ccs-front-bash"
+# Pushed every run, the last good site if none was made: the push is this machine's heartbeat,
+# so the web server's alarm only sounds when this machine can't reach it (its own alerts cover
+# a failed run). The push exits 7 when the gate held a file back but the rest went live: a failed
+# run, and the live pages are still checked (a web server that lies must not hide behind it).
+# The push and pushed/, the copy of what went that ccs-watch compares with, under one lock: a
+# check on ccs-watch.timer (below) never sees one without the other
+exec 9> /run/ccs-watch.lock; flock -w 600 9
+rc=0
+timeout -k 5 120 runuser -u ccs -- rsync -a --checksum --delay-updates \
+    -e "ssh -p 22 -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15" \
+    /var/lib/ccs/www/site/ ccs-data@<web server>: >> $L 2>&1 || rc=$?
+[ "$rc" = 7 ] && failed="${failed:+$failed, }the push (the web server held a file back)"
+[ "$rc" = 0 ] || [ "$rc" = 7 ] || failed="${failed:+$failed, }the push"
+if [ "$rc" = 0 ] || [ "$rc" = 7 ]; then
+    runuser -u ccs -- rsync -a --delete /var/lib/ccs/www/site/ /var/lib/ccs/pushed/
+    runuser -u ccs -- $W https://ccs.getmonero.org /var/lib/ccs/pushed >> $L 2>&1
+fi
+exec 9>&-
+
+# how the run went: three failed runs in a row alert, so a stopped backend can't go unnoticed
+runuser -u ccs -- $W --run "${failed:-ok}" >> $L 2>&1
+```
+
+`-p 22` is the web server's ssh port, given in full in case the backend's `ssh_config` defaults to
+another.
+
+ccs-watch also runs between pushes, at random times, so a web server can't serve its own pages
+only once the check after a push is over (`ccs-watch` itself puts its asks in no fixed order):
+
+```
+# /etc/systemd/system/ccs-watch.service
+[Unit]
+Description=ccs-watch between pushes
+ConditionPathExists=/run/ccs-watch.lock
+ConditionPathExists=/var/lib/ccs/pushed/index.html
+[Service]
+Type=oneshot
+User=ccs
+ExecStart=/usr/bin/flock -s -w 600 /run/ccs-watch.lock /opt/ccs-bash/contrib/ccs-watch https://ccs.getmonero.org /var/lib/ccs/pushed
+
+# /etc/systemd/system/ccs-watch.timer
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=5min
+RandomizedDelaySec=8min
+[Install]
+WantedBy=timers.target
+```
+
+`systemctl enable --now ccs-watch.timer`; its log is `journalctl -u ccs-watch`.
+
+
 ## Backing up the state
 
 The state (`proposals.csv`, and each retired wallet's file) can't be made again: each new version
@@ -232,7 +329,7 @@ Match User ccs-backup
 
 On the **backend**: a key (`ssh-keygen -t ed25519 -N '' -f /root/.ssh/ccs-backup_ed25519`, its
 `.pub` in the line above) and the backup machine's host key in `known_hosts`. [The update
-script](handover.md#9-the-update) sends each new version (`ccs-backup: kept …` in the log).
+script](#the-update-script-the-host-setup) sends each new version (`ccs-backup: kept …` in the log).
 Restoring: [troubleshooting](troubleshooting.md#restore-the-state).
 
 ## Proposals on another forge
