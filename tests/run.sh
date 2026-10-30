@@ -639,6 +639,8 @@ rm -rf "$img"
 # wallet's retired record, and the feed only for a proposal in neither; a title the feed has twice,
 # or not at all, kept off the site while it has no address; an address that changes in the feed
 # stops the run.
+# (the wallet's labels as they were, after: these runs label what the feed gives)
+cp "$TEST_TMP/wallet-labels" "$TEST_TMP/wallet-labels.mirror"
 d=$TEST_TMP/mirror
 mkdir -p "$d/state/retired" "$d/out" && : > "$d/state/proposals.csv"
 other=$(printf '8%094d' 0 | tr 0 A)
@@ -662,7 +664,8 @@ printf 'MIRROR_URL=file://%s/feed.json\n' "$d" >> "$d/ccs.conf" && chmod 444 "$d
 had=$(cat "$TEST_TMP/wallet-count")
 mrun() { bash -c 'source "$1/../ccs-back.sh" && source "$1/stubs.sh" && main "$2"' _ "$here" "$d/ccs.conf" 2> "$d/log"; }
 p() { jq -r --arg f "$1" '.[] | select(.filename == $f) | "\(.raised_amount) \(.contributions)"' "$d/out/projects.json"; }
-if mrun && [[ $(cat "$TEST_TMP/wallet-count") == "$had" ]] \
+# (created up to the feed's highest, subaddress 9, to be labelled: none past it, none handed out of its own)
+if mrun && (($(cat "$TEST_TMP/wallet-count") <= (had > 10 ? had : 10))) \
     && grep -q '^"new-fund.md",[^,]*,7,' "$d/state/proposals.csv" && grep -q '^"a-fund.md",[^,]*,1,' "$d/state/proposals.csv" \
     && [[ $(p "c done, (old).md") == "12.5 4" && $(p "b-wip.md") == "2 1" && $(p "dots-end.md") == "0.25 1" ]] \
     && grep -q '^"near-funded.md",[^,]*,9,' "$d/state/proposals.csv" && [[ -z $(p " leading-space.md") ]] \
@@ -677,6 +680,40 @@ else
     echo "FAIL mirror"; tail -n 8 "$d/log"; jq -c '.[] | {filename, raised_amount, contributions}' "$d/out/projects.json" 2> /dev/null; cat "$d/state/proposals.csv"; status=1
 fi
 echo "$had" > "$TEST_TMP/wallet-count"
+
+# A mirror whose feed has one proposal of a title and author that two here have (a second of the
+# same name merged here before the other site lists it): the feed's address to the one of its date
+# only, never to both. The wallet's main address (index 0: payout change lands there, and it
+# counts for no proposal) never given. An address the wallet scans for but hasn't created yet (the
+# other site's newest): created, then labelled (the wallet labels only those it has created).
+m7=$TEST_TMP/mirror7
+mirror7() {   # mirror7 FEED-ADDRESS-INDEX: a fresh state, the fixtures and dave-2.md ("Brand new", dave, again)
+    rm -rf "$m7" && mkdir -p "$m7/state" "$m7/out" && : > "$m7/state/proposals.csv"
+    cp -r "$FIXTURES/proposals" "$m7/proposals"
+    sed 's/^date: .*/date: 1 November 2026/' "$FIXTURES/proposals/new-fund.md" > "$m7/proposals/dave-2.md"
+    jq -n --arg a "$(printf '8%094d' "$1")" '{data: [{title: "Brand new", author: "dave", date: "October 1, 2026", address: $a, raised_amount: 0, contributions: 0, state: "FUNDING-REQUIRED"}]}' > "$m7/feed.json"
+    sed "s|$TEST_TMP/state|$m7/state|; s|$TEST_TMP/out|$m7/out|; s|^PROPOSALS_DIR=.*|PROPOSALS_DIR=$m7/proposals|" "$TEST_TMP/ccs.conf" > "$m7/ccs.conf"
+    printf 'MIRROR_URL=file://%s/feed.json\n' "$m7" >> "$m7/ccs.conf" && chmod 444 "$m7/ccs.conf"
+    echo "$had" > "$TEST_TMP/wallet-count"
+    bash -c 'source "$1/../ccs-back.sh" && source "$1/stubs.sh" && main "$2"' _ "$here" "$m7/ccs.conf" 2> "$m7/log"
+}
+had=$(cat "$TEST_TMP/wallet-count")
+if mirror7 1 && grep -q '^"new-fund.md",[^,]*,1,' "$m7/state/proposals.csv" && ! grep -q '^"dave-2.md",[^,]*,[0-9]' "$m7/state/proposals.csv"; then
+    echo "ok   mirror: one feed proposal of a title and author two here have: its address to the one of its date only"
+else
+    echo "FAIL mirror: a title and author twice here, once in the feed"; tail -n 3 "$m7/log"; cat "$m7/state/proposals.csv"; status=1
+fi
+if mirror7 0 && ! grep -qE '^"[^"]*",[^,]*,0,' "$m7/state/proposals.csv" && grep -q "subaddress 0 (its main address" "$m7/log"; then
+    echo "ok   mirror: the feed can't give a proposal the wallet's main address (index 0)"
+else
+    echo "FAIL mirror: the main address from the feed"; tail -n 3 "$m7/log"; cat "$m7/state/proposals.csv"; status=1
+fi
+if mirror7 $((had + 5)) && grep -q "^\"new-fund.md\",[^,]*,$((had + 5))," "$m7/state/proposals.csv" && (($(cat "$TEST_TMP/wallet-count") == had + 6)); then
+    echo "ok   mirror: an address the wallet hasn't created yet (the other site's newest): created, then given"
+else
+    echo "FAIL mirror: an address not created yet"; tail -n 3 "$m7/log"; cat "$m7/state/proposals.csv"; status=1
+fi
+echo "$had" > "$TEST_TMP/wallet-count"; mv "$TEST_TMP/wallet-labels.mirror" "$TEST_TMP/wallet-labels"
 
 # TARGET_BRANCH: only the merge requests to it (GitLab's target_branch; Forgejo's base.ref)
 # shellcheck disable=SC2016
@@ -960,7 +997,7 @@ if command -v sort > /dev/null && command -v runuser > /dev/null; then
         && grep -q '^FAIL /etc/ccs/alert.conf: 2 line(s) still to fill in (ALERT_URL WATCH_PROXY)$' <<<"$out" \
         && grep -q '^ok   WALLET_ADDRESS: a mainnet address$' <<<"$out" && ! grep -q 'rpc password' <<<"$out"; then
         sed -i 's/<rpc password[^>]*>/s3cret/' "$r"/etc/ccs/ccs.conf "$r"/etc/ccs-wallet/wallet-rpc.conf
-        sed -i 's/<wallet password[^>]*>/w4llet/; s/<monerod host>/node.example/' "$r"/etc/ccs-wallet/wallet-rpc.conf
+        sed -i 's/<wallet password[^>]*>/w4llet/; s/<host.docker.internal, or the monerod host>/host.docker.internal/' "$r"/etc/ccs-wallet/wallet-rpc.conf
         sed -i 's#^ALERT_URL=.*#ALERT_URL=https://bot.example/x#; s#^WATCH_PROXY=.*#WATCH_PROXY=socks5h://tor.example:9050#' "$r"/etc/ccs/alert.conf
         printf '%040d  # someone\n' 1 > "$r"/etc/ccs/trusted-signers
         sed -i "s/<[^>]*ID[^>]*>/$(printf '%064d' 7)/; s/=<uid:gid of [a-z-]*>/=1:1/; s/<web server>/web.example/; s/<backup machine>/backup.example/" "$r"/opt/ccs-bash/contrib/docker/backend/.env
