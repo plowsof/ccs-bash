@@ -71,6 +71,15 @@ secret.
   `ccs status` read it.
 - **The watch's check** holds the push's lock only while it copies what was pushed (6.5 MB on
   the testnet, a moment), then compares the copy: a push never waits for its minute of fetches.
+  What it compares with isn't taken on the push's word: the front writes the sums of each site it
+  makes in its own folder (`run/front/sums-N`, the last 10), the push says which run's site it
+  pushed, and the copy must be that site, or the watch compares nothing and alerts. A file the
+  web server answers as a later run's site has it counts as pushed too: a push landing during the
+  fetches isn't a difference. The push reads the web server's answers; this way a flaw in its
+  client can't make the watch see the web server's pages as the backend's.
+- **Limits:** every container 1 GB of memory (the wallet 4 GB), 256 processes, a 256 MB `/tmp`
+  (memory too); ccs-watch's fetches and the mirror's feed 16 MB each, decompressed: one that sends
+  more can't take the machine's memory from monerod and the wallet.
 - **Health:** each stage's healthcheck is that it finished a run lately (the watch: a check);
   `docker compose ps` shows it. A failed run still counts as finished: ccs-watch alerts on three.
   And no result at all for 5 minutes (a stage stopped or stuck, so no push and no result) counts
@@ -79,14 +88,22 @@ secret.
 ## A host whose monerod is on its own 127.0.0.1
 
 The wallet on the `wallet` network reaches monerod (`daemon-address` in `wallet-rpc.conf`) over
-its `monerod` network: another machine, or this one on an address containers reach. A monerod
+its `monerod` network: another machine, or this one on an address containers reach
+(`host.docker.internal`, monerod's restricted RPC on the bridge's address or `0.0.0.0`: [the
+handover](handover.md#1-monerod-and-monero-wallet-rpc-the-backend), which is the way to set it
+up). A monerod
 (or alert.conf's proxy and bot) listening on the host's 127.0.0.1 only, as on the testnet, isn't
 one of those: [`compose.host.yml`](../contrib/docker/backend/compose.host.yml) puts the wallet,
 ccs-bash and the watch on the host's network instead, the wallet's RPC on 127.0.0.1, as the host
 setup has them; the other stages keep theirs. In `.env`: `COMPOSE_FILE=compose.yml:compose.host.yml`;
 in `ccs.conf`, `RPC_URL=http://127.0.0.1:18082/json_rpc` (without it, `http://wallet-rpc:18082/json_rpc`).
-Its price: any process on the host can reach the wallet's RPC on 127.0.0.1 (its login still
-needed), as in the host setup.
+Its price, two ways. Any process on the host can reach the wallet's RPC on 127.0.0.1 (its login
+still needed), as in the host setup. And ccs-bash and the watch, the two stages that read what
+others send (the forge's API, a mirror's feed; the web server's answers), reach everything else
+that listens on the host's 127.0.0.1 too: a monerod's unrestricted RPC, databases, consoles. A
+flaw in either then goes further than its container. Better, on a host you set up for it: monerod,
+the proxy and the bot listening on an address the containers reach (a bridge's, with the firewall
+letting only that network in), and no `compose.host.yml`.
 
 ## Setting it up
 

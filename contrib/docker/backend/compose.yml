@@ -14,7 +14,12 @@
 
 x-hardened: &hardened
   read_only: true
-  tmpfs: [/tmp]
+  # /tmp is memory: sized, as each container's memory and processes are, so that one fed a huge
+  # answer (the web server's to the watch, a feed's, the forge's) can't take the machine's memory
+  # from monerod and the wallet (each uses tens of MB; the watch's copy of the site, a few)
+  tmpfs: ["/tmp:size=256m"]
+  mem_limit: 1g
+  pids_limit: 256
   cap_drop: [ALL]
   security_opt: ["no-new-privileges:true"]
   restart: unless-stopped
@@ -72,8 +77,13 @@ services:
   wallet-rpc:
     <<: *hardened
     image: ${WALLET_IMAGE:?the wallet-rpc image ID}
+    # (more room: a wallet's cache grows with every payment, and a rescan holds more)
+    mem_limit: 4g
     # its RPC on the wallet network only (ccs-bash), its login in wallet-rpc.conf; out to monerod
     networks: [wallet, monerod]
+    # a monerod on this machine: daemon-address=host.docker.internal:18089, its restricted RPC
+    # listening where containers reach it (docs/handover.md, 1)
+    extra_hosts: ["host.docker.internal:host-gateway"]
     user: "${WALLET_UID:?}"
     environment:
       # its shared ring database (~/.shared-ringdb) beside the wallet, the rest is read-only
@@ -193,6 +203,8 @@ services:
     image: ${CCS_BASH_IMAGE}
     # its own user: its state and the results it counts out of the other stages' reach
     user: "${WATCH_UID}"
+    # a proxy on this machine (Tor, ssh -D): WATCH_PROXY=socks5h://host.docker.internal:9050
+    extra_hosts: ["host.docker.internal:host-gateway"]
     entrypoint: [*step, "watch", "${CCS_SITE_URL:?the site's address, https://...}"]
     environment:
       <<: *every

@@ -165,6 +165,14 @@ front)
         n=$(($(num "$R/front/done") + 1))
         wait_for ccs-bash "$n"
         if run "${CCS_FRONT:-/opt/ccs-front-bash/ccs-front-bash.sh}" "$@"; then finish "$n" ok; else finish "$n" "failed: ccs-front-bash"; fi
+        # the sums of the site it left (its 4th argument; the last good one after a failure), in
+        # its own folder: what the watch checks what was pushed against, which the push writes;
+        # the last 10 kept
+        fsite=${CCS_FRONT_SITE:-${4:-}}
+        if [[ -d $fsite ]]; then
+            (cd "$fsite" && find . -type f -exec sha256sum {} +) > "$R/front/sums-$n.tmp" && mv -f "$R/front/sums-$n.tmp" "$R/front/sums-$n"
+            rm -f "$R/front/sums-$((n - 10))"
+        fi
         wake push
     done
     ;;
@@ -185,7 +193,8 @@ push)
             timeout 600 flock 9 || say "warning: ccs-watch's lock not had in 10 minutes, pushing all the same"
             run timeout -k 5 120 rsync -a --checksum --delay-updates \
                 -e "ssh -p ${CCS_PUSH_PORT:-22} -i $pkeys/id_ed25519 -o UserKnownHostsFile=$pkeys/known_hosts -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15" "$site/" "${CCS_PUSH:?}:" || rc=$?
-            if ((rc == 0 || rc == 7)); then rsync -a --delete "$site/" "$pushed/"; fi
+            # (and which run's site it is: the front's run N, which it waited for)
+            if ((rc == 0 || rc == 7)); then rsync -a --delete "$site/" "$pushed/" && put "$R/push/pushed" "$n"; fi
         } 9< "$(lock)"
         # the run's result, as ccs-bash-update says it (a failed pull is no failed run)
         result=''
@@ -206,14 +215,19 @@ watch)
     # check: the live pages against what was pushed, under the lock (shared: the push's is
     # exclusive), when something was
     # (the lock held only to copy what was pushed, a moment: the comparison, a minute of fetches,
-    # on the copy, so a push never waits for it)
+    # on the copy, so a push never waits for it). CCS_WATCH_SUMS: the front's sums of the run
+    # pushed, which the copy must be (the push writes it, and reads the web server's answers), and
+    # of the runs since, as a push landing during the fetches has them
     check() {
         [[ -f $pushed/index.html ]] || return 0
-        local copy
+        local copy p k list
         copy=$(mktemp -d) || return 0
+        # (-r, not -a: the files are ccs-push's, and this user can't give them that owner)
         { timeout 600 flock -s 9 || say "warning: the push's lock not had in 10 minutes, checking all the same"
-          cp -a "$pushed/." "$copy/"; } 9< "$(lock)"
-        run "$w" "$site" "$copy"
+          cp -r "$pushed/." "$copy/"; p=$(num "$R/push/pushed"); } 9< "$(lock)"
+        list=$R/front/sums-$p
+        for ((k = p + 1; k <= $(num "$R/front/done"); k++)); do [[ -f $R/front/sums-$k ]] && list+=" $R/front/sums-$k"; done
+        run env CCS_WATCH_SUMS="$list" "$w" "$site" "$copy"
         rm -rf "$copy"
         return 0
     }

@@ -54,13 +54,14 @@ EOF
 cat > "$t/bin/ccs-watch" <<'EOF'
 #!/usr/bin/env bash
 echo "$*" >> "$T/watched"
+[[ $1 == --run ]] || echo "${CCS_WATCH_SUMS:-}" >> "$T/watched-sums"
 EOF
 chmod 755 "$t/bin"/*
 
 export T=$t PATH="$t/bin:$PATH" CCS_RUN=$t/run CCS_EVERY=1 STATE_DIR=$t/state \
     CCS_BACK=$t/bin/ccs-back CCS_FRONT=$t/bin/ccs-front CCS_PROPOSALS=$t/proposals CCS_PULL_OK=$t/pull-ok \
     CCS_BACKUP=backup@test CCS_BACKUP_KEYS=$t CCS_PUSH=data@test CCS_SITE=$t/www/site CCS_PUSHED=$t/pushed \
-    CCS_WATCH=$t/bin/ccs-watch CCS_OUT=$t/out
+    CCS_WATCH=$t/bin/ccs-watch CCS_OUT=$t/out CCS_FRONT_SITE=$t/www/site
 me="$(id -u):$(id -g)"
 if ! CCS_UIDS="pull=$me ccs-bash=$me backup=$me front=$me push=$me watch=$me" CCS_NOW_GID=$me CCS_WATCH_GID=$(id -g) "$step" init > /dev/null; then
     fail "init"; exit 1
@@ -157,6 +158,13 @@ for ((i = 0; i < 30; i++)); do (($(cat "$t/run/watch/done" 2> /dev/null || echo 
 if [[ $(sed -n 1p "$t/watched") == "https://site.test /"* && $(sed -n 2p "$t/watched") == "--run ok" && $(wc -l < "$t/watched") == 2 ]]; then
     ok "watch: after a push, the live pages against what was pushed, then the run's result"
 else fail "watch after a push"; cat "$t/watched" "$t/out-watch"; fi
+# what was pushed checked against the front's own sums (its folder, not the push's): the run's
+# sums made by the front, the push saying which run's site it pushed, the watch handed that one
+p=$(cat "$t/run/push/pushed" 2> /dev/null)
+if [[ $p && $(sed -n 1p "$t/watched-sums") == "$t/run/front/sums-$p"* ]] \
+    && cmp -s <(cd "$t/pushed" && find . -type f -exec sha256sum {} + | sort) <(sort "$t/run/front/sums-$p"); then
+    ok "watch: handed the front's sums of the run pushed ($p), which what was pushed is"
+else fail "the front's sums"; ls "$t/run/front" "$t/run/push"; cat "$t/watched-sums"; fi
 stop
 : > "$t/watched"
 exec 3<> "$t/run/push/watch"; while IFS= read -r -t 1 _ <&3; do :; done; exec 3<&-
