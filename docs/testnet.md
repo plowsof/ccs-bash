@@ -4,6 +4,12 @@ https://ccs.monerodevs.org runs this setup on Monero's testnet, so that each rel
 of [the handover](handover.md) runs somewhere before ccs.getmonero.org. The set it runs: [the
 releases](handover.md#the-releases). Nothing here is part of the setup: don't copy it.
 
+**As of 2026-10-30 it runs in mirror mode** (`MIRROR_URL`, [ccs.conf.example](../ccs.conf.example)):
+on mainnet, with the real CCS's view-only wallet, every proposal's address taken from
+ccs.getmonero.org's `/projects`, never one of its own, so it shows the same proposals,
+addresses and totals as the real CCS. Where this page says testnet, it describes the setup
+before that.
+
 ## Where it differs
 
 - **Testnet:** `testnet=1`, monerod on `28081`, wallet-rpc on `18182`; `MIN_CONFIRMATIONS=1`. Its
