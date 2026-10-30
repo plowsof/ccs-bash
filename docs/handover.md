@@ -69,6 +69,9 @@ must listen where a container can reach it, **not on 127.0.0.1 only**: inside a 
   bridge's address, `172.17.0.1`, when 18089 shouldn't be public). ufw's default denies the
   containers too: `ufw allow from 172.16.0.0/12 to any port 18089 proto tcp`.
 - **On another machine:** `daemon-address=<it>:18089`, its firewall open to the backend.
+- A firewall's rate limits on 18089 (a public node's flood rules) count the wallet's container
+  as any client: a few connections a sync, well under them, but a flood that trips a global
+  limit slows the wallet too.
 
 `ccs config:check` says when `daemon-address` is one the wallet's container can't reach. The same
 goes for ccs-watch's proxies (`WATCH_PROXY`, [the alerts](#8-the-alerts)): Tor on the backend
@@ -77,15 +80,19 @@ address exists once Docker does):
 
 ```
 # /etc/tor/torrc
+SocksPort 127.0.0.1:9050
 SocksPort 172.17.0.1:9050
+SocksPolicy accept 127.0.0.0/8
 SocksPolicy accept 172.16.0.0/12
 SocksPolicy reject *
-# systemctl edit tor@default: [Unit] After=docker.service
+# systemctl edit tor@default: [Unit] After=docker.service; then systemctl reload tor@default
 ufw allow from 172.16.0.0/12 to any port 9050 proto tcp
 ```
 
 and `WATCH_PROXY=socks5h://host.docker.internal:9050` (an `ssh -D` clearnet proxy the same way:
-`-D 172.17.0.1:1080`). The bot is on a third machine, reached by its address.
+`-D 172.17.0.1:1080`; a `SocksPolicy` covers every `SocksPort`, hence 127.0.0.1 accepted too).
+The bot is on a third machine, reached by its address; a bot on this one by its public HTTPS
+address (as the web server reaches it), not 127.0.0.1.
 
 [`compose.host.yml`](../contrib/docker/backend/compose.host.yml) (the wallet, ccs-bash and the
 watch on the host's network, as the testnet has it) is for a host where these can't move off
