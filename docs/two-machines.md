@@ -1,28 +1,22 @@
 # Two machines: the backend pushes, the web server only receives
 
 The backend takes no incoming connections; after each run it pushes the site to the web server,
-whose push account can only write into one folder, through the gate.
+whose push key runs only the gate: it checks every file before it goes live, and nginx serves what
+passed. In Docker, the production setup, the gate and its heartbeat run from the gate's attested
+image, with their own sshd on port 2223 ([the web server in Docker](docker.md#the-web-server-in-docker));
+nginx stays on the host. Without Docker, the host's sshd and a timer do it ([below](#without-docker)).
 
-The web server's side can also run in Docker, from the gate's attested image, with nginx on the
-host as below: [the web server in Docker](docker.md#the-web-server-in-docker).
-
-**The push account** (rsync 3.2.4+ for `rrsync`; `apt install rsync python3`):
+**The push account:**
 
 ```
 useradd --system --create-home --shell /bin/sh ccs-data   # no password; only the forced command runs
 install -d -o ccs-data -m 755 /var/lib/ccs-data           # ideally its own small filesystem or a quota
 install -d -m 755 /etc/ssh/authorized_keys                # root-owned, outside the account's home
 # /etc/ssh/authorized_keys/ccs-data (root, 644):
-from="<backend IP>",command="rrsync -wo -no-del -munge /var/lib/ccs-data",restrict ssh-ed25519 AAAA... ccs-bash
+from="<backend IP>",command="/usr/local/bin/ccs-receive",restrict ssh-ed25519 AAAA... ccs-bash
 ```
 
-and at the end of `/etc/ssh/sshd_config`, then `systemctl reload ssh` (so sshd reads no other key
-file for it: one in its own home it could replace):
-
-```
-Match User ccs-data
-    AuthorizedKeysFile /etc/ssh/authorized_keys/%u
-```
+The gate receives with rrsync (`-wo -no-del -munge`) into its staging folder, so:
 
 | If the key is stolen, this stops | |
 |---|---|
@@ -127,24 +121,20 @@ lines the button only reloads the page.
 **HTTPS:** a DNS A record, `server_name`, then `certbot --nginx -d <name> --redirect` (`apt install
 certbot python3-certbot-nginx`): the 443 server, a redirect from 80, renewed by `certbot.timer`.
 
-**The backend:** a key for `ccs`, and the web server's host key from its
-`/etc/ssh/ssh_host_ed25519_key.pub` (not accepted on first connect):
+**The backend's key**, the push stage's, and the gate's own host key on its port, from the web
+server's `/etc/ccs-gate/ssh/ssh_host_ed25519_key.pub` (not accepted on first connect):
 
 ```
-install -d -o ccs -g ccs -m 700 /var/lib/ccs/.ssh
-runuser -u ccs -- ssh-keygen -t ed25519 -N '' -f /var/lib/ccs/.ssh/id_ed25519
-echo "<web server> ssh-ed25519 AAAA..." > /var/lib/ccs/.ssh/known_hosts
+install -d -o ccs-push -m 700 /etc/ccs/push
+runuser -u ccs-push -- ssh-keygen -t ed25519 -N '' -f /etc/ccs/push/id_ed25519
+echo "[<web server>]:2223 ssh-ed25519 AAAA..." > /etc/ccs/push/known_hosts
 ```
 
-In Docker the key is in `/etc/ccs/push/` (`ccs-push`'s), and the host key is the gate's own on
-its port: `[<web server>]:2223 ssh-ed25519 AAAA...`, from its `/etc/ccs-gate/ssh/ssh_host_ed25519_key.pub`
-([the web server in Docker](docker.md#the-web-server-in-docker)).
-
-[The update script](setup.md#the-update-script-the-host-setup) pushes (`--checksum`: only the files whose contents changed, as each run makes every file anew;
-`--delay-updates`: swapped in once all have arrived), with `-p 22` in full, as the backend's `ssh_config` may default to another port
-(a push that hangs is the sign). The web server needs 22 open to the backend and 80/443 to
-everyone, in its firewall *and* a cloud provider's (an Oracle security list, an AWS security group).
-The admins' own ssh: [admin access](admin-access.md).
+The push (`--checksum`: only the files whose contents changed, as each run makes every file anew;
+`--delay-updates`: swapped in once all have arrived) goes to `CCS_PUSH_PORT` (2223) of the
+compose's `.env`. The web server needs 2223 open to the backend only (the backup machine: 2224)
+and 80/443 to everyone, in its firewall *and* a cloud provider's (an Oracle security list, an AWS
+security group). The admins' own ssh: [admin access](admin-access.md).
 
 `tests/rrsync.sh` tries all of the above from the backend's key in containers (commands,
 forwarding, reading back, `..`, `--temp-dir`, `--backup-dir`, `--link-dest`, deleting, symlinks,
@@ -153,7 +143,7 @@ catches them. A taken-over backend can still push false pages: the gate is for t
 
 ## The gate: the web server checks every page
 
-`contrib/ccs-receive`, run by the push key instead of rrsync. It doesn't guess how a browser shows
+`contrib/ccs-receive`, the push key's forced command. It doesn't guess how a browser shows
 what it is sent; it knows what a page may be. Each push, one at a time, it
 
 1. makes a staging folder a copy of the live site, and receives the push into it (rrsync, with
@@ -211,26 +201,18 @@ what it is sent; it knows what a page may be. Each push, one at a time, it
    site, and the push is good;
 6. refuses the whole push without its pinned list, `design.sha256`, the design, `markdown.awk`,
    `proposals.conf`, the QR reader's libraries (libzbar, libpng, libturbojpeg, giflib),
-   `qrencode`, `python3` or `git`.
+   `qrencode`, `python3` or `git`, or for a file name with a control character in it.
 
 With `/etc/ccs-gate/alert.conf` it tells IRC itself (once an hour per address or file, three a
 push, a foreign address first, also when the backend hangs up mid-check): the alarm that still
-sounds when the backend is the one lying.
+sounds when the backend is the one lying. Every line it sends, and what to do:
+[troubleshooting, What IRC says](troubleshooting.md#what-irc-says).
+
+Set it up once, as root (in Docker, then [its own steps](docker.md#setting-it-up-1)):
 
 ```
-[CCS-watch] the web server held back a page: donation address 9yQXrj…4Kd2 is not in the signed list (its last good copy stays) @ https://<site>/proposals/<page>
-[CCS-watch] the web server held back a file: not a page of the design as ccs-front-bash fills it (it differs at character 4916: …) @ https://<site>/funding-required/index.html
-[CCS-watch] the web server refuses every push: its signed list isn't the one its .pin names
-```
-
-Set it up once, as root:
-
-```
-apt install libzbar0 libpng16-16 libturbojpeg0 libgif7 qrencode git  # the QR codes, read (libzbar on pixels the formats' own libraries decode) and remade; git, for the proposals
-install -m 755 contrib/ccs-receive /usr/local/bin/ccs-receive        # from this repository at the attested commit, checked out here (handover: Upgrading, 1-2)
 install -d -o ccs-data -m 755 /var/lib/ccs-staging
 install -d -m 755 /etc/ccs-gate /etc/ccs-gate/design
-install -o ccs-data -m 644 /dev/null /var/log/ccs-gate.log          # optional: the refusals, as a file
 install -d -o ccs-data -m 755 /var/lib/ccs-gate                      # one push at a time, the last push (the heartbeat), when it last alerted, the proposals fetched
 install -m 640 -g ccs-data /dev/null /etc/ccs-gate/alert.conf        # optional: the bot (as ccs-watch's, plain text POST)
 printf 'ALERT_URL=http://<bot>:8086/<path>\nSITE_URL=https://<site>\n' > /etc/ccs-gate/alert.conf
@@ -264,39 +246,24 @@ unzip -q ccs-front-hugo-$v.zip -d /etc/ccs-gate/design/$v
 
 A new design: unpack it beside the old one and **add** (`>>`) its lines to `design.sha256` before
 the backend switches; the old can go once the new is live. A changed `markdown.awk`: install it
-beside the old as `markdown-<release>.awk` first. Then the push key's `command=` becomes
-`command="/usr/local/bin/ccs-receive"`; empty `/var/lib/ccs-data` first if anything was pushed
-before (the gate trusts what is live).
+beside the old as `markdown-<release>.awk` first. Empty `/var/lib/ccs-data` before the first push
+if anything is in it (the gate trusts what is live).
 
 A proposal quoting another address doesn't update until that address is in `allowed` (the
 refusal names it; on the testnet, two). A new list: its four files, the same way.
-`tests/gate.sh` builds this in containers and checks:
 
-- **held back, the live file kept:**
-  - a page changed anywhere the design doesn't fill, a page the design doesn't have, a page made
-    a folder, a page too costly to check;
-  - an address split by markup, an entity, a zero-width or no-break space, drawn in bidi
-    embeddings or mathematical letters, or in an invisible image's alt text;
-  - a `<br>`, a class, a `style` attribute, an `<svg>`, text the design's classes could hide;
-  - another proposal text than the repository's, a milestone the proposal doesn't have;
-  - a link to another site, to another repository on the forge, or out of it by `..`; a
-    `monero:` link with more than an address;
-  - a foreign address in the donation box, or an `allowed` one (the General Fund);
-  - a QR code of another address, not exactly qrencode's (another size, more drawn beside it),
-    or drawn as text; a proposal image that is another QR code (inverted or not), or that the
-    repository doesn't have (or has at another path, or other bytes);
-  - a `\u` escape or a key twice in `projects.json`; a PNG named `.html` or `projects.json`; a
-    NUL byte; a page named with a backslash or wildcard;
-  - a stylesheet or design file that isn't the design's, a swapped list;
-- **refused, every push:** no design or `markdown.awk`, or a list that isn't the pinned one;
-  deleting, and anything outside the folder, as with rrsync alone;
+`tests/gate.sh` builds this in containers (with `GATE_IMAGE`, from the gate's image) and pushes
+each way around it, each case named in its output:
+
+- **held back:** an address split, disguised (entities, invisible or look-alike characters, bidi)
+  or in a QR code of another address; a page or text that isn't the design's or the repository's;
+  a link out of the repository; a stylesheet, image or list that isn't the installed one;
+- **refused, every push:** no design or `markdown.awk`, a list that isn't the pinned one;
+  deleting, and anything outside the folder;
 - **checked again:** only what a push changed; a held-back file sent again unchanged; every page
-  after a change to `allowed` or the proposals commit, or a day after the last full check;
-- **through:** a good push, and the next good push after a held-back one; ideas titled with
-  "data:", "charset=", `▶` or `🟢`; the repository down (the last fetch is used); two pushes at
-  once (one after the other);
-- **alerts:** a page check that stops holds back every page; a backend that hangs up mid-check
-  still gets an alert sent.
+  after a change to what it is checked against, or a day after the last full check;
+- **through:** a good push after a held-back one; the repository down; two pushes at once;
+- **alerts:** a check that stops holds back every page; a backend that hangs up mid-check.
 
 **What it can't see:** what only the backend knows: a total, count or percentage that is wrong but
 a number; an idea that is no merge request (still escaped text linking to the repository); one of
@@ -320,36 +287,12 @@ up less than that, and only on the second late check in a row. Then once an hour
 when pushes return:
 
 ```
-[CCS-watch] no push from the backend for 17 minutes: is it running? (its cron, its push key, its network) @ https://<site>
+[CCS-watch] no push from the backend for 17 minutes: is it running? (its loop, its push key, its network) @ https://<site>
 [CCS-watch] pushes from the backend arrive again @ https://<site>
 ```
 
-`ccs-receive --heartbeat`, as ccs-data (the push key can't pass it arguments). As root:
-
-```
-cat > /etc/systemd/system/ccs-heartbeat.service <<'UNIT'
-[Unit]
-Description=ccs-gate: alert when no push has come from the backend
-
-[Service]
-Type=oneshot
-User=ccs-data
-ExecStart=/usr/local/bin/ccs-receive --heartbeat
-UNIT
-cat > /etc/systemd/system/ccs-heartbeat.timer <<'UNIT'
-[Unit]
-Description=ccs-gate heartbeat, every 5 minutes
-
-[Timer]
-OnBootSec=5min
-OnUnitActiveSec=5min
-
-[Install]
-WantedBy=timers.target
-UNIT
-systemctl daemon-reload && systemctl enable --now ccs-heartbeat.timer
-```
-
+`ccs-receive --heartbeat`, as ccs-data (the push key can't pass it arguments), every 5 minutes:
+the web server compose's `heartbeat` service ([without Docker](#without-docker): a timer).
 `tests/gate.sh` checks each of those cases.
 
 ## Watching the web server: the backend raises the alarm
@@ -385,10 +328,11 @@ a second ccs-watch elsewhere.
 Alerts go to one URL as a plain-text POST: an IRC bot (CptHook's `simple` module,
 `https://<host>/<endpoint>?channel=%23<channel>`), ntfy, or anything that takes a POST; or wmb's
 `/directedMessage` with `ALERT_TARGET` and `ALERT_PASSWORD` (the bot must be in the channel).
-`ccs-watch --test https://<the site>` sends one. Its config, readable only by root and ccs:
+`ccs-watch --test https://<the site>` sends one. Its config, readable only by root and the
+watch's user (without Docker: `ccs`):
 
 ```
-install -m 640 -g ccs /dev/null /etc/ccs/alert.conf
+install -m 640 -g ccs-watch /dev/null /etc/ccs/alert.conf
 cat > /etc/ccs/alert.conf <<'CONF'
 ALERT_URL=https://<the bot>/simple?channel=%23<channel>
 SUBADDRESSES=/etc/ccs-front/subaddresses.txt        # to name addresses not on the list
@@ -398,10 +342,62 @@ WATCH_SAMPLE=10                                     # other pages, at random, ea
 CONF
 ```
 
-The update script runs it after each push (also exit 7: a web server that lies can't hide behind
-a held-back page), then `ccs-watch --run` with how the run went, so a stopped backend is an alarm
-too. One alert per problem an hour; "could not be fetched" after three checks; "the backend has
-failed N runs in a row" after three failed runs (about six minutes), and "runs again" after.
+It runs after each push (also exit 7: a web server that lies can't hide behind a held-back page),
+and is given how each run went (the compose's `push` hands it each run's result; without Docker,
+the update script's `ccs-watch --run`), so a stopped backend is an alarm too. One alert per problem
+an hour; "could not be fetched" after three checks; "the backend has failed N runs in a row" after
+three failed runs (about six minutes), and "runs again" after: [every line](troubleshooting.md#what-irc-says).
 A careful attacker on the web server can still tell the watcher apart (above). Hence the Verify
 page, asking visitors to check the address their wallet shows. `tests/watch.sh` runs it against a
 local web server and a fake bot, including web servers that try each trick above.
+
+## Without Docker
+
+The host's own sshd takes the push key, and a timer runs the heartbeat. As root, with the
+folders and files above:
+
+```
+apt install rsync python3 libzbar0 libpng16-16 libturbojpeg0 libgif7 qrencode git   # rsync 3.2.4+ (rrsync); the QR codes read (libzbar on pixels the formats' own libraries decode) and remade; git, for the proposals
+install -m 755 contrib/ccs-receive /usr/local/bin/ccs-receive        # from this repository at the attested commit, checked out here
+install -o ccs-data -m 644 /dev/null /var/log/ccs-gate.log          # optional: the refusals, as a file (in Docker: /var/log/ccs-web/)
+```
+
+At the end of `/etc/ssh/sshd_config`, then `systemctl reload ssh` (so sshd reads no other key file
+for ccs-data: one in its own home it could replace):
+
+```
+Match User ccs-data
+    AuthorizedKeysFile /etc/ssh/authorized_keys/%u
+```
+
+The heartbeat:
+
+```
+cat > /etc/systemd/system/ccs-heartbeat.service <<'UNIT'
+[Unit]
+Description=ccs-gate: alert when no push has come from the backend
+
+[Service]
+Type=oneshot
+User=ccs-data
+ExecStart=/usr/local/bin/ccs-receive --heartbeat
+UNIT
+cat > /etc/systemd/system/ccs-heartbeat.timer <<'UNIT'
+[Unit]
+Description=ccs-gate heartbeat, every 5 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target
+UNIT
+systemctl daemon-reload && systemctl enable --now ccs-heartbeat.timer
+```
+
+On the backend, the push key is `ccs`'s (`/var/lib/ccs/.ssh/id_ed25519`, made as above as `ccs`), its `known_hosts` the
+web server's own host key (`/etc/ssh/ssh_host_ed25519_key.pub`) for `<web server>` on port 22,
+and [the update script](setup.md#the-update-script-the-host-setup) pushes with `-p 22` in full, as
+the backend's `ssh_config` may default to another port (a push that hangs is the sign). Keep the
+QR reader's libraries updated (`unattended-upgrades`): the gate's image pins and attests them.

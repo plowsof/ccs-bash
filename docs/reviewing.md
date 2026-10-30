@@ -125,11 +125,10 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
 - The push (`push`, as `ccs-push`; the host setup: `ccs`): `rsync --checksum --delay-updates` to
   the web server's key, which runs only the gate; then the copy of what went, `pushed/`, under the
   lock the watch shares.
-- [`contrib/ccs-watch`](../contrib/ccs-watch) (`watch`, as `ccs-watch`; the host setup: `ccs`): fetches the donation pages, the files
-  they use (the stylesheets' `url()`s too), `WATCH_SAMPLE` other pages and `/projects`, as one of
-  three browsers asks (`Sec-Fetch-*` by what is fetched, under `/`, `/dark/` or `/light/`, through
-  a random proxy), and compares each byte for byte with what was last pushed; also a page never
-  pushed (the 404 page) and the theme button's redirect, at a random place among them. After each
+- [`contrib/ccs-watch`](../contrib/ccs-watch) (`watch`, as `ccs-watch`; the host setup: `ccs`): the live pages against `pushed/`, byte for
+  byte, as one of three browsers through a random proxy (what it fetches, and why:
+  [two machines](two-machines.md#watching-the-web-server-the-backend-raises-the-alarm)); `differs`
+  refetches before it counts, `sighted` keeps the day's sightings. After each
   push and between pushes at random times (the `watch` stage; the host setup: `ccs-watch.timer`). A difference (three fetches over 40 s, or a
   recheck not answered) alerts the second time it is seen within a day; so does a page answering
   anything but 200 three checks in a row; `--run`, three failed runs. Its config is read key by

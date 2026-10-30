@@ -69,17 +69,7 @@ is why visitors can check an address against the signed list themselves.
    the output, for ccs-front-bash; any other image stays a link.
 8. **Write the JSON** (`lib/site.jq`), swapped in atomically.
 
-| File | Does |
-|---|---|
-| `ccs-back.sh` | the steps above |
-| `lib/common.sh` | logging, config, atomic writes, filename check |
-| `lib/frontmatter.awk` | the proposal format parser, spec at the top |
-| `lib/proposals.sh` | proposals to JSON, the state file |
-| `lib/gitlab.sh` | ideas, merged MR lookup |
-| `lib/wallet.sh` | wallet RPC, subaddresses, totals |
-| `lib/images.sh` | a proposal's images, from the proposals repository |
-| `lib/site.jq` | the JSON for ccs-front-bash and `/projects` |
-| `notify-loop.sh` | optional: also run on new txes ([setup](docs/setup.md) step 5) |
+Each file, function by function: [reviewing](docs/reviewing.md).
 
 ## State
 
