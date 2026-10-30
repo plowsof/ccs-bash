@@ -179,7 +179,7 @@
   <path d="M730,463 H770 V290 H809" fill="none" stroke="#16a34a" stroke-width="3.5" marker-end="url(#gb)"/>
   <g transform="translate(700,580)">
     <rect x="0" y="0" width="230" height="30" rx="15" fill="#dcfce7" stroke="#16a34a"/>
-    <text x="115" y="20" text-anchor="middle" font-size="12.5" font-weight="600" fill="#166534">ssh push, write-only, every run</text>
+    <text x="115" y="20" text-anchor="middle" font-size="12.5" font-weight="600" fill="#166534">write-only push of what changed</text>
   </g>
   <path d="M770,463 V578" fill="none" stroke="#16a34a" stroke-width="1.5" stroke-dasharray="3 3"/>
   <!-- web server inside -->
@@ -255,6 +255,6 @@
     <path d="M520,10 H554" stroke="#64748b" stroke-width="2.5"/><text x="562" y="14">fetched or read (outgoing connections only)</text>
   <use href="#signedlist" x="905" y="-1" width="20" height="20"/>
   <text x="930" y="14" font-size="12.5" fill="#334155">the signed subaddress list</text>
-    <text x="0" y="40" fill="#64748b">No Jekyll or front-end framework on any live machine. Every page is made fresh from the original and pushed, each run.</text>
+    <text x="0" y="40" fill="#64748b">No Jekyll or front-end framework on any live machine. Every page is made fresh from the original each run; what changed is pushed, and checked.</text>
   </g>
 </svg>

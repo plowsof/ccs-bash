@@ -140,8 +140,8 @@ In Docker the key is in `/etc/ccs/push/` (`ccs-push`'s), and the host key is the
 its port: `[<web server>]:2223 ssh-ed25519 AAAA...`, from its `/etc/ccs-gate/ssh/ssh_host_ed25519_key.pub`
 ([the web server in Docker](docker.md#the-web-server-in-docker)).
 
-[The handover's update script](handover.md#9-the-update) pushes (`--delay-updates`: swapped in once
-all have arrived), with `-p 22` in full, as the backend's `ssh_config` may default to another port
+[The handover's update script](handover.md#9-the-update) pushes (`--checksum`: only the files whose contents changed, as each run makes every file anew;
+`--delay-updates`: swapped in once all have arrived), with `-p 22` in full, as the backend's `ssh_config` may default to another port
 (a push that hangs is the sign). The web server needs 22 open to the backend and 80/443 to
 everyone, in its firewall *and* a cloud provider's (an Oracle security list, an AWS security group).
 The admins' own ssh: [admin access](admin-access.md).
@@ -157,7 +157,12 @@ catches them. A taken-over backend can still push false pages: the gate is for t
 what it is sent; it knows what a page may be. Each push, one at a time, it
 
 1. makes a staging folder a copy of the live site, and receives the push into it (rrsync, with
-   the same `-wo -no-del -munge`);
+   the same `-wo -no-del -munge`). What it checks below are the files the push changed, and the
+   ones it held back last time (their last good copy is live, so the same file sent again fails
+   again): the live site holds only what passed. Every page and JSON file is checked again
+   when what they were checked against changes (the list or its pin, `allowed`, the design,
+   `markdown.awk`, `proposals.conf`, the proposals commit fetched, `ccs-receive` itself), and
+   once a day whatever happens. Its log says how many: `checking 3 of 1022 pages and JSON files`;
 2. checks **every page against the design**: the design's release zip, unpacked here, has every
    page and every part ccs-front-bash fills them with (ccs-front-hugo's README, "What
    ccs-front-bash fills in"). A page must be one of the design's own, byte for byte outside its
@@ -285,6 +290,8 @@ refusal names it; on the testnet, two). A new list: its four files, the same way
   - a stylesheet or design file that isn't the design's, a swapped list;
 - **refused, every push:** no design or `markdown.awk`, or a list that isn't the pinned one;
   deleting, and anything outside the folder, as with rrsync alone;
+- **checked again:** only what a push changed; a held-back file sent again unchanged; every page
+  after a change to `allowed` or the proposals commit, or a day after the last full check;
 - **through:** a good push, and the next good push after a held-back one; ideas titled with
   "data:", "charset=", `▶` or `🟢`; the repository down (the last fetch is used); two pushes at
   once (one after the other);
