@@ -40,13 +40,13 @@ mirror_load() {
 # the other site credits elsewhere. Never the main address (index 0: payout change lands there,
 # and it counts for no proposal), one past any signed list, or one another proposal here has.
 mirror_assign() {
-    local file key dated here m addr have res err idx other n hist=$WORK/historic.tsv
+    local file key dated many m addr have res err idx other n hist=$WORK/historic.tsv
     : > "$hist"
     # the proposals a retired record already has: theirs, never the feed's on top
     local -A retired=()
     while IFS= read -r file; do retired[$file]=1; done < <(awk -F, 'FNR > 1 && $6 != "" { print $6 }' "${RETIRED_DIR:-/nonexistent}"/*.csv 2> /dev/null)
-    while IFS=$'\t' read -r file key dated here; do
-        if ((here > 1)); then
+    while IFS=$'\t' read -r file key dated many; do
+        if ((many > 1)); then
             # several here of that title and author (a series): only the feed's one of this date.
             # The one of that name alone would do while the feed has one, but the feed may not list
             # the newest yet: it would get an older one's address
