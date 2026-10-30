@@ -296,7 +296,8 @@ cmd_check() {
         read -r o g m <<<"$(stat -c '%U %G %a' "$p")"
         if [[ $CCS_AS != none && "$o $g" != "$2 $3" ]]; then bad "$1: owned by $o:$g, not $2:$3"; r=1; fi
         if ((8#$m & ~8#$4)); then bad "$1: mode $m, looser than $4"; r=1; fi
-        # (the keys named, never their values)
+        # (the keys named, never their values; a folder has none)
+        [[ -f $p ]] || return "$r"
         n=$(grep -vE '^\s*#' "$p" | grep -cE '<[^>]+>|=change-me$|^WALLET_ADDRESS=4\.\.\.$' || true)
         if ((n)); then bad "$1: $n line(s) still to fill in ($(grep -vE '^\s*#' "$p" | grep -E '<[^>]+>|=change-me$|=4\.\.\.$' | cut -d= -f1 | sort -u | paste -sd ' ' -))"; r=1; fi
         return "$r"
@@ -339,8 +340,10 @@ cmd_check() {
     elif [[ $v =~ ^[9A][1-9A-HJ-NP-Za-km-z]{94}$ ]]; then warn "WALLET_ADDRESS: a testnet address"
     else bad "WALLET_ADDRESS: not a main address (95 characters, 4...)"; fi
     if [[ -e $root$env ]]; then
-        [[ $(kv "$env" WALLET_PORT) == "${port:-x}" || ( -z $(kv "$env" WALLET_PORT) && $port == 18182 ) ]] \
-            && ok ".env's WALLET_PORT is the wallet's port (its healthcheck)" || bad ".env's WALLET_PORT isn't rpc-bind-port ($port): the wallet never shows healthy, ccs-bash never starts"
+        # (none: the compose's default, 18082)
+        v=$(kv "$env" WALLET_PORT)
+        [[ ${v:-18082} == "${port:-x}" ]] \
+            && ok ".env's WALLET_PORT is the wallet's port (its healthcheck)" || bad ".env's WALLET_PORT (${v:-unset: 18082}) isn't rpc-bind-port ($port): the wallet never shows healthy, ccs-bash never starts"
         for v in CCS_BASH_IMAGE CCS_FRONT_IMAGE WALLET_IMAGE; do [[ $(kv "$env" $v) =~ ^sha256:[0-9a-f]{64}$ ]] || bad ".env's $v: not an image ID (sha256:...)"; done
         if [[ $hostmode ]]; then
             [[ $host == 127.0.0.1 || $host == localhost ]] && ok "RPC_URL on 127.0.0.1 (compose.host.yml)" || bad "RPC_URL: with compose.host.yml, http://127.0.0.1:$port/json_rpc"

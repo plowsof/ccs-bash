@@ -9,7 +9,8 @@ nginx stays on the host. Without Docker, the host's sshd and a timer do it ([bel
 **The push account:**
 
 ```
-useradd --system --create-home --shell /bin/sh ccs-data   # no password; only the forced command runs
+install -d -m 755 /var/empty                              # its home: root's and empty (bash, git and curl read config from a home)
+useradd --system --no-create-home --home-dir /var/empty --shell /bin/sh ccs-data   # no password; only the forced command runs (an existing one: usermod -d /var/empty ccs-data)
 install -d -o ccs-data -m 755 /var/lib/ccs-data           # ideally its own small filesystem or a quota
 install -d -m 755 /etc/ssh/authorized_keys                # root-owned, outside the account's home
 # /etc/ssh/authorized_keys/ccs-data (root, 644):
@@ -197,8 +198,10 @@ what it is sent; it knows what a page may be. Each push, one at a time, it
    why: `journalctl -t ccs-gate` (and `/var/log/ccs-gate.log` if created), and IRC. The one
    exception: a proposal page the push didn't send, whose proposal is in neither commit just
    fetched (not the last fetch), and with nothing else wrong, is a proposal taken out of the
-   repository. The push can't delete, so the gate takes it, and its `images/<name>/`, off the live
-   site, and the push is good;
+   repository (its `.md` in neither commit's tree). The push can't delete, so the gate takes it,
+   and its `images/<name>/`, off the live site, and the push is good; but never more than 3 at
+   once (`CCS_GATE_REMOVE`): more (a branch emptied or rewritten, a forge answering wrong) stay
+   held back, and IRC is told;
 6. refuses the whole push without its pinned list, `design.sha256`, the design, `markdown.awk`,
    `proposals.conf`, the QR reader's libraries (libzbar, libpng, libturbojpeg, giflib),
    `qrencode`, `python3` or `git`, or for a file name with a control character in it.
@@ -244,7 +247,8 @@ unzip -q ccs-front-hugo-$v.zip -d /etc/ccs-gate/design/$v
 (cd /etc/ccs-gate/design/$v && find . -type f ! -name '*.html' -exec sha256sum {} +) > /etc/ccs-gate/design.sha256
 ```
 
-A new design: unpack it beside the old one and **add** (`>>`) its lines to `design.sha256` before
+Each design in `design/` named as its release (`v0.1.25`): the gate takes no other folder there
+(a build of the design's left beside them is no design). A new design: unpack it beside the old one and **add** (`>>`) its lines to `design.sha256` before
 the backend switches; the old can go once the new is live. A changed `markdown.awk`: install it
 beside the old as `markdown-<release>.awk` first. Empty `/var/lib/ccs-data` before the first push
 if anything is in it (the gate trusts what is live).
