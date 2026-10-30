@@ -11,7 +11,7 @@ wallet's. [The design](design.md) says why it is built this way.
 
 ## Backend (no inbound connections)
 
-Root's `ccs-bash-update` ([handover](handover.md#9-the-update)) runs one update, starting each step
+Root's `ccs-bash-update` ([setup](setup.md#the-update-script-the-host-setup)) runs one update, starting each step
 as its own user: `git pull` as `ccs-git`, ccs-bash as `ccs`, ccs-front-bash as `ccs-front`, the push
 and the watcher as `ccs`.
 

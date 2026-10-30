@@ -140,7 +140,7 @@ In Docker the key is in `/etc/ccs/push/` (`ccs-push`'s), and the host key is the
 its port: `[<web server>]:2223 ssh-ed25519 AAAA...`, from its `/etc/ccs-gate/ssh/ssh_host_ed25519_key.pub`
 ([the web server in Docker](docker.md#the-web-server-in-docker)).
 
-[The handover's update script](handover.md#9-the-update) pushes (`--checksum`: only the files whose contents changed, as each run makes every file anew;
+[The update script](setup.md#the-update-script-the-host-setup) pushes (`--checksum`: only the files whose contents changed, as each run makes every file anew;
 `--delay-updates`: swapped in once all have arrived), with `-p 22` in full, as the backend's `ssh_config` may default to another port
 (a push that hangs is the sign). The web server needs 22 open to the backend and 80/443 to
 everyone, in its firewall *and* a cloud provider's (an Oracle security list, an AWS security group).

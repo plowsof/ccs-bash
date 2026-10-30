@@ -3,7 +3,7 @@
 <p align="center"><img src="docker-design.svg" width="900" alt="The backend in Docker: pull, ccs-bash, front and backup, push and watch take turns through the run folder, each in its own container as its own user with its own folders and secret; ccs-bash and the wallet alone share an internal network; front has none"></p>
 
 [`contrib/docker/backend/compose.yml`](../contrib/docker/backend/compose.yml) runs the backend's
-update ([the handover](handover.md#9-the-update), step 9), and ccs-watch, as one service a stage,
+update ([the host setup's script](setup.md#the-update-script-the-host-setup)), and ccs-watch, as one service a stage,
 and monero-wallet-rpc, instead of the host's loop ([setup](setup.md) steps 1 and 4-5). The host
 keeps its folders and config (setup steps 2-3), so either one can run them, never both. The
 testnet runs it ([the testnet](testnet.md)).
@@ -146,8 +146,8 @@ run at once and prints it; `ccs status`, `ccs log` read the journal. `journalctl
 follows every stage; `docker compose logs -f <service>` one. A stage that fails says so in its
 `status`, and the run's result goes to the watch (three failed runs alert).
 
-- **Upgrading:** the new attested IDs in `.env`, between runs (`ccs status`: no run going),
-  `docker compose up -d`. A new monero: its `hashes.txt` (signed) and the version and sum in
+- **Upgrading:** step by step in [the handover](handover.md#deploying-a-set-the-docker-setup): the
+  new attested IDs in `.env`, between runs (`ccs status`: no run going), `docker compose up -d`. A new monero: its `hashes.txt` (signed) and the version and sum in
   `wallet-rpc/Dockerfile`, then build it.
 - **Pausing** (to edit the state by hand, [troubleshooting](troubleshooting.md#doing-things-by-hand)):
   `docker compose stop pull`, then wait for `ccs status` to show no run going; after, `docker
@@ -242,4 +242,5 @@ until the switch):
    ports back to 22, `docker compose down`.
 
 **Upgrading:** the new attested ID in `.env`, `docker compose --profile init run --rm -T init`
-(passwd and group again; the host key stays), `docker compose up -d`.
+(passwd and group again; the host key stays), `docker compose up -d`; step by step, with a new
+design: [the handover](handover.md#deploying-a-set-the-docker-setup).

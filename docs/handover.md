@@ -10,6 +10,12 @@ address and `/projects`. **Goes:** PHP, MySQL, Jekyll, Ruby; the web server runs
 [the design](design.md). The testnet CCS, https://ccs.monerodevs.org, is this setup, running
 ([where it differs](testnet.md)).
 
+**The setup is Docker** on each machine: the backend compose and the web server compose
+([docker](docker.md)), each stage its own container, user and secret, every image pinned by its
+attested ID. That is what production runs, and what these steps build. (The host setup without
+Docker, [setup](setup.md), does the same with systemd and root's script; it is kept for those who
+can't run Docker, not recommended.)
+
 **Only looking after it?** `ccs` on the backend does what ccs-back's artisan commands did, by
 the same names (`ccs proposal:process`, `ccs wallet:notify`...), and `ccs status`, `ccs log`:
 [troubleshooting, Looking](troubleshooting.md#looking). **Setting it up:** the files to fill
@@ -44,9 +50,8 @@ destroyed could attest anything).
 
 ## 1. monerod and monero-wallet-rpc (the backend)
 
-monerod (local, or one you trust) and monero-wallet-rpc with the CCS wallet, view-only, its own
-user: on 127.0.0.1 ([setup](setup.md) step 1), or in Docker on a network only ccs-bash is on
-([docker](docker.md)).
+monerod (local, or one you trust) and monero-wallet-rpc with the CCS wallet, view-only: the
+compose's `wallet-rpc`, on a network only ccs-bash is on ([docker](docker.md)).
 
 **Moving the wallet from ccs-back:** copy its two files as they are: `<name>.keys` (the keys,
 encrypted with the wallet's password) and `<name>` (the cache: every transfer and subaddress so
@@ -101,7 +106,8 @@ highest), and counts nothing paid to a subaddress before it was handed out, not 
 
 ## 2. ccs-bash and its state (the backend)
 
-The users, folders, config, proposals checkout and `ccs-bash-run`: [setup](setup.md) steps 2–3.
+The users, folders, config, proposals checkout and the images: [docker](docker.md), with
+[setup](setup.md) step 2's users, folders and `ccs.conf`.
 
 From ccs-back, only the `projects` table moves: which proposal has which subaddress, the one thing
 nothing can make again. The donations come from the wallet (step 1); ccs-back's `deposits` table
@@ -190,18 +196,20 @@ source-text shared by luigi1111 here
 
 ## 5. ccs-front-bash (the backend)
 
-`ccs-front-run`, from its pinned image, with the list as its fifth argument: ccs-front-bash's
-[setup](https://github.com/plowsof/ccs-front-bash/blob/master/docs/setup.md), steps 2 and 5. It
-makes `/var/lib/ccs/www/site` each run.
+The compose's `front` ([docker](docker.md)), from ccs-front-bash's pinned image, with the list
+(ccs-front-bash's [setup](https://github.com/plowsof/ccs-front-bash/blob/master/docs/setup.md),
+step 5). It makes `/var/lib/ccs/www/site` each run.
 
 ## 6. The web server
 
 [Two machines](two-machines.md): the write-only push account, nginx with HTTPS and its headers,
-and the gate (its design, `markdown.awk`, the list's files, `allowed`, `proposals.conf`).
+and the gate's files (its design, `markdown.awk`, the list's files, `allowed`, `proposals.conf`);
+then the gate in Docker ([the web server in Docker](docker.md#the-web-server-in-docker)).
 
 ## 7. The backup machine
 
-[Setup](setup.md#backing-up-the-state): an account that can only add copies of the state.
+[Setup](setup.md#backing-up-the-state): an account that can only add copies of the state; its
+receiver in Docker, the web server compose's `backup` profile ([docker](docker.md#the-web-server-in-docker)).
 
 ## 8. The alerts
 
@@ -212,98 +220,18 @@ web server (a held-back page; no push for 15 minutes): both post one line to the
 
 ## 9. The update
 
-One run of everything, every 2 minutes and on each new donation ([setup](setup.md) step 5, with
-its log rotation from step 4), as root (it only starts each step as that step's own user):
+The backend compose ([docker](docker.md)) runs one update every 2 minutes and on each new
+donation, each stage its own container and user: the proposals pulled, ccs-bash, the backup,
+ccs-front-bash, the push to the web server's gate, ccs-watch (and its checks between pushes, at
+random times). With the IDs and the web server and backup machine in `.env`:
 
 ```
-#!/bin/sh
-# /usr/local/bin/ccs-bash-update (chmod 755)
-L=/var/log/ccs-bash.log W=/opt/ccs-bash/contrib/ccs-watch failed=''
-# where each run starts (ccs log and ccs status read the runs by it)
-echo "== run $(date -u '+%F %T')" >> $L
-
-# the proposals; GitLab down: give up, not a failed run (the last checkout stays); pull-ok: when
-# one last went through (ccs-watch --run alerts when that's FORGE_HOURS ago)
-timeout -k 5 40 runuser -u ccs-git -- env HOME=/ git -C /var/lib/ccs/proposals pull -q --ff-only \
-    && touch /var/lib/ccs/pull-ok
-
-# ccs-bash: totals, addresses, the JSON
-ccs-bash-run >> $L 2>&1 || failed="ccs-bash"
-
-# the state, to the backup machine when it changed (it keeps every version), and deposits.csv
-# (it keeps one copy, which only grows); read as ccs, whose files they are: root never opens a
-# file another account controls (it could be a link to any file)
-# (and each retired wallet's file, state like proposals.csv: "Retiring a wallet")
-for S in /var/lib/ccs/state/proposals.csv /var/lib/ccs/state/deposits.csv /var/lib/ccs/state/retired/*.csv; do
-[ -f "$S" ] || continue
-sent=/var/lib/ccs/backup-sent-${S##*/}; [ "$S" = /var/lib/ccs/state/proposals.csv ] && sent=/var/lib/ccs/backup-sent
-case $S in */retired/*) sent=/var/lib/ccs/backup-sent-retired-${S##*/} ;; esac
-# (deposits.csv: its deposits, not its first line, whose height changes every run)
-sum=$(runuser -u ccs -- sed '/^# final /d' "$S" | sha256sum | cut -c1-64)
-if [ "$sum" != "$(cat "$sent" 2>/dev/null)" ]; then
-    # a backup that doesn't go through is a failed run: three in a row tell IRC (the backup
-    # machine down, its folder full, a deposits.csv it refuses)
-    if runuser -u ccs -- cat "$S" | timeout -k 5 30 ssh -T -i /root/.ssh/ccs-backup_ed25519 -o BatchMode=yes \
-        -o IdentitiesOnly=yes -o ConnectTimeout=15 ccs-backup@<backup machine> >> $L 2>&1; then
-        echo "$sum" > "$sent"
-    else
-        failed="${failed:+$failed, }the backup (${S##*/})"
-    fi
-fi
-done
-
-# ccs-front-bash makes the site; it goes to the web server, which must then serve exactly that.
-ccs-front-run >> $L 2>&1 || failed="${failed:+$failed, }ccs-front-bash"
-# Pushed every run, the last good site if none was made: the push is this machine's heartbeat,
-# so the web server's alarm only sounds when this machine can't reach it (its own alerts cover
-# a failed run). The push exits 7 when the gate held a file back but the rest went live: a failed
-# run, and the live pages are still checked (a web server that lies must not hide behind it).
-# The push and pushed/, the copy of what went that ccs-watch compares with, under one lock: a
-# check on ccs-watch.timer (below) never sees one without the other
-exec 9> /run/ccs-watch.lock; flock -w 600 9
-rc=0
-timeout -k 5 120 runuser -u ccs -- rsync -a --checksum --delay-updates \
-    -e "ssh -p 22 -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15" \
-    /var/lib/ccs/www/site/ ccs-data@<web server>: >> $L 2>&1 || rc=$?
-[ "$rc" = 7 ] && failed="${failed:+$failed, }the push (the web server held a file back)"
-[ "$rc" = 0 ] || [ "$rc" = 7 ] || failed="${failed:+$failed, }the push"
-if [ "$rc" = 0 ] || [ "$rc" = 7 ]; then
-    runuser -u ccs -- rsync -a --delete /var/lib/ccs/www/site/ /var/lib/ccs/pushed/
-    runuser -u ccs -- $W https://ccs.getmonero.org /var/lib/ccs/pushed >> $L 2>&1
-fi
-exec 9>&-
-
-# how the run went: three failed runs in a row alert, so a stopped backend can't go unnoticed
-runuser -u ccs -- $W --run "${failed:-ok}" >> $L 2>&1
+cd /opt/ccs-bash/contrib/docker/backend && docker compose up -d
+ccs status                      # each service healthy, the last run: every stage ok, the push pushed
+ccs config:check                # nothing failing
 ```
 
-`-p 22` is the web server's ssh port, given in full in case the backend's `ssh_config` defaults to
-another.
-
-ccs-watch also runs between pushes, at random times, so a web server can't serve its own pages
-only once the check after a push is over (`ccs-watch` itself puts its asks in no fixed order):
-
-```
-# /etc/systemd/system/ccs-watch.service
-[Unit]
-Description=ccs-watch between pushes
-ConditionPathExists=/run/ccs-watch.lock
-ConditionPathExists=/var/lib/ccs/pushed/index.html
-[Service]
-Type=oneshot
-User=ccs
-ExecStart=/usr/bin/flock -s -w 600 /run/ccs-watch.lock /opt/ccs-bash/contrib/ccs-watch https://ccs.getmonero.org /var/lib/ccs/pushed
-
-# /etc/systemd/system/ccs-watch.timer
-[Timer]
-OnBootSec=10min
-OnUnitActiveSec=5min
-RandomizedDelaySec=8min
-[Install]
-WantedBy=timers.target
-```
-
-`systemctl enable --now ccs-watch.timer`; its log is `journalctl -u ccs-watch`.
+(The host setup, without Docker, runs the same as one script: [setup](setup.md#the-update-script-the-host-setup).)
 
 ## 10. The cutover
 
@@ -514,43 +442,102 @@ label (the run stops on a subaddress whose label names another proposal), and in
 
 ## Upgrading
 
-Images are built on the backend from the attested commit (the same commit gives the same ID, so it
+A release is published by its repository (a tag: the release workflow builds it, checks it builds
+the same twice and publishes the image or zip with its ID or sha256: [releasing](image.md#releases));
+a deploy puts a set of three on the machines. Nothing changes on a machine until you deploy.
+
+Images are built on the machine from the attested commit (the same commit gives the same ID, so it
 can be checked); the design comes as its zip, checked by sha256. ccs-bash's image holds
 `ccs-back.sh`, `lib/`, the compose's stage runner (`step`) and ccs-watch; the gate's image the gate
 and `ccs-backup-receive` (ccs-front-bash's: its own). What runs on the machines from the checkout
-(the host setup's scripts, `ccs`, the compose files, the front's `step`, `container/build.sh`)
-isn't in an image, so another commit with the same image files would build the same ID. They are trusted because they come from the commit the signers
-attested: check that commit out, never only the tag. For each release:
+(`ccs`, the compose files, the front's `step`, `container/build.sh`) isn't in an image, so another
+commit with the same image files would build the same ID. They are trusted because they come from
+the commit the signers attested: check that commit out, never only the tag.
 
-1. **Attested.** From a ccs-sigs checkout on the backend, counting only signers you trust (their
-   fingerprints in a file of yours, not in ccs-sigs, which anyone can send keys to):
+### Deploying a set (the Docker setup)
+
+The set is the three releases together, as [the releases](#the-releases) and ccs-sigs name it, e.g.
+`ccs-bash-v0.2.34+ccs-front-bash-v0.1.21+ccs-front-hugo-v0.1.25`. Below, `SET` is that name, and
+`IDB`, `IDG`, `IDF` and `ZIP` are what `verify` prints for it: ccs-bash's image ID, the gate's,
+ccs-front-bash's, and the design zip's sha256. Only the parts that changed need doing (a new
+design alone: the design lines of steps 3 to 5). Each machine: as root, a backup folder first
+(`B=/root/ccs/pre-<SET>; install -d -m 700 "$B"`).
+
+1. **Attested** (each machine checks it itself, with its own `trusted-signers`: a taken-over
+   backend would bring both the release and the sums it is compared with):
    ```
-   git clone -q https://github.com/plowsof/ccs-sigs /opt/ccs-sigs      # once; then: git -C /opt/ccs-sigs pull -q
+   git clone -q https://github.com/plowsof/ccs-sigs /opt/ccs-sigs        # once; then: git -C /opt/ccs-sigs pull -q --ff-only
    cd /opt/ccs-bash && env CCS_SIGS_REPO=/opt/ccs-sigs TRUSTED_KEYS=/etc/ccs/trusted-signers \
-       contrib/release/verify ccs-bash-v0.2.26
+       contrib/release/verify "$SET"
    ```
-   It prints the image ID (or zip sha256), how many signers agree (two by default;
-   `--min-signers 1` relaxes it), and the commit they all name. Too few: wait, or attest it
-   yourself ([contrib/release](../contrib/release/README.md)).
-2. **Built from that commit:** `git -C /opt/ccs-bash fetch --tags` and
-   `checkout <the commit verify printed>` (not the tag: a tag can move, and the build runs as root);
-   check `git describe --tags` is the release. Then `container/build.sh ccs-bash:v0.2.26`
-   ([the pinned image](image.md)); the same for ccs-front-bash. (`contrib/release/build` doesn't keep the image: it is for attesting.) Or build
-   elsewhere and `docker save … | ssh <backend> docker load`. The design: its zip, `sha256sum`.
-   A build that stops with `sources has files that are not in sources.lock`: a source an older
-   release needed is still in `container/sources/` (a download cache, not in git); move it aside.
-3. **Compared:** the image ID and the zip's sha256 must be the attested ones. Any other: stop.
-4. **Switched**, web server first, so its gate allows the new pages. Its admin checks the release
-   there, not against the backend (a taken-over backend would bring both the gate and the sums it
-   is compared with): `verify` as in step 1 with their own `trusted-signers`, on the web server or
-   their own machine; the gate (`contrib/ccs-receive`) and `markdown.awk` from a checkout of the
-   commits it prints, made there; the design's zip fetched there, its sha256 the attested one.
-   The same for `ccs-backup-receive` on the backup machine. A new design unpacked beside
-   the old in `/etc/ccs-gate/design/` with its lines added to `design.sha256`; a changed
-   `markdown.awk` beside the old as `/etc/ccs-gate/markdown-<release>.awk`. Then the new image IDs in
-   `ccs-bash-run` and `ccs-front-run` (by ID, `--pull never`, so no cleanup can remove them), a
-   stopped container on each (`docker create --name ccs-bash-keep --network none <ID>`, the old one
-   renamed: what to go back to), and the design unzipped and swapped with
-   `/opt/ccs-front-hugo/public` between runs.
-5. **Watched:** the next run fills the site and ccs-watch confirms it; put the new set in
-   [the releases](#the-releases).
+   It prints each ID or sha256, how many signers agree (two by default; `--min-signers 1`
+   relaxes it) and the commits they name. Too few: wait, or attest it yourself
+   ([contrib/release](../contrib/release/README.md)).
+2. **Built from those commits and compared** (the loop keeps running). Not the tag: a tag can move,
+   and the build runs as root. A clone of its own, so the running checkout stays as it is:
+   ```
+   W=/root/ccs/src-ccs-bash; rm -rf "$W"; git clone -q https://github.com/plowsof/ccs-bash "$W"
+   git -C "$W" checkout -q <ccs-bash's commit>; git -C "$W" describe --tags     # the release
+   (cd "$W" && container/build.sh ccs-bash:<release>)                         # the backend
+   (cd "$W" && container/build.sh ccs-gate:<release> gate.Dockerfile)          # the web server's
+   docker image inspect ccs-bash:<release> --format '{{.Id}}'                  # must be IDB
+   ```
+   The same for ccs-front-bash (`/opt/ccs-front-bash`, its commit, `container/build.sh
+   ccs-front-bash:<release>`, must be IDF). Any other ID: stop. The gate's image is built on the
+   web server, or here and loaded there (`docker save ccs-gate:<release> | ssh <web server>
+   docker load`, its ID checked there). A build that stops with `sources has files that are not
+   in sources.lock`: a source an older release needed is still in `container/sources/` (a
+   download cache, not in git); move it aside.
+3. **The web server first**, so its gate allows the new pages (`/opt/ccs-bash` here is the web
+   server's own checkout, at ccs-bash's attested commit):
+   ```
+   D=/opt/ccs-bash/contrib/docker/web; cp -a "$D/.env" /etc/ccs-gate/design.sha256 "$B/"
+   # a new design: fetched here, its sha256 the attested one, unpacked beside the old ones
+   curl -fsSLo /tmp/d.zip https://github.com/plowsof/ccs-front-hugo/releases/download/<release>/ccs-front-hugo-<release>.zip
+   echo "$ZIP  /tmp/d.zip" | sha256sum -c -
+   unzip -q /tmp/d.zip -d /etc/ccs-gate/design/<release>
+   (cd /etc/ccs-gate/design/<release> && find . -type f ! -name '*.html' -exec sha256sum {} +) > /tmp/lines
+   flock /var/lib/ccs-gate/lock sh -c 'cat /tmp/lines >> /etc/ccs-gate/design.sha256'
+   # a new gate
+   git -C /opt/ccs-bash fetch -q --tags && git -C /opt/ccs-bash checkout -q <ccs-bash's commit>
+   sed -i "s|^CCS_GATE_IMAGE=.*|CCS_GATE_IMAGE=$IDG|" "$D/.env"
+   cd "$D" && docker compose config -q && docker compose --profile init run --rm -T init && docker compose up -d
+   docker compose ps                                                           # healthy
+   ```
+   A changed `markdown.awk` beside the old as `/etc/ccs-gate/markdown-<release>.awk`. The old
+   designs stay: the gate takes a page of any of them, so the backend can switch later. The
+   backup machine: its compose the same way (`--profile backup up -d backup`).
+4. **The backend, prepared** (the loop keeps running): a stopped container on each new image, so
+   no cleanup removes it (`docker create --name ccs-bash-keep-<release> --network none "$IDB"`, the
+   same for ccs-front-bash), and the design unpacked beside the one in use:
+   ```
+   curl -fsSLo /tmp/d.zip …; echo "$ZIP  /tmp/d.zip" | sha256sum -c -
+   rm -rf /opt/ccs-front-hugo/public.new && unzip -q /tmp/d.zip -d /opt/ccs-front-hugo/public.new
+   chmod -R u=rwX,go=rX /opt/ccs-front-hugo/public.new
+   ```
+5. **The backend, switched between runs:** wait until a run has pushed (`ccs status`: no run
+   going; or `/var/lib/ccs/run/push/done` changes), then at once:
+   ```
+   D=/opt/ccs-bash/contrib/docker/backend; cp -a "$D/.env" /opt/ccs-front-hugo/VERSION "$B/"
+   git -C /opt/ccs-bash rev-parse HEAD > "$B/commit"
+   git -C /opt/ccs-bash fetch -q --tags && git -C /opt/ccs-bash checkout -q <ccs-bash's commit>
+   sed -i -e "s|^CCS_BASH_IMAGE=.*|CCS_BASH_IMAGE=$IDB|" -e "s|^CCS_FRONT_IMAGE=.*|CCS_FRONT_IMAGE=$IDF|" "$D/.env"
+   mv /opt/ccs-front-hugo/public /opt/ccs-front-hugo/public.<old release>
+   mv /opt/ccs-front-hugo/public.new /opt/ccs-front-hugo/public
+   echo "<release> $ZIP" > /opt/ccs-front-hugo/VERSION
+   cd "$D" && docker compose config -q && docker compose up -d
+   ```
+   (`front` mounts `/opt/ccs-front-hugo`, so the renamed `public` is seen; nothing else to
+   restart.) A design and a ccs-front-bash that need each other (a new `{{slot}}`) switch
+   together, as here; the gate of step 3 must already know the slot.
+6. **Watched:** the next run, every stage `ok` and the push `pushed` (`ccs status`), ccs-watch's
+   check after it; `ccs config:check` with nothing failing (it says when an image isn't in an
+   attestation). Then the set in [the releases](#the-releases), and the ccs-sigs fingerprints you
+   now trust in `trusted-signers` (on each machine).
+7. **Going back:** the backend's `.env` and checkout from `$B` (`git checkout $(cat $B/commit)`),
+   the old `public` back in place, `docker compose up -d` between runs; the web server's `.env`
+   from `$B`, then init and `up -d` (its `design.sha256` can keep the new lines). The old images
+   are still there: their keep containers.
+
+The host setup (no Docker): the same, but the new IDs go in `ccs-bash-run` and `ccs-front-run`
+(by ID, `--pull never`), and the switch is made with `systemctl stop ccs-bash` between runs.
