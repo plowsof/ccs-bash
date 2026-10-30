@@ -40,7 +40,7 @@ new set replaces the row (earlier sets: this file's history, and ccs-sigs).
 
 | Set | ccs-bash | ccs-front-bash | ccs-front-hugo | Running on |
 |---|---|---|---|---|
-| 2026-10-30 | v0.2.35 | v0.1.21 | v0.1.25 | [ccs.monerodevs.org](https://ccs.monerodevs.org), in mirror mode: the backend compose (without `compose.host.yml`) and the web server compose, each machine verifying with its own `trusted-signers` |
+| 2026-10-30 | v0.2.36 | v0.1.21 | v0.1.25 | [ccs.monerodevs.org](https://ccs.monerodevs.org), in mirror mode: the backend compose (without `compose.host.yml`) and the web server compose, each machine verifying with its own `trusted-signers` |
 
 Each is reproducible, and attested in [ccs-sigs](https://github.com/plowsof/ccs-sigs) by those who
 rebuilt it: on the testnet so far by one throwaway key a set (one person; the CCS's should be two
