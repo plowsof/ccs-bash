@@ -110,7 +110,7 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
 
 ### Push, watcher, backup
 
-- The push: `rsync --delay-updates` as `ccs` to the web server's key, which runs only the gate.
+- The push: `rsync --checksum --delay-updates` as `ccs` to the web server's key, which runs only the gate.
 - [`contrib/ccs-watch`](../contrib/ccs-watch), as `ccs`: fetches the donation pages, the files
   they use (the stylesheets' `url()`s too), `WATCH_SAMPLE` other pages and `/projects`, as one of
   three browsers asks (`Sec-Fetch-*` by what is fetched, under `/`, `/dark/` or `/light/`, through
