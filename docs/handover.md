@@ -216,7 +216,8 @@ receiver in Docker, the web server compose's `backup` profile ([docker](docker.m
 
 ccs-watch on the backend (the live pages are what was pushed; three failed runs), the gate on the
 web server (a held-back page; no push for 15 minutes): both post one line to the IRC bot's URL
-([two machines](two-machines.md#watching-the-web-server-the-backend-raises-the-alarm)).
+([two machines](two-machines.md#watching-the-web-server-the-backend-raises-the-alarm); every
+line and what to do: [troubleshooting](troubleshooting.md#what-irc-says)).
 `ccs-watch --test https://ccs.getmonero.org` sends one message to check it.
 
 ## 9. The update
