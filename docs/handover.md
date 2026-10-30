@@ -40,7 +40,7 @@ new set replaces the row (earlier sets: this file's history, and ccs-sigs).
 
 | Set | ccs-bash | ccs-front-bash | ccs-front-hugo | Running on |
 |---|---|---|---|---|
-| 2026-10-30 | v0.2.33 | v0.1.21 | v0.1.25 | [ccs.monerodevs.org](https://ccs.monerodevs.org), in mirror mode: the backend compose and the web server compose (the gate's image: master's, with `{{funding_date}}`, until the next release) |
+| 2026-10-30 | v0.2.34 | v0.1.21 | v0.1.25 | [ccs.monerodevs.org](https://ccs.monerodevs.org), in mirror mode: the backend compose and the web server compose (the gate's image: v0.2.34's) |
 
 Each is reproducible, and attested in [ccs-sigs](https://github.com/plowsof/ccs-sigs) by those who
 rebuilt it: on the testnet so far by one throwaway key a set (one person; the CCS's should be two
@@ -52,6 +52,53 @@ destroyed could attest anything).
 
 monerod (local, or one you trust) and monero-wallet-rpc with the CCS wallet, view-only: the
 compose's `wallet-rpc`, on a network only ccs-bash is on ([docker](docker.md)).
+
+**monerod.** On the backend itself, or another machine you run: the wallet asks it for every
+block, so it must be one you trust (a node that lies can hide donations, not invent spendable
+ones). The compose expects it at `daemon-address` in `wallet-rpc.conf`, reached from the
+wallet's container over its `monerod` network, which goes out like any container's. So monerod
+must listen where a container can reach it, **not on 127.0.0.1 only**: inside a container,
+127.0.0.1 is the container itself.
+
+- **Its restricted RPC for the wallet** (`--rpc-restricted-bind-ip`, `--rpc-restricted-bind-port
+  18089`): a view-only wallet syncs from it as from any public node, and it can't stop, ban or
+  reconfigure monerod. Keep the unrestricted RPC on 127.0.0.1, for you.
+- **On the backend itself:** the containers reach the host as `host.docker.internal` (the
+  compose maps it to the host's bridge address, `host-gateway`), so
+  `daemon-address=host.docker.internal:18089`, with monerod's restricted RPC on `0.0.0.0` (or the
+  bridge's address, `172.17.0.1`, when 18089 shouldn't be public). ufw's default denies the
+  containers too: `ufw allow from 172.16.0.0/12 to any port 18089 proto tcp`.
+- **On another machine:** `daemon-address=<it>:18089`, its firewall open to the backend.
+- A firewall's rate limits on 18089 (a public node's flood rules) count the wallet's container
+  as any client: a few connections a sync, well under them, but a flood that trips a global
+  limit slows the wallet too.
+
+`ccs config:check` says when `daemon-address` is one the wallet's container can't reach. The same
+goes for ccs-watch's proxies (`WATCH_PROXY`, [the alerts](#8-the-alerts)): Tor on the backend
+listens on the bridge's address, for the compose's networks only, and starts after Docker (the
+address exists once Docker does):
+
+```
+# /etc/tor/torrc
+SocksPort 127.0.0.1:9050
+SocksPort 172.17.0.1:9050
+SocksPolicy accept 127.0.0.0/8
+SocksPolicy accept 172.16.0.0/12
+SocksPolicy reject *
+# systemctl edit tor@default: [Unit] After=docker.service; then systemctl reload tor@default
+ufw allow from 172.16.0.0/12 to any port 9050 proto tcp
+```
+
+and `WATCH_PROXY=socks5h://host.docker.internal:9050` (an `ssh -D` clearnet proxy the same way:
+`-D 172.17.0.1:1080`; a `SocksPolicy` covers every `SocksPort`, hence 127.0.0.1 accepted too).
+The bot is on a third machine, reached by its address; a bot on this one by its public HTTPS
+address (as the web server reaches it), not 127.0.0.1.
+
+[`compose.host.yml`](../contrib/docker/backend/compose.host.yml) (the wallet, ccs-bash and the
+watch on the host's network, as the testnet has it) is for a host where these can't move off
+127.0.0.1. It costs more than the wallet's port: ccs-bash and the watch, which read what the forge,
+a mirror's feed and the web server send, then reach everything listening on the host's 127.0.0.1
+([docker](docker.md#a-host-whose-monerod-is-on-its-own-127001)).
 
 **Moving the wallet from ccs-back:** copy its two files as they are: `<name>.keys` (the keys,
 encrypted with the wallet's password) and `<name>` (the cache: every transfer and subaddress so
@@ -465,16 +512,21 @@ ccs-front-bash's, and the design zip's sha256. Only the parts that changed need 
 design alone: the design lines of steps 3 to 5). Each machine: as root, a backup folder first
 (`B=/root/ccs/pre-<SET>; install -d -m 700 "$B"`).
 
-1. **Attested** (each machine checks it itself, with its own `trusted-signers`: a taken-over
-   backend would bring both the release and the sums it is compared with):
+1. **Attested** (each machine checks it itself, the web server too, with its own ccs-sigs and
+   `trusted-signers`: a taken-over backend would bring both the release and the sums it is
+   compared with). First the fingerprints of the people you trust to attest this set, and only
+   theirs, in `trusted-signers` (a key whose secret wasn't really destroyed could attest anything
+   later, so an old throwaway key goes once its set is replaced):
    ```
-   git clone -q https://github.com/plowsof/ccs-sigs /opt/ccs-sigs        # once; then: git -C /opt/ccs-sigs pull -q --ff-only
+   git clone -q https://github.com/plowsof/ccs-sigs /opt/ccs-sigs        # once; then, every time:
+   git -C /opt/ccs-sigs pull -q --ff-only
    cd /opt/ccs-bash && env CCS_SIGS_REPO=/opt/ccs-sigs TRUSTED_KEYS=/etc/ccs/trusted-signers \
-       contrib/release/verify "$SET"
+       contrib/release/verify "$SET"                                   # the web server: verify ccs-gate-vX too
    ```
-   It prints each ID or sha256, how many signers agree (two by default; `--min-signers 1`
-   relaxes it) and the commits they name. Too few: wait, or attest it yourself
-   ([contrib/release](../contrib/release/README.md)).
+   It prints each ID or sha256, how many signers agree (two by default) and the commits they
+   name. Too few: wait, or attest it yourself ([contrib/release](../contrib/release/README.md)).
+   `--min-signers 1` is for the testnet only: with one signer, the one person who wrote a release
+   also vouches for it, for the backend and for the gate that checks it alike.
 2. **Built from those commits and compared** (the loop keeps running). Not the tag: a tag can move,
    and the build runs as root. A clone of its own, so the running checkout stays as it is:
    ```
@@ -534,8 +586,8 @@ design alone: the design lines of steps 3 to 5). Each machine: as root, a backup
    together, as here; the gate of step 3 must already know the slot.
 6. **Watched:** the next run, every stage `ok` and the push `pushed` (`ccs status`), ccs-watch's
    check after it; `ccs config:check` with nothing failing (it says when an image isn't in an
-   attestation). Then the set in [the releases](#the-releases), and the ccs-sigs fingerprints you
-   now trust in `trusted-signers` (on each machine).
+   attestation). Then the set in [the releases](#the-releases), and the previous set's signers
+   out of `trusted-signers` (on each machine) unless they attested this one too.
 7. **Going back:** the backend's `.env` and checkout from `$B` (`git checkout $(cat $B/commit)`),
    the old `public` back in place, `docker compose up -d` between runs; the web server's `.env`
    from `$B`, then init and `up -d` (its `design.sha256` can keep the new lines). The old images

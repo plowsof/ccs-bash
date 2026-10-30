@@ -17,7 +17,7 @@ port() { python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)
 ccs_watch() {
     if [[ ${CCS_WATCH_IMAGE:-} ]]; then
         docker run --rm --network host --read-only --tmpfs /tmp -u "$(id -u):$(id -g)" -v "$tmp:$tmp" \
-            -e CCS_WATCH_STATE -e CCS_WATCH_PULL -e CCS_WATCH_FORGE -e CCS_WATCH_WAITS \
+            -e CCS_WATCH_STATE -e CCS_WATCH_PULL -e CCS_WATCH_FORGE -e CCS_WATCH_WAITS -e CCS_WATCH_SUMS \
             --entrypoint /opt/ccs-bash/contrib/ccs-watch "$CCS_WATCH_IMAGE" "$@"
     else
         "$here/../contrib/ccs-watch" "$@"
@@ -99,6 +99,12 @@ cp "$page" "$tmp/page.good"
 : > "$page"
 for _ in 1 2; do watch || true; done
 if [[ $(alerts) == 0 ]] && grep -q "could not fetch" "$tmp/log"; then ok "a page answering 200 with nothing, twice: no alert"; else cat "$tmp/log"; fail "an empty answer"; fi
+rm -f "$tmp/state"/answers-*
+# An answer over 16 MB (a web server filling the watcher's /tmp, which is memory): not kept, an
+# answer that isn't the page (three in a row alert, as a wrong status does)
+head -c 17000000 /dev/zero > "$page"
+watch || true
+if grep -q "could not fetch .*(HTTP with more than 16 MB)" "$tmp/log"; then ok "a page answering more than 16 MB: not kept, an answer that isn't the page"; else cat "$tmp/log"; fail "an answer over 16 MB"; fi
 rm -f "$tmp/state"/answers-*   # (the 404s below are counted from none)
 rm "$page"
 for _ in 1 2; do watch || true; done
@@ -163,6 +169,38 @@ for _ in 1 2; do
     watch || true; wait "$putback"
 done
 if [[ $(alerts) == "$base" ]]; then ok "changed for a moment on two runs: no alert"; else cat "$tmp/bot.txt"; fail "a moment's change"; fi
+
+# What the compose's watch compares with is a copy of what was pushed, which the push stage writes;
+# CCS_WATCH_SUMS holds the front's sums of that run's site (which the copy must be) and of the runs
+# since. A push landing during a check: the web server serving the newer push is serving what was
+# pushed, no sighting on two runs, no alert; serving neither push still alerts on the second run.
+# A copy that isn't the front's site (the push stage changed it): nothing compared, an alert.
+sums() { (cd "$1" && find . -type f -exec sha256sum {} +) > "$2"; }
+mkdir -p "$tmp/newer" && cp -r "$tmp/local/." "$tmp/newer/"
+sed -i 's/>home$/>home, pushed again/' "$tmp/newer/index.html" "$tmp/remote/index.html"
+sums "$tmp/local" "$tmp/sums-1"; sums "$tmp/newer" "$tmp/sums-2"
+cwatch() { CCS_WATCH_SUMS="$tmp/sums-1 $tmp/sums-2" watch; }
+rm -f "$tmp/state"/differs-* "$tmp/state"/alert-*; was=$base base=$(alerts)
+if cwatch && cwatch && [[ $(alerts) == "$base" ]] && ! grep -q 'differs' "$tmp/log"; then
+    ok "a push landing during a check: the newer push's page served, no sighting, no alert"
+else
+    cat "$tmp/log"; fail "a push landing during a check"
+fi
+echo "<p>$(addr 7 B)</p>" >> "$tmp/remote/index.html"
+cwatch || true; cwatch || true
+if [[ $(alerts) == $((base + 1)) ]]; then ok "a push landing during a check, but the page served is neither push's: an alert"; else cat "$tmp/log" "$tmp/bot.txt"; fail "neither push's page"; fi
+cp "$tmp/local/index.html" "$tmp/remote/index.html"; rm -f "$tmp/state"/differs-* "$tmp/state"/alert-*
+# the push stage taken over: it writes the web server's page into what was pushed, so they agree
+cp -r "$tmp/local" "$tmp/forged" && echo "<p>$(addr 7 B)</p>" >> "$tmp/forged/index.html" && cp "$tmp/forged/index.html" "$tmp/remote/index.html"
+n=$(alerts)
+if ! CCS_WATCH_STATE=$tmp/state CCS_WATCH_SUMS="$tmp/sums-1" ccs_watch "http://127.0.0.1:$web" "$tmp/forged" "$tmp/alert.conf" 2> "$tmp/log" \
+    && [[ $(alerts) == $((n + 1)) ]] && grep -qF "what was pushed isn't the site the front made (sums-1)" "$tmp/bot.txt"; then
+    ok "what was pushed changed to match the web server's page (the push stage taken over): an alert, nothing compared with it"
+else
+    cat "$tmp/log" "$tmp/bot.txt"; fail "a forged copy of what was pushed"
+fi
+cp "$tmp/local/index.html" "$tmp/remote/index.html"; rm -rf "$tmp/newer" "$tmp/forged" "$tmp/sums-1" "$tmp/sums-2"; rm -f "$tmp/state"/differs-* "$tmp/state"/alert-*
+head -n "$was" "$tmp/bot.txt" > "$tmp/bot.tmp" && mv "$tmp/bot.tmp" "$tmp/bot.txt"; base=$was   # (the cases after count from there)
 
 # The web server goes away while a changed page is being rechecked: nothing is known, no alert.
 sed -i "s/$(addr 1)/$(addr 7 B)/g" "$page"

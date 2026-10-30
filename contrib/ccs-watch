@@ -7,7 +7,12 @@
 # with LOCAL_SITE, what was last pushed. A difference means the web server serves something the
 # backend didn't make (a push skips a file whose size and time were kept: this doesn't): alert,
 # the second time it is seen within a day. Also a page never pushed (it must be the 404 page) and,
-# with the themes, the theme button's redirect.
+# with the themes, the theme button's redirect. CCS_WATCH_SUMS (the backend compose's): the sums
+# of the sites the front stage made ("sha256  ./path", sha256sum's), the first the one LOCAL_SITE
+# is, then those made since. LOCAL_SITE must be the first, or nothing is compared and it alerts:
+# the push stage, which writes what was pushed, also reads the web server's answers, so it mustn't
+# be what the web server is checked against. A file as a later one has it is what was pushed too
+# (a push landing during the check's minute of fetches changes the live site, not LOCAL_SITE).
 # CONF (default /etc/ccs/alert.conf, root-owned, not in any repository):
 #   ALERT_URL=https://bot.example/simple?channel=%23ccs   POSTed the message as plain text
 #                                                         (CptHook's simple module, ntfy, ...)
@@ -58,6 +63,14 @@ if [[ ${1:-} == --run ]]; then
     run_result=$2; set -- - /nonexistent "${3:-/etc/ccs/alert.conf}"
 fi
 site_url=${1:?SITE_URL} local_site=${2:?LOCAL_SITE} conf=${3:-/etc/ccs/alert.conf}
+read -ra sums <<<"${CCS_WATCH_SUMS:-}"
+# pushed FILE P: FILE is the site's P as it was pushed: as LOCAL_SITE has it, or as a site the
+# front made since has it (CCS_WATCH_SUMS)
+pushed() {
+    cmp -s "$1" "$local_site/$2" && return 0
+    ((${#sums[@]})) || return 1
+    grep -qxF "$(sha256sum < "$1" | cut -d' ' -f1)  ./$2" "${sums[@]}" 2> /dev/null
+}
 state=${CCS_WATCH_STATE:-/var/lib/ccs/state/watch}
 ALERT_URL='' WATCH_PROXY='' WATCH_THEMES='' SUBADDRESSES='' ALERT_PREFIX='' ALERT_TARGET='' ALERT_PASSWORD='' ALERT_PLAIN='' FORGE_HOURS=''
 WATCH_FIREFOX_ESR='' WATCH_FIREFOX='' WATCH_CHROME=''
@@ -147,15 +160,19 @@ fetch() {
                 -H 'Sec-Fetch-Dest: document' -H 'Sec-Fetch-Mode: navigate' -H "Sec-Fetch-Site: ${from[RANDOM % 3]}" -H 'Sec-Fetch-User: ?1' -H 'Priority: u=0, i') ;;
         esac
     fi
-    out=$(curl -sS --max-time 60 ${proxy:+--proxy "$proxy"} --compressed -A "$ua" -H "Accept-Language: $lang" \
+    # (16 MB at most, as received or once decompressed: the site's largest file is a few hundred
+    # KB, and a web server's endless or compressed answer would otherwise fill /tmp, which is memory;
+    # one over that is an answer, but not the page: 3, as a wrong status is)
+    out=$(curl -sS --max-time 60 --max-filesize "${WATCH_MAX_BYTES:-16777216}" ${proxy:+--proxy "$proxy"} --compressed -A "$ua" -H "Accept-Language: $lang" \
         -H "Accept-Encoding: $enc" "${kind[@]}" -o "$2" -w '%{http_code}\t%{redirect_url}' "$1" 2> /dev/null) || rc=$?
+    if ((rc == 63)); then code='with more than 16 MB' location=''; : > "$2"; return 3; fi
     if ((rc)); then code=000 location=''; else code=${out%%$'\t'*} location=${out#*$'\t'}; fi
     [[ $code == 200 && -s $2 ]] && return 0
     [[ $code != 000 ]] && return 3
     return 1
 }
 
-# differs URL LOCAL: 0 if the page still differs from LOCAL on two more whole fetches, 10s and 30s
+# differs URL P: 0 if the page still differs from P as pushed on two more whole fetches, 10s and 30s
 # later (a push may be landing), or a recheck isn't answered (a web server refusing the watcher's
 # second ask mustn't hide what the first saw; $tmp/page keeps the last differing answer); 1 only
 # if it matches again
@@ -164,7 +181,7 @@ differs() {
     for wait in ${CCS_WATCH_WAITS:-10 30}; do   # (tests make them shorter)
         sleep "$wait"
         fetch "$1" "$tmp/again" || continue
-        cmp -s "$tmp/again" "$2" && return 1
+        pushed "$tmp/again" "$2" && return 1
         cp "$tmp/again" "$tmp/page"
     done
     return 0
@@ -224,6 +241,14 @@ if [[ $test_only ]]; then
     if ! send "$ALERT_PREFIX test, please ignore @ $1"; then echo "could not send" >&2; exit 1; fi
     echo "sent"
     exit 0
+fi
+
+# what was pushed, as the front made it (CCS_WATCH_SUMS' first): else nothing is compared with it
+if ((${#sums[@]})); then
+    if [[ ! -r ${sums[0]} ]] || ! cmp -s <(cd "$local_site" && find . -type f -exec sha256sum {} + | sort) <(sort "${sums[0]}"); then
+        alert pushed "what was pushed isn't the site the front made (${sums[0]##*/}): the push stage changed it? Nothing compared with it (ccs log on the backend)"
+        exit 1
+    fi
 fi
 
 # the pages: the fixed ones, and every proposal page with a donation box
@@ -339,7 +364,7 @@ unpushed() {
     [[ $name ]] || name=proposals/$(printf '%04x%04x%04x' $RANDOM $RANDOM $RANDOM).html
     name=${prefixes[RANDOM % ${#prefixes[@]}]}$name
     rc=0; fetch "$(urlof "$name")" "$tmp/page" || rc=$?
-    if ((rc == 3)) && [[ $code == 404 ]] && cmp -s "$tmp/page" "$local_site/404.html"; then return; fi
+    if ((rc == 3)) && [[ $code == 404 ]] && pushed "$tmp/page" 404.html; then return; fi
     ((rc == 1)) && return   # nothing answered: nothing known
     bad=$((bad + 1))
     if ! sighted "$state/differs-unpushed"; then
@@ -389,8 +414,8 @@ for c in "${checks[@]}"; do
         continue
     fi
     rm -f "$other"
-    cmp -s "$tmp/page" "$local_site/$p" && continue
-    differs "$url" "$local_site/$p" || continue
+    pushed "$tmp/page" "$p" && continue
+    differs "$url" "$p" || continue
     # It differed on three fetches over 40s (or wasn't answered again). The second run within a
     # day that sees it alerts, runs that see the page right in between or not: no single moment,
     # push or glitch, raises an alarm, and neither does showing it only now and then hide it.

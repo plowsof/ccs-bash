@@ -24,7 +24,8 @@ rpc() {
             [[ -z ${TEST_REUSE_INDEX:-} ]] || n=1
             printf '%d %s\n' "$n" "$(jq -r '.label // empty' <<<"$2")" >> "$TEST_TMP/wallet-labels"
             printf '{"address_index": %d, "address": "%s"}\n' "$n" "$(fake_address "$n")" ;;
-        label_address)
+        label_address) # like the real one: only a subaddress the wallet has created
+            (($(jq -r '.index.minor' <<<"$2") < n)) || { echo "jq: error (at <stdin>:0): rpc label_address: address index is out of bound" >&2; return 1; }
             jq -r '"\(.index.minor) \(.label)"' <<<"$2" >> "$TEST_TMP/wallet-labels"; echo '{}' ;;
         get_address_index) # an address of this wallet's form ("8" and its index), created or not
             jq -r '.address' <<<"$2" | grep -qE '^8[0-9]{94}$' || { echo "jq: error (at <stdin>:0): rpc get_address_index: Address doesn't belong to the wallet" >&2; return 1; }
