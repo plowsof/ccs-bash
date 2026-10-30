@@ -713,6 +713,27 @@ if mirror7 $((had + 5)) && grep -q "^\"new-fund.md\",[^,]*,$((had + 5))," "$m7/s
 else
     echo "FAIL mirror: an address not created yet"; tail -n 3 "$m7/log"; cat "$m7/state/proposals.csv"; status=1
 fi
+# The feed writes "&" as "&amp;" (ccs.getmonero.org's does), the front matter as "&": the same
+# proposal. Two in the feed of one title, author and day: each given the one whose subaddress the
+# wallet labels with its file (an earlier mirror's labels), not neither.
+rm -rf "$m7" && mkdir -p "$m7/state" "$m7/out" "$m7/proposals" && : > "$m7/state/proposals.csv"
+fr() { printf -- '---\nlayout: fr\ntitle: %s\nauthor: %s\ndate: %s\namount: 10\nmilestones:\n  - name: Only\n    done:\n---\n' "$1" "$2" "$3"; }
+fr 'Tools & docs' ann '1 November 2026' > "$m7/proposals/amp.md"
+fr 'Series' sam '2 November 2026' > "$m7/proposals/s1.md"
+fr 'Series' sam '2 November 2026' > "$m7/proposals/s2.md"
+jq -n --arg a5 "$(printf '8%094d' 5)" --arg a6 "$(printf '8%094d' 6)" --arg a7 "$(printf '8%094d' 7)" '{data: [
+    {title: "Tools &amp; docs", author: "ann", date: "November 1, 2026", address: $a5, raised_amount: 0, contributions: 0, state: "FUNDING-REQUIRED"},
+    {title: "Series", author: "sam", date: "November 2, 2026", address: $a6, raised_amount: 0, contributions: 0, state: "FUNDING-REQUIRED"},
+    {title: "Series", author: "sam", date: "November 2, 2026", address: $a7, raised_amount: 0, contributions: 0, state: "FUNDING-REQUIRED"}]}' > "$m7/feed.json"
+sed "s|$TEST_TMP/state|$m7/state|; s|$TEST_TMP/out|$m7/out|; s|^PROPOSALS_DIR=.*|PROPOSALS_DIR=$m7/proposals|" "$TEST_TMP/ccs.conf" > "$m7/ccs.conf"
+printf 'MIRROR_URL=file://%s/feed.json\n' "$m7" >> "$m7/ccs.conf" && chmod 444 "$m7/ccs.conf"
+echo $((had > 8 ? had : 8)) > "$TEST_TMP/wallet-count"; printf '6 s2.md\n7 s1.md\n' >> "$TEST_TMP/wallet-labels"
+if bash -c 'source "$1/../ccs-back.sh" && source "$1/stubs.sh" && main "$2"' _ "$here" "$m7/ccs.conf" 2> "$m7/log" \
+    && grep -q '^"amp.md",[^,]*,5,' "$m7/state/proposals.csv" && grep -q '^"s1.md",[^,]*,7,' "$m7/state/proposals.csv" && grep -q '^"s2.md",[^,]*,6,' "$m7/state/proposals.csv"; then
+    echo "ok   mirror: a title the feed escapes (&amp;) matched; two of one title, author and day told apart by the wallet's labels"
+else
+    echo "FAIL mirror: escaped titles, same-day twins"; tail -n 3 "$m7/log"; cat "$m7/state/proposals.csv"; status=1
+fi
 echo "$had" > "$TEST_TMP/wallet-count"; mv "$TEST_TMP/wallet-labels.mirror" "$TEST_TMP/wallet-labels"
 
 # TARGET_BRANCH: only the merge requests to it (GitLab's target_branch; Forgejo's base.ref)
@@ -1005,6 +1026,15 @@ if command -v sort > /dev/null && command -v runuser > /dev/null; then
         if out=$(ck) && ! grep -q '^FAIL' <<<"$out" && grep -q '^ok   RPC_URL: wallet-rpc, on the compose' <<<"$out"; then
             echo "ok   ccs config:check: the examples as shipped fail at each placeholder (its key named, not its value); filled in, nothing fails"
         else echo "FAIL ccs config:check, filled in"; echo "$out"; status=1; fi
+        # no WALLET_PORT in .env: the compose's default, 18082, so right for a wallet on 18082 and
+        # wrong for one on 18182 (whose healthcheck would then wait forever)
+        sed -i '/^WALLET_PORT=/d' "$r"/opt/ccs-bash/contrib/docker/backend/.env
+        a=$(ck | grep "WALLET_PORT" || true)
+        sed -i 's/^rpc-bind-port=.*/rpc-bind-port=18182/' "$r"/etc/ccs-wallet/wallet-rpc.conf
+        sed -i 's#^RPC_URL=.*#RPC_URL=http://wallet-rpc:18182/json_rpc#' "$r"/etc/ccs/ccs.conf
+        b=$(ck | grep "WALLET_PORT" || true)
+        if [[ $a == "ok "* && $b == "FAIL "*"unset: 18082"* ]]; then echo "ok   ccs config:check: no WALLET_PORT is the compose's 18082 (right for 18082, wrong for 18182)"
+        else echo "FAIL ccs config:check, WALLET_PORT unset"; echo "$a"; echo "$b"; status=1; fi
     else echo "FAIL ccs config:check, as shipped"; echo "$out"; status=1; fi
 else
     echo "ok   ccs: skipped (a host script, its tools are not in the image)"

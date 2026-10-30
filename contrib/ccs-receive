@@ -26,7 +26,8 @@
 # reading QR codes libzbar, libpng, libturbojpeg and giflib (Debian: libzbar0 libpng16-16
 # libturbojpeg0 libgif7). Root-owned, 755.
 set -euo pipefail
-export LC_ALL=C
+# (no home of the account's: git, curl and bash read no config from there, whatever passwd says)
+export LC_ALL=C HOME=/nonexistent GIT_CONFIG_NOSYSTEM=1
 staging=/var/lib/ccs-staging live=/var/lib/ccs-data conf=/etc/ccs-gate state=/var/lib/ccs-gate
 
 # The reason goes to the web server's journal (and /var/log/ccs-gate.log, if ccs-data may write
@@ -752,7 +753,13 @@ bodies() {
             out=$state/bodies-$c-$sum.jsonl
             if [[ ! -s $out ]]; then
                 d=$(mktemp -d)
-                git -C "$git" archive "$c" | tar -x -C "$d" 2> /dev/null || true
+                # (all of it, or no text for this commit: a part unpacked would read as proposals
+                # taken out, and their pages go, below)
+                if ! { git -C "$git" archive "$c" | tar -x -C "$d"; } 2> /dev/null; then
+                    say "could not unpack the proposals repository's commit $c: not checked against it"
+                    rm -rf "$d"
+                    continue
+                fi
                 (cd "$d" && find images -mindepth 2 -maxdepth 2 -type f 2> /dev/null) | while IFS= read -r a; do
                     [[ $a =~ ^images/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+\.(png|jpg|jpeg|gif)$ ]] || continue
                     f=$d/$a
@@ -782,7 +789,8 @@ pages() {
     for file in "$@"; do [[ $file == *.html ]] && html+=("${file#"$staging"/}"); done
     ((${#html[@]})) || return 0
     local end=$((SECONDS + 300))
-    for d in "$conf"/design/*/; do [[ -d $d/parts ]] && designs+=${designs:+:}${d%/}; done
+    # (releases only, design/vX.Y.Z: a build of the design's of no release, left there, isn't one)
+    for d in "$conf"/design/v*/; do [[ ${d%/} =~ /v[0-9]+\.[0-9]+\.[0-9]+$ && -d $d/parts ]] && designs+=${designs:+:}${d%/}; done
     b=$(bodies)
     [[ -f $list.viewkey ]] && vk=$list.viewkey
     out=$(mktemp) png=$(mktemp)
@@ -922,7 +930,7 @@ python3 -I -c "$qrscan_py" --check > /dev/null 2>&1 \
 [[ -s $conf/design.sha256 ]] || refuse "it has no $conf/design.sha256 (the design release's files)" design
 # the design's pages and parts (its release zip, unpacked in design/<release>/), and the
 # markdown.awk that fills a proposal's text (ccs-front-bash's): several releases' while switching
-compgen -G "$conf/design/*/parts/proposal-fr.html" > /dev/null || refuse "it has no $conf/design/<release>/ (the design's release zip, unpacked)" designs
+compgen -G "$conf/design/v*/parts/proposal-fr.html" > /dev/null || refuse "it has no $conf/design/<release>/ (the design's release zip, unpacked: v0.1.25, say)" designs
 [[ -r $conf/proposals.conf ]] || refuse "it has no $conf/proposals.conf (the proposals repository, for their text and images)" proposals
 compgen -G "$conf/markdown*.awk" > /dev/null || refuse "it has no $conf/markdown.awk (ccs-front-bash's lib/markdown.awk)" markdown
 design=$(mktemp)
@@ -969,18 +977,32 @@ bad=$( { kinds; scan "${files[@]}"; pages "${files[@]}"; changes; } | awk -F '\t
 # fail. It goes from the live site, with its images/<name>/, when the repository was fetched just
 # now (not the last fetch), has its .md in neither commit, that is all that's wrong with it, and
 # the push didn't send it (staging has the live copy): the backend no longer makes it either.
+# Its absence is git's (neither commit's tree has the file), not only the texts': and at most
+# CCS_GATE_REMOVE (3) a push. More at once (a branch emptied or rewritten, a forge answering
+# wrong) stay held back, and IRC is told: a person decides.
 if [[ $bad && $fresh ]]; then
-    gone=''
+    gone='' remove=()
     while IFS= read -r file; do
         rp=${file#"$staging"/} name=${file#"$staging"/proposals/}; name=${name%.html}
         [[ $rp == proposals/*.html && $name =~ ^[A-Za-z0-9_][A-Za-z0-9._-]*$ ]] || continue
         awk -F '\t' -v f="$file" '$1 == f && $2 !~ /^!a proposal page with no proposal \(/ { x = 1 } END { exit x }' <<<"$bad" || continue
         cmp -s -- "$file" "$live/$rp" || continue
+        git -C "$git" cat-file -e "refs/heads/ccs:$name.md" 2> /dev/null && continue
+        git -C "$git" cat-file -e "refs/heads/ccs~1:$name.md" 2> /dev/null && continue
+        remove+=("$file")
+    done < <(awk -F '\t' '$2 ~ /^!a proposal page with no proposal \(/ { print $1 }' <<<"$bad" | sort -u)
+    if ((${#remove[@]} > ${CCS_GATE_REMOVE:-3})); then
+        say "${#remove[@]} proposal pages are in neither commit of the proposals repository: more than ${CCS_GATE_REMOVE:-3} at once, so none removed (held back; their last copies stay live)"
+        alert remove-many "the web server would take ${#remove[@]} proposal pages off the site at once (their .md files are in neither commit of the proposals repository, proposals.conf): none taken, they stay as they were; is the branch right? @ @SITE@"
+        remove=()
+    fi
+    for file in "${remove[@]}"; do
+        rp=${file#"$staging"/} name=${file#"$staging"/proposals/}; name=${name%.html}
         # (one that can't be removed stays held back, as before)
         rm -rf -- "$file" "$live/${rp:?}" "$staging/images/${name:?}" "$live/images/${name:?}" 2> /dev/null || continue
         say "removed $rp (and images/$name/, if any) from the site: $name.md is no longer in the proposals repository"
         gone+=$file$'\n'
-    done < <(awk -F '\t' '$2 ~ /^!a proposal page with no proposal \(/ { print $1 }' <<<"$bad" | sort -u)
+    done
     [[ ! $gone ]] || bad=$(awk -F '\t' 'NR == FNR { g[$0] = 1; next } !($1 in g)' <(printf '%s' "$gone") - <<<"$bad")
 fi
 # The rest of the push goes live; a file that fails keeps its last good copy (a new one stays
