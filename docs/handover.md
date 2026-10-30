@@ -215,10 +215,16 @@ checked by the backend and the web server. Each wallet's is in this repository, 
 `subaddresses/<wallet>/` (the mainnet's: [`subaddresses/ccs2/`](../subaddresses/ccs2/)), with its
 signature, key, `.pin` and view key file (not `list-signers`: you write that from the fingerprints
 in step 2, so a forged folder can't bring its own). In full: ccs-front-bash's
-[setup](https://github.com/plowsof/ccs-front-bash/blob/master/docs/setup.md), step 5. In short:
+[setup](https://github.com/plowsof/ccs-front-bash/blob/master/docs/setup.md), step 5. The three
+scripts are **ccs-front-bash's** (its `tools/`, not this repository's), run from a checkout of it:
+[`make-subaddresses.sh`](https://github.com/plowsof/ccs-front-bash/blob/0c6d294918b344b27e6fc0999c4f75fe86294189/tools/make-subaddresses.sh),
+[`sign-subaddresses.sh`](https://github.com/plowsof/ccs-front-bash/blob/0c6d294918b344b27e6fc0999c4f75fe86294189/tools/sign-subaddresses.sh) and
+[`verify-subaddresses.sh`](https://github.com/plowsof/ccs-front-bash/blob/0c6d294918b344b27e6fc0999c4f75fe86294189/tools/verify-subaddresses.sh) (v0.1.21's). In short:
 
-1. **Made** by a Core Team member on the offline machine (`tools/make-subaddresses.sh`) from the
-   wallet's address and view key; line 0 is `WALLET_ADDRESS`.
+1. **Made** by a Core Team member on the offline machine from the wallet's address and view key,
+   which it asks for (an offline `monero-wallet-rpc` makes them in a view-only copy it deletes
+   after; no spend key, no daemon): `tools/make-subaddresses.sh <path to monero-wallet-rpc> 15000
+   subaddresses.txt`. Line 0 is `WALLET_ADDRESS`.
 2. **Signed with their own key**, as the Monero repository publishes it (`utils/gpg_keys/`):
    binaryFate `81AC591FE9C4B65C5806AFC3F0AF4D462A0BDF92` or luigi1111
    `8777AB8F778EE89487A2F8E7F4ACA0183641E010`
