@@ -80,7 +80,9 @@ the web server on the next run.
 ## What one compromise can and can't do
 
 The two machines watch each other, and each one's alarm reaches IRC without passing through the
-other: the gate's goes from the web server to the bot, ccs-watch's from the backend.
+other: the gate's goes from the web server to the bot, ccs-watch's from the backend. That holds
+only with the bot on a third machine: a bot on the backend (the testnet's) lets the backend's root
+drop the gate's alarms.
 
 - **The web server taken over:** it can serve what it likes, but the backend's ccs-watch fetches
   the live pages and compares them with what was pushed. It can tell the watcher from visitors
@@ -100,8 +102,11 @@ What the watching doesn't cover is one flaw that opens both at once:
   reachable from outside only through what each machine exposes, but also by each machine from
   the other: the web server answers the backend's push (rsync and ssh, as clients) and
   ccs-watch's fetches (curl). Each runs in a container of its own, as its own user, so a flaw
-  there reaches that one stage, not the state or the wallet. Keep the pins current
-  (`container/update-images.sh`).
+  there reaches that one stage, not the state or the wallet. But those two stages are the
+  watching: a flaw in the push's client can rewrite what was pushed (the watch then finds it isn't
+  the site the front made, whose sums are the front's own, and alerts), and a flaw in the watch's
+  curl can silence the watch itself, whose alarm is then only the Verify page's visitors. Keep the
+  pins current (`container/update-images.sh`).
 - **One release for both sides:** the gate is in ccs-bash's repository and release, beside the
   backend it checks. Attesters should read the gate's changes as their own diff, not as part of
   the backend's.

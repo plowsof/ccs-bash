@@ -348,9 +348,9 @@ cmd_check() {
             [[ $host == wallet-rpc ]] && ok "RPC_URL: wallet-rpc, on the compose's wallet network" || bad "RPC_URL: http://wallet-rpc:$port/json_rpc (or compose.host.yml)"
             # what a container can't reach on this machine's 127.0.0.1
             [[ $(kv $wconf daemon-address) == 127.0.0.1:* || $(kv $wconf daemon-address) == localhost:* ]] \
-                && bad "daemon-address on 127.0.0.1: the wallet's container can't reach it (compose.host.yml, or another address)"
+                && bad "daemon-address on 127.0.0.1: the wallet's container can't reach it (monerod here: host.docker.internal:18089, its restricted RPC where containers reach it, docs/handover.md 1)"
             grep -qE '^(ALERT_URL|WATCH_PROXY)=.*(127\.0\.0\.1|localhost)' "$root$aconf" 2> /dev/null \
-                && bad "alert.conf: the bot or a proxy on 127.0.0.1: the watch's container can't reach it (compose.host.yml)"
+                && bad "alert.conf: the bot or a proxy on 127.0.0.1: the watch's container can't reach it (a proxy here: host.docker.internal, listening on the bridge's address; the bot on a third machine; docs/handover.md 1)"
         fi
     fi
     [[ $(kv $aconf SUBADDRESSES) == /etc/ccs-front/subaddresses.txt ]] && ok "alert.conf's SUBADDRESSES" || warn "alert.conf: no SUBADDRESSES=/etc/ccs-front/subaddresses.txt (an alert won't name a foreign address)"
