@@ -198,7 +198,8 @@ source-text shared by luigi1111 here
 
 The compose's `front` ([docker](docker.md)), from ccs-front-bash's pinned image, with the list
 (ccs-front-bash's [setup](https://github.com/plowsof/ccs-front-bash/blob/master/docs/setup.md),
-step 5). It makes `/var/lib/ccs/www/site` each run.
+step 5). It makes `/var/lib/ccs/www/site` each run. The design's release in
+`/opt/ccs-front-hugo/VERSION`, for `ccs status`: `echo "<release> <zip sha256>" > /opt/ccs-front-hugo/VERSION`.
 
 ## 6. The web server
 
@@ -540,4 +541,6 @@ design alone: the design lines of steps 3 to 5). Each machine: as root, a backup
    are still there: their keep containers.
 
 The host setup (no Docker): the same, but the new IDs go in `ccs-bash-run` and `ccs-front-run`
-(by ID, `--pull never`), and the switch is made with `systemctl stop ccs-bash` between runs.
+(by ID, `--pull never`), and the switch is made with `systemctl stop ccs-bash` between runs. Root's
+`ccs-bash-update` isn't in a release: compare it with [setup's](setup.md#the-update-script-the-host-setup)
+at the new commit (after ccs-bash v0.2.34: the push's `--checksum`).
