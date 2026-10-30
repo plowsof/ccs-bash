@@ -11,18 +11,30 @@ wallet's. [The design](design.md) says why it is built this way.
 
 ## Backend (no inbound connections)
 
-Root's `ccs-bash-update` ([handover](handover.md#9-the-update)) runs one update, starting each step
-as its own user: `git pull` as `ccs-git`, ccs-bash as `ccs`, ccs-front-bash as `ccs-front`, the push
-and the watcher as `ccs`.
+In Docker, the production setup ([docker](docker.md)), the backend compose runs one service a
+stage, each its own container and user, every one read-only, no capabilities, `no-new-privileges`,
+no Docker socket: `pull` as `ccs-git`, `ccs-bash` as `ccs`, `backup` as `ccs-send`, `front` as
+`ccs-front` with no network, `push` as `ccs-push`, `watch` as `ccs-watch`.
 
-- [`notify-loop.sh`](../notify-loop.sh), root (systemd): runs `ccs-bash-update` every 120 s, or sooner
-  once wallet-rpc's `tx-notify` has touched a flag file (never read, only checked for), at most
-  once per 30 s.
+- [`contrib/docker/backend/step`](../contrib/docker/backend/step), each stage's runner (in
+  ccs-bash's image, and mounted from the checkout for `front`): the stages take turns through the
+  run folder (each one's `done`, `status`, `at`, its own user's; pipes that wake the next); a run
+  every 120 s, sooner once wallet-rpc's `tx-notify` (`ccs-notify`) writes a line on pull's `now`,
+  never two starts closer than 30 s; each run's result only `push` writes and `watch` reads.
+- [`contrib/ccs`](../contrib/ccs), root's: `ccs status`, `ccs log`, `ccs config:check`, and
+  ccs-back's artisan names.
+
+The host setup instead: root's `ccs-bash-update` ([setup](setup.md#the-update-script-the-host-setup))
+runs one update, starting each step as its own user: `git pull` as `ccs-git`, ccs-bash as `ccs`,
+ccs-front-bash as `ccs-front`, the push and the watcher as `ccs`; and
+[`notify-loop.sh`](../notify-loop.sh), root (systemd), runs it every 120 s, or sooner once
+wallet-rpc's `tx-notify` has touched a flag file (never read, only checked for), at most once per
+30 s.
 
 ### ccs-bash: proposals, GitLab and the wallet to JSON
 
-Pinned container, read-only, no capabilities, `--network host` only to reach wallet-rpc on
-127.0.0.1.
+Pinned container, read-only, no capabilities; in Docker on the internal `wallet` network, which
+only wallet-rpc shares (the host setup: `--network host`, only to reach wallet-rpc on 127.0.0.1).
 
 - [`ccs-back.sh`](../ccs-back.sh): `main` is the run: config, `flock`, proposals, state, wallet
   checks, totals, new proposals' merged MRs, new subaddresses, funds, ideas (GitLab down: the last
@@ -110,13 +122,14 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
 
 ### Push, watcher, backup
 
-- The push: `rsync --checksum --delay-updates` as `ccs` to the web server's key, which runs only the gate.
-- [`contrib/ccs-watch`](../contrib/ccs-watch), as `ccs`: fetches the donation pages, the files
-  they use (the stylesheets' `url()`s too), `WATCH_SAMPLE` other pages and `/projects`, as one of
-  three browsers asks (`Sec-Fetch-*` by what is fetched, under `/`, `/dark/` or `/light/`, through
-  a random proxy), and compares each byte for byte with what was last pushed; also a page never
-  pushed (the 404 page) and the theme button's redirect, at a random place among them. After each
-  push and on `ccs-watch.timer` between pushes. A difference (three fetches over 40 s, or a
+- The push (`push`, as `ccs-push`; the host setup: `ccs`): `rsync --checksum --delay-updates` to
+  the web server's key, which runs only the gate; then the copy of what went, `pushed/`, under the
+  lock the watch shares.
+- [`contrib/ccs-watch`](../contrib/ccs-watch) (`watch`, as `ccs-watch`; the host setup: `ccs`): the live pages against `pushed/`, byte for
+  byte, as one of three browsers through a random proxy (what it fetches, and why:
+  [two machines](two-machines.md#watching-the-web-server-the-backend-raises-the-alarm)); `differs`
+  refetches before it counts, `sighted` keeps the day's sightings. After each
+  push and between pushes at random times (the `watch` stage; the host setup: `ccs-watch.timer`). A difference (three fetches over 40 s, or a
   recheck not answered) alerts the second time it is seen within a day; so does a page answering
   anything but 200 three checks in a row; `--run`, three failed runs. Its config is read key by
   key, never sourced.
@@ -135,9 +148,13 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
 
 - [`contrib/ccs-receive`](../contrib/ccs-receive), the push key's forced command, as `ccs-data`,
   one push at a time (`flock`), into staging, a copy of the live site (rrsync `-wo -no-del -munge`).
-  Refuses the whole push without its pinned list, the QR reader's libraries, `qrencode`, `python3`, `git`,
-  `design.sha256`, the design, `markdown.awk` or `proposals.conf`, or for a control character in a
-  file name. Then, per file:
+  Once received, before anything goes live, refuses the whole push without its pinned list, the QR
+  reader's libraries, `qrencode`, `python3`, `git`, `design.sha256`, the design, `markdown.awk` or
+  `proposals.conf`, or for a control character in a file name. Then, for each page and JSON file
+  the push changed and each it held back last time (`held` in its state folder; every one when the
+  list, its pin, `allowed`, the design, `markdown.awk`, `proposals.conf`, the proposals commit,
+  `qrencode` or `ccs-receive` changed, and once a day: `checked-with`; the live site holds only what
+  passed), and every other file the push changed:
   - `fetch`: the proposals repository's last two commits (the last fetch if it can't);
   - `pages` (`pages_py`, Python's standard library): a page is one of the design's
     (`design/<release>/`), byte for byte outside its regions, each region the design's parts and
@@ -156,7 +173,13 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
     has at that path (`repo_images`: `git hash-object` against `ls-tree`; its QR codes checked),
     `projects.json`, or the list's files as installed;
   - a failing file is removed from staging (its last good copy stays), the rest goes live, the
-    push fails and IRC is told. `--heartbeat` (a timer): no push for 15 minutes.
+    push fails and IRC is told. `--heartbeat` (the `heartbeat` service's loop; the host setup: a
+    timer): no push for 15 minutes.
+- In Docker ([the web server in Docker](docker.md#the-web-server-in-docker)): the gate's image runs
+  its own sshd on 2223 ([`contrib/docker/web/sshd_config`](../contrib/docker/web/sshd_config): one
+  user, `ForceCommand ccs-receive`, keys only, no shell, forwarding or subsystem), as root with
+  only `SETUID`, `SETGID`, `SYS_CHROOT`; [`contrib/docker/web/init`](../contrib/docker/web/init)
+  writes its host key and passwd once. The backup receiver the same, on 2224, on its own machine.
 - nginx: static files, the security headers, the theme map ([two machines](two-machines.md)).
 
 ## Where an address is checked against the signed list
@@ -173,7 +196,7 @@ key; its `.pin` (sha256 and key) is what each machine trusts, installed by hand 
 | 3. Every donation address is on the list | ccs-front-bash `ccs-front-bash.sh` `check_addresses` | the list is the one its `.pin` names (sha256); every funding-required proposal's address is a line of it | a wrong list: the run stops, no site is made. An address not on it: that proposal is left off the site, the run exits 3 (an address past index 15,000 too: make a longer list) |
 | 4. Its QR code is made from it | ccs-front-bash `ccs-front-bash.sh` `qr_codes` | made here, from the checked address (`qrencode -s 10 "monero:<address>"`); ccs-bash's own QR codes are never used | the run stops |
 | 5. The page holds them | ccs-front-bash `lib/pages.jq`, the donation box | the donation box gets that address and that QR code, else the run stops | the run stops |
-| 6. The web server's list is the pinned one | `contrib/ccs-receive`, before the push is received | the gate's own copy (installed by hand) is the one its `.pin` names | every push refused, IRC told |
+| 6. The web server's list is the pinned one | `contrib/ccs-receive`, once the push is received, before anything goes live | the gate's own copy (installed by hand) is the one its `.pin` names | every push refused, IRC told |
 | 7. Every address on every page is on the list | `contrib/ccs-receive` `scan` (`scan_py`, `json_py`) | every 95- or 106-character address in a page or JSON, as written (entities read, a non-ASCII character as nothing and as a space), is a line of the list or in `allowed` | that file held back, its last good copy stays, IRC told |
 | 8. Every QR code is of a listed address | `contrib/ccs-receive` `qrdata` (`pixels_py`) | each `data:` image is, pixel for pixel, `qrencode -s 10` of the `monero:` address libzbar reads in it, and that address goes through step 7 | held back |
 | 9. Addresses only where the design puts them | `contrib/ccs-receive` `pages` (`pages_py`, the `address` and `qr` slots) | a page is the design's, filled: a whole address can only be in the donation box's slots, each one address; one in groups is found by `scan` (any slot), by its checksum | held back |

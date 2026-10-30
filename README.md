@@ -69,17 +69,7 @@ is why visitors can check an address against the signed list themselves.
    the output, for ccs-front-bash; any other image stays a link.
 8. **Write the JSON** (`lib/site.jq`), swapped in atomically.
 
-| File | Does |
-|---|---|
-| `ccs-back.sh` | the steps above |
-| `lib/common.sh` | logging, config, atomic writes, filename check |
-| `lib/frontmatter.awk` | the proposal format parser, spec at the top |
-| `lib/proposals.sh` | proposals to JSON, the state file |
-| `lib/gitlab.sh` | ideas, merged MR lookup |
-| `lib/wallet.sh` | wallet RPC, subaddresses, totals |
-| `lib/images.sh` | a proposal's images, from the proposals repository |
-| `lib/site.jq` | the JSON for ccs-front-bash and `/projects` |
-| `notify-loop.sh` | optional: also run on new txes ([setup](docs/setup.md) step 5) |
+Each file, function by function: [reviewing](docs/reviewing.md).
 
 ## State
 
@@ -110,9 +100,10 @@ only replaced by one with every deposit it has. A wallet the CCS no longer uses 
 | The loop | systemd, as root | systemd, as root | each stage its own container and user |
 | Updates | `apt upgrade` | [change the pin](docs/image.md#changing-the-pin) and rebuild | B's, then the IDs in `.env` |
 
-Same scripts, config and folders, so you can switch. B and C pin everything that runs; C also
-keeps each secret in the one container that needs it (the testnet runs it); A avoids Docker on
-the host and gets Debian's security updates automatically.
+**C is the production setup**, the one [the handover](docs/handover.md) builds and upgrades: it
+pins everything that runs and keeps each secret in the one container that needs it (the testnet
+runs it). A and B, the host setup ([setup](docs/setup.md)), use the same scripts, config and
+folders, for those who can't run Docker; not recommended.
 
 ## Documentation
 
