@@ -16,7 +16,7 @@ before that.
   own wallet and signed list ([subaddresses/testnet2](../subaddresses/testnet2/README.md)): every
   address the site shows is the testnet wallet's. A full wallet (its spend key too), so testnet
   donations can be sent from it.
-- **The backend in Docker** (since 2026-10-29, [docker](docker.md)); since v0.2.35 (2026-10-30)
+- **The backend in Docker** (since 2026-10-29, [docker](docker.md)); since v0.2.35 (2026-10-30; now v0.2.36)
   without `compose.host.yml`, as [the handover, 1](handover.md#1-monerod-and-monero-wallet-rpc-the-backend)
   has it: the wallet syncs from node3's own monerod through its public restricted RPC,
   `host.docker.internal:18089` (unchanged for its other users; its flood rules count the wallet
