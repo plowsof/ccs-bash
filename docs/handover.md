@@ -262,7 +262,7 @@ ccs-front-run >> $L 2>&1 || failed="${failed:+$failed, }ccs-front-bash"
 # check on ccs-watch.timer (below) never sees one without the other
 exec 9> /run/ccs-watch.lock; flock -w 600 9
 rc=0
-timeout -k 5 120 runuser -u ccs -- rsync -a --delay-updates \
+timeout -k 5 120 runuser -u ccs -- rsync -a --checksum --delay-updates \
     -e "ssh -p 22 -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15" \
     /var/lib/ccs/www/site/ ccs-data@<web server>: >> $L 2>&1 || rc=$?
 [ "$rc" = 7 ] && failed="${failed:+$failed, }the push (the web server held a file back)"
