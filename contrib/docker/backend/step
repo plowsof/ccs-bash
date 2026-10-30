@@ -183,7 +183,7 @@ push)
         rc=0
         {
             timeout 600 flock 9 || say "warning: ccs-watch's lock not had in 10 minutes, pushing all the same"
-            run timeout -k 5 120 rsync -a --delay-updates \
+            run timeout -k 5 120 rsync -a --checksum --delay-updates \
                 -e "ssh -p ${CCS_PUSH_PORT:-22} -i $pkeys/id_ed25519 -o UserKnownHostsFile=$pkeys/known_hosts -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15" "$site/" "${CCS_PUSH:?}:" || rc=$?
             if ((rc == 0 || rc == 7)); then rsync -a --delete "$site/" "$pushed/"; fi
         } 9< "$(lock)"

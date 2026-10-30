@@ -188,7 +188,7 @@ import sys; p, a, b = sys.argv[1:]; s = open(p, encoding="utf-8").read(); assert
 open(p, "w", encoding="utf-8").write(s.replace(a, b, 1))' "/out/$1" "$2" "$3"
     on backend "touch '/out/$1'"
 }
-push() { on backend "rsync -a --delay-updates -e 'ssh -o BatchMode=yes -o StrictHostKeyChecking=yes' /out/ ccs-data@$web: 2>&1"; }
+push() { on backend "rsync -a --checksum --delay-updates -e 'ssh -o BatchMode=yes -o StrictHostKeyChecking=yes' /out/ ccs-data@$web: 2>&1"; }
 live() { on web "sed -n '/<!-- ccs:count fr -->/{n;p}' /var/lib/ccs-data/index.html 2> /dev/null"; }
 livefile() { on web "cat '/var/lib/ccs-data/$1' 2> /dev/null || true"; }
 livepage() { livefile proposals/p.html; }
@@ -201,6 +201,12 @@ if push > /dev/null && [[ $(on web "stat -c %a /var/lib/ccs-data/index.html /var
     ok "file modes from the backend don't go live (files 644, folders 755)"
 else on web "ls -la /var/lib/ccs-data /var/lib/ccs-data/assets"; fail "file modes"; fi
 on backend "chmod 644 /out/index.html && chmod 755 /out/assets"
+# only what a push changed is checked: the same site again (nothing), then one page changed
+checking() { on web "grep 'checking ' /var/log/ccs-gate.log | tail -n 1"; }
+push > /dev/null
+if [[ $(checking) == *"checking 0 of "* ]]; then ok "the same site pushed again: nothing to check"; else checking; fail "the same site pushed again"; fi
+change index.html $'fr -->\n1\n' $'fr -->\n11\n'
+if push > /dev/null && [[ $(live) == 11 && $(checking) == *"checking 1 of "* ]]; then ok "one page changed: that page checked, and only it"; else checking; fail "one page changed"; fi
 
 site 2 "$(addr 9 B)"
 # The reason is written after rsync is done: the backend gets it only if ssh relays it before the
@@ -418,7 +424,11 @@ on backend 'rm -rf /out/images'
 # a proposal taken out of the repository: its page, left on the live site (the push can't
 # delete), goes with its images and the push is good; pushed again by the backend, it is held
 # back; while the repository can't be fetched (the last fetch), it stays
-stale() { on web 'cd /var/lib/ccs-data && cp proposals/p.html proposals/gone.html && mkdir -p images/gone && cp /srv/proposals/images/p/ok.png images/gone/ && chown -R ccs-data proposals/gone.html images'; }
+# (the proposal taken out is a new commit: every page is checked again then)
+stale() {
+    on web 'cd /var/lib/ccs-data && cp proposals/p.html proposals/gone.html && mkdir -p images/gone && cp /srv/proposals/images/p/ok.png images/gone/ && chown -R ccs-data proposals/gone.html images'
+    on web 'cd /srv/proposals && git -c safe.directory=* -c user.name=t -c user.email=t@t commit -q --allow-empty -m "a proposal taken out" && chown -R ccs-data /srv/proposals'
+}
 stale
 v=$((v + 1)); site "$v" "$good"
 if push > /dev/null && [[ $(live) == "$v" ]] && on web '! test -e /var/lib/ccs-data/proposals/gone.html && ! test -e /var/lib/ccs-data/images/gone' \
@@ -430,8 +440,8 @@ held "$v" proposals/gone.html "a page of a proposal not in the repository, pushe
 on web "sed -i 's#=file:///srv/proposals#=file:///nowhere#' /etc/ccs-gate/proposals.conf"
 stale
 v=$((v + 1)); site "$v" "$good"
-rc=0; push > /dev/null || rc=$?
-if ((rc)) && on web 'test -e /var/lib/ccs-data/proposals/gone.html'; then ok "the repository can't be fetched: a page with no proposal in the last fetch stays (held back)"; else fail "a removed proposal's page, no fetch"; fi
+push > /dev/null || true
+if on web 'test -e /var/lib/ccs-data/proposals/gone.html'; then ok "the repository can't be fetched: a page with no proposal in the last fetch stays"; else fail "a removed proposal's page, no fetch"; fi
 on web 'rm -rf /var/lib/ccs-data/proposals/gone.html /var/lib/ccs-data/images/gone'
 on web "sed -i 's#=file:///nowhere#=file:///srv/proposals#' /etc/ccs-gate/proposals.conf"
 # the repository can't be fetched: the last fetch is checked against, so the site goes on
@@ -453,6 +463,22 @@ on web "sed -i 's#=file:///nowhere#=file:///srv/proposals#' /etc/ccs-gate/propos
 v=$((v + 1)); site "$v" "$good"; push > /dev/null || true
 v=$((v + 1)); site "$v" "$good"; push > /dev/null || true
 if [[ $(bot | grep -c 'the web server fetches the proposals repository again @ https://ccs.test' || true) == 1 ]]; then ok "the repository fetched again: says so, once"; else bot; fail "the repository back"; fi
+# what the pages were checked against changes (here allowed, the General Fund in every footer
+# taken out of it): every page is checked again, and held back; pushed again unchanged, they are
+# checked again (their last good copy is live, the same bytes), until they pass
+v=$((v + 1)); site "$v" "$good"; push > /dev/null || true
+on web 'cp /etc/ccs-gate/allowed /tmp/allowed && : > /etc/ccs-gate/allowed'
+rc1=0; push > /dev/null || rc1=$?; c1=$(checking)
+rc2=0; push > /dev/null || rc2=$?; c2=$(checking)
+if ((rc1 == 7 && rc2 == 7)) && [[ $c1 == *"(all of them"* && $c2 != *"(all of them"* && $c2 != *"checking 0 of"* ]]; then
+    ok "allowed changed: every page checked again; held back, the same pages pushed again are checked again"
+else echo "$c1 / $c2 (exits $rc1 $rc2)"; fail "allowed changed"; fi
+on web 'cp /tmp/allowed /etc/ccs-gate/allowed'
+rc=0; push > /dev/null || rc=$?
+if ((rc == 0)) && [[ $(checking) == *"(all of them"* ]]; then ok "allowed as before: every page checked again, the push good"; else checking; fail "allowed restored"; fi
+# and once a day whatever happens
+on web 'touch -d "-25 hours" /var/lib/ccs-gate/checked-with'
+if push > /dev/null && [[ $(checking) == *"(all of them"* ]]; then ok "a day after the last full check: every page checked again"; else checking; fail "the daily full check"; fi
 # a NUL byte, which HTML drops from the text
 v=$((v + 1)); site "$v" "$good"; on backend "printf '<p>%s\\000%s</p>\\n' '${fake:0:40}' '${fake:40}' > /out/proposals/nul.html"
 held "$v" proposals/nul.html "an address split by a NUL byte" "${fake:40}"
