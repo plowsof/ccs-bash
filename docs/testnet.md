@@ -16,9 +16,14 @@ before that.
   own wallet and signed list ([subaddresses/testnet2](../subaddresses/testnet2/README.md)): every
   address the site shows is the testnet wallet's. A full wallet (its spend key too), so testnet
   donations can be sent from it.
-- **The backend in Docker** (since 2026-10-29, [docker](docker.md)), with `compose.host.yml`:
-  node3's monerod, Tor (ccs-watch's proxy) and the alert bot listen on its 127.0.0.1 only, so the
-  wallet, ccs-bash and the watch run on the host's network; `WALLET_PORT=18182`. The host's
+- **The backend in Docker** (since 2026-10-29, [docker](docker.md)); since v0.2.35 (2026-10-30)
+  without `compose.host.yml`, as [the handover, 1](handover.md#1-monerod-and-monero-wallet-rpc-the-backend)
+  has it: the wallet syncs from node3's own monerod through its public restricted RPC,
+  `host.docker.internal:18089` (unchanged for its other users; its flood rules count the wallet
+  too); ccs-watch's Tor (`tor@default`) listens on `172.17.0.1:9050` as well as 127.0.0.1, for
+  Docker's networks only (`SocksPolicy`, ufw), and starts after Docker; the bot by
+  `host.docker.internal:8086`. `WALLET_PORT=18182`, `RPC_URL=http://wallet-rpc:18182/json_rpc`.
+  `retire-wallet` now needs the wallet's RPC from the host ([docker](docker.md#running-it)). The host's
   `ccs-bash`, `ccs-wallet-rpc` and ccs-watch units are disabled, kept for going back. The
   compose runs from `/opt/ccs-bash` at the release's commit, its images by their attested IDs
   (`ccs config:check`: none failing).
@@ -55,8 +60,9 @@ before that.
 - **The real CCS's totals:** the CCS1 and CCS2 wallets' donations, by proposal, as retired wallets
   (`STATE_DIR/retired/ccs1.csv` and `ccs2.csv`, [retiring a wallet](handover.md#retiring-a-wallet)):
   numbers only, no addresses, so the site's raised amounts look like the real CCS's.
-- **The IRC bot** runs on the backend machine itself: the backend's alerts reach it on 127.0.0.1,
-  the web server's over HTTPS through that machine's proxy. They go to `#montero-ccs-emojis`. So
+- **The IRC bot** runs on the backend machine itself: the backend's alerts reach it as
+  `host.docker.internal:8086`, the web server's over HTTPS through that machine's proxy (it
+  listens on every address, its port open to all: its path is all that keeps others from posting). They go to `#montero-ccs-emojis`. So
   root on the backend can also silence the web server's alerts (a held-back page, no push); the
   CCS's bot belongs on a third machine.
 - **ccs-watch fetches through Tor only** (no clearnet proxy): a web server that serves Tor's exits
