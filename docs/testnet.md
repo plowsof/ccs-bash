@@ -27,6 +27,10 @@ before that.
   `ccs-bash`, `ccs-wallet-rpc` and ccs-watch units are disabled, kept for going back. The
   compose runs from `/opt/ccs-bash` at the release's commit, its images by their attested IDs
   (`ccs config:check`: none failing).
+- **An onion service** (since 2026-10-31): http://euofv4oczbu32vr4my73diw3dwelcnazsnx55wd7ouoimrvstk4wqyid.onion,
+  node2's `tor@default` (`/var/lib/tor/hidden_service/ccs`) to nginx on `127.0.0.1:8096`, the same
+  site body as the clearnet one (`snippets/ccs-site.conf`), and `Onion-Location` on the clearnet
+  site; in the footer once v0.2.37's set is deployed ([handover](handover.md#the-onion-address)).
 - **The web server's side in Docker** ([the web server in Docker](docker.md#the-web-server-in-docker)):
   node2 is the web server and the backup machine both, so its compose (`/opt/ccs-bash-web`, at
   the release's commit, the gate's attested image) runs the backup receiver too
