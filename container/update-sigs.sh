@@ -23,3 +23,6 @@ while read -r name ref; do
 done < <(grep -v '^#' "$here/images")
 rm -rf "$here/sigs" && mv "$new" "$here/sigs" && chmod -R u=rwX,go=rX "$here/sigs"
 trap - EXIT
+# each stored signature that counts now, by a key valid now, in sigs-verified: it still counts
+# once that key has expired (verify-images.sh)
+"$here/verify-images.sh" --record
