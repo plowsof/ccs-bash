@@ -122,6 +122,32 @@ lines the button only reloads the page.
 **HTTPS:** a DNS A record, `server_name`, then `certbot --nginx -d <name> --redirect` (`apt install
 certbot python3-certbot-nginx`): the 443 server, a redirect from 80, renewed by `certbot.timer`.
 
+**An onion service** (optional): the same site for Tor Browser users, without an exit node. Tor
+publishes it, nginx serves the very files and headers the clearnet site does (the site's body in
+one snippet, `snippets/ccs-site.conf`, both servers including it), and the clearnet site says so
+(`Onion-Location`, which Tor Browser turns into ".onion available"):
+
+```
+# /etc/tor/torrc, then: systemctl reload tor; cat /var/lib/tor/hidden_service/ccs/hostname
+HiddenServiceDir /var/lib/tor/hidden_service/ccs
+HiddenServicePort 80 127.0.0.1:8096
+# sites-available/ccs: the server's body (root ... the /light/ location) moved to snippets/ccs-site.conf
+server {
+    listen 127.0.0.1:8096;
+    server_name <name>.onion;
+    port_in_redirect off;          # the theme button's redirect names the onion, not this port
+    include snippets/ccs-site.conf;
+}
+# snippets/ccs-headers.conf (Tor Browser ignores it on the onion itself)
+add_header Onion-Location "http://<name>.onion$request_uri" always;
+```
+
+The footer says so too: the address in `/etc/ccs-gate/onion` (root, 644), and the same in the
+backend compose's `.env` as `CCS_ONION`, which ccs-front-bash writes in every page's footer. The
+gate takes the footer's onion line only with the address in its own file: a backend can't point
+visitors at another onion. The onion's key, `/var/lib/tor/hidden_service/ccs/hs_ed25519_secret_key`,
+is the onion's identity, as the TLS key is the clearnet site's: back it up as root, show it no one.
+
 **The backend's key**, the push stage's, and the gate's own host key on its port, from the web
 server's `/etc/ccs-gate/ssh/ssh_host_ed25519_key.pub` (not accepted on first connect):
 
