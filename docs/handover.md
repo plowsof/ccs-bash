@@ -401,6 +401,7 @@ agreeing, answering) and changes nothing.
 | | `WALLET_PORT` | `18082`, `wallet-rpc.conf`'s `rpc-bind-port` (its healthcheck: without it the compose waits forever) | docker |
 | | `CCS_PUSH`, `CCS_BACKUP`, `CCS_SITE_URL` | `ccs-data@<web server>`, `ccs-backup@<backup machine>`, `https://ccs.getmonero.org` | docker |
 | | `COMPOSE_FILE` | only with a monerod, Tor or bot on the backend's 127.0.0.1: `compose.yml:compose.host.yml` | docker |
+| | `CCS_ONION` | optional: the site's onion address, for every page's footer; the same as the web server's `/etc/ccs-gate/onion` ([below](#the-onion-address)) | docker |
 | the host setup: `/usr/local/bin/ccs-bash-run`, `ccs-front-run` | the image they run | its ID, `--pull never`, the attested one of [the releases](#the-releases) | 2, 5, upgrading |
 | the host setup: `/usr/local/bin/ccs-bash-update` | `<web server>`, `<backup machine>` | their addresses | 9 |
 
@@ -418,6 +419,18 @@ agreeing, answering) and changes nothing.
 | | `subaddresses.txt.viewkey` | the same as the backend's (the Verify page is then checked word for word) | 6 |
 | | `allowed` | the General Fund, `888tNkZrPN6JsEgekjMnABU4TBzc2Dt29EPAvkRxbANsAnjyPbb3iQ1YBRk1UXcdRsiKc9dhwMVgN5S9cQUiyoogDavup3H`, and any address a proposal's text quotes (the gate's refusal names it) | 6 |
 | | `alert.conf` | `ALERT_URL` (the bot), `SITE_URL=https://ccs.getmonero.org` | 8 |
+| | `onion` | optional: the site's onion address, one line (Tor's `/var/lib/tor/hidden_service/ccs/hostname`, [two machines](two-machines.md)); the only one the footer may show | 6 |
+
+### The onion address
+
+Optional: with an onion service ([two machines](two-machines.md), "An onion service"), every
+page's footer says "Also on Tor: <its address>". The address is in two places, which must agree:
+the web server's `/etc/ccs-gate/onion` (root, 644: the only onion the gate lets a footer show) and
+the backend compose's `.env`, `CCS_ONION` (what ccs-front-bash writes). Setting or changing it,
+between runs: the web server's file first, then the backend's `.env` and `docker compose up -d
+front` (a new variable needs a new container). Until the backend's next run, its pages still have
+the old line: the gate holds them back (their last good copies stay live) and that run fails, which
+is all. Removing it: the backend's `CCS_ONION` first, then the file.
 | nginx | `server_name`, the certificate | `ccs.getmonero.org`, from certbot | 6 |
 | | `snippets/ccs-headers.conf` | the security headers, as in two-machines (A+ on securityheaders.com) | 6 |
 
