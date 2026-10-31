@@ -1,6 +1,5 @@
-# the stored StageX signatures (sigs/) verified while their maintainer's key was valid: sha256 of
-# the signature file, then its signer. verify-images.sh --record adds them (update-sigs.sh runs it); a
-# signature listed here still counts once its key has expired, as git dates when it was added
+# StageX signatures in sigs/ verified while their key was valid, "<sha256 of the file> <signer>":
+# each still counts once its key has expired (verify-images.sh; --record adds them)
 4f704792d5704d8e5ef4538dd4e15881a39373873952f71051806d7fafd7b3c7 21684C20478F95A277FA54A000B81DC07B71A212
 7f99e3cf395692532ceebea6cba729131ddd732f0c7a663a81ca2936e97bdc9e F4BF5C81EC78A5DD341C91EEDC4B7D1F52E0BA4D
 e19999957088fd1c7e9c46a2e3b857ea4c0f2ea4c175af226b8a28b9f9fcbaa9 6B61ECD76088748C70590D55E90A401336C8AAA9
