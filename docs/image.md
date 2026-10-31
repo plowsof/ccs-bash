@@ -41,6 +41,12 @@ checks, for each pin:
   repo and manifest;
 - **two different maintainers** signed, so one stolen key isn't enough.
 
+A maintainer's key that expires doesn't stop the builds: a signature we verified while its key was
+valid still counts. `container/sigs-verified` lists them (each signature file's sha256 and
+signer), written by `verify-images.sh --record`, which `update-sigs.sh` runs; committed with
+`sigs/`, so git dates each. Not a signature that first arrives after its key expired (a signature's
+date is the signer's to write), and never one by a revoked key.
+
 `stagex-keys.asc` holds the keys of the people in StageX's
 [MAINTAINERS](https://codeberg.org/stagex/stagex/src/branch/main/MAINTAINERS), fingerprints
 listed at the top. `container/update-keys.sh` refreshes it; a new fingerprint in the diff is a
