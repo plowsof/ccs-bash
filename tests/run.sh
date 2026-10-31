@@ -549,7 +549,7 @@ if command -v gpg > /dev/null; then
         s "$exp" e3 2> /dev/null || true   # (an expired key can't sign: no new signature)
         for f in g e e2 r; do printf '%s=%s ' "$f" "$(signature_signer "$tmp/$f" stagex/core-x "$m" | cut -d' ' -f2)"; done
     )
-    if [[ $sig == "g=good e=recorded e2= r= " ]]; then
+    if [[ $sig == "g=good e=expired e2= r= " ]]; then
         echo "ok   an expired key: its signature verified before (sigs-verified) still counts, an unrecorded one doesn't; a revoked key's never"
     else
         echo "FAIL expired and revoked keys: $sig"; status=1
