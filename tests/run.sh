@@ -524,6 +524,36 @@ if command -v gpg > /dev/null; then
     else
         echo "FAIL signature check: $sig"; status=1
     fi
+    # a maintainer's key that expires: a signature we verified while it was valid (sigs-verified)
+    # still counts, one we never did doesn't; a revoked key's never does, recorded or not
+    sig=$(
+        # shellcheck source=container/verify-images.sh
+        source "$here/../container/verify-images.sh"
+        tmp=$(mktemp -d)
+        trap 'rm -rf "$tmp"' EXIT
+        export GNUPGHOME=$tmp/gnupg
+        install -d -m 700 "$GNUPGHOME"
+        key() { gpg -q --batch --passphrase '' --quick-gen-key "$1 <$1@invalid>" ed25519 sign "$2" 2> /dev/null
+                gpg --batch --with-colons --list-keys "$1@invalid" 2> /dev/null | awk -F: '$1 == "fpr" { print $10; exit }'; }
+        good=$(key good never) exp=$(key exp seconds=3) rev=$(key rev never)
+        printf '%s\n' "$good" "$exp" "$rev" > "$tmp/trusted"
+        m=sha256:$(printf '%064d' 1)
+        printf '{"critical":{"identity":{"docker-reference":"stagex/core-x:1"},"image":{"docker-manifest-digest":"%s"},"type":"atomic container signature"},"optional":{}}' "$m" > "$tmp/p"
+        s() { gpg -q --batch -z0 -u "$1" --output "$tmp/$2" --sign "$tmp/p"; }
+        s "$good" g && s "$exp" e && cp "$tmp/e" "$tmp/e2" && s "$rev" r
+        verified=$tmp/verified
+        printf '%s %s\n' "$(sha256sum < "$tmp/e" | cut -d' ' -f1)" "$exp" "$(sha256sum < "$tmp/r" | cut -d' ' -f1)" "$rev" > "$verified"
+        sleep 4   # exp has expired
+        sed 's/^:-----BEGIN/-----BEGIN/' "$GNUPGHOME/openpgp-revocs.d/$rev.rev" | gpg -q --batch --import 2> /dev/null
+        echo "dummy" >> "$tmp/e2"   # (another file: not the one recorded)
+        s "$exp" e3 2> /dev/null || true   # (an expired key can't sign: no new signature)
+        for f in g e e2 r; do printf '%s=%s ' "$f" "$(signature_signer "$tmp/$f" stagex/core-x "$m" | cut -d' ' -f2)"; done
+    )
+    if [[ $sig == "g=good e=expired e2= r= " ]]; then
+        echo "ok   an expired key: its signature verified before (sigs-verified) still counts, an unrecorded one doesn't; a revoked key's never"
+    else
+        echo "FAIL expired and revoked keys: $sig"; status=1
+    fi
 elif [[ ${CI:-} == true ]]; then
     echo "FAIL gpg not installed"; status=1
 fi
