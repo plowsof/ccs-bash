@@ -179,7 +179,8 @@ sums() { (cd "$1" && find . -type f -exec sha256sum {} +) > "$2"; }
 mkdir -p "$tmp/newer" && cp -r "$tmp/local/." "$tmp/newer/"
 sed -i 's/>home$/>home, pushed again/' "$tmp/newer/index.html" "$tmp/remote/index.html"
 sums "$tmp/local" "$tmp/sums-1"; sums "$tmp/newer" "$tmp/sums-2"
-cwatch() { CCS_WATCH_SUMS="$tmp/sums-1 $tmp/sums-2" watch; }
+# (handed only the run's own sums, as when the next run finished during the check: sums-2 is found beside it)
+cwatch() { CCS_WATCH_SUMS="$tmp/sums-1" watch; }
 rm -f "$tmp/state"/differs-* "$tmp/state"/alert-*; was=$base base=$(alerts)
 if cwatch && cwatch && [[ $(alerts) == "$base" ]] && ! grep -q 'differs' "$tmp/log"; then
     ok "a push landing during a check: the newer push's page served, no sighting, no alert"

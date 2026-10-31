@@ -65,11 +65,20 @@ fi
 site_url=${1:?SITE_URL} local_site=${2:?LOCAL_SITE} conf=${3:-/etc/ccs/alert.conf}
 read -ra sums <<<"${CCS_WATCH_SUMS:-}"
 # pushed FILE P: FILE is the site's P as it was pushed: as LOCAL_SITE has it, or as a site the
-# front made since has it (CCS_WATCH_SUMS)
+# front made since has it (CCS_WATCH_SUMS, and any sums-M beside its first, sums-N, with M > N:
+# looked for at each comparison, as a run can finish and push during the check's fetches)
 pushed() {
     cmp -s "$1" "$local_site/$2" && return 0
     ((${#sums[@]})) || return 1
-    grep -qxF "$(sha256sum < "$1" | cut -d' ' -f1)  ./$2" "${sums[@]}" 2> /dev/null
+    local line f n later=()
+    line="$(sha256sum < "$1" | cut -d' ' -f1)  ./$2"
+    n=${sums[0]##*/sums-}
+    if [[ $n =~ ^[0-9]+$ ]]; then
+        for f in "${sums[0]%/*}"/sums-*; do
+            [[ ${f##*/sums-} =~ ^[0-9]+$ ]] && ((${f##*/sums-} > n)) && later+=("$f")
+        done
+    fi
+    grep -qxF "$line" "${sums[@]}" "${later[@]}" 2> /dev/null
 }
 state=${CCS_WATCH_STATE:-/var/lib/ccs/state/watch}
 ALERT_URL='' WATCH_PROXY='' WATCH_THEMES='' SUBADDRESSES='' ALERT_PREFIX='' ALERT_TARGET='' ALERT_PASSWORD='' ALERT_PLAIN='' FORGE_HOURS=''
