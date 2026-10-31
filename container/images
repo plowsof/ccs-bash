@@ -4,7 +4,7 @@ filesystem                 stagex/core-filesystem@sha256:da28831927652291b0fa573
 musl                       stagex/core-musl@sha256:94f77e4b1841987a42efce52aac54dbf230c152cb55c62da1967189a2705df89
 bash                       stagex/core-bash@sha256:f1e9107e8b2ce20c33dc47bf335d345bd337c51298efc7ca0e7805c3b8845bab
 ncurses                    stagex/core-ncurses@sha256:75ff2773ec899b83185e6050d9bf5c80d54459531d708adca8dbab9f6189cb2f
-ca-certificates            stagex/core-ca-certificates@sha256:fe24a3809eba30972b64ddd8b611a6494bebea7631f805d795cec4241f5a11c6
+ca-certificates            stagex/core-ca-certificates@sha256:2e5d0da04413dfbc739f3009fe6616e90e733c463f8495ce6997b02c0832735c
 curl                       stagex/core-curl@sha256:937996bec550ef05ddb573fbcd36843e45eff2206505b23f41d8eac879c8c0f8
 openssl                    stagex/core-openssl@sha256:0ea25b654c044622a62c0a8707123a9ca5c87b6ef39dc178e3fe6d972c7e690d
 libzstd                    stagex/core-libzstd@sha256:84c78c0000a4134df8a45661ab7e8ecb91dead720ff6b46c315380fb33cd0607
