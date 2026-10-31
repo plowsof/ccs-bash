@@ -399,7 +399,7 @@ for f in sys.argv[1:]:
     for a in sorted(out): print(f + "\t" + a)
 '
 
-# pages SITE DESIGNS BODIES LIST VIEWKEY HOSTS < pages (NUL-separated, relative to SITE): each must
+# pages SITE DESIGNS BODIES LIST VIEWKEY HOSTS ONION < pages (NUL-separated, relative to SITE): each must
 # be one of the design's own, every region filled with the design's parts and every {{slot}} with a
 # value of its kind, as ccs-front-bash fills them; a proposal's text, milestones and payouts exactly
 # what markdown.awk makes of its file; a donation box one address of the signed list. DESIGNS:
@@ -412,7 +412,7 @@ for f in sys.argv[1:]:
 pages_py='
 import json, os, re, sys
 
-site, designs, bodies, lst, viewkey, hosts = sys.argv[1:7]
+site, designs, bodies, lst, viewkey, hosts, onion = sys.argv[1:8]
 MAX = int(os.environ.get("CCS_GATE_MAX", 8 << 20))   # a page larger is not read (nor checked)
 B58 = "[1-9A-HJ-NP-Za-km-z]"
 # escaped text (as ccs-bash and markdown.awk escape it): no markup, no bidi controls (they can
@@ -527,6 +527,12 @@ class Design:
         if kind == "title": return TEXT
         if kind == "filters": return self.nav(depth)
         if kind == "verify": return self.verify()
+        # the onion line of the footer: nothing, or the onion part of the design with the onion
+        # address of this site (ONION, /etc/ccs-gate/onion), never another: a backend cannot send
+        # visitors to an onion of its choosing
+        if kind == "onion":
+            if not onion or "onion" not in self.p: return ""
+            return "(?:" + re.escape(put(part(self.p["onion"]), {"onion": onion})) + ")?"
         if kind == "list":
             c = self.card(arg, depth, tagpage)
             return "(?:" + c + "(?:\\n" + c + ")*|" + re.escape(part(self.p["empty"])) + ")?"
@@ -793,9 +799,13 @@ pages() {
     for d in "$conf"/design/v*/; do [[ ${d%/} =~ /v[0-9]+\.[0-9]+\.[0-9]+$ && -d $d/parts ]] && designs+=${designs:+:}${d%/}; done
     b=$(bodies)
     [[ -f $list.viewkey ]] && vk=$list.viewkey
+    # this site's onion address, for the footer's onion line (none: no line)
+    local onion=''
+    onion=$(tr -d ' \n' < "$conf/onion" 2> /dev/null) || onion=''
+    [[ $onion =~ ^[a-z2-7]{56}\.onion$ ]] || onion=
     out=$(mktemp) png=$(mktemp)
     printf '%s\0' "${html[@]}" \
-        | timeout 300 python3 -I -c "$pages_py" "$staging" "$designs" "$b" "$list" "$vk" "$hosts" > "$out" 2> /dev/null || true
+        | timeout 300 python3 -I -c "$pages_py" "$staging" "$designs" "$b" "$list" "$vk" "$hosts" "$onion" > "$out" 2> /dev/null || true
     while IFS=$'\t' read -r file tag a q; do
         case $tag in
             =ok) [[ ${ok[$file]:-} == no ]] || ok[$file]=1 ;;
@@ -949,7 +959,7 @@ fetch && fetched=1
 mapfile -d '' all < <(find "$staging" -type f \( -name '*.html' -o -name '*.json' \) -print0)
 inputs=$( {
     cat -- "${BASH_SOURCE[0]}" "$list" "$list.pin" "$design" "$conf"/markdown*.awk "$conf/proposals.conf"
-    cat -- "$conf/allowed" "$list.viewkey" 2> /dev/null || true
+    cat -- "$conf/allowed" "$list.viewkey" "$conf/onion" 2> /dev/null || true
     (cd "$conf/design" && find . -type f -print0 | sort -z | xargs -0 -r sha256sum)
     git -C "$git" rev-parse -q --verify refs/heads/ccs 2> /dev/null || true
     qrencode -V 2>&1 || true

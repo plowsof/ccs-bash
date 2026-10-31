@@ -53,7 +53,7 @@ fund=$(addr 7 8)
 # (its README: "What ccs-front-bash fills in"); the General Fund in every page's footer.
 d=$files/design
 mkdir -p "$d/parts" "$d/ideas" "$d/assets"
-foot="<footer><p class=\"address\">$fund</p></footer>"
+foot="<footer><p class=\"address\">$fund</p>"$'\n'"<!-- ccs:onion -->"$'\n'"<!-- /ccs:onion -->"$'\n'"</footer>"
 printf '<!doctype html>\n<html lang="en">\n<head><meta charset="utf-8"><title>CCS</title><link rel="stylesheet" href="./assets/style.css"></head>\n<body>\n<p>Funding required: <!-- ccs:count fr -->\n0\n<!-- /ccs:count fr --></p>\n<!-- ccs:filters -->\n<!-- /ccs:filters -->\n%s\n</body>\n</html>\n' "$foot" > "$d/index.html"
 printf '<!doctype html>\n<html lang="en">\n<head><meta charset="utf-8"><title>Ideas</title></head>\n<body>\n<!-- ccs:list idea -->\n<!-- /ccs:list idea -->\n%s\n</body>\n</html>\n' "$foot" > "$d/ideas/index.html"
 printf '<!doctype html>\n<html lang="en">\n<head><meta charset="utf-8"><title>{{name}}</title></head>\n<body>\n<h1>{{name}}</h1>\n<p class="by">{{author}} {{funding_date}} {{tag_links}}</p>\n<!-- ccs:%s -->\n<!-- /ccs:%s -->\n<div class="body">\n{{body}}\n</div>\n<!-- ccs:milestones -->\n<!-- /ccs:milestones -->\n%s\n</body>\n</html>\n' donate donate "$foot" > "$d/parts/proposal-fr.html"
@@ -77,6 +77,7 @@ printf '<a class="filter {{color}}{{active}}" href="{{href}}">{{tag}}<span class
 printf '<nav class="filters">{{filters}}</nav>\n' > "$d/parts/filters.html"
 printf '<p>{{address}} {{viewkey}}{{network}} {{fingerprint}} {{wallet_source}}</p>\n' > "$d/parts/verify.html"
 printf '\n<p class="verify"><a href="../verify/">Check this address</a></p>\n' > "$d/parts/verify-link.html"
+printf '<p class="footer-onion">Also on Tor: <a href="http://{{onion}}/">{{onion}}</a></p>\n' > "$d/parts/onion.html"
 printf 'body {}\n' > "$d/assets/style.css"
 # markdown.awk, as ccs-front-bash's makes a proposal's text (a stand-in: one paragraph, escaped)
 cat > "$files/markdown.awk" <<'AWK'
@@ -98,6 +99,8 @@ def region(t, name, html_):
     a, b = "<!-- ccs:" + name + " -->", "<!-- /ccs:" + name + " -->"
     return t[:t.index(a)] + a + "\n" + html_ + "\n" + b + t[t.index(b) + len(b):]
 def write(p, t):
+    if "<!-- ccs:onion -->" in t:   # the footer: the onion line with ONION, as ccs-front-bash fills it
+        t = region(t, "onion", fill(part("onion"), {"onion": os.environ["ONION"]}) if os.environ.get("ONION") else "")
     os.makedirs(os.path.dirname(out + "/" + p), exist_ok=True); open(out + "/" + p, "w", encoding="utf-8").write(t)
 write("index.html", region(region(read(design + "/index.html"), "count fr", n), "filters", ""))
 cards = [fill(part("card-idea"), {"url": "https://forge.test/ccs-proposals/pulls/%d" % i, "name": html.escape(t), "author": "someone",
@@ -172,7 +175,7 @@ site() {
     qr=$(qr64 "${3:-$a}")
     shift $(($# < 3 ? $# : 3))
     on backend "rm -rf /out && mkdir -p /out/assets && cp /design/assets/style.css /out/assets/"
-    docker exec -e PENDING_NOTE="${PENDING_NOTE:-}" "$name-backend" python3 /gen.py /design /out "$v" "$a" "$qr" "$@"
+    docker exec -e PENDING_NOTE="${PENDING_NOTE:-}" -e ONION="${ONION:-}" "$name-backend" python3 /gen.py /design /out "$v" "$a" "$qr" "$@"
     on backend "echo '[{\"address\": \"$a\"}]' > /out/projects.json"
     put subaddresses.txt < <(on web 'cat /etc/ccs-gate/subaddresses.txt')
     put subaddresses.txt.asc <<<sig
@@ -405,6 +408,25 @@ if ((rc)) && [[ $(live) == "$v" && $(livefile assets/style.css) == 'body {}' ]];
 v=$((v + 1)); site "$v" "$good"; printf '0 %s\n' "$fake" | put subaddresses.txt
 rc=0; push > /dev/null || rc=$?
 if ((rc)) && [[ $(livefile subaddresses.txt) != *"$fake"* ]]; then ok "held back: a subaddress list that isn't the one installed here"; else fail "a swapped list"; fi
+# the footer's onion line: only this site's onion (/etc/ccs-gate/onion), on every page; none
+# configured, none at all; another onion, held back, the page's last good copy staying
+our=abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuvwx.onion other=zyxwvutsrqponmlkjihgfedcba765432zyxwvutsrqponmlkjihgfedc.onion
+# (the pages with the line are every page, the home page too: held back, the last good ones stay)
+onion_held() {   # onion_held WHAT ONION
+    local before rc=0
+    before=$(live); v=$((v + 1)); ONION=$2 site "$v" "$good"
+    push > /dev/null || rc=$?
+    if ((rc == 7)) && [[ $(live) == "$before" && $(livefile index.html) != *"$2"* && $(livefile proposals/p.html) != *"$2"* ]]; then ok "held back: $1"
+    else echo "push exit $rc, live $(live)"; on web 'tail -n 3 /var/log/ccs-gate.log'; fail "$1"; fi
+}
+onion_held "an onion line where this site has no onion configured" "$our"
+on web "echo $our > /etc/ccs-gate/onion && chmod 644 /etc/ccs-gate/onion"
+v=$((v + 1)); ONION=$our site "$v" "$good"
+passes "$v" proposals/p.html "the footer's onion line with this site's onion (/etc/ccs-gate/onion)" "Also on Tor: <a href=\"http://$our/\">$our</a>"
+onion_held "an onion line with another onion than this site's" "$other"
+v=$((v + 1)); site "$v" "$good"
+passes "$v" index.html "no onion line, with one configured" "Funding required"
+on web "rm -f /etc/ccs-gate/onion"
 v=$((v + 1)); site "$v" "$good"; on backend "qrencode -s 4 -o /tmp/q.png 'monero:$fake'"; docker exec "$name-backend" sh -c 'mkdir -p /out/images/p && cp /tmp/q.png /out/images/p/qr.png'
 held "$v" images/p/qr.png "a proposal image that is a QR code of another address" "PNG"
 v=$((v + 1)); site "$v" "$good"; docker exec "$name-backend" sh -c "mkdir -p /out/images/p && qrencode -s 4 --foreground=FFFFFF --background=000000 -o /out/images/p/inv.png 'monero:$fake'"
