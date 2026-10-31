@@ -24,7 +24,9 @@ here=$(dirname "$(readlink -f "$0")")
 repo=${here%/tests}
 CACHE=${REGTEST_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/ccs-regtest}
 FRONT=${FRONT_BASH:-$repo/../ccs-front-bash}
-PORT=${REGTEST_PORT:-38180}
+# (below 32768: a port in the kernel's range for outgoing connections, 32768-60999, can be one of
+# the test's own connections when a daemon starts, which then fails to bind it)
+PORT=${REGTEST_PORT:-28180}
 MONERO_V=v0.18.5.4
 MONERO_SHA=ba2928962c101b609434bf8c1b43ad59ebe96c5525977284ca599d8bf0f02d10
 # (binaryFate's signed hashes.txt for v0.18.3.3, monero-site commit d00169a6d)
@@ -107,7 +109,7 @@ start_daemon() { # start_daemon BIN DIR
     mkdir -p "$2"
     "$1/monerod" --regtest --offline --fixed-difficulty 1 --no-igd --non-interactive --data-dir "$2" \
         --rpc-bind-ip 127.0.0.1 --rpc-bind-port "$DPORT" --p2p-bind-ip 127.0.0.1 --p2p-bind-port "$((DPORT - 1))" \
-        --zmq-rpc-bind-ip 127.0.0.1 --zmq-rpc-bind-port "$((DPORT + 1))" --log-file "$2/monerod.log" > "$2/stdout" 2>&1 &
+        --no-zmq --log-file "$2/monerod.log" > "$2/stdout" 2>&1 &
     PIDS+=($!)
     wait_for monerod D get_info
 }
