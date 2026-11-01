@@ -1,0 +1,147 @@
+--- a/go.mod
++++ b/go.mod
+@@ -2,7 +2,4 @@
+ 
+ go 1.17
+ 
+-require (
+-	golang.org/x/text v0.3.7
+-	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1
+-)
++require golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1
+--- a/qrcode/decoder/decoded_bit_stream_parser.go
++++ b/qrcode/decoder/decoded_bit_stream_parser.go
+@@ -1,9 +1,11 @@
+ package decoder
+ 
+-import (
+-	"golang.org/x/text/encoding"
+-	"golang.org/x/text/transform"
++// ccs-check (contrib/ccs-check/gozxing.patch): every segment's bytes read as ISO-8859-1, one
++// character a byte, whatever character set an ECI names or a guess would pick: no byte of a
++// multi-byte character hides the next, so an address's every character shows; and no
++// golang.org/x/text. An ECI is read, and changes nothing.
+ 
++import (
+ 	"github.com/makiuchi-d/gozxing"
+ 	"github.com/makiuchi-d/gozxing/common"
+ )
+@@ -23,7 +25,7 @@
+ 	parityData := -1
+ 	symbologyModifier := 0
+ 
+-	var currentCharacterSetECI *common.CharacterSetECI
++	eci := false
+ 	fc1InEffect := false
+ 	hasFNC1first := false
+ 	hasFNC1second := false
+@@ -65,14 +67,10 @@
+ 			}
+ 		case Mode_ECI:
+ 			// Count doesn't apply to ECI
+-			value, e := DecodedBitStreamParser_parseECIValue(bits)
+-			if e != nil {
++			if _, e := DecodedBitStreamParser_parseECIValue(bits); e != nil {
+ 				return nil, e
+ 			}
+-			currentCharacterSetECI, e = common.GetCharacterSetECIByValue(value)
+-			if e != nil || currentCharacterSetECI == nil {
+-				return nil, gozxing.WrapFormatException(e)
+-			}
++			eci = true
+ 		case Mode_HANZI:
+ 			// First handle Hanzi mode which does not start with character count
+ 			// Chinese mode contains a sub set indicator right after mode indicator
+@@ -109,7 +107,7 @@
+ 					return nil, e
+ 				}
+ 			case Mode_BYTE:
+-				result, byteSegments, e = DecodedBitStreamParser_decodeByteSegment(bits, result, count, currentCharacterSetECI, byteSegments, hints)
++				result, byteSegments, e = DecodedBitStreamParser_decodeByteSegment(bits, result, count, byteSegments)
+ 				if e != nil {
+ 					return nil, e
+ 				}
+@@ -129,7 +127,7 @@
+ 		}
+ 	}
+ 
+-	if currentCharacterSetECI != nil {
++	if eci {
+ 		if hasFNC1first {
+ 			symbologyModifier = 4
+ 		} else if hasFNC1second {
+@@ -186,12 +184,7 @@
+ 		count--
+ 	}
+ 
+-	dec := common.StringUtils_GB2312_CHARSET.NewDecoder()
+-	result, _, e := transform.Append(dec, result, buffer[:offset])
+-	if e != nil {
+-		return result, gozxing.WrapFormatException(e)
+-	}
+-	return result, nil
++	return latin1(result, buffer[:offset]), nil
+ }
+ 
+ func DecodedBitStreamParser_decodeKanjiSegment(bits *common.BitSource, result []byte, count int) ([]byte, error) {
+@@ -221,18 +214,11 @@
+ 		count--
+ 	}
+ 
+-	// Shift_JIS may not be supported in some environments:
+-	dec := common.StringUtils_SHIFT_JIS_CHARSET.NewDecoder()
+-	result, _, e := transform.Append(dec, result, buffer[:offset])
+-	if e != nil {
+-		return result, gozxing.WrapFormatException(e)
+-	}
+-	return result, nil
++	return latin1(result, buffer[:offset]), nil
+ }
+ 
+ func DecodedBitStreamParser_decodeByteSegment(bits *common.BitSource,
+-	result []byte, count int, currentCharacterSetECI *common.CharacterSetECI,
+-	byteSegments [][]byte, hints map[gozxing.DecodeHintType]interface{}) ([]byte, [][]byte, error) {
++	result []byte, count int, byteSegments [][]byte) ([]byte, [][]byte, error) {
+ 
+ 	// Don't crash trying to read more bits than we have available.
+ 	if 8*count > bits.Available() {
+@@ -244,31 +230,16 @@
+ 		b, _ := bits.ReadBits(8)
+ 		readBytes[i] = byte(b)
+ 	}
++	byteSegments = append(byteSegments, readBytes)
++	return latin1(result, readBytes), byteSegments, nil
++}
+ 
+-	var encoding encoding.Encoding
+-	if currentCharacterSetECI == nil {
+-		// The spec isn't clear on this mode; see
+-		// section 6.4.5: t does not say which encoding to assuming
+-		// upon decoding. I have seen ISO-8859-1 used as well as
+-		// Shift_JIS -- without anything like an ECI designator to
+-		// give a hint.
+-		var err error
+-		encoding, err = common.StringUtils_guessCharset(readBytes, hints)
+-		if err != nil {
+-			return nil, nil, gozxing.WrapFormatException(err)
+-		}
+-	} else {
+-		encoding = currentCharacterSetECI.GetCharset()
+-	}
+-
+-	dec := encoding.NewDecoder()
+-	result, _, e := transform.Append(dec, result, readBytes)
+-	if e != nil {
+-		return result, byteSegments, gozxing.WrapFormatException(e)
++// latin1: b appended to result as ISO-8859-1 text (UTF-8), each byte its character
++func latin1(result, b []byte) []byte {
++	for _, c := range b {
++		result = append(result, string(rune(c))...)
+ 	}
+-
+-	byteSegments = append(byteSegments, readBytes)
+-	return result, byteSegments, nil
++	return result
+ }
+ 
+ func toAlphaNumericChar(value int) (byte, error) {

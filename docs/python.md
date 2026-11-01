@@ -69,6 +69,12 @@ therefore change the site, as a compromised gate could. Hence: keep Python patch
   (unattended-upgrades on Debian and Ubuntu) cover it.
 - **Watch for:** Python security releases (python.org's security announcements) and libzbar's
   CVEs; either is a reason to release.
+- **ccs-check** (`contrib/ccs-check`: the same checks in Go, beside the Python in shadow mode,
+  later in its place): built by StageX's Go (`container/images`, `go`), from `vendor/` (gozxing,
+  x/text, x/xerrors). CI's `vulncheck` (weekly, and on each change) runs govulncheck: it fails on
+  a known vulnerability in code ccs-check calls, and lists the rest. A Go security release is a
+  StageX pin refresh, as Python's (StageX publishes it some days after Go does); a module's is
+  `contrib/ccs-check/build.sh vendor MODULE@VERSION`, a reviewed commit; then a release.
 
 Removing Python entirely would mean doing QR decoding, pixel comparison and checksums with other
 tools (zbarimg, a C helper), which are dependencies of their own; for now it stays, contained to

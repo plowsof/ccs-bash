@@ -48,6 +48,24 @@ RUN --mount=type=bind,source=container,target=/pin \
     && make -s DESTDIR=/rootfs install > /dev/null \
     && rm -rf /rootfs/usr/include /rootfs/usr/lib/pkgconfig /rootfs/usr/share /rootfs/usr/lib/*.a /rootfs/usr/lib/*.la
 
+# ccs-check's modules (gozxing, golang.org/x/xerrors) from their pinned archives (sources.lock:
+# the files Go's checksum database has for their versions), the QR reader's files only, patched
+# (contrib/ccs-check/deps.sh), at /deps, where its go.mod has them
+FROM toolchain AS ccs-check-deps
+COPY --from=bash / /
+COPY --from=ncurses / /
+RUN --mount=type=bind,source=container,target=/pin --mount=type=bind,source=contrib/ccs-check,target=/c \
+    bash /pin/verify.sh /pin/sources.lock /pin/sources && bash /c/deps.sh /pin/sources /deps
+
+# ccs-check, the gate's checks in Go (contrib/ccs-check), as its build.sh builds it: StageX's Go
+# alone (it has no shell: the exec form), as root (a clone made under umask 077 is its owner's
+# alone: StageX's user couldn't read it), with no network, so the same bytes
+FROM go AS ccs-check
+USER 0
+COPY --from=ccs-check-deps /deps /deps
+ENV HOME=/tmp GOCACHE=/tmp/cache GOPATH=/tmp/go CGO_ENABLED=0 GOFLAGS=-mod=readonly GOPROXY=off GOTOOLCHAIN=local
+RUN --mount=type=bind,source=contrib/ccs-check,target=/src ["/usr/bin/go", "-C", "/src", "build", "-trimpath", "-buildvcs=false", "-ldflags=-buildid=", "-o", "/tmp/ccs-check", "."]
+
 FROM scratch AS tree
 COPY --from=filesystem / /
 COPY --from=musl / /
@@ -81,6 +99,7 @@ COPY --from=giflib / /
 COPY --from=qrencode /rootfs/ /
 COPY --from=zbar /rootfs/ /
 COPY contrib/ccs-receive contrib/ccs-backup-receive /usr/local/bin/
+COPY --from=ccs-check --chown=0:0 /tmp/ccs-check /usr/local/bin/ccs-check
 COPY contrib/docker/web/sshd_config /etc/ssh/sshd_config
 COPY contrib/docker/web/init /usr/local/bin/ccs-web-init
 
@@ -119,7 +138,7 @@ RUN --mount=type=bind,source=container,target=/pin \
     && PYTHONHASHSEED=0 chroot /rootfs /usr/bin/python3 -I -m compileall -q -j 1 \
         --invalidation-mode unchecked-hash /usr/lib/python3.14 > /dev/null \
     && mkdir -p var/log && ln -s bash usr/bin/sh && ln -sf /etc/ccs-ssh/keys/passwd etc/passwd && ln -sf /etc/ccs-ssh/keys/group etc/group \
-    && chmod 755 usr/local/bin/ccs-receive usr/local/bin/ccs-backup-receive usr/local/bin/ccs-web-init && chmod 644 etc/ssh/sshd_config \
+    && chmod 755 usr/local/bin/ccs-receive usr/local/bin/ccs-backup-receive usr/local/bin/ccs-check usr/local/bin/ccs-web-init && chmod 644 etc/ssh/sshd_config \
     && find . -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
 
 FROM scratch AS image
