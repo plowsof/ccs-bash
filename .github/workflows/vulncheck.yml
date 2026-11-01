@@ -2,7 +2,7 @@ name: vulncheck
 # ccs-check (contrib/ccs-check): the known vulnerabilities (Go's database) in what it calls, of
 # Go's standard library as StageX's pinned Go has it and of vendor/. Weekly too: a new one is
 # found in code that hasn't changed. A failure: refresh the Go pin (container/update-images.sh)
-# or the module (contrib/ccs-check/build.sh vendor), a release (docs/python.md, Keeping it patched).
+# or the module (a new archive in container/sources.lock), a release (docs/ccs-check.md, Keeping it patched).
 on:
   pull_request:
     paths: [contrib/ccs-check/**, container/images, container/sources.lock, .github/workflows/vulncheck.yml]

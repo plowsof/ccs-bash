@@ -2,7 +2,8 @@ name: release
 # On a pushed tag v*: build the pinned image, test it, check (check-pinned.sh) builds give the same
 # hash, push it to ghcr.io/<owner>/ccs-bash:<tag> and make a GitHub release with both hashes; the
 # gate's image too (container/gate.Dockerfile, ghcr.io/<owner>/ccs-bash:<tag>-gate), its ID in the
-# notes as "Gate image ID" (contrib/release/build attests both).
+# notes as "Gate image ID" (contrib/release/build attests both); and its ccs-check, copied out of
+# that image, as an asset with its sha256 in the notes, for a gate set up on a host (no Docker).
 on:
   push:
     tags: ['v*']
@@ -45,6 +46,9 @@ jobs:
           digest=$(docker image inspect "$image:$TAG" --format '{{index .RepoDigests 0}}')
           gate=$(docker image inspect ccs-gate --format '{{.Id}}')
           gate_digest=$(docker image inspect "$image:$TAG-gate" --format '{{index .RepoDigests 0}}')
+          # the gate's checks, the gate image's own bytes (attested with it), for a host setup
+          c=$(docker create ccs-gate) && docker cp "$c:/usr/local/bin/ccs-check" "ccs-check-$TAG-linux-amd64" && docker rm "$c" > /dev/null
+          check=$(sha256sum < "ccs-check-$TAG-linux-amd64" | cut -d' ' -f1)
           notes=$(cat <<EOF
           Image, pulled by its digest (a tag can be moved, a digest can't):
 
@@ -63,6 +67,10 @@ jobs:
           Gate image ID: \`$gate\`
 
           Built yourself: \`container/build.sh ccs-gate gate.Dockerfile\`.
+
+          The gate's checks, for a host setup (docs/two-machines.md): \`ccs-check-$TAG-linux-amd64\`,
+          ccs-check sha256: \`$check\`. The gate image's own /usr/local/bin/ccs-check (so attested with
+          it); also what \`contrib/ccs-check/build.sh\` makes from this tag.
           EOF
           )
           # a release made by hand on GitHub (which also makes the tag) keeps its text
@@ -71,3 +79,4 @@ jobs:
           else
               gh release create "$TAG" --verify-tag --title "$TAG" --notes "$notes"
           fi
+          gh release upload "$TAG" "ccs-check-$TAG-linux-amd64" --clobber

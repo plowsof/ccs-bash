@@ -206,10 +206,10 @@ change. The host keeps the accounts' ids, folders, key files and `/etc/ccs-gate`
 - **The image:** StageX by digest (signatures checked), sources by sha256, built as ccs-bash's,
   reproducible, attested in the same release (`contrib/release/build ccs-bash vX` builds both; its
   second line is `ccs-gate-vX`; `contrib/release/verify ccs-gate-vX`). GNU userland, as the gate
-  was written and tested for; sshd (no ssh client, sftp or agent); Python; git; and the QR reader's
-  libraries: libzbar built here (StageX publishes none; with zbar's own fix of a crash under
-  clang), on pixels libpng, libturbojpeg or giflib decode; qrencode built with PNG output, as
-  ccs-front-bash builds it, so its QR codes are the backend's, pixel for pixel. About 165 MB.
+  was written and tested for; sshd (no ssh client, sftp or agent); git; rsync; `ccs-check`, the
+  checks in Go ([ccs-check.md](ccs-check.md)), built here; qrencode built with PNG output, as
+  ccs-front-bash builds it, so its QR codes are the backend's, pixel for pixel. No Python, and no
+  C library that reads an image a push brings.
 - **sshd** as root, read-only, every capability dropped but the three it can't log anyone in
   without (`compose.yml` says why each), `no-new-privileges`, memory- and process-limited. One
   sshd a service, one user each (`AllowUsers`), its forced command (`ForceCommand`, and the key
