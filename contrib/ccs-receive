@@ -496,7 +496,7 @@ class Design:
         label = self.fill(part(self.p["label"]), {"tag": TEXT, "color": "tag-[0-7]"})
         return self.fill(c, {"url": url, "name": TEXT, "author": TEXT, "date": DATE,
             "funding_note": "(?: · funding since " + DATE + ")?", "funding_date": DATE, "contributors": NUM, "amount": XMR, "raised": XMR,
-            "percentage": NUM, "done": NUM, "milestones": NUM, "pending_note": "(?: · " + XMR + " XMR pending)?",
+            "percentage": NUM, "done": NUM, "milestones": NUM, "pending_note": "(?: · \\+?" + XMR + " XMR pending)?",
             "upvotes": NUM + "|–", "downvotes": NUM + "|–", "segments": seg, "tags": "(?:" + label + ")*"})
     def nav(self, depth):
         href = re.escape(prefix(depth)) + "explore/tag/[A-Za-z0-9%._~-]+/"
@@ -562,7 +562,7 @@ class Design:
         href = re.escape(prefix(depth)) + "explore/tag/[A-Za-z0-9%._~-]+/"
         s = {"name": TEXT, "author": TEXT, "date": DATE, "funding_note": "(?: · funding since " + DATE + ")?", "funding_date": DATE,
              "contributors": NUM, "amount": XMR, "raised": XMR, "percentage": NUM, "done": NUM, "milestones": NUM,
-             "pending_note": "(?: · " + XMR + " XMR pending)?", "gitlab_url": "#|" + LINK, "segments": seg,
+             "pending_note": "(?: · \\+?" + XMR + " XMR pending)?", "gitlab_url": "#|" + LINK, "segments": seg,
              "address": B58 + "{95}", "qr": "data:image/png;base64,[A-Za-z0-9+/]+=*",
              "verify_link": re.escape(strip(self.p["verify-link"])), "milestones_list": "", "payouts_list": "",
              "tag_links": "(?:" + self.fill(part(self.p["label-link"]), {"tag": TEXT, "color": "tag-[0-7]", "href": href}) + ")*"}
