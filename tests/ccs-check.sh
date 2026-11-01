@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# ccs-check against the Python it replaces (shadow mode, offline): each of ccs-receive's Python
-# blocks and ccs-check's subcommand for it on the same files, their output the same, line for
-# line. The files: addresses (real checksums, made with check_py's own Keccak) written every way
+# ccs-check against the Python it replaced: each of the gate's Python checks (as they were, in
+# tests/fixtures/gate-python.sh) and ccs-check's subcommand for it on the same files, their output
+# the same, line for line. The files: addresses (real checksums, made with check_py's own Keccak) written every way
 # the checks know (entities, groups, look-alike bytes, controls, data: images, JSON escapes...),
 # then random mixes of those pieces. Needs python3 and a ccs-check (CCS_CHECK, else
 # contrib/ccs-check/build.sh builds one). A test helper's Python (CI only, docs/python.md).
 set -uo pipefail
 here=$(dirname "$(readlink -f "$0")")
-receive=$here/../contrib/ccs-receive
+receive=$here/fixtures/gate-python.sh
 status=0
 ok() { echo "ok   $1"; }
 fail() { echo "FAIL $1"; status=1; }
@@ -16,7 +16,7 @@ trap '[[ ${KEEP:-} ]] || rm -rf "$t"' EXIT
 if [[ -n ${CCS_CHECK:-} ]]; then check=$CCS_CHECK
 else "$here/../contrib/ccs-check/build.sh" "$t/ccs-check" > /dev/null || exit 1; check=$t/ccs-check
 fi
-# block NAME: a Python block of ccs-receive, as it runs (scan_py and json_py after check_py)
+# block NAME: one of the Python checks, as the gate ran it (scan_py and json_py after check_py)
 block() { sed -n "/^$1='\$/,/^'\$/p; /^$1=\$check_py'\$/,/^'\$/p" "$receive" | sed '1d; $d'; }
 block check_py > "$t/check.py"
 for b in scan_py json_py; do { cat "$t/check.py"; block "$b"; } > "$t/$b.py"; done
@@ -90,9 +90,8 @@ same "scan, 3 checksums a file: $(grep -c 'too many' "$t/py.budget") files past 
 CCS_GATE_MAX=200 python3 -I "$t/scan_py.py" "${html[@]}" > "$t/py.max"
 CCS_GATE_MAX=200 "$check" scan "${html[@]}" > "$t/go.max"
 same "scan, files over 200 bytes not read: $(grep -c 'not read' "$t/py.max")" "$t/py.max" "$t/go.max"
-# the NUL check (scan()'s inline Python)
-nulpy=$(sed -n "/xargs -0 -r python3 -I -c 'import sys\$/,/print(f)'/p" "$receive" | sed "1s/.*-c 'import sys/import sys/; \$s/'.*//")
-printf '%s\n' "$nulpy" > "$t/nul.py"
+# the NUL check (it was inline Python in scan())
+sed -n "/^nul_py='import sys\$/,/^'\$/p" "$receive" | sed "1s/^nul_py='//; \$d" > "$t/nul.py"
 grep -q 'b"\\0" in h.read()' "$t/nul.py" || fail "the NUL check: not found in $receive"
 python3 -I "$t/nul.py" "${html[@]}" "${jsn[@]}" > "$t/py.nul"
 "$check" nul "${html[@]}" "${jsn[@]}" > "$t/go.nul"
