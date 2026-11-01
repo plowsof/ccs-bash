@@ -576,6 +576,11 @@ cp -r "$OUT" "$T/out-8"
 if run_back; then
     ok "8. a 9008 XMR donation: counted"
     run_front && shows "8. a 9008 XMR donation" p-alpha.md
+    # past its goal in Funding Required: fully funded, the feed's date recorded and published
+    at=$(jq -r '.[] | .proposals[] | select(."local-url" == "/proposals/p-alpha.html") | ."funded-at"' "$OUT/proposals.json")
+    if [[ $at =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z$ ]] && grep -q "^\"p-alpha.md\",.*,\"$at\"\$" "$STATE/proposals.csv"; then
+        ok "8. past its goal: fully funded at $at (proposals.csv, proposals.json's funded-at)"
+    else fail "8. past its goal: no funded date ('$at')"; fi
 else
     fail "8. a 9008 XMR donation stops every run: $(grep -m1 'error' "$T/last.log") (the site keeps its last totals)"
 fi
