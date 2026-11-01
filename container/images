@@ -34,6 +34,9 @@ attr                       stagex/core-attr@sha256:0bc3969c19f015f6408b7b952abca
 libpng                     stagex/core-libpng@sha256:60ad8b2685cdc0766fa476b63855a22a0dc6f69998fb697f9d3a783e957e4785
 libjpeg                    stagex/core-libjpeg@sha256:c811a528bd8393a3d8afdb6e53c66f1fe1750ef09b1e7d06200d95cc59422805
 giflib                     stagex/core-giflib@sha256:3456d97c680a39090899fa028d50818356f536048cc1431a2ecc67f2af04eec2
+# the gate's checks, ccs-check (contrib/ccs-check: gate.Dockerfile, build.sh): Go, building only
+# from vendor/
+go                         stagex/core-go@sha256:689ff4afffb574203ec8039fd4663101b07bec04805d53fb198bee1a51bb1736
 # the builder (builder.Dockerfile): BuildKit, and runc with its library for the RUN steps
 buildkit                   stagex/user-buildkit@sha256:91bff9810facddaa795fe3173d190b25b1919bd4eb21dc8e81ce4d632161faa7
 runc                       stagex/user-runc@sha256:8bbf5810f80422827c085f653aecbdf3c4f0b673f0c27129e634379177443857

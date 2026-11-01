@@ -26,7 +26,8 @@
 # isn't the pinned one, or no design.sha256, design or markdown.awk, refuses the whole push. Needs
 # bash, awk, grep, rsync (rrsync), coreutils, curl, qrencode, git, python3 (as rrsync), and for
 # reading QR codes libzbar, libpng, libturbojpeg and giflib (Debian: libzbar0 libpng16-16
-# libturbojpeg0 libgif7). Root-owned, 755.
+# libturbojpeg0 libgif7). With ccs-check (contrib/ccs-check) in PATH, its checks run beside the
+# Python's, which decide (shadow mode, below). Root-owned, 755.
 set -euo pipefail
 # (no home of the account's: git, curl and bash read no config from there, whatever passwd says)
 export LC_ALL=C HOME=/nonexistent GIT_CONFIG_NOSYSTEM=1
@@ -60,6 +61,25 @@ say() {
     # stderr is the backend's ssh channel: if the backend hung up, writing to it kills the writer
     # (SIGPIPE), so a subshell writes it, and the gate goes on to alert
     (printf 'ccs-gate: %s\n' "$*" >&2) || true
+}
+
+# Shadow mode (the plan to retire Python: ccs-check, the same checks in Go, contrib/ccs-check):
+# where ccs-check is installed, it runs beside each Python check below on the same files, with
+# the same time limit, and the Python's answer is the one used. An answer that differs is kept
+# (both, in $state/differs/, two weeks and 200 files at most), logged, and IRC told once an hour.
+shadow=''
+command -v ccs-check > /dev/null 2>&1 && ccs-check --check 2> /dev/null && shadow=1
+# differs WHAT PYTHON GO: the two answers (files) the same, or the difference kept and told
+differs() {
+    cmp -s -- "$2" "$3" && return 0
+    local d=$state/differs f
+    mkdir -p "$d" 2> /dev/null || true
+    find "$d" -type f -mtime +14 -delete 2> /dev/null || true
+    (($(find "$d" -type f 2> /dev/null | wc -l) < 200)) || { say "ccs-check differs from the Python on $1 (not kept: $d is full)"; return 0; }
+    f=$d/$(date -u +%Y%m%dT%H%M%S)-$$-${1//[^A-Za-z0-9._-]/_}
+    { printf '== %s: the Python\n' "$1"; cat -- "$2"; printf '== ccs-check\n'; cat -- "$3"; } > "$f" 2> /dev/null || true
+    say "ccs-check differs from the Python on $1 (both answers: $f)"
+    alert check-differs "the web server's checks in Go (ccs-check, shadow mode) answer differently from its Python on $1 (both: $f; the Python's is used) @ @SITE@" || true
 }
 
 # refuse WHY KEY [WHY_FOR_IRC]: the whole push stays out
@@ -289,7 +309,20 @@ for w, h, grey in {"png": png, "jpeg": jpeg, "gif": gif}[kind]():
 for t in found: sys.stdout.buffer.write(t + b"\n")
 sys.exit(0 if found else 1)
 '
-qrscan() { CCS_GATE_SCANLOG=$([[ -e $state/scan.log ]] && echo "$state/scan.log") timeout 20 python3 -I -c "$qrscan_py" "$@"; }
+qrscan() {
+    local out rc=0 go grc=0 a b
+    out=$(CCS_GATE_SCANLOG=$([[ -e $state/scan.log ]] && echo "$state/scan.log") timeout 20 python3 -I -c "$qrscan_py" "$@") || rc=$?
+    if [[ $shadow ]]; then
+        go=$(timeout 20 ccs-check qr "$@" 2> /dev/null) || grc=$?
+        a=$(mktemp) b=$(mktemp)
+        { echo "exit $rc"; [[ -z $out ]] || sort -u <<<"$out"; } > "$a"
+        { echo "exit $grc"; [[ -z $go ]] || sort -u <<<"$go"; } > "$b"
+        differs "qr $1 ${2#"$staging"/}" "$a" "$b"
+        rm -f "$a" "$b"
+    fi
+    [[ -z $out ]] || printf '%s\n' "$out"
+    return "$rc"
+}
 
 # qr FILE IMAGE: the addresses in every QR code in IMAGE as "FILE<TAB>address" lines (none if it
 # has no QR code). qrscan_py reads it, as ccs-data, with a time limit; inverted codes (light on
@@ -351,7 +384,20 @@ for y in range(h):
         else: out += row[x * 4:x * 4 + 4]
 print(w, h, hashlib.sha256(out).hexdigest())
 '
-pixels() { timeout 20 python3 -I -c "$pixels_py" < "$1" 2> /dev/null; }
+pixels() {
+    local png=$1 tmp='' rc=0 a b
+    if [[ $shadow ]]; then
+        a=$(mktemp) b=$(mktemp)
+        [[ -f $png ]] || { tmp=$(mktemp); head -c $((4 << 20)) -- "$png" > "$tmp"; png=$tmp; }
+        timeout 20 python3 -I -c "$pixels_py" < "$png" > "$a" 2> /dev/null || rc=$?
+        timeout 20 ccs-check pixels < "$png" > "$b" 2> /dev/null || true
+        differs "pixels ${1#"$staging"/}" "$a" "$b"
+        cat -- "$a"
+        rm -f "$a" "$b" ${tmp:+"$tmp"}
+        return "$rc"
+    fi
+    timeout 20 python3 -I -c "$pixels_py" < "$1" 2> /dev/null
+}
 
 # qrdata FILE IMAGE: "FILE<TAB>address" if IMAGE is exactly the QR code of one address that
 # qrencode makes (as ccs-front-bash does: qrencode -s 10 "monero:<address>"), pixel for pixel;
@@ -654,20 +700,39 @@ scan() {
     png=$(mktemp) out=$(mktemp)
     # a NUL byte: HTML drops it from the text, so it could split an address
     # (Python, not grep -P: a grep without PCRE, the image's, has none)
-    printf '%s\0' "$@" | grep -zE '\.(html|json)$|/feed\.xml$' | xargs -0 -r python3 -I -c 'import sys
+    mapfile -d '' texts < <(printf '%s\0' "$@" | grep -zE '\.(html|json)$|/feed\.xml$')
+    if ((${#texts[@]})); then
+        printf '%s\0' "${texts[@]}" | xargs -0 -r python3 -I -c 'import sys
 for f in sys.argv[1:]:
     with open(f, "rb") as h:
-        if b"\0" in h.read(): print(f)' | sed 's/$/\t!a NUL byte (a browser drops it from the text)/'
+        if b"\0" in h.read(): print(f)' > "$out"
+        if [[ $shadow ]]; then
+            printf '%s\0' "${texts[@]}" | xargs -0 -r ccs-check nul > "$out.go" 2> /dev/null || true
+            differs "nul" "$out" "$out.go"
+        fi
+        sed 's/$/\t!a NUL byte (a browser drops it from the text)/' "$out"
+    fi
     # the JSON, as JSON (its \u escapes are an address's characters to whoever reads it)
     mapfile -d '' jsons < <(printf '%s\0' "$@" | grep -zE '\.json$')
     if ((${#jsons[@]})); then
-        timeout 60 python3 -I -c "$json_py" "${jsons[@]}" || printf '%s\t!the JSON could not be read in time\n' "${jsons[@]}"
+        { timeout 60 python3 -I -c "$json_py" "${jsons[@]}" || printf '%s\t!the JSON could not be read in time\n' "${jsons[@]}"; } > "$out"
+        if [[ $shadow ]]; then
+            { timeout 60 ccs-check json "${jsons[@]}" 2> /dev/null || printf '%s\t!the JSON could not be read in time\n' "${jsons[@]}"; } > "$out.go"
+            differs "json" "$out" "$out.go"
+        fi
+        cat -- "$out"
     fi
     # the pages, JSON and feed as written; one that couldn't be read in time is held back (what it
     # has in it is unknown)
-    mapfile -d '' texts < <(printf '%s\0' "$@" | grep -zE '\.(html|json)$|/feed\.xml$')
+    : > "$out"
     if ((${#texts[@]})) && ! timeout 120 python3 -I -c "$scan_py" "${texts[@]}" > "$out" 2> /dev/null; then
         printf '%s\t!its addresses could not be read in time\n' "${texts[@]}" >> "$out"
+    fi
+    if ((${#texts[@]})) && [[ $shadow ]]; then
+        if ! timeout 120 ccs-check scan "${texts[@]}" > "$out.go" 2> /dev/null; then
+            printf '%s\t!its addresses could not be read in time\n' "${texts[@]}" >> "$out.go"
+        fi
+        differs "scan" "$out" "$out.go"
     fi
     # each QR code: one image read once however often it is pushed (a page of 200 copies took a
     # minute), 4 a file at most (a proposal's page has one), and all of them within 5 minutes: past
@@ -696,7 +761,7 @@ for f in sys.argv[1:]:
         fi
         printf '%s\t%s\n' "$file" "${seen[$payload]}"
     done < "$out"
-    rm -f "$png" "$out"
+    rm -f "$png" "$out" "$out.go"
 }
 
 # fetch: the proposals repository (/etc/ccs-gate/proposals.conf: PROPOSALS_GIT, its URL;
@@ -820,6 +885,12 @@ pages() {
     out=$(mktemp) png=$(mktemp)
     printf '%s\0' "${html[@]}" \
         | timeout 300 python3 -I -c "$pages_py" "$staging" "$designs" "$b" "$list" "$vk" "$hosts" "$onion" > "$out" 2> /dev/null || true
+    if [[ $shadow ]]; then
+        printf '%s\0' "${html[@]}" \
+            | timeout 300 ccs-check pages "$staging" "$designs" "$b" "$list" "$vk" "$hosts" "$onion" > "$out.go" 2> /dev/null || true
+        differs "pages" "$out" "$out.go"
+        rm -f "$out.go"
+    fi
     while IFS=$'\t' read -r file tag a q; do
         case $tag in
             =ok) [[ ${ok[$file]:-} == no ]] || ok[$file]=1 ;;

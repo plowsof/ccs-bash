@@ -20,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, pinned by commit
       - name: shellcheck
-        run: shellcheck -x ccs-back.sh notify-loop.sh lib/*.sh tests/*.sh container/*.sh contrib/ccs-receive contrib/ccs-watch contrib/ccs-backup-receive contrib/retire-wallet contrib/migrate/compare-deposits contrib/ccs contrib/docker/backend/step contrib/docker/backend/wallet-rpc/ccs-notify contrib/docker/web/init
+        run: shellcheck -x ccs-back.sh notify-loop.sh lib/*.sh tests/*.sh container/*.sh contrib/ccs-receive contrib/ccs-watch contrib/ccs-backup-receive contrib/retire-wallet contrib/migrate/compare-deposits contrib/ccs contrib/docker/backend/step contrib/docker/backend/wallet-rpc/ccs-notify contrib/docker/web/init contrib/ccs-check/build.sh
       - name: tests (Ubuntu's awk is mawk)
         run: tests/run.sh
       - name: the backend compose's stages (contrib/docker/backend/step)
@@ -108,6 +108,17 @@ jobs:
         run: container/build.sh ccs-gate gate.Dockerfile
       - name: its QR reader and tools, inside it, no network
         run: docker run --rm --network none --read-only --tmpfs /tmp -v "$PWD:/src:ro" --entrypoint bash ccs-gate /src/tests/gate-image.sh
+      - name: ccs-check, gofmt'd, vetted and its Go tests, in StageX's Go; build.sh's bytes the image's
+        run: |
+          contrib/ccs-check/build.sh test
+          b=$(contrib/ccs-check/build.sh "$RUNNER_TEMP/ccs-check" | cut -d' ' -f1)
+          i=$(docker run --rm --network none --entrypoint sha256sum ccs-gate /usr/local/bin/ccs-check | cut -d' ' -f1)
+          echo "build.sh: $b, the image: $i"; [[ $b == "$i" ]]
+      - name: ccs-check against the Python it replaces, on the same files (shadow mode, offline)
+        run: |
+          git clone -q --depth 1 -b v0.1.25 https://github.com/plowsof/ccs-front-bash "$RUNNER_TEMP/ccs-front-bash"
+          sudo apt-get install -y -q qrencode > /dev/null
+          CCS_CHECK="$RUNNER_TEMP/ccs-check" FRONT_BASH="$RUNNER_TEMP/ccs-front-bash" tests/ccs-check.sh
       - name: the gate's tests, the web server being this image
         run: GATE_IMAGE=ccs-gate tests/gate.sh
       - name: the web server compose's sshd, attacked from the backend's keys
@@ -144,6 +155,20 @@ jobs:
           read -r a b <<<"$IDS"
           echo "the tested build: $a"; echo "a clean one: $b"
           [[ $a == sha256:* && $a == "$b" ]] || { echo "error: the gate image's builds differ, or one is missing" >&2; exit 1; }
+  fuzz:
+    # ccs-check's fuzz tests (contrib/ccs-check/*/fuzz_test.go), a minute each, in StageX's Go: no
+    # panic or hang on any input, and what each must always say (rrsync: only the push's shape;
+    # pages: one line a page...). A failing input is printed; commit it under testdata/fuzz/.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, pinned by commit
+      - name: the source tarballs, kept from the last run (each still checked by its sha256)
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3, pinned by commit
+        with:
+          path: container/sources
+          key: sources-${{ hashFiles('container/sources.lock') }}
+      - name: go test -fuzz, 60 s a test
+        run: contrib/ccs-check/build.sh fuzz 60
   regtest:
     # The backend against a real monerod (regtest, offline) and monero-wallet-rpc: what a visitor
     # sees (totals, pending, contributions) checked against what the test sent (tests/regtest.sh)
@@ -167,8 +192,17 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, pinned by commit
+      - name: the source tarballs, kept from the last run (each still checked by its sha256)
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3, pinned by commit
+        with:
+          path: container/sources
+          key: sources-${{ hashFiles('container/sources.lock') }}
       - name: rrsync restrictions
         run: tests/rrsync.sh
+      - name: the same, on ccs-check rrsync (the gate's, in place of rrsync)
+        run: |
+          contrib/ccs-check/build.sh "$RUNNER_TEMP/ccs-check"
+          CCS_CHECK="$RUNNER_TEMP/ccs-check" tests/rrsync.sh
       - name: the gate (contrib/ccs-receive)
         run: tests/gate.sh
       - name: the watcher (contrib/ccs-watch)
