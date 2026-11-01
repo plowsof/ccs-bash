@@ -3,8 +3,14 @@
 # qrencode (with PNG output, as ccs-front-bash builds it) and rsync (only its
 # rrsync script: rsync itself is StageX's). fetch.sh tries the
 # urls in order and keeps a file only if its sha256 matches. Each sum is the one StageX pins for
-# the same tarball (core/busybox, user/zbar, user/libqrencode, user/rsync).
+# the same tarball (core/busybox, user/zbar, user/libqrencode, user/rsync). For ccs-check
+# (contrib/ccs-check/deps.sh), gozxing and golang.org/x/xerrors at the versions its go.mod
+# names: each archive's files hash to the h1: Go's checksum database has for that version
+# (gozxing h1:Iwm/nSTFNZTKb2hVNoXL3og/8hjxSsSYIz885k+2pFs=, xerrors
+# h1:go1bK/D/BFZV2I8cIQd1NKEZ+0owSTG1fDTci4IqFcE=).
 34f9ea6ff8636f2c9241153b9114eefa9e65674a45318ae1ef95bb5f31c53bb2 2695723 https://busybox.net/downloads/busybox-1.38.0.tar.bz2 https://www.busybox.net/downloads/busybox-1.38.0.tar.bz2
 212dfab527894b8bcbcc7cd1d43d63f5604a07473d31a5f02889e372614ebe28 1009320 https://github.com/mchehab/zbar/archive/refs/tags/0.23.93.tar.gz https://codeload.github.com/mchehab/zbar/tar.gz/refs/tags/0.23.93
 c7ffd1ef653e99540f661e47cb00b7f9cad1ee6b972399b16f93d672656e0d33 1892222 https://download.samba.org/pub/rsync/src/rsync-3.5.0.tar.gz https://www.samba.org/ftp/rsync/src/rsync-3.5.0.tar.gz https://github.com/RsyncProject/rsync/releases/download/v3.5.0/rsync-3.5.0.tar.gz
 5385bc1b8c2f20f3b91d258bf8ccc8cf62023935df2d2676b5b67049f31a049c 190419 https://github.com/fukuchi/libqrencode/archive/refs/tags/v4.1.1.tar.gz https://codeload.github.com/fukuchi/libqrencode/tar.gz/refs/tags/v4.1.1
+adc06d4ad9045b1903f925ebf28705feb273d4c38cff60f348af6ed9064db004 50498663 https://github.com/makiuchi-d/gozxing/archive/95e256b768ac998970103689922aaf7e8c5cae34.tar.gz https://codeload.github.com/makiuchi-d/gozxing/tar.gz/95e256b768ac998970103689922aaf7e8c5cae34
+25b085a914da78b9e922d49316eaab69a042a09285e46485a5cd2c50702a68d8 13669 https://github.com/golang/xerrors/archive/5ec99f83aff198f5fbd629d6c8d8eb38a04218ca.tar.gz https://codeload.github.com/golang/xerrors/tar.gz/5ec99f83aff198f5fbd629d6c8d8eb38a04218ca

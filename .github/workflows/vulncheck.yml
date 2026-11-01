@@ -1,0 +1,30 @@
+name: vulncheck
+# ccs-check (contrib/ccs-check): the known vulnerabilities (Go's database) in what it calls, of
+# Go's standard library as StageX's pinned Go has it and of vendor/. Weekly too: a new one is
+# found in code that hasn't changed. A failure: refresh the Go pin (container/update-images.sh)
+# or the module (contrib/ccs-check/build.sh vendor), a release (docs/python.md, Keeping it patched).
+on:
+  pull_request:
+    paths: [contrib/ccs-check/**, container/images, container/sources.lock, .github/workflows/vulncheck.yml]
+  push:
+    branches: [master]
+    paths: [contrib/ccs-check/**, container/images, container/sources.lock, .github/workflows/vulncheck.yml]
+  schedule:
+    - cron: '17 6 * * 1'
+permissions:
+  contents: read
+jobs:
+  govulncheck:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, pinned by commit
+      - name: the source tarballs, kept from the last run (each still checked by its sha256)
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3, pinned by commit
+        with:
+          path: container/sources
+          key: sources-${{ hashFiles('container/sources.lock') }}
+      - name: govulncheck, in StageX's Go (fails on a vulnerability in code ccs-check calls)
+        run: contrib/ccs-check/build.sh vulncheck
+      - name: and all it found, called or not (the Go pin's own, waiting on StageX)
+        if: always()
+        run: contrib/ccs-check/build.sh vulncheck -show verbose | grep -E '^Vulnerability|Found in|Fixed in' || true
