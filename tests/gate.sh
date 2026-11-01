@@ -60,6 +60,7 @@ printf '<!doctype html>\n<html lang="en">\n<head><meta charset="utf-8"><title>{{
 for s in wip cp; do sed 's/ccs:donate/ccs:funded/' "$d/parts/proposal-fr.html" > "$d/parts/proposal-$s.html"; done
 printf '<p>Raised {{raised}} of {{amount}} XMR{{pending_note}}</p>\n<a class="qr" href="monero:{{address}}"><img src="{{qr}}" alt="QR code of the address below"></a>\n<div class="address">{{address}}</div>{{verify_link}}\n' > "$d/parts/donate.html"
 printf '<p>Completed {{done}} of {{milestones}} milestones, raised {{raised}} of {{amount}} XMR</p>\n' > "$d/parts/funded.html"
+printf '<p>Raised {{raised}} of {{amount}} XMR{{pending_note}}</p>\n<progress max="100" value="{{percentage}}"></progress>\n<p class="funded-badge">Fully funded</p>\n' > "$d/parts/donate-funded.html"
 printf '<a class="card idea" href="{{url}}"><h3>{{name}}</h3><p>{{author}}, {{date}}{{funding_note}}</p><p class="labels">{{tags}}</p><p>{{upvotes}} {{downvotes}}</p></a>\n' > "$d/parts/card-idea.html"
 for s in fr wip cp; do cp "$d/parts/card-idea.html" "$d/parts/card-$s.html"; done
 printf '<div class="milestone"><h3>{{name}}</h3><p>{{funds}}</p><p>{{date}}</p></div>\n' > "$d/parts/milestone-done.html"
@@ -108,7 +109,10 @@ cards = [fill(part("card-idea"), {"url": "https://forge.test/ccs-proposals/pulls
 write("ideas/index.html", region(read(design + "/ideas/index.html"), "list idea", "\n".join(cards) or part("empty")))
 page = fill(read(design + "/parts/proposal-fr.html"), {"name": "A proposal", "author": "someone", "funding_date": "October 22, 2026", "tag_links": "",
              "body": "<p>Monero: a guide, in 2 parts.</p>"})
-page = region(page, "donate", fill(part("donate"), {"raised": "1.5", "amount": "10", "pending_note": os.environ.get("PENDING_NOTE", ""), "address": addr,
+if os.environ.get("FUNDED"):   # at its goal: "Fully funded" (donate-funded), its bar at FUNDED
+    page = region(page, "donate", fill(part("donate-funded"), {"raised": "10", "amount": "10", "pending_note": "", "percentage": os.environ["FUNDED"]}))
+else:
+    page = region(page, "donate", fill(part("donate"), {"raised": "1.5", "amount": "10", "pending_note": os.environ.get("PENDING_NOTE", ""), "address": addr,
              "qr": "data:image/png;base64," + qr, "verify_link": read(design + "/parts/verify-link.html").rstrip("\n")}))
 write("proposals/p.html", region(page, "milestones", part("no-milestones")) + "\n")
 PY
@@ -175,7 +179,7 @@ site() {
     qr=$(qr64 "${3:-$a}")
     shift $(($# < 3 ? $# : 3))
     on backend "rm -rf /out && mkdir -p /out/assets && cp /design/assets/style.css /out/assets/"
-    docker exec -e PENDING_NOTE="${PENDING_NOTE:-}" -e ONION="${ONION:-}" "$name-backend" python3 /gen.py /design /out "$v" "$a" "$qr" "$@"
+    docker exec -e PENDING_NOTE="${PENDING_NOTE:-}" -e ONION="${ONION:-}" -e FUNDED="${FUNDED:-}" "$name-backend" python3 /gen.py /design /out "$v" "$a" "$qr" "$@"
     on backend "echo '[{\"address\": \"$a\"}]' > /out/projects.json"
     put subaddresses.txt < <(on web 'cat /etc/ccs-gate/subaddresses.txt')
     put subaddresses.txt.asc <<<sig
@@ -427,6 +431,12 @@ onion_held "an onion line with another onion than this site's" "$other"
 v=$((v + 1)); site "$v" "$good"
 passes "$v" index.html "no onion line, with one configured" "Funding required"
 on web "rm -f /etc/ccs-gate/onion"
+# fully funded: "Fully funded" (the design's donate-funded part, no address) in place of a Funding
+# Required proposal's donation box, only with its bar full: short of it, held back
+v=$((v + 1)); FUNDED=100 site "$v" "$good"
+passes "$v" proposals/p.html "a proposal at its goal: \"Fully funded\" in place of its donation box" 'class="funded-badge">Fully funded'
+v=$((v + 1)); FUNDED=99 site "$v" "$good"
+held "$v" proposals/p.html "\"Fully funded\" on a proposal short of its goal" 'value="99"'
 # the feed (ccs-front-bash's feed.xml): its items links to this site's proposal pages (alert.conf's
 # SITE_URL, https://ccs.test), plain text; one with a link elsewhere or to no page held back, the
 # live one kept
