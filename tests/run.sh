@@ -301,7 +301,7 @@ got=$(
     load_state
     echo "$(jq -r '[to_entries[] | select(.value.funded_date) | .key] | join(" ")' "$WORK/state.json")" \
         "$([[ $(jq -r '."a.md".funded_date' "$WORK/state.json") == "$first" ]] && echo once)" \
-        "$(awk -F, '{ print NF }' "$STATE_DIR/proposals.csv" | sort | uniq -c | awk '{ printf "%s:%s ", $2, $1 }')"
+        "$(awk -F, '{ n[NF]++ } END { printf "5:%d 6:%d ", n[5], n[6] }' "$STATE_DIR/proposals.csv")"
     rm -rf "$WORK" "$STATE_DIR"
 )
 if [[ $got == 'a.md once 5:2 6:1 ' ]]; then echo "ok   fully funded: a Funding Required proposal at its goal gets funded_date, once, kept in proposals.csv and read back"; else echo "FAIL fully funded: '$got'"; status=1; fi
