@@ -427,6 +427,25 @@ onion_held "an onion line with another onion than this site's" "$other"
 v=$((v + 1)); site "$v" "$good"
 passes "$v" index.html "no onion line, with one configured" "Funding required"
 on web "rm -f /etc/ccs-gate/onion"
+# the feed (ccs-front-bash's feed.xml): its items links to this site's proposal pages (alert.conf's
+# SITE_URL, https://ccs.test), plain text; one with a link elsewhere or to no page held back, the
+# live one kept
+# feedxml HOST PAGE TITLE: a feed of one item, as ccs-front-bash writes it
+feedxml() {
+    printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' '<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">' '<channel>' \
+        '<title>Monero Community Crowdfunding System</title>' '<link>https://ccs.test/</link>' \
+        '<description>Proposals put to Funding Required, and fully funded</description>' \
+        '<atom:link href="https://ccs.test/feed.xml" rel="self" type="application/rss+xml"/>' \
+        '<item>' "<title>Fully funded: $3</title>" "<link>https://$1/proposals/$2.html</link>" \
+        "<guid isPermaLink=\"false\">https://$1/proposals/$2.html#funded</guid>" '<pubDate>Sat, 31 Oct 2026 23:50:47 +0000</pubDate>' '</item>' \
+        '</channel>' '</rss>'
+}
+v=$((v + 1)); site "$v" "$good"; feedxml ccs.test p "Proposal" | put feed.xml
+passes "$v" feed.xml "the feed, its item a link to one of this site's proposal pages" "<title>Fully funded: Proposal</title>"
+v=$((v + 1)); site "$v" "$good"; feedxml evil.example p "Proposal" | put feed.xml
+held "$v" feed.xml "a feed with a link to another site" "evil.example"
+v=$((v + 1)); site "$v" "$good"; feedxml ccs.test nope "Gone" | put feed.xml
+held "$v" feed.xml "a feed with a link to no proposal page of this site" "Gone"
 v=$((v + 1)); site "$v" "$good"; on backend "qrencode -s 4 -o /tmp/q.png 'monero:$fake'"; docker exec "$name-backend" sh -c 'mkdir -p /out/images/p && cp /tmp/q.png /out/images/p/qr.png'
 held "$v" images/p/qr.png "a proposal image that is a QR code of another address" "PNG"
 v=$((v + 1)); site "$v" "$good"; docker exec "$name-backend" sh -c "mkdir -p /out/images/p && qrencode -s 4 --foreground=FFFFFF --background=000000 -o /out/images/p/inv.png 'monero:$fake'"

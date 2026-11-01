@@ -39,6 +39,8 @@
                 "author": "judy",
                 "date": "October 5, 2026",
                 "funding-required-date": null,
+                "funding-required-at": null,
+                "funded-at": null,
                 "tags": []
             },
             {
@@ -57,6 +59,8 @@
                 "author": "dave",
                 "date": "October 1, 2026",
                 "funding-required-date": "October 22, 2026",
+                "funding-required-at": "2026-10-22T08:00:00Z",
+                "funded-at": null,
                 "tags": []
             },
             {
@@ -75,6 +79,8 @@
                 "author": "ivan",
                 "date": "January 2, 2025",
                 "funding-required-date": "October 22, 2026",
+                "funding-required-at": "2026-10-22T08:00:00Z",
+                "funded-at": null,
                 "tags": []
             },
             {
@@ -93,6 +99,8 @@
                 "author": "alice",
                 "date": "June 25, 2021",
                 "funding-required-date": "June 30, 2021",
+                "funding-required-at": "2021-06-30T10:00:00Z",
+                "funded-at": null,
                 "tags": []
             }
         ]
@@ -116,6 +124,8 @@
                 "author": "bob",
                 "date": "August 10, 2021",
                 "funding-required-date": null,
+                "funding-required-at": null,
+                "funded-at": null,
                 "tags": [
                     "Abandoned",
                     "Available to pick up",

@@ -399,7 +399,7 @@ agreeing, answering) and changes nothing.
 | `/opt/ccs-bash/contrib/docker/backend/.env` | `CCS_BASH_IMAGE`, `CCS_FRONT_IMAGE`, `WALLET_IMAGE` | the attested IDs of [the releases](#the-releases); the wallet's, as built | docker, upgrading |
 | | `CCS_UID`, `GIT_UID`, `FRONT_UID`, `WALLET_UID` | the host's users, `uid:gid` | docker |
 | | `WALLET_PORT` | `18082`, `wallet-rpc.conf`'s `rpc-bind-port` (its healthcheck: without it the compose waits forever) | docker |
-| | `CCS_PUSH`, `CCS_BACKUP`, `CCS_SITE_URL` | `ccs-data@<web server>`, `ccs-backup@<backup machine>`, `https://ccs.getmonero.org` | docker |
+| | `CCS_PUSH`, `CCS_BACKUP`, `CCS_SITE_URL` | `ccs-data@<web server>`, `ccs-backup@<backup machine>`, `https://ccs.getmonero.org` (also the feed's links: the same as the web server's `alert.conf` `SITE_URL`) | docker |
 | | `COMPOSE_FILE` | only with a monerod, Tor or bot on the backend's 127.0.0.1: `compose.yml:compose.host.yml` | docker |
 | | `CCS_ONION` | optional: the site's onion address, for every page's footer; the same as the web server's `/etc/ccs-gate/onion` ([below](#the-onion-address)) | docker |
 | the host setup: `/usr/local/bin/ccs-bash-run`, `ccs-front-run` | the image they run | its ID, `--pull never`, the attested one of [the releases](#the-releases) | 2, 5, upgrading |
@@ -418,7 +418,7 @@ agreeing, answering) and changes nothing.
 | | `proposals.conf` | `PROPOSALS_GIT=https://repo.getmonero.org/monero-project/ccs-proposals.git`, `PROPOSALS_BRANCH=master` (and `LINK_HOSTS`, other repositories a proposal's merge request link may be in, as host/path) | 6 |
 | | `subaddresses.txt.viewkey` | the same as the backend's (the Verify page is then checked word for word) | 6 |
 | | `allowed` | the General Fund, `888tNkZrPN6JsEgekjMnABU4TBzc2Dt29EPAvkRxbANsAnjyPbb3iQ1YBRk1UXcdRsiKc9dhwMVgN5S9cQUiyoogDavup3H`, and any address a proposal's text quotes (the gate's refusal names it) | 6 |
-| | `alert.conf` | `ALERT_URL` (the bot), `SITE_URL=https://ccs.getmonero.org` | 8 |
+| | `alert.conf` | `ALERT_URL` (the bot), `SITE_URL=https://ccs.getmonero.org` (the gate takes a feed only with links under it) | 8 |
 | | `onion` | optional: the site's onion address, one line (Tor's `/var/lib/tor/hidden_service/ccs/hostname`, [two machines](two-machines.md)); the only one the footer may show | 6 |
 
 ### The onion address
@@ -431,6 +431,15 @@ between runs: the web server's file first, then the backend's `.env` and `docker
 front` (a new variable needs a new container). Until the backend's next run, its pages still have
 the old line: the gate holds them back (their last good copies stay live) and that run fails, which
 is all. Removing it: the backend's `CCS_ONION` first, then the file.
+
+### The feed
+
+`/feed.xml`, RSS: each proposal put to Funding Required, and each fully funded (its goal raised in
+confirmed donations while in Funding Required), the 50 newest. ccs-bash records when each happened
+(`proposals.csv`'s `funding_required_date` and `funded_date`), ccs-front-bash writes the feed with
+the backend's `CCS_SITE_URL`, and the gate takes it only exactly in that form, each item a link to
+one of the site's proposal pages under its own `alert.conf` `SITE_URL`: set the two to the same
+address. A proposal funded before ccs-bash recorded it has no "fully funded" item.
 | nginx | `server_name`, the certificate | `ccs.getmonero.org`, from certbot | 6 |
 | | `snippets/ccs-headers.conf` | the security headers, as in two-machines (A+ on securityheaders.com) | 6 |
 

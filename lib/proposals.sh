@@ -43,7 +43,9 @@ read_proposals() {
 
 # The state, proposals.csv, one line per proposal seen (as jq's @csv writes it; filenames
 # can have commas), empty = unknown:
-#   filename,gitlab_url,subaddr_index,address,funding_required_date   (first seen as fr, UTC)
+#   filename,gitlab_url,subaddr_index,address,funding_required_date[,funded_date]
+# funding_required_date: first seen as fr; funded_date: first seen as fr with its goal raised (the
+# feed's "fully funded"; a row has that column only once it has one); both UTC.
 # During a run it is $WORK/state.json: {"file.md": {gitlab_url, subaddr_index, ...}}.
 load_state() {
     # Never recreated: every fr proposal would quietly get a new address. Restore a backup.
@@ -59,16 +61,19 @@ load_state() {
             gitlab_url: (.[1] // "" | opt),
             subaddr_index: (.[2] // "" | opt | if . then tonumber else . end),
             address: (.[3] // "" | opt),
-            funding_required_date: (.[4] // "" | opt)
+            funding_required_date: (.[4] // "" | opt),
+            funded_date: (.[5] // "" | opt)
         }})
-        | map(if (.value.funding_required_date // "2000-01-01T00:00:00Z") | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")
-              then . else error("bad funding_required_date for \(.key): \(.value.funding_required_date)") end)
+        | map(.key as $k | reduce ("funding_required_date", "funded_date") as $c (.;
+              if (.value[$c] // "2000-01-01T00:00:00Z") | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")
+              then . else error("bad \($c) for \($k): \(.value[$c])") end))
         | from_entries' "$STATE_DIR/proposals.csv" > "$WORK/state.json"
 }
 
 save_state() {
     atomic_write "$STATE_DIR/proposals.csv" jq -r \
-        'to_entries[] | [.key, .value.gitlab_url, .value.subaddr_index, .value.address, .value.funding_required_date] | map(. // "") | @csv' \
+        'to_entries[] | [.key, .value.gitlab_url, .value.subaddr_index, .value.address, .value.funding_required_date]
+             + (if .value.funded_date then [.value.funded_date] else [] end) | map(. // "") | @csv' \
         "$WORK/state.json"
 }
 
