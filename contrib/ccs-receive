@@ -538,8 +538,15 @@ class Design:
         if kind == "list":
             c = self.card(arg, depth, tagpage)
             return "(?:" + c + "(?:\\n" + c + ")*|" + re.escape(part(self.p["empty"])) + ")?"
-        # the donation box: one address, in its text, its monero: link and its QR code (checked after)
-        if kind in ("donate", "funded"): return self.fill(part(self.p[kind]), self.slots(depth), ("address", "qr"))
+        # the donation box: one address, in its text, its monero: link and its QR code (checked after);
+        # or, a Funding Required proposal at its goal, the donate-funded part of the design in its place
+        # ("Fully funded", no address), only with its bar full: a proposal short of its goal always
+        # keeps its donation box
+        if kind in ("donate", "funded"):
+            r = self.fill(part(self.p[kind]), self.slots(depth), ("address", "qr"))
+            if kind == "donate" and "donate-funded" in self.p:
+                r = "(?:" + r + "|" + self.fill(part(self.p["donate-funded"]), dict(self.slots(depth), percentage="100")) + ")"
+            return r
         t = LOOSE if body else TEXT
         if kind == "milestones":
             m = "(?:" + self.fill(part(self.p["milestone-done"]), {"name": t, "funds": t, "date": t}) + "|" \
