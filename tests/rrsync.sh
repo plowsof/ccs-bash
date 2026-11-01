@@ -2,6 +2,7 @@
 # docs/two-machines.md, attacked from a taken-over wallet machine: web server (as documented),
 # wallet machine, another machine, in containers. Needs docker and network.
 # --loose keeps only rrsync and its folder: then the checks for the other restrictions must fail.
+# CCS_CHECK=<ccs-check>: the same attacks on ccs-check rrsync (the gate's, in place of rrsync).
 set -euo pipefail
 name=ccs-rrsync-test
 net=172.30.99
@@ -34,6 +35,10 @@ docker exec "$name-wallet" cat /root/.ssh/id_ed25519 | docker exec -i "$name-oth
 
 # The web server, as in the docs.
 line="from=\"$wallet\",command=\"rrsync -wo -no-del -munge /var/lib/ccs-data\",restrict $key"
+if [[ -n ${CCS_CHECK:-} ]]; then
+    docker cp "$CCS_CHECK" "$name-web:/usr/local/bin/ccs-check"
+    line="from=\"$wallet\",command=\"/usr/local/bin/ccs-check rrsync /var/lib/ccs-data\",restrict $key"
+fi
 [[ ${1:-} == --loose ]] && line="command=\"rrsync /var/lib/ccs-data\" $key"
 on web "
     useradd --system --create-home --shell /bin/sh ccs-data
@@ -62,6 +67,10 @@ push() { on "${2:-wallet}" "cd /out && rsync $1 -e '$ssh_opts' 2>&1"; }
 on wallet 'mkdir -p /out && echo "[1]" > /out/proposals.json && echo "[2]" > /out/projects.json'
 push "-a --delay-updates /out/ ccs-data@$web:" > /dev/null
 if [[ $(on web 'cat /var/lib/ccs-data/proposals.json') == '[1]' ]]; then ok "the documented push works"; else fail "the documented push"; fi
+# the backend's (contrib/docker/backend/step): --checksum too
+on wallet 'echo "[4]" > /out/proposals.json'
+push "-a --checksum --delay-updates /out/ ccs-data@$web:" > /dev/null
+if [[ $(on web 'cat /var/lib/ccs-data/proposals.json') == '[4]' ]]; then ok "the backend's push (--checksum) works"; else fail "the backend's push (--checksum)"; fi
 
 out=$(on wallet "$ssh_opts -tt ccs-data@$web id 2>&1" || true)
 if [[ $out != *uid=* ]]; then ok "no commands, no shell (and a key in its own home is ignored)"; else fail "ran a command: $out"; fi

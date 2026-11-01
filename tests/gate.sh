@@ -5,7 +5,9 @@
 # design's filled as ccs-front-bash fills it, an address that is neither the wallet's nor allowed,
 # or a list that isn't the pinned one, leaves the live file as it was and says why. Needs docker
 # and network. With GATE_IMAGE, the web server is the gate's image (contrib/docker/web): its own
-# ccs-receive, its sshd as compose.yml starts it, its users from its init.
+# ccs-receive, its sshd as compose.yml starts it, its users from its init. Shadow mode: the web
+# server has ccs-check (the image's; else CCS_CHECK, or contrib/ccs-check/build.sh builds it),
+# and every check of every push must give the Python's answer (nothing in its differs/).
 set -euo pipefail
 here=$(dirname "$(readlink -f "$0")")
 name=ccs-gate-test
@@ -120,6 +122,12 @@ PY
 on backend 'mkdir -p ~/.ssh && ssh-keygen -q -t ed25519 -N "" -f ~/.ssh/id_ed25519'
 key=$(on backend 'cat ~/.ssh/id_ed25519.pub')
 [[ $img ]] || docker cp "$here/../contrib/ccs-receive" "$name-web:/usr/local/bin/ccs-receive"
+if [[ ! $img ]]; then
+    check=${CCS_CHECK:-$files/ccs-check}
+    [[ -n ${CCS_CHECK:-} ]] || "$here/../contrib/ccs-check/build.sh" "$check" > /dev/null
+    docker cp "$check" "$name-web:/usr/local/bin/ccs-check"
+    on web 'chown root:root /usr/local/bin/ccs-check && chmod 755 /usr/local/bin/ccs-check'
+fi
 docker cp "$d" "$name-web:/tmp/design" && docker cp "$files/markdown.awk" "$name-web:/tmp/markdown.awk"
 docker cp "$d" "$name-backend:/design" && docker cp "$files/gen.py" "$name-backend:/gen.py"
 on web "
@@ -675,5 +683,18 @@ for _ in $(seq 100); do [[ $(on web 'stat -c %Y /var/lib/ccs-gate/last-push 2> /
 on backend 'pkill -x ssh || true'
 for _ in $(seq 100); do on web 'for p in /proc/[0-9]*/cmdline; do { tr "\0" " " < $p; } 2> /dev/null; echo; done | grep -q "[c]cs-receive"' || break; sleep 0.2; done
 if (($(bot | grep -c . || true) > alerts)); then ok "a backend that hangs up mid-check: the gate still alerts"; else on web 'tail -n 3 /var/log/ccs-gate.log'; fail "a backend that hangs up mid-check: no alert from the gate"; fi
+
+# shadow mode: on every push above, ccs-check answered as the Python did
+differ=$(on web 'ls /var/lib/ccs-gate/differs 2> /dev/null || true')
+if [[ -z $differ ]]; then ok "shadow mode: ccs-check gave the Python's answer on every check of every push"
+else fail "shadow mode: ccs-check answered otherwise ($(wc -l <<<"$differ") times):"; on web 'cd /var/lib/ccs-gate/differs && head -n 6 -- * | cut -c1-200' | head -n 40; fi
+# ... and one that answers otherwise is seen: both answers kept, IRC told, the Python's used
+on web 'cp /usr/local/bin/ccs-check /tmp/ccs-check.real && printf "%s\n" "#!/bin/bash" "[[ \$1 == --check ]] || echo wrong" > /usr/local/bin/ccs-check'
+site 90 "$(addr 1)"
+push > /dev/null || true
+if [[ $(live) == 90 ]] && on web 'grep -lq "^wrong" /var/lib/ccs-gate/differs/*' && bot | grep -q 'answer differently from its Python'; then
+    ok "shadow mode: a ccs-check that answers otherwise is kept (both answers), IRC is told, the Python's answer is used"
+else fail "shadow mode: a wrong ccs-check went unseen (live $(live))"; fi
+on web 'mv /tmp/ccs-check.real /usr/local/bin/ccs-check'
 
 exit "$status"
