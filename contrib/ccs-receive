@@ -20,7 +20,7 @@
 #     only such addresses), projects.json, or the signed list's own files, the same as the ones
 #     installed here; and a plain file where the site has one (no symlink, no folder for a page);
 #   - feed.xml, the feed, exactly as ccs-front-bash writes it: its items plain text, each a link to
-#     one of this site's proposal pages (SITE_URL, alert.conf), nothing else (feed_py).
+#     one of this site's proposal pages (SITE_URL, alert.conf), nothing else (feed_awk).
 # The push goes live, except a file that fails: that one keeps its last good copy (a new one stays
 # out), IRC is told (alert.conf), and it exits 7 (the backend's rsync exits 7 too). A list that
 # isn't the pinned one, or no design.sha256, design or markdown.awk, refuses the whole push. Needs
@@ -851,58 +851,111 @@ kinds() {
     done < <(find "$staging" -mindepth 1 -print0)
 }
 
-# feed_py FEED SITE STAGING LIVE: the feed (ccs-front-bash's feed.xml, RSS 2.0) line for line as it
-# writes it, else the reason on stdout and exit 1. An item: "Funding required: " or "Fully funded: "
-# and a title, escaped text with no markup even once a reader unescapes it (a reader may show a
-# title as HTML: no &lt; or &gt;), no run of 90 base58 characters (an address); a link and guid to
-# one of the proposal pages of this site (SITE), in the push or live; a date. At most 100 items.
-feed_py='
-import os, re, sys, urllib.parse
-f, site, staging, live = sys.argv[1:5]
-def fail(why): print(why); sys.exit(1)
-t = open(f, "rb").read()
-if len(t) > 500000: fail("a feed of over 500 kB")
-try: t = t.decode("utf-8")
-except UnicodeDecodeError: fail("a feed that is not UTF-8")
-S = re.escape(site)
-RUN = "(?:[1-9A-HJ-NP-Za-km-z]|[^\\x00-\\x7f])"
-TEXT = "(?:(?!" + RUN + "{90})(?:[^<>\"&\\x00-\\x1f\\x7f\\u202a-\\u202e\\u2066-\\u2069]|&(?:amp|quot|#39|apos);)){1,1000}"
-NAME = "[A-Za-z0-9._~%-]{1,1000}"   # a file name, percent-encoded as jq @uri does
-WHEN = "(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), [0-3][0-9] (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) [0-9]{4} [0-2][0-9]:[0-5][0-9]:[0-6][0-9] \\+0000"
-head = ("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<rss version=\"2.0\" xmlns:atom=\"http://www.w3.org/2005/Atom\">\n<channel>\n"
-        "<title>Monero Community Crowdfunding System</title>\n<link>" + site + "/</link>\n"
-        "<description>Proposals put to Funding Required, and fully funded</description>\n"
-        "<atom:link href=\"" + site + "/feed.xml\" rel=\"self\" type=\"application/rss+xml\"/>\n")
-tail = "</channel>\n</rss>\n"
-if not (t.startswith(head) and t.endswith(tail) and len(t) >= len(head) + len(tail)): fail("not the feed (its first or last lines)")
-item = re.compile("<item>\n<title>(Funding required|Fully funded): " + TEXT + "</title>\n<link>" + S + "/proposals/(" + NAME + ")\\.html</link>\n"
-                  "<guid isPermaLink=\"false\">" + S + "/proposals/(" + NAME + ")\\.html#(funding-required|funded)</guid>\n<pubDate>" + WHEN + "</pubDate>\n</item>\n")
-kinds = {"Funding required": "funding-required", "Fully funded": "funded"}
-body, pos, n = t[len(head):len(t) - len(tail)], 0, 0
-while pos < len(body):
-    m = item.match(body, pos)
-    if not m: fail("item " + str(n + 1) + " is not one the feed has")
-    kind, a, b, tag = m.groups()
-    if a != b or kinds[kind] != tag: fail("item " + str(n + 1) + ": its link, guid and kind differ")
-    try: name = urllib.parse.unquote(a, errors="strict")
-    except UnicodeDecodeError: fail("item " + str(n + 1) + ": a link that is not UTF-8")
-    page = os.path.join("proposals", name + ".html")
-    if urllib.parse.quote(name, safe="") != a or "/" in name or "\x00" in name or name in (".", "..") or not (os.path.isfile(os.path.join(staging, page)) or os.path.isfile(os.path.join(live, page))):
-        fail("item " + str(n + 1) + ": a link to no proposal page of this site")
-    pos, n = m.end(), n + 1
-    if n > 100: fail("over 100 items")
+# feed_awk (-v site=SITE) < FEED: the feed (ccs-front-bash's feed.xml, RSS 2.0) line for line as it
+# writes it; prints each linked page's name (decoded, one a line) once all of it passed, else the
+# reason and exits 1. An
+# item: "Funding required: " or "Fully funded: " and a title: escaped text, UTF-8, no markup even
+# once a reader unescapes it (a reader may show a title as HTML: no &lt; or &gt;), no control or
+# bidi characters, no run of 90 base58 or non-ASCII characters (an address, as pages_py); a link and
+# guid to the same proposal page of SITE, its name percent-encoded as jq @uri does; a date. At most
+# 100 items. Plain POSIX awk, bytes (LC_ALL=C): gawk, mawk and busybox read it alike.
+feed_awk='
+function fail(why) { print why; failed = 1; exit 1 }
+# multibyte: each UTF-8 sequence as one \001; a byte left over 127 is not UTF-8
+function chars(s) {
+    gsub(/[\302-\337][\200-\277]|[\340-\357][\200-\277][\200-\277]|[\360-\364][\200-\277][\200-\277][\200-\277]/, "\001", s)
+    return s
+}
+function title_ok(t,   u, w) {
+    if (t == "" || t ~ /[\001-\037\177]/ || t ~ /\342\200[\252-\256]|\342\201[\246-\251]/) return 0
+    u = t; gsub(/&(amp|quot|#39|apos);/, " ", u)
+    if (u ~ /[<>"&]/) return 0
+    w = chars(u)
+    if (w ~ /[\200-\377]/ || length(w) > 1000) return 0
+    while (match(w, /[1-9A-HJ-NP-Za-km-z\001]+/)) {
+        if (RLENGTH >= 90) return 0
+        w = substr(w, RSTART + RLENGTH)
+    }
+    return 1
+}
+# the file name a link names: %XX decoded (upper case, only where jq @uri encodes), else ""
+function decode(e,   d, i, c, v) {
+    if (e !~ /^[A-Za-z0-9._~%-]+$/ || length(e) > 1000) return ""
+    d = ""
+    for (i = 1; i <= length(e); i++) {
+        c = substr(e, i, 1)
+        if (c == "%") {
+            if (substr(e, i + 1, 2) !~ /^[0-9A-F][0-9A-F]$/) return ""
+            v = (index("0123456789ABCDEF", substr(e, i + 1, 1)) - 1) * 16 + index("0123456789ABCDEF", substr(e, i + 2, 1)) - 1
+            c = sprintf("%c", v)
+            if (v < 32 || v == 127 || v == 47 || c ~ /^[A-Za-z0-9._~-]$/) return ""
+            i += 2
+        }
+        d = d c
+    }
+    if (d == "." || d == ".." || chars(d) ~ /[\200-\377]/) return ""
+    return d
+}
+BEGIN {
+    h[1] = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+    h[2] = "<rss version=\"2.0\" xmlns:atom=\"http://www.w3.org/2005/Atom\">"
+    h[3] = "<channel>"
+    h[4] = "<title>Monero Community Crowdfunding System</title>"
+    h[5] = "<link>" site "/</link>"
+    h[6] = "<description>Proposals put to Funding Required, and fully funded</description>"
+    h[7] = "<atom:link href=\"" site "/feed.xml\" rel=\"self\" type=\"application/rss+xml\"/>"
+    tag["Funding required"] = "funding-required"; tag["Fully funded"] = "funded"
+    link = "<link>" site "/proposals/"; guid = "<guid isPermaLink=\"false\">" site "/proposals/"
+    when = "^<pubDate>(Mon|Tue|Wed|Thu|Fri|Sat|Sun), [0-3][0-9] (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) [0-9][0-9][0-9][0-9] [0-2][0-9]:[0-5][0-9]:[0-6][0-9] \\+0000</pubDate>$"
+    k = 0; n = 0; done = 0
+}
+done { fail("not the feed (lines after its last)") }
+length($0) > 5000 { fail("not the feed (a line of over 5000 bytes)") }
+NR <= 7 { if ($0 != h[NR]) fail("not the feed (its first lines)"); next }
+k == 0 && $0 == "</channel>" { k = -1; next }
+k == -1 { if ($0 != "</rss>") fail("not the feed (its last lines)"); done = 1; next }
+k == 0 { if ($0 != "<item>") fail("item " (n + 1) " is not one the feed has"); n++; if (n > 100) fail("over 100 items"); k = 1; next }
+k == 1 {
+    if (!match($0, /^<title>(Funding required|Fully funded): /) || substr($0, length($0) - 7) != "</title>") fail("item " n " is not one the feed has")
+    kind = substr($0, 8, RLENGTH - 9)
+    if (!title_ok(substr($0, RLENGTH + 1, length($0) - RLENGTH - 8))) fail("item " n " is not one the feed has")
+    k = 2; next
+}
+k == 2 {
+    if (substr($0, 1, length(link)) != link || substr($0, length($0) - 11) != ".html</link>") fail("item " n " is not one the feed has")
+    enc = substr($0, length(link) + 1, length($0) - length(link) - 12)
+    name = decode(enc)
+    if (name == "") fail("item " n ": a link to no proposal page of this site")
+    k = 3; next
+}
+k == 3 { if ($0 != guid enc ".html#" tag[kind] "</guid>") fail("item " n ": its link, guid and kind differ"); k = 4; next }
+k == 4 { if ($0 !~ when) fail("item " n " is not one the feed has"); k = 5; next }
+k == 5 { if ($0 != "</item>") fail("item " n " is not one the feed has"); names[n] = name; k = 0; next }
+END {
+    if (failed) exit 1
+    if (!done) { print "not the feed (its last lines)"; exit 1 }
+    for (i = 1; i <= n; i++) print names[i]
+}
 '
-# feed FILE: "FILE<TAB>!reason" unless it is the feed as feed_py checks it, its links this site's
-# (alert.conf's SITE_URL: without one, no feed passes)
+# feed FILE: "FILE<TAB>!reason" unless it is the feed as feed_awk checks it, its links this site's
+# (alert.conf's SITE_URL: without one, no feed passes) and each to a proposal page in the push or live
 feed() {
-    local site='' why
+    local site='' out name
     site=$(sed -n 's/^SITE_URL=//p' "$conf/alert.conf" 2> /dev/null | tail -n 1)
     site=${site%/}
     if [[ ! $site =~ ^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?$ ]]; then
-        printf '%s\t%s\n' "$1" "!a feed, and no SITE_URL (https://host) in alert.conf for its links"
-    elif ! why=$(timeout 60 python3 -I -c "$feed_py" "$1" "$site" "$staging" "$live" 2> /dev/null); then
-        printf '%s\t!%s\n' "$1" "${why:-the feed could not be checked}"
+        printf '%s\t%s\n' "$1" "!a feed, and no SITE_URL (https://host) in alert.conf for its links"; return
     fi
+    if (($(wc -c < "$1") > 500000)) || [[ -n $(tail -c 1 "$1") ]]; then
+        printf '%s\t%s\n' "$1" "!not the feed (over 500 kB, or no newline at its end)"; return
+    fi
+    if ! out=$(timeout 60 awk -v site="$site" "$feed_awk" < "$1" 2> /dev/null); then
+        printf '%s\t!%s\n' "$1" "${out:-the feed could not be checked}"; return
+    fi
+    while IFS= read -r name; do
+        [[ -z $name || -f $staging/proposals/$name.html || -f $live/proposals/$name.html ]] \
+            || { printf '%s\t%s\n' "$1" "!a link to no proposal page of this site ($name)"; return; }
+    done <<<"$out"
 }
 
 # changes: every file the push brings that isn't already live, byte for byte, as "file<TAB>!reason"
