@@ -70,6 +70,8 @@ therefore change the site, as a compromised gate could. Hence: keep Python patch
 - **Watch for:** Python security releases (python.org's security announcements) and libzbar's
   CVEs; either is a reason to release.
 
+A plan to replace it with one Go binary, built by StageX: [go-gate.md](go-gate.md).
+
 Removing Python entirely would mean doing QR decoding, pixel comparison and checksums with other
 tools (zbarimg, a C helper), which are dependencies of their own; for now it stays, contained to
 the gate.
