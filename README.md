@@ -48,6 +48,9 @@ that only serves what its gate passed, and a watcher on it): [the design](docs/d
 it can't fix: a shell on the web server can still change the site until ccs-watch alerts, which
 is why visitors can check an address against the signed list themselves.
 
+Python usage in ccs-bash is contained to the web server's gate, `contrib/ccs-receive`: what it
+does there, who can reach it, and what keeps a Python CVE from mattering more: [Python](docs/python.md).
+
 ## What a run does
 
 `ccs-back.sh`, top to bottom:
@@ -116,6 +119,7 @@ folders, for those who can't run Docker; not recommended.
 - [The pinned image](docs/image.md): how B is built and checked, changing the pin, releases
 - [Attesting a release](contrib/release/README.md): rebuild a release, sign what came out into ccs-sigs, as Feather Wallet does
 - [When something is wrong](docs/troubleshooting.md): what the log lines mean
+- [Python](docs/python.md): only in the gate (`ccs-receive`): what it does, who can reach it, keeping it patched
 - [Reviewing](docs/reviewing.md): what each file that runs on the live machines does, and checks
 - [The testnet](docs/testnet.md): https://ccs.monerodevs.org, and where it differs from the setup (not to copy)
 
