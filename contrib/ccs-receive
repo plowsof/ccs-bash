@@ -18,7 +18,9 @@
 #   - every other file it changes must be the design's (design.sha256, from the release zip), a
 #     proposal's image that the proposals repository has at that path (any QR code in it holding
 #     only such addresses), projects.json, or the signed list's own files, the same as the ones
-#     installed here; and a plain file where the site has one (no symlink, no folder for a page).
+#     installed here; and a plain file where the site has one (no symlink, no folder for a page);
+#   - feed.xml, the feed, exactly as ccs-front-bash writes it: its items plain text, each a link to
+#     one of this site's proposal pages (SITE_URL, alert.conf), nothing else (feed_py).
 # The push goes live, except a file that fails: that one keeps its last good copy (a new one stays
 # out), IRC is told (alert.conf), and it exits 7 (the backend's rsync exits 7 too). A list that
 # isn't the pinned one, or no design.sha256, design or markdown.awk, refuses the whole push. Needs
@@ -849,6 +851,60 @@ kinds() {
     done < <(find "$staging" -mindepth 1 -print0)
 }
 
+# feed_py FEED SITE STAGING LIVE: the feed (ccs-front-bash's feed.xml, RSS 2.0) line for line as it
+# writes it, else the reason on stdout and exit 1. An item: "Funding required: " or "Fully funded: "
+# and a title, escaped text with no markup even once a reader unescapes it (a reader may show a
+# title as HTML: no &lt; or &gt;), no run of 90 base58 characters (an address); a link and guid to
+# one of the proposal pages of this site (SITE), in the push or live; a date. At most 100 items.
+feed_py='
+import os, re, sys, urllib.parse
+f, site, staging, live = sys.argv[1:5]
+def fail(why): print(why); sys.exit(1)
+t = open(f, "rb").read()
+if len(t) > 500000: fail("a feed of over 500 kB")
+try: t = t.decode("utf-8")
+except UnicodeDecodeError: fail("a feed that is not UTF-8")
+S = re.escape(site)
+RUN = "(?:[1-9A-HJ-NP-Za-km-z]|[^\\x00-\\x7f])"
+TEXT = "(?:(?!" + RUN + "{90})(?:[^<>\"&\\x00-\\x1f\\x7f\\u202a-\\u202e\\u2066-\\u2069]|&(?:amp|quot|#39|apos);)){1,1000}"
+NAME = "[A-Za-z0-9._~%-]{1,1000}"   # a file name, percent-encoded as jq @uri does
+WHEN = "(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), [0-3][0-9] (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) [0-9]{4} [0-2][0-9]:[0-5][0-9]:[0-6][0-9] \\+0000"
+head = ("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<rss version=\"2.0\" xmlns:atom=\"http://www.w3.org/2005/Atom\">\n<channel>\n"
+        "<title>Monero Community Crowdfunding System</title>\n<link>" + site + "/</link>\n"
+        "<description>Proposals put to Funding Required, and fully funded</description>\n"
+        "<atom:link href=\"" + site + "/feed.xml\" rel=\"self\" type=\"application/rss+xml\"/>\n")
+tail = "</channel>\n</rss>\n"
+if not (t.startswith(head) and t.endswith(tail) and len(t) >= len(head) + len(tail)): fail("not the feed (its first or last lines)")
+item = re.compile("<item>\n<title>(Funding required|Fully funded): " + TEXT + "</title>\n<link>" + S + "/proposals/(" + NAME + ")\\.html</link>\n"
+                  "<guid isPermaLink=\"false\">" + S + "/proposals/(" + NAME + ")\\.html#(funding-required|funded)</guid>\n<pubDate>" + WHEN + "</pubDate>\n</item>\n")
+kinds = {"Funding required": "funding-required", "Fully funded": "funded"}
+body, pos, n = t[len(head):len(t) - len(tail)], 0, 0
+while pos < len(body):
+    m = item.match(body, pos)
+    if not m: fail("item " + str(n + 1) + " is not one the feed has")
+    kind, a, b, tag = m.groups()
+    if a != b or kinds[kind] != tag: fail("item " + str(n + 1) + ": its link, guid and kind differ")
+    try: name = urllib.parse.unquote(a, errors="strict")
+    except UnicodeDecodeError: fail("item " + str(n + 1) + ": a link that is not UTF-8")
+    page = os.path.join("proposals", name + ".html")
+    if urllib.parse.quote(name, safe="") != a or "/" in name or "\x00" in name or name in (".", "..") or not (os.path.isfile(os.path.join(staging, page)) or os.path.isfile(os.path.join(live, page))):
+        fail("item " + str(n + 1) + ": a link to no proposal page of this site")
+    pos, n = m.end(), n + 1
+    if n > 100: fail("over 100 items")
+'
+# feed FILE: "FILE<TAB>!reason" unless it is the feed as feed_py checks it, its links this site's
+# (alert.conf's SITE_URL: without one, no feed passes)
+feed() {
+    local site='' why
+    site=$(sed -n 's/^SITE_URL=//p' "$conf/alert.conf" 2> /dev/null | tail -n 1)
+    site=${site%/}
+    if [[ ! $site =~ ^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?$ ]]; then
+        printf '%s\t%s\n' "$1" "!a feed, and no SITE_URL (https://host) in alert.conf for its links"
+    elif ! why=$(timeout 60 python3 -I -c "$feed_py" "$1" "$site" "$staging" "$live" 2> /dev/null); then
+        printf '%s\t!%s\n' "$1" "${why:-the feed could not be checked}"
+    fi
+}
+
 # changes: every file the push brings that isn't already live, byte for byte, as "file<TAB>!reason"
 # for any that isn't allowed, and "file<TAB>address" for the addresses in a proposal image's QR codes
 changes() {
@@ -859,6 +915,7 @@ changes() {
         cmp -s "$f" "$live/$rel" 2> /dev/null && continue
         case $rel in
             *.html | projects.json) ;;   # the pages and the /projects JSON: checked, all of them
+            feed.xml) feed "$f" ;;
             subaddresses.txt | subaddresses.txt.asc | subaddresses.txt.key.asc)
                 cmp -s "$f" "$conf/$rel" || printf '%s\t%s\n' "$f" "!not the $rel installed in $conf" ;;
             images/*/*)
@@ -956,10 +1013,11 @@ fetch && fetched=1
 # holds only what passed, so a file the same as its live copy passed before, against the same
 # list, allowed file, design, markdown.awk, proposals commit and gate: when any of those changes
 # (a proposal taken out is a new commit), and once a day whatever happens, all are checked again.
-mapfile -d '' all < <(find "$staging" -type f \( -name '*.html' -o -name '*.json' \) -print0)
+mapfile -d '' all < <(find "$staging" -type f \( -name '*.html' -o -name '*.json' -o -path "$staging/feed.xml" \) -print0)
 inputs=$( {
     cat -- "${BASH_SOURCE[0]}" "$list" "$list.pin" "$design" "$conf"/markdown*.awk "$conf/proposals.conf"
     cat -- "$conf/allowed" "$list.viewkey" "$conf/onion" 2> /dev/null || true
+    grep '^SITE_URL=' "$conf/alert.conf" 2> /dev/null || true   # (the feed's links)
     (cd "$conf/design" && find . -type f -print0 | sort -z | xargs -0 -r sha256sum)
     git -C "$git" rev-parse -q --verify refs/heads/ccs 2> /dev/null || true
     qrencode -V 2>&1 || true

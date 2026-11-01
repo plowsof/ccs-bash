@@ -76,7 +76,7 @@ Each file, function by function: [reviewing](docs/reviewing.md).
 All is recomputed each run except `STATE_DIR/proposals.csv` (written by `jq -r '@csv'`):
 
 ```
-filename,gitlab_url,subaddr_index,address,funding_required_date
+filename,gitlab_url,subaddr_index,address,funding_required_date[,funded_date]
 "fund-me.md","https://repo.getmonero.org/.../merge_requests/697",43,"8...","2026-09-08T18:06:19Z"
 ```
 
