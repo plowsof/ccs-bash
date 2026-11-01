@@ -167,6 +167,8 @@ services:
       # the site's onion address, for the footer's onion line (none: no line); the web server's
       # gate accepts only the one in its own /etc/ccs-gate/onion
       CCS_ONION: ${CCS_ONION:-}
+      # the feed's links (feed.xml): the site's address, as the web server's alert.conf SITE_URL
+      CCS_SITE_URL: ${CCS_SITE_URL:-}
     healthcheck: {<<: *health, test: ["CMD", "/step", "health", "front"]}
     volumes:
       - ${CCS_BASH_DIR:-/opt/ccs-bash}/contrib/docker/backend/step:/step:ro

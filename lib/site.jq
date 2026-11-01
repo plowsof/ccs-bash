@@ -38,6 +38,9 @@ $props[0] as $props | $state[0] as $state | $funds[0] as $funds
         author: (.author | nobidi | @html),
         date: (if .ts > 0 then .ts | strftime("%B %-d, %Y") else null end),
         "funding-required-date": ($s.funding_required_date | if . then fromdate | strftime("%B %-d, %Y") else null end),
+        # (the feed's: when it went to Funding Required, and when its goal was raised; UTC)
+        "funding-required-at": $s.funding_required_date,
+        "funded-at": $s.funded_date,
         tags: (.tags | map(nobidi | @html))
       };
 

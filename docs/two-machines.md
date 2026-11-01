@@ -245,6 +245,7 @@ install -d -m 755 /etc/ccs-gate /etc/ccs-gate/design
 install -d -o ccs-data -m 755 /var/lib/ccs-gate                      # one push at a time, the last push (the heartbeat), when it last alerted, the proposals fetched
 install -m 640 -g ccs-data /dev/null /etc/ccs-gate/alert.conf        # optional: the bot (as ccs-watch's, plain text POST)
 printf 'ALERT_URL=http://<bot>:8086/<path>\nSITE_URL=https://<site>\n' > /etc/ccs-gate/alert.conf
+# (SITE_URL: also the feed's address; feed.xml passes only with links under it, the backend's CCS_SITE_URL)
 # the signed list, its pin, signature and key (ccs-front-bash, setup step 5); its view key file too, if the backend has one
 install -m 644 subaddresses.txt subaddresses.txt.pin subaddresses.txt.asc subaddresses.txt.key.asc subaddresses.txt.viewkey /etc/ccs-gate/
 cat > /etc/ccs-gate/allowed <<'LIST'                                # other addresses allowed on the site, one a line

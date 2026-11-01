@@ -283,6 +283,29 @@ got=$(
 )
 if [[ $got == '1 1 0' ]]; then echo "ok   the forge down: one failed lookup a run, the other new proposals wait for the next"; else echo "FAIL the forge down: '$got' (lookups, the log line, state rows)"; status=1; fi
 
+# Fully funded (the feed's): a Funding Required proposal at 100% gets funded_date, once; not one
+# short of its goal, not one past Funding Required, not one with no state row yet; kept in
+# proposals.csv (a 6th column, only on the rows that have one) and read back
+got=$(
+    # shellcheck source=ccs-back.sh
+    source "$here/../ccs-back.sh"
+    WORK=$(mktemp -d)
+    # shellcheck disable=SC2030  # (this subshell's own state folder)
+    STATE_DIR=$(mktemp -d)
+    jq -n '[{file: "a.md", layout: "fr"}, {file: "b.md", layout: "fr"}, {file: "c.md", layout: "wip"}, {file: "d.md", layout: "fr"}]' > "$WORK/props.json"
+    jq -n '{"a.md": {percentage: 100}, "b.md": {percentage: 99}, "c.md": {percentage: 100}, "d.md": {percentage: 100}}' > "$WORK/funds.json"
+    jq -n '{"a.md": {address: "8a", funding_required_date: "2026-10-01T00:00:00Z"}, "b.md": {}, "c.md": {}}' > "$WORK/state.json"
+    record_funded 2> /dev/null
+    first=$(jq -r '."a.md".funded_date' "$WORK/state.json")
+    sleep 1; record_funded 2> /dev/null
+    load_state
+    echo "$(jq -r '[to_entries[] | select(.value.funded_date) | .key] | join(" ")' "$WORK/state.json")" \
+        "$([[ $(jq -r '."a.md".funded_date' "$WORK/state.json") == "$first" ]] && echo once)" \
+        "$(awk -F, '{ n[NF]++ } END { printf "5:%d 6:%d ", n[5], n[6] }' "$STATE_DIR/proposals.csv")"
+    rm -rf "$WORK" "$STATE_DIR"
+)
+if [[ $got == 'a.md once 5:2 6:1 ' ]]; then echo "ok   fully funded: a Funding Required proposal at its goal gets funded_date, once, kept in proposals.csv and read back"; else echo "FAIL fully funded: '$got'"; status=1; fi
+
 # The merged MRs' files kept between runs (MR_CACHE): one MR that can't be read is passed over, the
 # others still found; the next run doesn't fetch again what one already read
 got=$(
@@ -992,8 +1015,10 @@ else
         && ! sed '$d' "$d1" | recv && grep -q 'lacks 2 deposit' "$TEST_TMP/recv.out" \
         && ! printf '# final 1 checked 1\n1,zz,1,1,0\n' | recv && grep -q 'not a deposits.csv' "$TEST_TMP/recv.out" \
         && ! printf 'hello\n' | recv && [[ $(find "$bk" -name 'proposals-*.csv' | wc -l) == 1 ]] \
+        && sleep 1 && printf '"a.md","",1,"8a","2026-10-01T00:00:00Z","2026-10-02T00:00:00Z"\n"b.md","","","",""\n' | recv && [[ $(find "$bk" -name 'proposals-*.csv' | wc -l) == 2 ]] \
+        && ! printf '"a.md","",1,"8a","","",""\n' | recv && [[ $(find "$bk" -name 'proposals-*.csv' | wc -l) == 2 ]] \
         && ! { sed '1s/checked [0-9]*/checked 99999999999/' "$d1"; printf '3099998,%064d,1,5,0\n' 8; } | recv && grep -q 'checked in the future' "$TEST_TMP/recv.out"; then
-        echo "ok   backup: proposals.csv kept as a new copy; deposits.csv one copy, replaced only by one with all its deposits; anything else refused"
+        echo "ok   backup: proposals.csv kept as a new copy (a funded date too); deposits.csv one copy, replaced only by one with all its deposits; anything else refused"
     else
         cat "$TEST_TMP/recv.out"; ls -la "$bk"; echo "FAIL backup receiver"; status=1
     fi
