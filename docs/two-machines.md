@@ -47,7 +47,8 @@ Debian's `default` (also a `default_server`: `nginx -t` refuses both):
 
 ```
 map $uri $ccs_cache {                               # in the http context, e.g. at the top of the file
-    "~\.[0-9a-f]{64}\.(css|png|woff2)$" "public, max-age=31536000, immutable";
+    "~\.[0-9a-f]{64}\.(css|png|avif|woff2)$" "public, max-age=31536000, immutable";
+    /assets/general-fund-qr.png        "public, max-age=86400";   # on every page; the same file for good
     default                            "no-cache";
 }
 server {
@@ -59,10 +60,20 @@ server {
     charset utf-8;                                  # pages are UTF-8, whatever a page says
     include snippets/ccs-headers.conf;
     add_header Cache-Control $ccs_cache always;
+    gzip on;                                        # text compressed (Debian's nginx: HTML only), not images
+    gzip_types text/css text/xml application/xml application/json;
+    gzip_vary on;
     error_page 404 /404.html;                       # a missing page, or a folder without one: the site's own
     error_page 403 =404 /404.html;
     location / {
         try_files $uri $uri/ =404;
+    }
+    location ~ \.avif$ {                            # nginx before 1.25 has no AVIF in mime.types
+        types { }
+        default_type image/avif;
+        include snippets/ccs-headers.conf;
+        add_header Cache-Control $ccs_cache always;
+        try_files $uri =404;
     }
     location = /projects {                          # the site carries projects.json
         alias /var/lib/ccs-data/projects.json;
@@ -73,7 +84,10 @@ server {
 }
 ```
 
-A `location` with its own `add_header` drops the server's, hence the `include` again. `charset
+A `location` with its own `add_header` drops the server's, hence the `include` again. Files named
+by their hash (the stylesheet, icons, font, the home page's pictures) are kept by browsers for a
+year, the General Fund's QR code (on every page, never changing) a day, the pages not at all: a
+visitor on a slow Tor circuit fetches each file once. `charset
 utf-8` overrides any `<meta charset>`, so a page can't switch to an encoding where bytes the gate
 read as text show as something else. A missing page or folder answers the site's 404 (403 would
 say it exists); ccs-watch reads any answer but 200 as the page not served.
