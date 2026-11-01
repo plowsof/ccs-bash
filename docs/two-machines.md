@@ -17,7 +17,8 @@ install -d -m 755 /etc/ssh/authorized_keys                # root-owned, outside 
 from="<backend IP>",command="/usr/local/bin/ccs-receive",restrict ssh-ed25519 AAAA... ccs-bash
 ```
 
-The gate receives with rrsync (`-wo -no-del -munge`) into its staging folder, so:
+The gate receives with `ccs-check rrsync` (as rrsync `-wo -no-del -munge`, and only the
+backend's own push: `rsync -a --delay-updates SITE/ host:`) into its staging folder, so:
 
 | If the key is stolen, this stops | |
 |---|---|
@@ -179,18 +180,18 @@ security group). The admins' own ssh: [admin access](admin-access.md).
 
 `tests/rrsync.sh` tries all of the above from the backend's key in containers (commands,
 forwarding, reading back, `..`, `--temp-dir`, `--backup-dir`, `--link-dest`, deleting, symlinks,
-another machine): all refused, and with rrsync alone (`--loose`) they get through, so the test
-catches them. A taken-over backend can still push false pages: the gate is for that.
+another machine): all refused, on rrsync as documented and on `ccs-check rrsync` (the gate's,
+`CCS_CHECK=`), and with rrsync alone (`--loose`) they get through, so the test catches them. A taken-over backend can still push false pages: the gate is for that.
 
 ## The gate: the web server checks every page
 
 `contrib/ccs-receive`, the push key's forced command. It doesn't guess how a browser shows
 what it is sent; it knows what a page may be. Each push, one at a time, it
 
-1. makes a staging folder a copy of the live site, and receives the push into it (rrsync, with
-   the same `-wo -no-del -munge`). What it checks below are the files the push changed, and the
-   ones it held back last time (their last good copy is live, so the same file sent again fails
-   again): the live site holds only what passed. Every page and JSON file is checked again
+1. makes a staging folder a copy of the live site, and receives the push into it (`ccs-check
+   rrsync`: the backend's push, nothing else; `--munge-links`). What it checks below are the
+   files the push changed, and the ones it held back last time (their last good copy is live, so
+   the same file sent again fails again): the live site holds only what passed. Every page and JSON file is checked again
    when what they were checked against changes (the list or its pin, `allowed`, the design,
    `markdown.awk`, `proposals.conf`, the proposals commit fetched, `ccs-receive` itself), and
    once a day whatever happens. Its log says how many: `checking 3 of 1022 pages and JSON files`;
@@ -243,8 +244,8 @@ what it is sent; it knows what a page may be. Each push, one at a time, it
    once (`CCS_GATE_REMOVE`): more (a branch emptied or rewritten, a forge answering wrong) stay
    held back, and IRC is told;
 6. refuses the whole push without its pinned list, `design.sha256`, the design, `markdown.awk`,
-   `proposals.conf`, the QR reader's libraries (libzbar, libpng, libturbojpeg, giflib),
-   `qrencode`, `python3` or `git`, or for a file name with a control character in it.
+   `proposals.conf`, `ccs-check`, `qrencode` or `git`, a design release (`design/vX.Y.Z/`), or
+   for a file name with a control character in it.
 
 With `/etc/ccs-gate/alert.conf` it tells IRC itself (once an hour per address or file, three a
 push, a foreign address first, also when the backend hangs up mid-check): the alarm that still
@@ -315,13 +316,12 @@ a number; an idea that is no merge request (still escaped text linking to the re
 the wallet's subaddresses on another proposal's page (the money stays in the CCS wallet); a
 proposal's name, author, dates, goal or stage as ccs-bash read its front matter (a renamed
 proposal, a completed one with a donation box, a listed address still). Nor anything once the web
-server itself is taken over: then ccs-watch and visitors are the defence. The QR reader
-(`qrscan_py`: libzbar, through Python's ctypes, on 8-bit grey pixels) reads what the backend
-sends, as ccs-data, but only images the gate has read as a plain PNG first, and each image as the
-format its name says, by that format's own library (libpng, libturbojpeg, giflib), its size
-checked before it is decoded, never a decoder picked by the bytes. Keep those
-libraries updated (`unattended-upgrades`), or run the gate in its image
-([the web server in Docker](docker.md#the-web-server-in-docker)), which pins and attests them.
+server itself is taken over: then ccs-watch and visitors are the defence. The checks are
+`ccs-check` ([ccs-check.md](ccs-check.md): Go, memory-safe, one static binary). The backend's
+QR codes are never decoded: each is compared, pixel for pixel, with qrencode's of the address it
+must be. Only a proposal's images, from the proposals repository, are read for QR codes (Go's
+own decoders, as the format the name says, the size checked first); one it can't check (over
+8 MB or 40 million pixels, or not in time) is held back.
 
 ### The heartbeat: the web server notices a silent backend
 
@@ -402,10 +402,17 @@ The host's own sshd takes the push key, and a timer runs the heartbeat. As root,
 folders and files above:
 
 ```
-apt install rsync python3 libzbar0 libpng16-16 libturbojpeg0 libgif7 qrencode git   # rsync 3.2.4+ (rrsync); the QR codes read (libzbar on pixels the formats' own libraries decode) and remade; git, for the proposals
+apt install rsync qrencode git   # the push received, the QR codes it compares with made, the proposals fetched
 install -m 755 contrib/ccs-receive /usr/local/bin/ccs-receive        # from this repository at the attested commit, checked out here
+install -m 755 ccs-check-vX.Y.Z-linux-amd64 /usr/local/bin/ccs-check  # the release's, its sha256 the notes' (see below)
 install -o ccs-data -m 644 /dev/null /var/log/ccs-gate.log          # optional: the refusals, as a file (in Docker: /var/log/ccs-web/)
 ```
+
+`ccs-check` is the release's asset (`ccs-check-vX.Y.Z-linux-amd64`): check `sha256sum` against
+the notes' "ccs-check sha256". It is the attested gate image's own `/usr/local/bin/ccs-check`:
+to check it against the attestation itself, pull the gate image by its digest, check its ID
+(`docker image inspect`, the attested one), and copy it out (`docker create`, `docker cp`); or
+build it (`contrib/ccs-check/build.sh OUT`, Docker, the same bytes).
 
 At the end of `/etc/ssh/sshd_config`, then `systemctl reload ssh` (so sshd reads no other key file
 for ccs-data: one in its own home it could replace):

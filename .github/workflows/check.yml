@@ -114,17 +114,12 @@ jobs:
           b=$(contrib/ccs-check/build.sh "$RUNNER_TEMP/ccs-check" | cut -d' ' -f1)
           i=$(docker run --rm --network none --entrypoint sha256sum ccs-gate /usr/local/bin/ccs-check | cut -d' ' -f1)
           echo "build.sh: $b, the image: $i"; [[ $b == "$i" ]]
-      - name: ccs-check against the Python it replaces, on the same files (shadow mode, offline)
-        run: |
-          git clone -q --depth 1 -b v0.1.25 https://github.com/plowsof/ccs-front-bash "$RUNNER_TEMP/ccs-front-bash"
-          sudo apt-get install -y -q qrencode > /dev/null
-          CCS_CHECK="$RUNNER_TEMP/ccs-check" FRONT_BASH="$RUNNER_TEMP/ccs-front-bash" tests/ccs-check.sh
       - name: the gate's tests, the web server being this image
         run: GATE_IMAGE=ccs-gate tests/gate.sh
       - name: the web server compose's sshd, attacked from the backend's keys
         run: CCS_GATE_IMAGE=ccs-gate tests/web.sh
-      - name: the image's size (Python, git, sshd, GNU userland; about 160 MB)
-        run: size=$(docker image inspect ccs-gate --format '{{.Size}}'); echo "$size bytes"; [ "$size" -lt 200000000 ]
+      - name: the image's size (git, sshd, GNU userland, ccs-check; no Python; about 110 MB)
+        run: size=$(docker image inspect ccs-gate --format '{{.Size}}'); echo "$size bytes"; [ "$size" -lt 130000000 ]
       - id: id
         run: echo "id=$(docker image inspect ccs-gate --format '{{.Id}}')" >> "$GITHUB_OUTPUT"
   # its second build, beside the first (not after it): a clean one, from a clone made under umask 077
