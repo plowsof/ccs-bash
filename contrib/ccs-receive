@@ -563,6 +563,7 @@ class Design:
         s = {"name": TEXT, "author": TEXT, "date": DATE, "funding_note": "(?: · funding since " + DATE + ")?", "funding_date": DATE,
              "contributors": NUM, "amount": XMR, "raised": XMR, "percentage": NUM, "done": NUM, "milestones": NUM,
              "pending_note": "(?: (?:· )?\\+?" + XMR + " XMR pending)?", "gitlab_url": "#|" + LINK, "segments": seg,
+             "needed_note": "(?: " + XMR + " XMR would fund it 100%!)?",
              "address": B58 + "{95}", "qr": "data:image/png;base64,[A-Za-z0-9+/]+=*",
              "verify_link": re.escape(strip(self.p["verify-link"])), "milestones_list": "", "payouts_list": "",
              "tag_links": "(?:" + self.fill(part(self.p["label-link"]), {"tag": TEXT, "color": "tag-[0-7]", "href": href}) + ")*"}
