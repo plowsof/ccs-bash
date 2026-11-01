@@ -35,6 +35,8 @@ $props[0] as $props | $state[0] as $state | $funds[0] as $funds
         amount: $f.amount,
         "amount-funded": $f.raised,
         "amount-pending": $f.pending,
+        # what would fund it now, pending counted, rounded up ("0.0000": nothing more needed)
+        "amount-needed": $f.needed,
         author: (.author | nobidi | @html),
         date: (if .ts > 0 then .ts | strftime("%B %-d, %Y") else null end),
         "funding-required-date": ($s.funding_required_date | if . then fromdate | strftime("%B %-d, %Y") else null end),
