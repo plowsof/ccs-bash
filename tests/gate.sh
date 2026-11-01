@@ -246,21 +246,9 @@ push > /dev/null || true
 if [[ $(bot | grep -c .) == 1 ]]; then ok "the same address refused again within the hour: no second alert"; else bot; fail "a repeated alert"; fi
 
 good=$(addr 2) fake=$(addr 9 B)
-# a foreign address its checksum says is one (testnet's prefix, random keys), with the gate's own
-# Keccak (checked against Keccak-256's of nothing), and it in groups of four
-grouped=$(python3 - "$here/fixtures/gate-python.sh" <<'PY'
-import os, sys
-src = open(sys.argv[1]).read().split("check_py='", 1)[1].split("\n'\n", 1)[0]
-ns = {}; exec(src[src.index("M = (1 << 64)"):src.index("def valid(")], ns)
-assert ns["keccak"](b"").hex() == "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"
-d = bytes([53]) + os.urandom(64); d += ns["keccak"](d)[:4]; a = ""
-for i in range(0, len(d), 8):
-    n, t = int.from_bytes(d[i:i + 8], "big"), ""
-    for _ in range({8: 11, 5: 7}[len(d[i:i + 8])]): n, r = divmod(n, 58); t = ns["B58"][r] + t
-    a += t
-print(" ".join(a[i:i + 4] for i in range(0, len(a), 4)), end="")
-PY
-)
+# a foreign address its checksum says is one (testnet's prefix, random keys; made once with
+# Monero's Keccak and base58, as ccs-check's addr), in groups of four
+grouped='9yYh ogMJ DCQ8 VtXZ Z7Tt X89x m46z jqoe 4R27 W3LY D3rc Tpk8 anmd zMs6 b2TK Bkwj S8KP 4J1h DL1d ki5i M3Xu cwFm 3ffW piq'
 integrated=$(printf '4%0105d' 7 | tr 0 1)
 held() {
     local rc=0
@@ -589,12 +577,11 @@ rows = [r + [255] * 200 + [0 if (x // 10) % 2 else 255 for x in range(200)] for 
 print(base64.b64encode(png(len(rows[0]), len(rows), rows)).decode())
 PY
 change "$p" "$(qr64 "$good")" "$(on backend 'cat /tmp/two.b64')"
-# (the image read on the backend, by the reader the gate had: tests/fixtures/gate-python.sh)
-qrpy=$(sed -n "/^qrscan_py='/,/^'\$/p" "$here/fixtures/gate-python.sh" | sed "1s/^qrscan_py='//; \$d")
-if on backend 'base64 -d /tmp/two.b64 > /tmp/two.png' && docker exec "$name-backend" python3 -I -c "$qrpy" png /tmp/two.png | grep -qx "monero:$good"; then held "$v" "$p" "a good QR code with more drawn beside it" "$(on backend 'cat /tmp/two.b64')"; else fail "the two-part test image doesn't read"; fi
+# (the image read on the web server, by its QR reader: the good code is there to be read)
+if on backend 'base64 -d /tmp/two.b64' | docker exec -i "$name-web" sh -c 'cat > /tmp/two.png' && on web 'ccs-check qr png /tmp/two.png' | grep -qx "monero:$good"; then held "$v" "$p" "a good QR code with more drawn beside it" "$(on backend 'cat /tmp/two.b64')"; else fail "the two-part test image doesn't read"; fi
 # two pushes at once: the second waits for the first (one staging folder, one at a time)
 v=$((v + 1)); site "$v" "$good"
-on backend "(rsync -a -e 'ssh -o BatchMode=yes' /out/ ccs-data@$web: > /tmp/a 2>&1; echo \$? >> /tmp/a) & (rsync -a -e 'ssh -o BatchMode=yes' /out/ ccs-data@$web: > /tmp/b 2>&1; echo \$? >> /tmp/b) & wait"
+on backend "(rsync -a --checksum --delay-updates -e 'ssh -o BatchMode=yes' /out/ ccs-data@$web: > /tmp/a 2>&1; echo \$? >> /tmp/a) & (rsync -a --checksum --delay-updates -e 'ssh -o BatchMode=yes' /out/ ccs-data@$web: > /tmp/b 2>&1; echo \$? >> /tmp/b) & wait"
 if [[ $(on backend 'tail -n 1 /tmp/a; tail -n 1 /tmp/b') == $'0\n0' && $(live) == "$v" ]]; then ok "two pushes at once both go through, one after the other"; else on backend 'cat /tmp/a /tmp/b'; fail "two pushes at once"; fi
 
 v=$((v + 1)); site "$v" "$(addr 2)"

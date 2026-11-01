@@ -4,8 +4,8 @@ ccs-bash is bash, awk and jq, except in one place: the web server's gate,
 [`contrib/ccs-receive`](../contrib/ccs-receive), which checks every push from the backend before
 it goes live. Its checks are one static Go binary, [`ccs-check`](../contrib/ccs-check), built
 reproducibly by StageX's Go; nothing on the servers runs Python (the gate's checks were Python
-until they were ported: `tests/fixtures/gate-python.sh` keeps them, as `tests/ccs-check.sh`'s
-reference only). Some test scripts use Python; they run in CI and on a developer's machine.
+until they were ported). Some test scripts use Python; they run in CI and on a developer's
+machine.
 
 ## What it does
 
@@ -17,9 +17,10 @@ reference only). Some test scripts use Python; they run in CI and on a developer
 | `qr` | the QR codes in a proposal's images (from the proposals repository): Go's own image decoders, gozxing's QR reader |
 | `rrsync` | receives the push, as `rrsync -wo -no-del -munge` did: only the backend's push (`rsync -a --delay-updates SITE/ host:`), nothing else |
 
-Each subcommand takes the command line the Python block it replaced took and prints the same
-lines; `tests/ccs-check.sh` checks it against that Python on generated and mutated files, and it
-was compared on the live testnet site (326 pages, every answer the same) before the switch.
+Each subcommand takes the command line the Python block it replaced took and printed the same
+lines: it was checked against that Python on generated and mutated files, and on the live
+testnet site (326 pages, every answer the same), before the Python was removed. Its own tests:
+`contrib/ccs-check/build.sh test` (Go tests) and `fuzz` (CI).
 Anything that can be plain text matching stays awk (the feed check, `feed_awk`).
 
 ## Built from
