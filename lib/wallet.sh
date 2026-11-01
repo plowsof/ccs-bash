@@ -349,11 +349,11 @@ retired_totals() {
     for file in "${!sum[@]}"; do printf '%s\t%s\t%s\n' "$file" "${sum[$file]}" "${cnt[$file]}"; done
 }
 
-# Print {"file.md": {amount, raised, pending, count, percentage}}, ready to show: amount and
+# Print {"file.md": {amount, raised, pending, count, percentage, needed}}, ready to show: amount and
 # raised "0.0000" strings, pending a number (ccs-front compares it with 0), percentage
 # rounded down (100% means really reached).
 proposal_funds() {
-    local idx c p n file amount target raised pct
+    local idx c p n file amount target raised pct need
     local -A conf=() pend=() cnt=() rconf=() rcnt=() hconf=() hcnt=()
     while IFS=$'\t' read -r idx c p n; do
         conf[$idx]=$c pend[$idx]=$p cnt[$idx]=$n
@@ -375,9 +375,14 @@ proposal_funds() {
             pct=0
             ((target > 0)) && pct=$((raised * 100 / target))
             ((pct > 100)) && pct=100
-            printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$file" "$(xmr4 "$target")" "$(xmr4 "$raised")" \
-                "$(xmr4_number "${pend[$idx]:-0}")" "$((${cnt[$idx]:-0} + ${rcnt[$file]:-0} + ${hcnt[$file]:-0}))" "$pct"
+            # what would fund it: the goal less what is raised and pending (pending counts within
+            # MIN_CONFIRMATIONS), rounded up to 0.0001 so that sending it reaches the goal; none, 0
+            need=$((target - raised - ${pend[$idx]:-0}))
+            ((need > 0)) || need=0
+            need=$(((need + 99999999) / 100000000 * 100000000))
+            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$file" "$(xmr4 "$target")" "$(xmr4 "$raised")" \
+                "$(xmr4_number "${pend[$idx]:-0}")" "$((${cnt[$idx]:-0} + ${rcnt[$file]:-0} + ${hcnt[$file]:-0}))" "$pct" "$(xmr4 "$need")"
         done | jq -R -s 'split("\n") | map(select(. != "") | split("\t") | {key: .[0], value: {
-            amount: .[1], raised: .[2], pending: (.[3] | tonumber), count: (.[4] | tonumber), percentage: (.[5] | tonumber)
+            amount: .[1], raised: .[2], pending: (.[3] | tonumber), count: (.[4] | tonumber), percentage: (.[5] | tonumber), needed: .[6]
         }}) | from_entries'
 }

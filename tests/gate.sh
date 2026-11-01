@@ -277,6 +277,9 @@ box="<div class=\"address\">$good</div>"
 # beside the total, as the design's donate part has its slot
 v=$((v + 1)); PENDING_NOTE=" · 0.01 XMR pending" site "$v" "$good"
 passes "$v" "$p" "a donation pending, its note beside the total" "XMR · 0.01 XMR pending"
+# ccs-front-bash v0.1.25 on: "+N XMR pending" (it will be added), no dot; the old wording still passes
+v=$((v + 1)); PENDING_NOTE=" +0.01 XMR pending" site "$v" "$good"
+passes "$v" "$p" "a donation pending, \"+N XMR pending\"" "XMR +0.01 XMR pending"
 for attack in \
     "new page|proposals/sneaky.html||<p>pay $fake here</p>|a new page the design doesn't have, with another address" \
     "body|$p|<p>Monero: a guide|<p>Pay $fake: a guide|another proposal text than the repository's" \
