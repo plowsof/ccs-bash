@@ -540,8 +540,8 @@ class Design:
             return "(?:" + c + "(?:\\n" + c + ")*|" + re.escape(part(self.p["empty"])) + ")?"
         # the donation box: one address, in its text, its monero: link and its QR code (checked after);
         # or, a Funding Required proposal at its goal, the donate-funded part of the design in its place
-        # ("Fully funded", no address), only with its bar full: a proposal short of its goal always
-        # keeps its donation box
+        # ("Funded", no address), only with its bar at 100. The backend writes the bar (the
+        # amounts never were checked here): one that says 100 can take a box away, never change it
         if kind in ("donate", "funded"):
             r = self.fill(part(self.p[kind]), self.slots(depth), ("address", "qr"))
             if kind == "donate" and "donate-funded" in self.p:
@@ -644,15 +644,16 @@ for rp in sys.stdin.read().split("\0"):
     print(p + "\t=ok")
 '
 
-# scan FILE...: the addresses (and reasons) of the pages and JSON among FILEs; every data:
-# image exactly the QR code of an address
+# scan FILE...: the addresses (and reasons) of the pages, JSON and feed among FILEs; every data:
+# image exactly the QR code of an address. The feed (feed.xml) has none, ever: an address found in
+# it, spaced, split, drawn with look-alikes or even the wallet's own, holds it back
 scan() {
     local file tag payload png out jsons=() texts=()
     (($#)) || return 0
     png=$(mktemp) out=$(mktemp)
     # a NUL byte: HTML drops it from the text, so it could split an address
     # (Python, not grep -P: a grep without PCRE, the image's, has none)
-    printf '%s\0' "$@" | grep -zE '\.(html|json)$' | xargs -0 -r python3 -I -c 'import sys
+    printf '%s\0' "$@" | grep -zE '\.(html|json)$|/feed\.xml$' | xargs -0 -r python3 -I -c 'import sys
 for f in sys.argv[1:]:
     with open(f, "rb") as h:
         if b"\0" in h.read(): print(f)' | sed 's/$/\t!a NUL byte (a browser drops it from the text)/'
@@ -661,9 +662,9 @@ for f in sys.argv[1:]:
     if ((${#jsons[@]})); then
         timeout 60 python3 -I -c "$json_py" "${jsons[@]}" || printf '%s\t!the JSON could not be read in time\n' "${jsons[@]}"
     fi
-    # the pages and JSON as written; one that couldn't be read in time is held back (what it has
-    # in it is unknown)
-    mapfile -d '' texts < <(printf '%s\0' "$@" | grep -zE '\.(html|json)$')
+    # the pages, JSON and feed as written; one that couldn't be read in time is held back (what it
+    # has in it is unknown)
+    mapfile -d '' texts < <(printf '%s\0' "$@" | grep -zE '\.(html|json)$|/feed\.xml$')
     if ((${#texts[@]})) && ! timeout 120 python3 -I -c "$scan_py" "${texts[@]}" > "$out" 2> /dev/null; then
         printf '%s\t!its addresses could not be read in time\n' "${texts[@]}" >> "$out"
     fi
@@ -673,6 +674,9 @@ for f in sys.argv[1:]:
     local -A seen=() many=()
     local res end=$((SECONDS + 300))
     while IFS=$'\t' read -r file tag payload; do
+        if [[ $file == "$staging/feed.xml" && $tag != '!'* ]]; then
+            printf '%s\t%s\n' "$file" "!an address in the feed, which never has one (${tag:0:12}…)"; continue
+        fi
         if [[ $tag != '?qr' ]]; then printf '%s\t%s\n' "$file" "$tag"; continue; fi
         many[$file]=$((${many[$file]:-0} + 1))
         if ((many[$file] > 4)); then
