@@ -5,9 +5,8 @@
 # design's filled as ccs-front-bash fills it, an address that is neither the wallet's nor allowed,
 # or a list that isn't the pinned one, leaves the live file as it was and says why. Needs docker
 # and network. With GATE_IMAGE, the web server is the gate's image (contrib/docker/web): its own
-# ccs-receive, its sshd as compose.yml starts it, its users from its init. Shadow mode: the web
-# server has ccs-check (the image's; else CCS_CHECK, or contrib/ccs-check/build.sh builds it),
-# and every check of every push must give the Python's answer (nothing in its differs/).
+# ccs-receive, its sshd as compose.yml starts it, its users from its init. The web server's
+# ccs-check: the image's; else CCS_CHECK, or contrib/ccs-check/build.sh builds it.
 set -euo pipefail
 here=$(dirname "$(readlink -f "$0")")
 name=ccs-gate-test
@@ -23,7 +22,8 @@ cleanup() {
 trap cleanup EXIT
 cleanup; files=$(mktemp -d)
 
-# Debian 12, as in the docs (the same pinned image as tests/rrsync.sh)
+# Debian 12, as in the docs (the same pinned image as tests/rrsync.sh); python3 and the image
+# libraries for the test's own helpers on the backend (the gate needs neither)
 docker buildx build -q --load -t "$name" - > /dev/null <<IMG
 FROM debian@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
 RUN apt-get update -q && apt-get install -y -q --no-install-recommends openssh-server openssh-client rsync python3 curl qrencode git \
@@ -137,7 +137,7 @@ on web "
     install -d -m 755 /etc/ccs-gate /etc/ccs-gate/design
     install -o ccs-data -m 644 /dev/null /var/log/ccs-gate.log
     install -d -o ccs-data -m 755 /var/lib/ccs-gate
-    printf 'ALERT_URL=http://127.0.0.1:9999/simple\nSITE_URL=https://ccs.test\n' > /etc/ccs-gate/alert.conf
+    printf 'ALERT_URL=http://$backend:9999/simple\nSITE_URL=https://ccs.test\n' > /etc/ccs-gate/alert.conf
     printf '%s\n' '$list' > /etc/ccs-gate/subaddresses.txt
     printf 'sha256 %s\nkey %040d\n' \"\$(sha256sum < /etc/ccs-gate/subaddresses.txt | cut -d' ' -f1)\" 0 > /etc/ccs-gate/subaddresses.txt.pin
     printf '%s  # the General Fund\n' '$fund' > /etc/ccs-gate/allowed
@@ -162,8 +162,9 @@ on web "
     $sshd
 "
 on backend "echo '$web $(on web "cat $hostkey")' > ~/.ssh/known_hosts"
-# a fake bot on the web server, keeping what it is sent (the gate's alerts)
-docker exec -d "$name-web" python3 -c '
+# a fake bot, keeping what it is sent (the gate's alerts); on the backend's machine (the gate's
+# image has no Python)
+docker exec -d "$name-backend" python3 -c '
 import http.server
 class H(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
@@ -171,8 +172,8 @@ class H(http.server.BaseHTTPRequestHandler):
         open("/tmp/bot.txt", "ab").write(self.rfile.read(n) + b"\n")
         self.send_response(200); self.end_headers()
     def log_message(self, *a): pass
-http.server.HTTPServer(("127.0.0.1", 9999), H).serve_forever()'
-bot() { on web 'cat /tmp/bot.txt 2> /dev/null || true' | tr -d '\003' | sed 's/12CCS-watch/CCS-watch/; s/04\([0-9A-Za-z]\{6\}…\)/\1/g'; }
+http.server.HTTPServer(("0.0.0.0", 9999), H).serve_forever()'
+bot() { on backend 'cat /tmp/bot.txt 2> /dev/null || true' | tr -d '\003' | sed 's/12CCS-watch/CCS-watch/; s/04\([0-9A-Za-z]\{6\}…\)/\1/g'; }
 
 status=0
 ok() { echo "ok   $1"; }
@@ -245,21 +246,9 @@ push > /dev/null || true
 if [[ $(bot | grep -c .) == 1 ]]; then ok "the same address refused again within the hour: no second alert"; else bot; fail "a repeated alert"; fi
 
 good=$(addr 2) fake=$(addr 9 B)
-# a foreign address its checksum says is one (testnet's prefix, random keys), with the gate's own
-# Keccak (checked against Keccak-256's of nothing), and it in groups of four
-grouped=$(python3 - "$here/../contrib/ccs-receive" <<'PY'
-import os, sys
-src = open(sys.argv[1]).read().split("check_py='", 1)[1].split("\n'\n", 1)[0]
-ns = {}; exec(src[src.index("M = (1 << 64)"):src.index("def valid(")], ns)
-assert ns["keccak"](b"").hex() == "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"
-d = bytes([53]) + os.urandom(64); d += ns["keccak"](d)[:4]; a = ""
-for i in range(0, len(d), 8):
-    n, t = int.from_bytes(d[i:i + 8], "big"), ""
-    for _ in range({8: 11, 5: 7}[len(d[i:i + 8])]): n, r = divmod(n, 58); t = ns["B58"][r] + t
-    a += t
-print(" ".join(a[i:i + 4] for i in range(0, len(a), 4)), end="")
-PY
-)
+# a foreign address its checksum says is one (testnet's prefix, random keys; made once with
+# Monero's Keccak and base58, as ccs-check's addr), in groups of four
+grouped='9yYh ogMJ DCQ8 VtXZ Z7Tt X89x m46z jqoe 4R27 W3LY D3rc Tpk8 anmd zMs6 b2TK Bkwj S8KP 4J1h DL1d ki5i M3Xu cwFm 3ffW piq'
 integrated=$(printf '4%0105d' 7 | tr 0 1)
 held() {
     local rc=0
@@ -373,13 +362,14 @@ docker update --cpus 0 "$name-web" > /dev/null
 # ---- end review 5 ----
 # ---- review 5, low ----
 # G5 / G7: what reaches a QR decoder. The gate notes each image it reads (its first bytes) in
-# its state folder's scan.log, when there is one.
+# its state folder's scan.log, when there is one. The backend's QR codes: none, ever (qrof and
+# qrknown compare them with qrencode's, pixel for pixel; only the proposals' images are read).
 on web 'install -o ccs-data -m 644 /dev/null /var/lib/ccs-gate/scan.log'
 v=$((v + 1)); site "$v" "$good"
 svg64=$(printf '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>' | base64 -w0)
 change "$p" "$(qr64 "$good")" "$svg64"
 held "$v" "$p" "review 5: an SVG as a donation box's QR code" "$svg64"
-if on web '! grep -qv "^211PNG png$" /var/lib/ccs-gate/scan.log'; then ok "review 5 (G5): the QR decoder was given only PNGs, as PNGs"; else on web 'sort /var/lib/ccs-gate/scan.log | uniq -c'; fail "review 5 (G5): a file that is not a PNG, from the backend, reached a decoder before any PNG check"; fi
+if on web '[[ ! -s /var/lib/ccs-gate/scan.log ]]'; then ok "review 5 (G5): no QR decoder read the backend's image (an SVG as a box's QR code): compared, not decoded"; else on web 'sort /var/lib/ccs-gate/scan.log | uniq -c'; fail "review 5 (G5): the backend's image reached a QR decoder"; fi
 # G7: the same QR code on 5 proposal pages: read once (scan), or once per page (the box check)?
 on web 'cd /srv/proposals && for q in q1 q2 q3 q4; do cp p.md $q.md; done && git -c safe.directory=* add -A && git -c safe.directory=* -c user.name=t -c user.email=t@t commit -q -m more && chown -R ccs-data /srv/proposals'
 v=$((v + 1)); site "$v" "$good"
@@ -387,7 +377,7 @@ on backend 'for q in q1 q2 q3 q4; do cp /out/proposals/p.html /out/proposals/$q.
 on web ': > /var/lib/ccs-gate/scan.log'
 push > /dev/null || true
 n=$(on web 'grep -c . /var/lib/ccs-gate/scan.log || true')
-if ((n <= 2)); then ok "review 5 (G7): one QR code on 5 pages read $n time(s)"; else fail "review 5 (G7): one QR code on 5 pages read $n times (the box check reads it again on each page, with no deadline)"; fi
+if ((n == 0)); then ok "review 5 (G7): one QR code on 5 pages: decoded none of the times (compared, as each box's)"; else fail "review 5 (G7): one QR code on 5 pages reached a QR decoder $n times"; fi
 on web 'rm /var/lib/ccs-gate/scan.log'
 on backend 'rm -f /out/proposals/q?.html'
 # a folder pushed without read permission: its pages can't be listed by the checks, nor copied
@@ -482,6 +472,19 @@ on backend 'rm -rf /out/images/q'
 v=$((v + 1)); site "$v" "$good"; docker exec "$name-backend" sh -c "mkdir -p /out/images/p && qrencode -s 5 -o /out/images/p/ok.png 'monero:$good'"
 rc=0; push > /dev/null || rc=$?
 if ((rc)) && [[ $(live) == "$v" ]] && on web 'cmp -s /var/lib/ccs-data/images/p/ok.png /srv/proposals/images/p/ok.png'; then ok "held back: a proposal image changed from the repository's (its last good copy stays)"; else fail "a changed proposal image"; fi
+# an image the QR reader can't check (a PNG claiming 30000x30000 pixels), even the proposals
+# repository's own: held back, never taken for an image without a QR code
+docker exec "$name-backend" python3 -c '
+import struct, sys, zlib
+def ch(t, c): return struct.pack(">I", len(c)) + t + c + struct.pack(">I", zlib.crc32(t + c))
+open(sys.argv[1], "wb").write(b"\x89PNG\r\n\x1a\n" + ch(b"IHDR", struct.pack(">IIBBBBB", 30000, 30000, 8, 0, 0, 0, 0))
+    + ch(b"IDAT", zlib.compress(b"\0" * 30001 * 10)) + ch(b"IEND", b""))' /tmp/big.png
+docker exec "$name-backend" cat /tmp/big.png | docker exec -i "$name-web" sh -c 'cat > /srv/proposals/images/p/big.png'
+on web 'cd /srv/proposals && git -c safe.directory=* add -A && git -c safe.directory=* -c user.name=t -c user.email=t@t commit -q -m big && chown -R ccs-data /srv/proposals'
+v=$((v + 1)); site "$v" "$good"; docker exec "$name-backend" sh -c 'mkdir -p /out/images/p && cp /tmp/big.png /out/images/p/big.png'
+held "$v" images/p/big.png "a proposal image the QR reader can't check (30000x30000 pixels), the repository's own" "PNG"
+if on web 'grep -q "images/p/big.png: !an image the QR reader could not check" /var/log/ccs-gate.log'; then ok "... and the log says it couldn't be checked"; else on web 'tail -n 4 /var/log/ccs-gate.log'; fail "the reason for an image that couldn't be checked"; fi
+on backend 'rm -f /out/images/p/big.png'
 on backend 'rm -rf /out/images'
 # a proposal taken out of the repository: its page, left on the live site (the push can't
 # delete), goes with its images and the push is good; pushed again by the backend, it is held
@@ -574,12 +577,11 @@ rows = [r + [255] * 200 + [0 if (x // 10) % 2 else 255 for x in range(200)] for 
 print(base64.b64encode(png(len(rows[0]), len(rows), rows)).decode())
 PY
 change "$p" "$(qr64 "$good")" "$(on backend 'cat /tmp/two.b64')"
-# (read on the backend by the gate's own reader, ccs-receive's qrscan_py)
-qrpy=$(sed -n "/^qrscan_py='/,/^'\$/p" "$here/../contrib/ccs-receive" | sed "1s/^qrscan_py='//; \$d")
-if on backend 'base64 -d /tmp/two.b64 > /tmp/two.png' && docker exec "$name-backend" python3 -I -c "$qrpy" png /tmp/two.png | grep -qx "monero:$good"; then held "$v" "$p" "a good QR code with more drawn beside it" "$(on backend 'cat /tmp/two.b64')"; else fail "the two-part test image doesn't read"; fi
+# (the image read on the web server, by its QR reader: the good code is there to be read)
+if on backend 'base64 -d /tmp/two.b64' | docker exec -i "$name-web" sh -c 'cat > /tmp/two.png' && on web 'ccs-check qr png /tmp/two.png' | grep -qx "monero:$good"; then held "$v" "$p" "a good QR code with more drawn beside it" "$(on backend 'cat /tmp/two.b64')"; else fail "the two-part test image doesn't read"; fi
 # two pushes at once: the second waits for the first (one staging folder, one at a time)
 v=$((v + 1)); site "$v" "$good"
-on backend "(rsync -a -e 'ssh -o BatchMode=yes' /out/ ccs-data@$web: > /tmp/a 2>&1; echo \$? >> /tmp/a) & (rsync -a -e 'ssh -o BatchMode=yes' /out/ ccs-data@$web: > /tmp/b 2>&1; echo \$? >> /tmp/b) & wait"
+on backend "(rsync -a --checksum --delay-updates -e 'ssh -o BatchMode=yes' /out/ ccs-data@$web: > /tmp/a 2>&1; echo \$? >> /tmp/a) & (rsync -a --checksum --delay-updates -e 'ssh -o BatchMode=yes' /out/ ccs-data@$web: > /tmp/b 2>&1; echo \$? >> /tmp/b) & wait"
 if [[ $(on backend 'tail -n 1 /tmp/a; tail -n 1 /tmp/b') == $'0\n0' && $(live) == "$v" ]]; then ok "two pushes at once both go through, one after the other"; else on backend 'cat /tmp/a /tmp/b'; fail "two pushes at once"; fi
 
 v=$((v + 1)); site "$v" "$(addr 2)"
@@ -684,17 +686,16 @@ on backend 'pkill -x ssh || true'
 for _ in $(seq 100); do on web 'for p in /proc/[0-9]*/cmdline; do { tr "\0" " " < $p; } 2> /dev/null; echo; done | grep -q "[c]cs-receive"' || break; sleep 0.2; done
 if (($(bot | grep -c . || true) > alerts)); then ok "a backend that hangs up mid-check: the gate still alerts"; else on web 'tail -n 3 /var/log/ccs-gate.log'; fail "a backend that hangs up mid-check: no alert from the gate"; fi
 
-# shadow mode: on every push above, ccs-check answered as the Python did
-differ=$(on web 'ls /var/lib/ccs-gate/differs 2> /dev/null || true')
-if [[ -z $differ ]]; then ok "shadow mode: ccs-check gave the Python's answer on every check of every push"
-else fail "shadow mode: ccs-check answered otherwise ($(wc -l <<<"$differ") times):"; on web 'cd /var/lib/ccs-gate/differs && head -n 6 -- * | cut -c1-200' | head -n 40; fi
-# ... and one that answers otherwise is seen: both answers kept, IRC told, the Python's used
-on web 'cp /usr/local/bin/ccs-check /tmp/ccs-check.real && printf "%s\n" "#!/bin/bash" "[[ \$1 == --check ]] || echo wrong" > /usr/local/bin/ccs-check'
-site 90 "$(addr 1)"
-push > /dev/null || true
-if [[ $(live) == 90 ]] && on web 'grep -lq "^wrong" /var/lib/ccs-gate/differs/*' && bot | grep -q 'answer differently from its Python'; then
-    ok "shadow mode: a ccs-check that answers otherwise is kept (both answers), IRC is told, the Python's answer is used"
-else fail "shadow mode: a wrong ccs-check went unseen (live $(live))"; fi
-on web 'mv /tmp/ccs-check.real /usr/local/bin/ccs-check'
+# no design release (vX.Y.Z) installed, only a build of none (v0.0.1-rc1): the push refused, not
+# every page passed for want of a design to fail it
+last=$(live)
+on web 'mv /etc/ccs-gate/design/v0.0.1 /etc/ccs-gate/design/v0.0.1-rc1'
+v=$((v + 1)); site "$v" "$good"
+rc=0; push > /dev/null || rc=$?
+if ((rc == 1)) && [[ $(live) == "$last" ]] && on web 'grep -q "refused the push: it has no /etc/ccs-gate/design/<release>/" /var/log/ccs-gate.log'; then
+    ok "no design release, only v0.0.1-rc1: the push refused (nothing passed for want of a design)"
+else fail "no design release: exit $rc, live $(live) (was $last)"; fi
+on web 'mv /etc/ccs-gate/design/v0.0.1-rc1 /etc/ccs-gate/design/v0.0.1'
+
 
 exit "$status"
