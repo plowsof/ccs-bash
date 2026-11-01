@@ -89,8 +89,8 @@ fi
 [[ $first == "# retired "* ]] && { echo "ccs-backup: not a retired wallet's file, not kept" >&2; exit 1; }
 [[ $first == "# final "* ]] && { echo "ccs-backup: not a deposits.csv, not kept" >&2; exit 1; }
 (($(wc -c < "$tmp") <= 1048576)) || { echo "ccs-backup: over 1 MB, not kept" >&2; exit 1; }
-# proposals.csv's rows: "file","link",index,"address","date" (the index a number, or "")
-if [[ ! -s $tmp ]] || ! awk '!/^"[^"]*","[^"]*",(""|0|[1-9][0-9]?[0-9]?[0-9]?[0-9]?[0-9]?),"[^"]*","[^"]*"$/ { bad = 1 } END { exit bad }' "$tmp"; then
+# proposals.csv's rows: "file","link",index,"address","date"[,"date"] (the index a number, or "")
+if [[ ! -s $tmp ]] || ! awk '!/^"[^"]*","[^"]*",(""|0|[1-9][0-9]?[0-9]?[0-9]?[0-9]?[0-9]?),"[^"]*","[^"]*"(,"[^"]*")?$/ { bad = 1 } END { exit bad }' "$tmp"; then
     echo "ccs-backup: not a proposals.csv, not kept" >&2; exit 1
 fi
 last=$(find "$dir" -maxdepth 1 -name 'proposals-*.csv' | sort | tail -n 1)

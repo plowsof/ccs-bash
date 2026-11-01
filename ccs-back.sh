@@ -44,6 +44,19 @@ record_new_proposals() {
     fi
 }
 
+# record_funded: when a proposal in Funding Required was first seen with its goal raised (confirmed
+# donations), as the state's funded_date: the feed's "fully funded". Only from Funding Required, and
+# only once: a proposal funded before this was recorded, or first seen past it, has none.
+record_funded() {
+    local new
+    new=$(jq -c --slurpfile funds "$WORK/funds.json" --slurpfile state "$WORK/state.json" \
+        '[.[] | select(.layout == "fr" and $state[0][.file] != null and $state[0][.file].funded_date == null
+            and ($funds[0][.file].percentage // 0) == 100) | .file]' "$WORK/props.json")
+    [[ $new != '[]' ]] || return 0
+    state_update --argjson new "$new" --arg now "$(now_utc)" 'reduce $new[] as $f (.; .[$f].funded_date = $now)'
+    log "fully funded: $(jq -r 'join(", ")' <<<"$new")"
+}
+
 # GitLab down: keep the last run's Ideas.
 previous_ideas() {
     jq '.[0].proposals' "$OUTPUT_DIR/proposals.json" 2> /dev/null || echo '[]'
@@ -146,6 +159,7 @@ main() {
     fi
     proposal_funds > "$WORK/funds.json"
     check_never_lower
+    record_funded
     # STATE_DIR/forge-ok: when GitLab last answered (ccs-watch --run alerts when that's long ago)
     if ideas > "$WORK/ideas.json"; then
         touch "$STATE_DIR/forge-ok"

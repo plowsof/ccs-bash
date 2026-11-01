@@ -18,6 +18,8 @@
                 "author": "lee",
                 "date": "May 2, 2023",
                 "funding-required-date": null,
+                "funding-required-at": null,
+                "funded-at": null,
                 "tags": []
             },
             {
@@ -36,6 +38,8 @@
                 "author": "kim",
                 "date": "March 1, 2022",
                 "funding-required-date": null,
+                "funding-required-at": null,
+                "funded-at": null,
                 "tags": []
             },
             {
@@ -54,6 +58,8 @@
                 "author": "carol",
                 "date": "March 1, 2020",
                 "funding-required-date": null,
+                "funding-required-at": null,
+                "funded-at": null,
                 "tags": []
             }
         ]
