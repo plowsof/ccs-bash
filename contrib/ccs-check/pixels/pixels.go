@@ -11,12 +11,18 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"hash/crc32"
 	"io"
+	"regexp"
+	"strings"
 )
 
 var errPNG = errors.New("not a PNG qrencode could have written")
 
-// Of: "<width> <height> <sha256 of its RGBA pixels>" of the PNG (its first 4 MB, as pixels_py)
+// the chunks' order, a letter each (an IDAT run one): qrencode's
+var chunks = regexp.MustCompile(`^HP?T?Y?DE$`)
+
+// Of: "<width> <height> <sha256 of its RGBA pixels>" of the PNG (its first 4 MB)
 func Of(r io.Reader) (string, error) {
 	d, err := io.ReadAll(io.LimitReader(r, 4<<20))
 	if err != nil {
@@ -25,20 +31,33 @@ func Of(r io.Reader) (string, error) {
 	if !bytes.HasPrefix(d, []byte("\x89PNG\r\n\x1a\n")) {
 		return "", errPNG
 	}
-	// the chunks, as pixels_py walks them: their CRCs not read (the pixels are what's compared),
-	// the last IHDR, PLTE and tRNS the ones that count, up to IEND
+	// the chunks in qrencode's order and no other, each CRC right: IHDR, then at most one PLTE,
+	// one tRNS and one pHYs, the IDATs one after another, IEND. Two PLTEs, or a tRNS after the
+	// image data, would be read otherwise by another decoder (libpng refuses the one, ignores the
+	// other; one that kept the first PLTE would show another code)
 	var idat, plte, trns, hdr []byte
+	order := ""
 	for i := 8; ; {
-		if i+8 > len(d) {
+		if i+12 > len(d) {
 			return "", errPNG
 		}
-		n := int(binary.BigEndian.Uint32(d[i:]))
+		n := int64(binary.BigEndian.Uint32(d[i:]))
+		if n > int64(len(d)-(i+12)) {
+			return "", errPNG
+		}
 		t := string(d[i+4 : i+8])
-		if n > len(d)-(i+8) {
+		c := d[i+8 : i+8+int(n)]
+		if crc32.ChecksumIEEE(d[i+4:i+8+int(n)]) != binary.BigEndian.Uint32(d[i+8+int(n):]) {
 			return "", errPNG
 		}
-		c := d[i+8 : i+8+n]
-		i += 12 + n
+		i += 12 + int(n)
+		k := map[string]string{"IHDR": "H", "PLTE": "P", "tRNS": "T", "pHYs": "Y", "IDAT": "D", "IEND": "E"}[t]
+		if k == "" {
+			return "", errPNG
+		}
+		if k != "D" || !strings.HasSuffix(order, "D") {
+			order += k
+		}
 		switch t {
 		case "IHDR":
 			if len(c) != 13 {
@@ -60,7 +79,7 @@ func Of(r io.Reader) (string, error) {
 			break
 		}
 	}
-	if hdr == nil {
+	if !chunks.MatchString(order) {
 		return "", errPNG
 	}
 	w, h := int(binary.BigEndian.Uint32(hdr)), int(binary.BigEndian.Uint32(hdr[4:]))
