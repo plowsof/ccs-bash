@@ -115,7 +115,7 @@
     <path d="M600,580 H580" stroke="#16a34a" marker-end="url(#g)"/>
   </g>
   <g fill="none" stroke="#64748b" stroke-width="1.8" marker-end="url(#s)">
-    <path d="M595,215 H602 V158 H915 V220 H935"/>
+    <path d="M335,245 H327 V158 H915 V220 H935"/>
     <path d="M865,385 H935"/>
     <path d="M450,660 V676 H915 V575 H935"/>
   </g>

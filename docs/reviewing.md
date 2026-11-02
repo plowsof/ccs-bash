@@ -36,9 +36,11 @@ wallet-rpc's `tx-notify` has touched a flag file (never read, only checked for),
 Pinned container, read-only, no capabilities; in Docker on the internal `wallet` network, which
 only wallet-rpc shares (the host setup: `--network host`, only to reach wallet-rpc on 127.0.0.1).
 
-- [`ccs-back.sh`](../ccs-back.sh): `main` is the run: config, `flock`, proposals, state, wallet
-  checks, totals, new proposals' merged MRs, new subaddresses, funds, ideas (GitLab down: the last
-  list), images, the JSON.
+- [`ccs-back.sh`](../ccs-back.sh): `main` is the run: config, `flock`, a watchdog (`RUN_SECONDS`,
+  900: a run that hangs is stopped, its lock with it), proposals, state, wallet checks, totals,
+  new proposals' merged MRs, new subaddresses (or a mirror's), funds, never lower, fully funded
+  (`record_funded`: a Funding Required proposal's first run at its goal, once, as the state's
+  `funded_date`, the feed's), ideas (GitLab down: the last list), images, the JSON.
 - [`lib/common.sh`](../lib/common.sh): `load_config` sources the config and **refuses to run if
   this user can write it** (it pins `WALLET_ADDRESS`); `atomic_write` (temp file, sync, rename; a
   failure keeps the old file); `safe_filename` (a plain `*.md`: no `/`, control characters, leading
@@ -74,6 +76,15 @@ only wallet-rpc shares (the host setup: `--network host`, only to reach wallet-r
   every field checked before bash arithmetic (no leading zero, at most 18 digits: bash wraps past
   2^63); no addresses in it. `check_wallet_addresses`: every state subaddress the wallet's, and given to
   the proposal its label names (a swapped state stops the run).
+- [`lib/mirror.sh`](../lib/mirror.sh), with `MIRROR_URL` only (a CCS shown beside another that
+  runs on the same wallet, as the testnet beside ccs.getmonero.org): `mirror_load` reads the other
+  site's `/projects` (16 MB at most); `mirror_assign`, in place of `assign_addresses`, gives a
+  proposal the state has no address for the feed's, matched by title and author (and date, when
+  the feed has that key twice, told apart by the wallet's labels), only if the wallet says it is
+  its own: never index 0, one past the signed list or 100000, or one another proposal has; a
+  proposal shown with one address here and another there stops the run. `mirror_hide`: a
+  funding-required proposal with no address yet isn't on the site. The totals stay this wallet's
+  (and retired wallets'); only a proposal in neither shows the feed's (`historic_totals`).
 - [`lib/gitlab.sh`](../lib/gitlab.sh): the public API of GitLab or Forgejo (Forgejo's pull requests
   mapped to GitLab's shape). `merged_mr_url`: the merged MR that added a file. `mr_proposal_file`:
   an MR is an idea only if it adds exactly one `.md` at the root, and besides it only files in
@@ -166,7 +177,8 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
     donation box one listed address and its QR code. Anything not passed (`=ok`), a timeout too,
     is held back;
   - `kinds`: no symlink, no folder in a file's place or file in a folder's;
-  - `scan` (`ccs-check scan`, one pass): every address in pages and JSON as written (entities
+  - `scan` (`ccs-check scan`, one pass): every address in pages, JSON and the feed (which may have
+    none) as written (entities
     decoded, a non-ASCII or control character read both as nothing and as a space; in groups split
     by up to three spaces or punctuation, or between elements side by side (the text with its tags
     dropped), by its checksum: `addr`, a budget of checksums and time a
@@ -176,7 +188,8 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
     compared once, within 5 minutes); pages and JSON start with `<`, `[` or `{`;
   - `changes`: any other file is the design's (`design.sha256`), a proposal image the repository
     has at that path (`repo_images`: `git hash-object` against `ls-tree`; its QR codes read, by
-    `ccs-check qr`; one it can't check held back),
+    `ccs-check qr`, as a browser shows it; one it can't check held back), `feed.xml` (`feed`,
+    `feed_awk`: line for line as ccs-front-bash writes it, its links this site's proposal pages),
     `projects.json`, or the list's files as installed;
   - a failing file is removed from staging (its last good copy stays), the rest goes live, the
     push fails and IRC is told. `--heartbeat` (the `heartbeat` service's loop; the host setup: a
@@ -203,7 +216,7 @@ key; its `.pin` (sha256 and key) is what each machine trusts, installed by hand 
 | 4. Its QR code is made from it | ccs-front-bash `ccs-front-bash.sh` `qr_codes` | made here, from the checked address (`qrencode -s 10 "monero:<address>"`); ccs-bash's own QR codes are never used | the run stops |
 | 5. The page holds them | ccs-front-bash `lib/pages.jq`, the donation box | the donation box gets that address and that QR code, else the run stops | the run stops |
 | 6. The web server's list is the pinned one | `contrib/ccs-receive`, once the push is received, before anything goes live | the gate's own copy (installed by hand) is the one its `.pin` names | every push refused, IRC told |
-| 7. Every address on every page is on the list | `contrib/ccs-receive` `scan` (`ccs-check scan`, `json`) | every 95- or 106-character address in a page or JSON, as written (entities read, a non-ASCII character as nothing and as a space), is a line of the list or in `allowed` | that file held back, its last good copy stays, IRC told |
+| 7. Every address on every page is on the list | `contrib/ccs-receive` `scan` (`ccs-check scan`, `json`) | every 95- or 106-character address in a page or JSON, as written (entities read, a non-ASCII character as nothing and as a space, in groups or across elements by its checksum), is a line of the list or in `allowed`; the feed has none | that file held back, its last good copy stays, IRC told |
 | 8. Every QR code is of a listed address | `contrib/ccs-receive` `qrof`, `qrknown` (`ccs-check pixels`) | each `data:` image is, pixel for pixel, `qrencode -s 10` of a listed or allowed address (a donation box's: of its own address); never decoded | held back |
 | 9. Addresses only where the design puts them | `contrib/ccs-receive` `pages` (`ccs-check pages`, the `address` and `qr` slots) | a page is the design's, filled: a whole address can only be in the donation box's slots, each one address; one in groups is found by `scan` (any slot), by its checksum | held back |
 | 10. What is live is what was pushed | `contrib/ccs-watch`, the page comparison (`differs`) | the live donation pages (and others at random) byte for byte; a live address not on the list is named in the alert | IRC told |

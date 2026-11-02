@@ -66,12 +66,17 @@ patched: [ccs-check](docs/ccs-check.md).
    logged and counted for no proposal.
 4. **Record new proposals:** the merged MR that added each new file, and when funding started.
 5. **Assign addresses:** a new subaddress for each `fr` proposal without one, after every index used.
-6. **Fetch ideas:** open MRs (GitLab, or Forgejo pull requests: `REPOSITORY_URL`) adding exactly
+   A mirror (`MIRROR_URL`: a view-only copy of a CCS another site runs) takes each address from
+   that site's `/projects` instead, never one of its own ([testnet](docs/testnet.md)).
+6. **Never lower:** a raised total below what the last run published stops the run (the site keeps
+   its last totals), unless `allow-lower` says it is meant. A Funding Required proposal at its goal
+   gets its "fully funded" date, once (the RSS feed's).
+7. **Fetch ideas:** open MRs (GitLab, or Forgejo pull requests: `REPOSITORY_URL`) adding exactly
    one new proposal file that reads as one, and only its images in `images/<its name>/`. The forge
    down: the previous list.
-7. **Copy images** a proposal shows from its `images/<name>/` (PNG, JPEG or GIF, 2 MB at most) into
+8. **Copy images** a proposal shows from its `images/<name>/` (PNG, JPEG or GIF, 2 MB at most) into
    the output, for ccs-front-bash; any other image stays a link.
-8. **Write the JSON** (`lib/site.jq`), swapped in atomically.
+9. **Write the JSON** (`lib/site.jq`), swapped in atomically.
 
 Each file, function by function: [reviewing](docs/reviewing.md).
 
@@ -95,7 +100,7 @@ Deleted, either is made again on the next run. `deposits.csv` is backed up too, 
 only replaced by one with every deposit it has. A wallet the CCS no longer uses is recorded in
 `retired/<name>.csv`, state like `proposals.csv` ([retiring a wallet](docs/handover.md#retiring-a-wallet)).
 
-## Two ways to run it
+## Three ways to run it
 
 | | A) packages on the host | B) the pinned container | C) the compose |
 |---|---|---|---|
@@ -127,10 +132,16 @@ folders, for those who can't run Docker; not recommended.
 ## Tests
 
 ```
-tests/run.sh             # end-to-end on tests/fixtures, fake wallet and GitLab
+tests/run.sh             # end-to-end on tests/fixtures, fake wallet and GitLab (and review5.sh's cases)
 UPDATE=1 tests/run.sh    # rewrite tests/expected after an intended change
-tests/rrsync.sh          # the two-machine setup, attacked from the wallet machine (docker)
+tests/regtest.sh         # with a real monerod (regtest, offline) and monero-wallet-rpc
+tests/compose.sh         # the backend compose's stages taking turns, as processes
+tests/watch.sh           # ccs-watch against a local web server and a fake bot
+tests/rrsync.sh          # the two-machine setup, attacked from the wallet machine (docker); CCS_CHECK=: ccs-check rrsync
 tests/gate.sh            # the web server's gate (docker); GATE_IMAGE=ccs-gate: the gate's image as the web server
 tests/web.sh             # the web server compose's sshd, attacked from the backend's keys (docker, the gate's image)
-shellcheck -x ccs-back.sh notify-loop.sh lib/*.sh tests/*.sh container/*.sh
+tests/image.sh           # inside the backend image: the tools each stage runs (CI)
+tests/gate-image.sh      # inside the gate's image: ccs-check, qrencode, rsync, sshd, no Python (CI)
+contrib/ccs-check/build.sh test   # ccs-check's Go tests (fuzz [SECONDS]: its fuzz targets; vulncheck)
+shellcheck -x ccs-back.sh notify-loop.sh lib/*.sh tests/*.sh container/*.sh contrib/ccs-receive ...   # the list: .github/workflows/check.yml
 ```

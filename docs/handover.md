@@ -40,7 +40,7 @@ new set replaces the row (earlier sets: this file's history, and ccs-sigs).
 
 | Set | ccs-bash | ccs-front-bash | ccs-front-hugo | Running on |
 |---|---|---|---|---|
-| 2026-11-01 | v0.2.39 | v0.1.24 | v0.1.28 | [ccs.monerodevs.org](https://ccs.monerodevs.org), in mirror mode, with its onion and its feed: the backend compose (without `compose.host.yml`) and the web server compose, each machine verifying with its own `trusted-signers` (throwaway-39) |
+| 2026-11-01 | v0.2.40 | v0.1.25 | v0.1.29 | [ccs.monerodevs.org](https://ccs.monerodevs.org), in mirror mode, with its onion and its feed: the backend compose (without `compose.host.yml`) and the web server compose (its gate still v0.2.40's, before `ccs-check`). **Not attested:** each machine built the images from the tags and checked their IDs against the release notes; the last attested set is v0.2.39 / v0.1.24 / v0.1.28 (throwaway-39) |
 
 Each is reproducible, and attested in [ccs-sigs](https://github.com/plowsof/ccs-sigs) by those who
 rebuilt it: on the testnet so far by one throwaway key a set (one person; the CCS's should be two
@@ -320,10 +320,8 @@ With steps 1–9 running, the new site is complete on the web server before anyo
 Each job runs as its own account, which can do that job and nothing more. Only you have root.
 
 **The backend:** no port open to the internet; it only connects out (monerod, GitLab, the web
-server, the backup machine, the IRC bot, Tor).
+server, the backup machine, the IRC bot, Tor; a mirror: the site it mirrors).
 
-| Account | Does | Can't |
-|---|---|---|
 In Docker ([docker](docker.md)) each account is its stage's container's (read-only, no
 capabilities, no new privileges, only its own folders); on the host, root runs the update and
 starts each step as its account.
@@ -394,12 +392,13 @@ agreeing, answering) and changes nothing.
 | `/etc/ccs/push/` (the host setup: `/var/lib/ccs/.ssh/`) | `id_ed25519` (the push key), `known_hosts` | the web server's host key: in Docker its gate's (`/etc/ccs-gate/ssh/ssh_host_ed25519_key.pub` there, as `[<web server>]:2223 ssh-ed25519 …`); the host setup, its `/etc/ssh/ssh_host_ed25519_key.pub`; `ccs-push` (the host setup: `ccs`), 600 | 6 |
 | `/etc/ccs/backup/` (the host setup: `/root/.ssh/`) | `id_ed25519` (the host setup: `ccs-backup_ed25519`), `known_hosts` | the backup key, the backup machine's host key (in Docker its receiver's, as `[<backup machine>]:2224 ssh-ed25519 …`); `ccs-send` (the host setup: root), 600 | 7 |
 | `/etc/ccs/alert.conf` | `ALERT_URL` | the IRC bot's URL (below) | 8 |
-| | `SUBADDRESSES`, `WATCH_PROXY`, `WATCH_THEMES`, `WATCH_SAMPLE` | `/etc/ccs-front/subaddresses.txt`; `socks5h://127.0.0.1:9050` (Tor) and a clearnet proxy elsewhere; `1`; `10` (other pages checked each run, at random) | 8 |
+| | `SUBADDRESSES`, `WATCH_PROXY`, `WATCH_THEMES`, `WATCH_SAMPLE` | `/etc/ccs-front/subaddresses.txt`; `socks5h://host.docker.internal:9050` (Tor, step 1; the host setup: `127.0.0.1`) and a clearnet proxy elsewhere; `1`; `10` (other pages checked each run, at random) | 8 |
 | `/etc/ccs/trusted-signers` | the attesters you trust | their keys' fingerprints, one a line | upgrading |
 | `/opt/ccs-bash/contrib/docker/backend/.env` | `CCS_BASH_IMAGE`, `CCS_FRONT_IMAGE`, `WALLET_IMAGE` | the attested IDs of [the releases](#the-releases); the wallet's, as built | docker, upgrading |
-| | `CCS_UID`, `GIT_UID`, `FRONT_UID`, `WALLET_UID` | the host's users, `uid:gid` | docker |
+| | `CCS_UID`, `GIT_UID`, `FRONT_UID`, `WALLET_UID`, `PUSH_UID`, `SEND_UID`, `WATCH_UID` | the host's users, `uid:gid` | docker |
 | | `WALLET_PORT` | `18082`, `wallet-rpc.conf`'s `rpc-bind-port` (its healthcheck: without it the compose waits forever) | docker |
 | | `CCS_PUSH`, `CCS_BACKUP`, `CCS_SITE_URL` | `ccs-data@<web server>`, `ccs-backup@<backup machine>`, `https://ccs.getmonero.org` (also the feed's links: the same as the web server's `alert.conf` `SITE_URL`) | docker |
+| | `CCS_PUSH_PORT`, `CCS_BACKUP_PORT` | `2223`, `2224` (the web server compose's gate and backup receiver) | docker |
 | | `COMPOSE_FILE` | only with a monerod, Tor or bot on the backend's 127.0.0.1: `compose.yml:compose.host.yml` | docker |
 | | `CCS_ONION` | optional: the site's onion address, for every page's footer; the same as the web server's `/etc/ccs-gate/onion` ([below](#the-onion-address)) | docker |
 | the host setup: `/usr/local/bin/ccs-bash-run`, `ccs-front-run` | the image they run | its ID, `--pull never`, the attested one of [the releases](#the-releases) | 2, 5, upgrading |
@@ -412,7 +411,7 @@ agreeing, answering) and changes nothing.
 | `/etc/ssh/authorized_keys/ccs-data` | `from=`, the key | the backend's address and its push key, `command="/usr/local/bin/ccs-receive"`; `sshd_config`'s `Match User ccs-data` reads only it | 6 |
 | `/etc/ccs-gate/` | `subaddresses.txt` and its `.pin`, `.asc`, `.key.asc` | the same files as the backend's | 6 |
 | | `design.sha256` | the design release's files, from its zip (two-machines, "The gate") | 6 |
-| the host setup's packages | the gate's tools | `apt install rsync curl qrencode git`, and the release's `ccs-check` (its sha256 the notes'; two-machines.md) (in Docker: none, the gate's image has them) | 6 |
+| the host setup's packages | the gate's tools | `apt install rsync curl qrencode git`, and `ccs-check` copied out of the attested gate image ([two machines, without Docker](two-machines.md#without-docker)) (in Docker: none, the gate's image has them) | 6 |
 | | `design/<release>/` | the design's release zip, unpacked (the same as the backend's); `design.sha256` from it | 6 |
 | | `markdown.awk` | `lib/markdown.awk` of the ccs-front-bash release the backend runs | 6 |
 | | `proposals.conf` | `PROPOSALS_GIT=https://repo.getmonero.org/monero-project/ccs-proposals.git`, `PROPOSALS_BRANCH=master` (and `LINK_HOSTS`, other repositories a proposal's merge request link may be in, as host/path) | 6 |
@@ -420,6 +419,8 @@ agreeing, answering) and changes nothing.
 | | `allowed` | the General Fund, `888tNkZrPN6JsEgekjMnABU4TBzc2Dt29EPAvkRxbANsAnjyPbb3iQ1YBRk1UXcdRsiKc9dhwMVgN5S9cQUiyoogDavup3H`, and any address a proposal's text quotes (the gate's refusal names it) | 6 |
 | | `alert.conf` | `ALERT_URL` (the bot), `SITE_URL=https://ccs.getmonero.org` (the gate takes a feed only with links under it) | 8 |
 | | `onion` | optional: the site's onion address, one line (Tor's `/var/lib/tor/hidden_service/ccs/hostname`, [two machines](two-machines.md)); the only one the footer may show | 6 |
+| nginx | `server_name`, the certificate | `ccs.getmonero.org`, from certbot | 6 |
+| | `snippets/ccs-headers.conf` | the security headers, as in two-machines (A+ on securityheaders.com) | 6 |
 
 ### The onion address
 
@@ -440,8 +441,6 @@ confirmed donations while in Funding Required), the 50 newest. ccs-bash records 
 the backend's `CCS_SITE_URL`, and the gate takes it only exactly in that form, each item a link to
 one of the site's proposal pages under its own `alert.conf` `SITE_URL`: set the two to the same
 address. A proposal funded before ccs-bash recorded it has no "fully funded" item.
-| nginx | `server_name`, the certificate | `ccs.getmonero.org`, from certbot | 6 |
-| | `snippets/ccs-headers.conf` | the security headers, as in two-machines (A+ on securityheaders.com) | 6 |
 
 **The backup machine:** the `ccs-backup` account, with the backend's key in
 `/etc/ssh/authorized_keys/ccs-backup` (step 7).
@@ -622,6 +621,9 @@ design alone: the design lines of steps 3 to 5). Each machine: as root, a backup
    are still there: their keep containers.
 
 The host setup (no Docker): the same, but the new IDs go in `ccs-bash-run` and `ccs-front-run`
-(by ID, `--pull never`), and the switch is made with `systemctl stop ccs-bash` between runs. Root's
+(by ID, `--pull never`), and the switch is made with `systemctl stop ccs-bash` between runs. Its
+web server takes the new `contrib/ccs-receive` from the checkout and `ccs-check` copied out of the
+new gate image ([two machines, without Docker](two-machines.md#without-docker)), both before the
+backend switches. Root's
 `ccs-bash-update` isn't in a release: compare it with [setup's](setup.md#the-update-script-the-host-setup)
 at the new commit (after ccs-bash v0.2.34: the push's `--checksum`).
