@@ -154,8 +154,9 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
   a control character in a file name. Then, for each page and JSON file
   the push changed and each it held back last time (`held` in its state folder; every one when the
   list, its pin, `allowed`, the design, `markdown.awk`, `proposals.conf`, the proposals commit,
-  `qrencode` or `ccs-receive` changed, and once a day: `checked-with`; the live site holds only what
-  passed), and every other file the push changed:
+  `qrencode`, `ccs-receive` or `ccs-check` changed, and once a day: `checked-with`; the live site
+  holds only what passed; then the live proposal images' QR codes are read again too), and every
+  other file the push changed:
   - `fetch`: the proposals repository's last two commits (the last fetch if it can't);
   - `pages` (`ccs-check pages`, contrib/ccs-check/pages): a page is one of the design's
     (`design/<release>/`), byte for byte outside its regions, each region the design's parts and
