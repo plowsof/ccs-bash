@@ -12,8 +12,8 @@ import (
 func init() { commands["pages"] = pagesCmd }
 
 // pages SITE DESIGNS BODIES LIST VIEWKEY HOSTS ONION < pages (NUL-separated, relative to SITE):
-// as pages_py, "page<TAB>=ok" for each page that passes, after "page<TAB>=box<TAB>address<TAB>QR
-// code base64" for its donation box; else "page<TAB>!reason". Exit 2, nothing printed, if the
+// as pages_py, "page<TAB>=ok" for each page that passes (a donation box's QR code
+// qr/<its address>.png); else "page<TAB>!reason". Exit 2, nothing printed, if the
 // list, the proposals' renderings or a design can't be read (pages_py stopped there too).
 func pagesCmd(args []string) int {
 	if len(args) != 7 {

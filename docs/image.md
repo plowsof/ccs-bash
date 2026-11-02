@@ -29,9 +29,9 @@ one on a cache from another commit must agree.
 
 **The gate's image** (the web server's, `container/build.sh ccs-gate gate.Dockerfile`) is built
 the same way, from the same pins: StageX's sshd, rsync, git, coreutils and the rest of a GNU
-userland; qrencode built here from its pinned source, with PNG output, as ccs-front-bash builds
-it; and [ccs-check](ccs-check.md) built here by StageX's Go (`go` in `container/images`) from its
-two modules' pinned archives (`container/sources.lock`), with no network. No Python.
+userland; and [ccs-check](ccs-check.md) built here by StageX's Go (`go` in `container/images`) from its
+two modules' pinned archives (`container/sources.lock`), with no network. No Python, and no
+qrencode (the donation QR codes are the signed list's files).
 `tests/gate-image.sh` checks what is in it.
 
 ## Signatures
