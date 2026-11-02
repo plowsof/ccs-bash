@@ -572,8 +572,9 @@ if ! flock -w 600 8; then
 fi
 
 # (before the push is received: ccs-check receives it too)
-check=$(command -v ccs-check) || check=''
-[[ $check ]] && ccs-check --check > /dev/null 2>&1 || refuse "it has no ccs-check (contrib/ccs-check: the release's, its sha256 attested) to check the push with" ccs-check
+if ! check=$(command -v ccs-check) || ! ccs-check --check > /dev/null 2>&1; then
+    refuse "it has no ccs-check (contrib/ccs-check: the release's, its sha256 attested) to check the push with" ccs-check
+fi
 # Staging starts as the live site each time: the push account can't delete, so whatever a
 # refused push left in it would otherwise stay there and refuse every push after it.
 rsync -a --delete "$live/" "$staging/"
