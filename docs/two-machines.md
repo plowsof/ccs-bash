@@ -17,14 +17,17 @@ install -d -m 755 /etc/ssh/authorized_keys                # root-owned, outside 
 from="<backend IP>",command="/usr/local/bin/ccs-receive",restrict ssh-ed25519 AAAA... ccs-bash
 ```
 
-The gate receives with `ccs-check rrsync` (as rrsync `-wo -no-del -munge`, and only the
-backend's own push: `rsync -a --delay-updates SITE/ host:`) into its staging folder, so:
+The push is a tar of the files that changed (the backend's [`contrib/ccs-push`](../contrib/ccs-push),
+over this key, asking for `receive`), read by the gate's own Go code (`ccs-check receive`), never
+by rsync or any other C program, into its staging folder, so:
 
 | If the key is stolen, this stops | |
 |---|---|
 | `restrict` | shells, forwarding, a terminal |
-| `ccs-check rrsync`: the push's own command, nothing else | reading back, writing outside the folder, deleting, any other rsync option |
-| `--munge-links` (added by it) | symlinks (a `projects.json` link to any file would get nginx to publish it) |
+| `command=` the gate, which takes `receive` only | any other command (a shell, scp, rsync, reading back) |
+| `ccs-check receive`: plain files and folders, at clean paths under the folder | writing outside it (`..`, an absolute path), links of either kind (a `projects.json` link to any file would get nginx to publish it), devices, a name twice, a file under a page: any of them refuses the whole push |
+| no delete in the push at all | deleting |
+| its limits: 512 MB a push, 64 MB a file, 100,000 files, 5 minutes | filling the disk, holding the gate |
 | `from=` | use from another machine |
 | key file root-owned, outside its home | loosening the key line, adding a key |
 | own filesystem / quota | filling the disk |
@@ -177,18 +180,19 @@ compose's `.env`. The web server needs 2223 open to the backend only (the backup
 and 80/443 to everyone, in its firewall *and* a cloud provider's (an Oracle security list, an AWS
 security group). The admins' own ssh: [admin access](admin-access.md).
 
-`tests/rrsync.sh` tries all of the above from the backend's key in containers (commands,
-forwarding, reading back, `..`, `--temp-dir`, `--backup-dir`, `--link-dest`, deleting, symlinks,
-another machine): all refused, on rrsync as documented and on `ccs-check rrsync` (the gate's,
-`CCS_CHECK=`), and with rrsync alone (`--loose`) they get through, so the test catches them. A taken-over backend can still push false pages: the gate is for that.
+`tests/gate.sh` sends each of those as a tar from the backend's key (a symlink, a hard link, a
+device, `..`, an absolute path, a name twice, a file under a page, a backslash, no tar at all):
+each refuses the whole push, nothing live changes, nothing is written outside; `tests/web.sh`
+tries other commands, forwarding and another machine; `contrib/ccs-check/build.sh test` and
+`fuzz` the receiver itself. A taken-over backend can still push false pages: the gate is for that.
 
 ## The gate: the web server checks every page
 
 `contrib/ccs-receive`, the push key's forced command. It doesn't guess how a browser shows
 what it is sent; it knows what a page may be. Each push, one at a time, it
 
-1. makes a staging folder a copy of the live site, and receives the push into it (`ccs-check
-   rrsync`: the backend's push, nothing else; `--munge-links`). What it checks below are the
+1. makes a staging folder a copy of the live site (`ccs-check copy`), and receives the push into
+   it (`ccs-check receive`: a tar of plain files, as above). What it checks below are the
    files the push changed, and the ones it held back last time (their last good copy is live, so
    the same file sent again fails again): the live site holds only what passed. Every page and JSON file is checked again
    when what they were checked against changes (the list or its pin, `allowed`, the design,
@@ -414,7 +418,7 @@ The host's own sshd takes the push key, and a timer runs the heartbeat. As root,
 folders and files above:
 
 ```
-apt install rsync git   # the push received, the proposals fetched
+apt install git   # the proposals fetched (the push is received by ccs-check)
 install -m 755 contrib/ccs-receive /usr/local/bin/ccs-receive        # from this repository at the attested commit, checked out here
 install -m 755 ccs-check /usr/local/bin/ccs-check                   # the attested gate image's own (see below)
 install -o ccs-data -m 644 /dev/null /var/log/ccs-gate.log          # optional: the refusals, as a file (in Docker: /var/log/ccs-web/)
@@ -466,5 +470,5 @@ On the backend, the push key is `ccs`'s (`/var/lib/ccs/.ssh/id_ed25519`, made as
 web server's own host key (`/etc/ssh/ssh_host_ed25519_key.pub`) for `<web server>` on port 22,
 and [the update script](setup.md#the-update-script-the-host-setup) pushes with `-p 22` in full, as
 the backend's `ssh_config` may default to another port (a push that hangs is the sign). Keep
-sshd, rsync and git updated (`unattended-upgrades`); `ccs-check` is the next release's
+sshd and git updated (`unattended-upgrades`); `ccs-check` is the next release's
 (it reads every push: install each release's).

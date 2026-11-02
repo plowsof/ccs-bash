@@ -62,9 +62,9 @@ machine and the IRC bot; ccs-watch through Tor and a proxy; a mirror to the site
 - **Attested releases:** anyone can rebuild a release from its tag, byte for byte, and sign the
   result into [ccs-sigs](https://github.com/plowsof/ccs-sigs), as Feather Wallet does; a release is
   verified against those signatures before it is installed ([contrib/release](../contrib/release/README.md)).
-- **The push:** `site/` to the web server, only the files whose contents changed (`rsync
-  --checksum --delay-updates`: ccs-front-bash makes every file anew each run, so their times
-  always differ).
+- **The push:** `site/` to the web server, only the files whose contents changed since what the
+  gate last took (`contrib/ccs-push`: their sums against its record; every file once a day), as a
+  tar over ssh; the gate answers which it held back, and those go again next time.
 
 **Web server:** the distribution's nginx (StageX has none, and builds for amd64 only) serving
 `/var/lib/ccs-data`, and a write-only push account whose key runs only the gate
@@ -103,9 +103,9 @@ What the watching doesn't cover is one flaw that opens both at once:
 
 - **The admins' own ssh**, the same sshd open to the internet on every machine: a flaw before its
   key check opens them all. [Admin access](admin-access.md) puts it behind a VPN or an allowlist.
-- **The same packages on both sides** (StageX's ssh, rsync, curl, OpenSSL in both images):
+- **The same packages on both sides** (StageX's ssh, curl, OpenSSL in both images):
   reachable from outside only through what each machine exposes, but also by each machine from
-  the other: the web server answers the backend's push (rsync and ssh, as clients) and
+  the other: the web server answers the backend's push (ssh, as a client; the tar is read in Go) and
   ccs-watch's fetches (curl). Each runs in a container of its own, as its own user, so a flaw
   there reaches that one stage, not the state or the wallet. But those two stages are the
   watching: a flaw in the push's client can rewrite what was pushed (the watch then finds it isn't

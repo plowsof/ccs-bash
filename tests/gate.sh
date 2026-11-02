@@ -22,11 +22,11 @@ cleanup() {
 trap cleanup EXIT
 cleanup; files=$(mktemp -d)
 
-# Debian 12, as in the docs (the same pinned image as tests/rrsync.sh); python3 and the image
+# Debian 12, as in the docs; python3 and the image
 # libraries for the test's own helpers on the backend (the gate needs neither)
 docker buildx build -q --load -t "$name" - > /dev/null <<IMG
 FROM debian@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
-RUN apt-get update -q && apt-get install -y -q --no-install-recommends openssh-server openssh-client rsync python3 curl qrencode git \
+RUN apt-get update -q && apt-get install -y -q --no-install-recommends openssh-server openssh-client python3 curl qrencode git \
     libzbar0 libpng16-16 libturbojpeg0 libgif7 \
     && rm -rf /var/lib/apt/lists/*
 IMG
@@ -139,6 +139,27 @@ if [[ ! $img ]]; then
 fi
 docker cp "$d" "$name-web:/tmp/design" && docker cp "$files/markdown.awk" "$name-web:/tmp/markdown.awk"
 docker cp "$d" "$name-backend:/design" && docker cp "$files/gen.py" "$name-backend:/gen.py"
+docker cp "$here/../contrib/ccs-push" "$name-backend:/ccs-push"
+# hostile.py KIND: a tar no backend's push makes, to stdout (python's tarfile writes what it's told)
+cat > "$files/hostile.py" <<'PY'
+import io, sys, tarfile
+out = tarfile.open(fileobj=sys.stdout.buffer, mode="w|", format=tarfile.GNU_FORMAT)
+def add(name, body=b"x", typ=tarfile.REGTYPE, link=""):
+    t = tarfile.TarInfo(name); t.type = typ; t.linkname = link; t.mode = 0o644
+    if typ == tarfile.REGTYPE: t.size = len(body); out.addfile(t, io.BytesIO(body))
+    else: out.addfile(t)
+k = sys.argv[1]
+if k == "symlink": add("evil.html", typ=tarfile.SYMTYPE, link="/etc/passwd")
+if k == "hardlink": add("a.txt"); add("evil.html", typ=tarfile.LNKTYPE, link="a.txt")
+if k == "device": add("evil.html", typ=tarfile.CHRTYPE)
+if k == "dotdot": add("../../../tmp/escaped")
+if k == "absolute": add("/tmp/escaped")
+if k == "twice": add("evil.html", b"<p>one"); add("./evil.html", b"<p>two")
+if k == "backslash": add("proposals/back\\slash.html")
+if k == "clash": add("index.html/evil.html")
+out.close()
+PY
+docker cp "$files/hostile.py" "$name-backend:/hostile.py"
 on web "
     chown root:root /usr/local/bin/ccs-receive && chmod 755 /usr/local/bin/ccs-receive
     $adduser
@@ -190,7 +211,7 @@ fail() { echo "FAIL $1"; status=1; }
 # proposal with ADDRESS in its donation box and the QR code qr/QR.png (default ADDRESS: the
 # list's file; none for an address not on it, as ccs-front-bash has none), the ideas, projects.json, the design's
 # stylesheet and the signed list's files. Each version gets its own
-# file times: two made in the same second, the same size, rsync would skip as unchanged.
+# file times (ccs-push sends by content: the times are only for the gate's own copy).
 qr64() { on backend "qrencode -s ${2:-10} -o - 'monero:$1' | base64 -w0"; }
 site() {
     local v=$1 a=$2 qr=${3:-$2}
@@ -213,7 +234,10 @@ import sys; p, a, b = sys.argv[1:]; s = open(p, encoding="utf-8").read(); assert
 open(p, "w", encoding="utf-8").write(s.replace(a, b, 1))' "/out/$1" "$2" "$3"
     on backend "touch '/out/$1'"
 }
-push() { on backend "rsync -a --checksum --delay-updates -e 'ssh -o BatchMode=yes -o StrictHostKeyChecking=yes' /out/ ccs-data@$web: 2>&1"; }
+# push: as the backend pushes (contrib/ccs-push): the files that changed, a tar over ssh
+push() { on backend "/ccs-push /out /pushed /state -T -o BatchMode=yes -o StrictHostKeyChecking=yes ccs-data@$web 2>&1"; }
+# hostile KIND: hostile.py's tar sent as a push; its exit
+hostile() { on backend "python3 /hostile.py $1 | ssh -T -o BatchMode=yes ccs-data@$web receive > /dev/null 2>&1"; }
 live() { on web "sed -n '/<!-- ccs:count fr -->/{n;p}' /var/lib/ccs-data/index.html 2> /dev/null"; }
 livefile() { on web "cat '/var/lib/ccs-data/$1' 2> /dev/null || true"; }
 livepage() { livefile proposals/p.html; }
@@ -221,11 +245,14 @@ livepage() { livefile proposals/p.html; }
 site 1 "$(addr 1)"
 if out=$(push) && [[ $(live) == 1 ]]; then ok "a push with the wallet's addresses, the design's pages filled, goes live"; else echo "$out"; on web 'tail -n 5 /var/log/ccs-gate.log'; fail "a good push"; fi
 # file modes don't go live: a page pushed 600 (a 403 for visitors, and no alert) is 644 there
+change index.html $'fr -->\n1\n' $'fr -->\n12\n'
 on backend "chmod 600 /out/index.html && chmod 700 /out/assets"
-if push > /dev/null && [[ $(on web "stat -c %a /var/lib/ccs-data/index.html /var/lib/ccs-data/assets" | tr '\n' ' ') == "644 755 " ]]; then
+if push > /dev/null && [[ $(live) == 12 && $(on web "stat -c %a /var/lib/ccs-data/index.html /var/lib/ccs-data/assets" | tr '\n' ' ') == "644 755 " ]]; then
     ok "file modes from the backend don't go live (files 644, folders 755)"
 else on web "ls -la /var/lib/ccs-data /var/lib/ccs-data/assets"; fail "file modes"; fi
 on backend "chmod 644 /out/index.html && chmod 755 /out/assets"
+change index.html $'fr -->\n12\n' $'fr -->\n1\n'
+push > /dev/null
 # only what a push changed is checked: the same site again (nothing), then one page changed
 checking() { on web "grep 'checking ' /var/log/ccs-gate.log | tail -n 1"; }
 push > /dev/null
@@ -234,8 +261,8 @@ change index.html $'fr -->\n1\n' $'fr -->\n11\n'
 if push > /dev/null && [[ $(live) == 11 && $(checking) == *"checking 1 of "* ]]; then ok "one page changed: that page checked, and only it"; else checking; fail "one page changed"; fi
 
 site 2 "$(addr 9 B)"
-# The reason is written after rsync is done: the backend gets it only if ssh relays it before the
-# rsync client exits (a race). The push failing and the web server's log are what's certain.
+# The push fails (7), the web server's log says which and where, and so does its answer (held:
+# ccs-push says it, and sends that file again next time)
 rc=0; out=$(push) || rc=$?
 if ((rc)) && [[ $(live) == 2 && $(livepage) == *"$(addr 1)"* && $(livepage) != *"$(addr 9 B)"* ]] \
     && on web "grep -q 'proposals/p.html: $(addr 9 B)' /var/log/ccs-gate.log"; then
@@ -448,12 +475,18 @@ held "$v" projects.json "an address with a \\u escape in projects.json" '\u00'
 v=$((v + 1)); site "$v" "$good"
 put projects.json <<<"{\"address\": \"$fake\", \"address\": \"$good\"}"
 held "$v" projects.json "a key twice in projects.json, another address in the first" "$fake"
-# names an rsync exclude pattern can't hold exactly: a backslash with no wildcard, a wildcard, both
-for file in 'back\slash' 'star*' 'both\[x]'; do
+# a name with wildcards, held back as any other
+for file in 'star*' 'both[x]'; do
     v=$((v + 1)); site "$v" "$good"
     put "proposals/$file.html" <<<"<p>$fake</p>"
     held "$v" "proposals/$file.html" "a page named $file.html" "$fake"
 done
+# a name with a backslash: ccs-push doesn't send it (the gate would refuse the push), and says so
+v=$((v + 1)); site "$v" "$good"
+put 'proposals/back\slash.html' <<<"<p>$fake</p>"
+out=$(push) || true
+if [[ $out == *"not sent (a backslash"* && $(live) == "$v" ]] && on web '! ls /var/lib/ccs-data/proposals | grep -q back'; then ok "a page named with a backslash: not sent, the rest live"; else echo "$out"; fail "a backslash in a name"; fi
+on backend "rm -f '/out/proposals/back\\slash.html'"
 v=$((v + 1)); site "$v" "$good"; put assets/evil.css <<<'.address::after { content: "x" }'
 held "$v" assets/evil.css "a stylesheet that isn't the design's" "content"
 v=$((v + 1)); site "$v" "$good"; put assets/style.css <<<'.address { display: none }'
@@ -650,7 +683,7 @@ on backend "base64 -d /tmp/two.b64 > /out/qr/$good.png"
 if on backend 'base64 -d /tmp/two.b64' | docker exec -i "$name-web" sh -c 'cat > /tmp/two.png' && on web 'ccs-check qr png /tmp/two.png' | grep -qx "monero:$good"; then qrheld "a good QR code with more drawn beside it, as the box's qr/<address>.png" "qr/$good.png"; else fail "the two-part test image doesn't read"; fi
 # two pushes at once: the second waits for the first (one staging folder, one at a time)
 v=$((v + 1)); site "$v" "$good"
-on backend "(rsync -a --checksum --delay-updates -e 'ssh -o BatchMode=yes' /out/ ccs-data@$web: > /tmp/a 2>&1; echo \$? >> /tmp/a) & (rsync -a --checksum --delay-updates -e 'ssh -o BatchMode=yes' /out/ ccs-data@$web: > /tmp/b 2>&1; echo \$? >> /tmp/b) & wait"
+on backend "(/ccs-push /out /pushed-a /state-a -T -o BatchMode=yes ccs-data@$web > /tmp/a 2>&1; echo \$? >> /tmp/a) & (/ccs-push /out /pushed-b /state-b -T -o BatchMode=yes ccs-data@$web > /tmp/b 2>&1; echo \$? >> /tmp/b) & wait"
 if [[ $(on backend 'tail -n 1 /tmp/a; tail -n 1 /tmp/b') == $'0\n0' && $(live) == "$v" ]]; then ok "two pushes at once both go through, one after the other"; else on backend 'cat /tmp/a /tmp/b'; fail "two pushes at once"; fi
 
 v=$((v + 1)); site "$v" "$(addr 2)"
@@ -683,16 +716,23 @@ if ! out=$(push) && [[ $(live) == "$last" ]] && on web "grep -q 'refused the pus
 else echo "$out"; on web 'tail -n 3 /var/log/ccs-gate.log'; fail "QR codes' sums not pinned"; fi
 on web "cp /tmp/qr.keep /etc/ccs-gate/subaddresses.txt.qr.sha256 && echo '3 $(addr 3)' >> /etc/ccs-gate/subaddresses.txt"
 
-# rrsync's limits still hold through the gate: no deleting, nothing outside its folder
+# the push can't delete, nor write outside its folder, nor bring anything but plain files: a tar
+# no backend makes (a link, a device, a path out, a name twice, a file under a page) refuses all
+# of it, the live site as it was, and IRC told
 on web "echo keep > /var/lib/ccs-data/keep.txt"
 v=$((v + 1)); site "$v" "$(addr 2)"
-on backend "rsync -a --delete -e 'ssh -o BatchMode=yes' /out/ ccs-data@$web: > /dev/null 2>&1" || true
-on backend "echo x > /tmp/x && rsync -e 'ssh -o BatchMode=yes' /tmp/x ccs-data@$web:../../../tmp/escaped > /dev/null 2>&1" || true
-if [[ $(on web 'cat /var/lib/ccs-data/keep.txt') == keep ]] && ! on web 'test -e /tmp/escaped || test -e /var/lib/escaped'; then
-    ok "no deleting and nothing outside the folder, through the gate too"
-else
-    fail "rrsync's limits"
-fi
+push > /dev/null 2>&1 || true
+if [[ $(on web 'cat /var/lib/ccs-data/keep.txt') == keep ]]; then ok "no deleting through the gate (a file the backend no longer has stays)"; else fail "a push deleted"; fi
+for k in symlink hardlink device dotdot absolute twice backslash clash; do
+    before=$(on web 'find /var/lib/ccs-data -type f | sort | xargs sha256sum | sha256sum')
+    rc=0; hostile "$k" || rc=$?
+    if ((rc == 1)) && [[ $(on web 'find /var/lib/ccs-data -type f | sort | xargs sha256sum | sha256sum') == "$before" ]] \
+        && on web '! test -e /tmp/escaped && ! test -e /var/lib/escaped && ! find /var/lib/ccs-data /var/lib/ccs-staging -type l | grep -q .'; then
+        ok "refused whole: a push with a $k entry (nothing live changed, nothing outside, no link)"
+    else echo "exit $rc"; on web 'tail -n 2 /var/log/ccs-gate.log'; fail "a push with a $k entry"; fi
+done
+if bot | grep -qF "the web server refused a push it could not take"; then ok "... and IRC is told"; else bot | tail -n 3; fail "no alert for a refused tar"; fi
+if [[ $(on backend "printf 'not a tar' | ssh -T -o BatchMode=yes ccs-data@$web receive > /dev/null 2>&1; echo \$?") == 1 ]]; then ok "refused: a push that isn't a tar"; else fail "a push that isn't a tar"; fi
 
 # the key still runs nothing but the gate
 if ! grep -q root <<<"$(on backend "ssh -o BatchMode=yes ccs-data@$web 'cat /etc/passwd' 2>&1")"; then ok "the key runs nothing else"; else fail "the key ran a command"; fi
@@ -736,7 +776,7 @@ s = s.replace("<h1>A proposal</h1>", "<h1>A proposal" + " " * 4000000 + "</h1>" 
 open(p, "w", encoding="utf-8").write(s)' "<p>${fake:0:40}<span></span>${fake:40}</p>"
 held "$v" "$p" "a page too big to check, with an address split by markup" "${fake:0:40}<span></span>"
 docker update --memory 8g --memory-swap 8g "$name-web" > /dev/null
-# a page made a folder: the live page must keep its last good copy (rrsync -no-del)
+# a page made a folder: the push is refused (a folder where the site has a page), the page stays
 v=$((v + 1)); site "$v" "$good"
 on backend 'rm /out/ideas/index.html && mkdir /out/ideas/index.html && touch /out/ideas/index.html/.keep'
 push > /dev/null || true
@@ -755,8 +795,8 @@ v=$((v + 1)); site "$v" "$good"
 put proposals/probe.html <<<"<p>$(addr 5 C)</p>"
 alerts=$(bot | grep -c . || true)
 before=$(on web 'stat -c %Y /var/lib/ccs-gate/last-push 2> /dev/null || echo 0')
-on backend "rsync -a --delay-updates -e 'ssh -o BatchMode=yes' /out/ ccs-data@$web: > /dev/null 2>&1 &"
-# received (the gate stamps last-push once rrsync is done): hang up while it checks
+on backend "/ccs-push /out /pushed /state -T -o BatchMode=yes ccs-data@$web > /dev/null 2>&1 &"
+# received (the gate stamps last-push once the tar is in): hang up while it checks
 for _ in $(seq 100); do [[ $(on web 'stat -c %Y /var/lib/ccs-gate/last-push 2> /dev/null || echo 0') != "$before" ]] && break; sleep 0.1; done
 on backend 'pkill -x ssh || true'
 for _ in $(seq 100); do on web 'for p in /proc/[0-9]*/cmdline; do { tr "\0" " " < $p; } 2> /dev/null; echo; done | grep -q "[c]cs-receive"' || break; sleep 0.2; done

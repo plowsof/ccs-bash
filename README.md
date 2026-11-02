@@ -138,11 +138,10 @@ UPDATE=1 tests/run.sh    # rewrite tests/expected after an intended change
 tests/regtest.sh         # with a real monerod (regtest, offline) and monero-wallet-rpc
 tests/compose.sh         # the backend compose's stages taking turns, as processes
 tests/watch.sh           # ccs-watch against a local web server and a fake bot
-tests/rrsync.sh          # the two-machine setup, attacked from the wallet machine (docker); CCS_CHECK=: ccs-check rrsync
 tests/gate.sh            # the web server's gate (docker); GATE_IMAGE=ccs-gate: the gate's image as the web server
 tests/web.sh             # the web server compose's sshd, attacked from the backend's keys (docker, the gate's image)
 tests/image.sh           # inside the backend image: the tools each stage runs (CI)
-tests/gate-image.sh      # inside the gate's image: ccs-check, rsync, sshd, no Python or qrencode (CI)
+tests/gate-image.sh      # inside the gate's image: ccs-check, sshd, no Python, qrencode, rsync or jq (CI)
 contrib/ccs-check/build.sh test   # ccs-check's Go tests (fuzz [SECONDS]: its fuzz targets; vulncheck)
 shellcheck -x ccs-back.sh notify-loop.sh lib/*.sh tests/*.sh container/*.sh contrib/ccs-receive ...   # the list: .github/workflows/check.yml
 ```
