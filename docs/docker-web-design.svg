@@ -12,7 +12,7 @@
 
   <text x="30" y="40" font-size="22" font-weight="700" fill="#0f172a">CCS: the web server in Docker</text>
   <text x="30" y="62" font-size="13.5" fill="#475569">The web server's side of two machines (docs/two-machines.md) from one attested StageX image: the gate behind its own sshd, and</text>
-  <text x="30" y="80" font-size="13.5" fill="#475569">(a profile, on the backup machine) the backup receiver behind another. nginx stays on the host and serves the same folder.</text>
+  <text x="30" y="80" font-size="13.5" fill="#475569">(a profile, on the backup machine) the backup receiver behind another; Caddy and Tor serve the site. The host keeps only files.</text>
 
   <!-- the backend -->
   <rect x="20" y="110" width="230" height="300" rx="16" fill="#eef4ff" stroke="#3b6fd8" stroke-width="2" stroke-dasharray="7 5"/>
@@ -41,7 +41,7 @@
 
   <!-- the compose -->
   <rect x="320" y="165" width="560" height="315" rx="12" fill="#eef4ff" stroke="#3b6fd8" stroke-width="1.6" stroke-dasharray="5 4"/>
-  <text x="335" y="187" font-size="12.5" font-weight="700" fill="#1e3a8a">compose.yml · the gate's image, by attested ID · the host's network</text>
+  <text x="335" y="187" font-size="12.5" font-weight="700" fill="#1e3a8a">compose.yml · the gate's image, by attested ID · sshd on the host's network</text>
   <g font-size="12" fill="#334155">
     <g filter="url(#sh)"><rect x="335" y="200" width="260" height="140" rx="10" fill="#ffffff" stroke="#94a3b8"/></g>
     <text x="350" y="225" font-size="15" font-weight="700" fill="#0f172a">gate · port 2223</text>
@@ -75,15 +75,15 @@
   </g>
 
   <!-- the host's -->
-  <rect x="320" y="500" width="260" height="160" rx="12" fill="#ffffff" stroke="#d97706" stroke-width="1.6"/>
-  <text x="335" y="524" font-size="14" font-weight="700" fill="#9a3412">On the host, unchanged</text>
+  <rect x="320" y="500" width="260" height="160" rx="12" fill="#eef4ff" stroke="#3b6fd8" stroke-width="1.6"/>
+  <text x="335" y="524" font-size="14" font-weight="700" fill="#1e3a8a">www and tor · the same image</text>
   <g font-size="12" fill="#334155">
-    <text x="335" y="546">nginx: serves /var/lib/ccs-data</text>
-    <text x="335" y="564">(80, 443; its headers, the theme lines)</text>
-    <text x="335" y="582">/etc/ccs-gate: the list, the design</text>
-    <text x="335" y="600">/etc/ssh/authorized_keys: the key files</text>
-    <text x="335" y="618">(root's, with from= and command=)</text>
-    <text x="335" y="636">the accounts' ids, the folders</text>
+    <text x="335" y="546">www (Caddy): 80, 443, read-only files;</text>
+    <text x="335" y="564">its certificate its own; the headers,</text>
+    <text x="335" y="582">the theme; HTTP/1.1, no Range</text>
+    <text x="335" y="600">tor (built from its signed source):</text>
+    <text x="335" y="618">the onion, through www's socket</text>
+    <text x="335" y="636">each its own user, no capabilities</text>
   </g>
   <rect x="600" y="500" width="280" height="160" rx="12" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.6"/>
   <text x="615" y="524" font-size="14" font-weight="700" fill="#14532d">/var/lib/ccs-data</text>
@@ -104,7 +104,7 @@
     <text x="950" y="405">a page held back; no pushes</text>
     <g filter="url(#sh)"><rect x="935" y="545" width="240" height="60" rx="10" fill="#ffffff" stroke="#94a3b8"/></g>
     <text x="950" y="570" font-size="14" font-weight="700" fill="#0f172a">Visitors</text>
-    <text x="950" y="590">browsers, over HTTPS</text>
+    <text x="950" y="590">browsers, over HTTPS or Tor</text>
   </g>
 
   <!-- arrows -->
@@ -123,6 +123,6 @@
   <text x="240" y="303" font-size="11" fill="#9a3412">:2224</text>
   <text x="920" y="185" font-size="11" fill="#475569">fetch</text>
   <text x="878" y="378" font-size="11" fill="#475569">alerts</text>
-  <text x="700" y="671" font-size="11" fill="#475569">nginx serves it</text>
+  <text x="700" y="671" font-size="11" fill="#475569">www serves it</text>
   <text x="592" y="430" font-size="11" fill="#166534" transform="rotate(90 592 430)">writes</text>
 </svg>

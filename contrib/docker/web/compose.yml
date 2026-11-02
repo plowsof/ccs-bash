@@ -2,14 +2,15 @@
 # (ccs-receive) behind its own sshd on port 2223, the gate's heartbeat; and, for the backup
 # machine, the backup receiver (ccs-backup-receive) behind another sshd on 2224 (the profile
 # "backup": on a machine of its own, not the web server, whose root could rewrite every copy;
-# a test setup may run both on one, COMPOSE_PROFILES=backup); nginx stays on the host, serving
-# /var/lib/ccs-data as before (docs/two-machines.md). The image by ID, never pulled
+# a test setup may run both on one, COMPOSE_PROFILES=backup); and the site itself: www (Caddy:
+# HTTPS, its certificates its own) and tor (the onion), serving what the gate let into
+# /var/lib/ccs-data (docs/two-machines.md). The image by ID, never pulled
 # (container/gate.Dockerfile, attested as ccs-bash's). The host's folders, users and key files
 # are the host's (docs/two-machines.md, docs/setup.md). Its settings: .env (env.example).
 #
 #   docker compose --profile init run --rm -T init     once: the host key, passwd (and after an upgrade)
 #   docker compose up -d                               start
-#   journalctl -t ccs-web -f                           sshd's lines (the gate's own: /var/log/ccs-web/)
+#   journalctl -t ccs-web -f                           sshd's, Caddy's and Tor's lines (the gate's own: /var/log/ccs-web/)
 
 x-hardened: &hardened
   image: ${CCS_GATE_IMAGE:?the attested ccs-gate image ID}
@@ -21,6 +22,7 @@ x-hardened: &hardened
   restart: unless-stopped
   init: true
   # the host's network: sshd sees the backend's own address, which authorized_keys' from= checks
+  # (www and tor: their own, below)
   # (published ports would show it Docker's for IPv6)
   network_mode: host
   logging:
@@ -110,3 +112,44 @@ services:
       - /etc/ccs-gate:/etc/ccs-gate:ro
       - /var/lib/ccs-gate:/var/lib/ccs-gate
       - ${CCS_WEB_LOG:-/var/log/ccs-web}:/var/log
+
+  # the site: Caddy, as CCS_WWW_UID, serving /var/lib/ccs-data read-only over HTTPS (Caddyfile),
+  # its certificates its own (Let's Encrypt, in CCS_WWW_DIR), and to tor through a socket in
+  # CCS_WWW_DIR/onion. Its own network namespace, so ports 80 and 443 are published, and it may
+  # bind them without a capability (the sysctl is that namespace's alone)
+  www:
+    <<: *hardened
+    network_mode: bridge
+    user: "${CCS_WWW_UID:?id -u ccs-www:id -g ccs-www}"
+    sysctls: {net.ipv4.ip_unprivileged_port_start: "80"}
+    ports: ["80:80", "443:443"]
+    mem_limit: 512m
+    pids_limit: 256
+    entrypoint: ["/usr/bin/caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+    environment:
+      CCS_SITE_HOST: ${CCS_SITE_HOST:?the site's host name, ccs.getmonero.org}
+      CCS_ONION: ${CCS_ONION:?the site's onion address, <56 characters>.onion (tor's hostname)}
+      CCS_ACME_EMAIL: ${CCS_ACME_EMAIL:?an address Let's Encrypt may write to about the certificate}
+      HOME: /tmp
+      XDG_CONFIG_HOME: /tmp
+    healthcheck: {<<: *health, interval: 1m, test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "--unix-socket", "/run/ccs-www/onion.sock", "http://onion/"]}
+    volumes:
+      - /var/lib/ccs-data:/srv:ro
+      - ${CCS_WWW_DIR:-/var/lib/ccs-www}/data:/data
+      - ${CCS_WWW_DIR:-/var/lib/ccs-www}/onion:/run/ccs-www
+      # this machine's own sites, if any (sites/<name>.caddy; an empty folder otherwise)
+      - ${CCS_WWW_DIR:-/var/lib/ccs-www}/sites:/etc/ccs-www/sites:ro
+
+  # the onion: Tor, as CCS_TOR_UID, its keys in CCS_TOR_DIR (the onion's address is its key: keep
+  # a copy), its port 80 www's socket (torrc)
+  tor:
+    <<: *hardened
+    network_mode: bridge
+    user: "${CCS_TOR_UID:?id -u ccs-tor:id -g ccs-tor}"
+    mem_limit: 512m
+    pids_limit: 64
+    entrypoint: ["/usr/bin/tor", "-f", "/etc/tor/torrc"]
+    healthcheck: {<<: *health, interval: 1m, test: ["CMD", "test", "-s", "/var/lib/tor/ccs/hostname"]}
+    volumes:
+      - ${CCS_TOR_DIR:-/var/lib/ccs-tor}:/var/lib/tor
+      - ${CCS_WWW_DIR:-/var/lib/ccs-www}/onion:/run/ccs-www

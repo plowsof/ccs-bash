@@ -41,8 +41,8 @@ view-only copy of the wallet) are what's left.
 | Part | From | Reviewed as |
 |---|---|---|
 | **the gate** (sshd on 2223, the push key's forced command `ccs-receive`: the push is a tar of the files that changed, read in Go) and **the heartbeat** | the gate's image, `contrib/docker/web/compose.yml` | this page: its code, its image's parts |
-| nginx (serves `/var/lib/ccs-data`, the live site; the security headers) | the host's Debian package; its config, [two machines](two-machines.md) | the config only |
-| Tor (the onion), certbot, Docker, the OS | the host's Debian packages, `unattended-upgrades` | not reviewed here: the distribution's |
+| **the site**: Caddy (`www`: serves `/var/lib/ccs-data`, the live site, read-only, over HTTPS, its certificates its own; the security headers) and Tor (`tor`: the onion) | the gate's image; their config, [`Caddyfile`](../contrib/docker/web/Caddyfile) and [`torrc`](../contrib/docker/web/torrc), in it | this page: their config, their image's parts |
+| Docker, the OS | the host's Debian or Ubuntu packages, `unattended-upgrades` | not reviewed here: the distribution's |
 | your own ssh | [admin access](admin-access.md) | yours |
 
 The backup receiver (`ccs-backup-receive`, the same image) runs on **the backup machine**, not
@@ -66,6 +66,8 @@ builds.
 | bash 5.3, coreutils 9.11, findutils 4.11.0, grep 3.12, sed 4.10, gawk 5.4.1, diffutils 3.12 (`cmp`), tar 1.35 (unpacks `git archive`, the proposals' own), util-linux 2.42.3 (`flock` only) | | `ccs-receive`, as written and tested |
 | musl 1.2.6, ncurses 6.6 (bash's `libncursesw` only), zlib 1.3.2, libzstd 1.5.7 | | their libraries (each linked by one of the above: checked) |
 | **ccs-check** | this repository's `contrib/ccs-check` | the checks (below), built by StageX's Go 1.27.1, no cgo, no module |
+| caddy | 2.11.4 | the site over HTTPS (`www`), its certificates from Let's Encrypt; HTTP/1.1 only, `Range` ignored, headers capped: [two machines](two-machines.md) |
+| **tor** | 0.4.9.15, built here from its source (`sources.lock`: the tarball's sha256, from its `.sha256sum` signed by two of Tor's release signers) | the onion (`tor`); a client and onion service only, no relay or directory authority code; linked to StageX's libevent 2.1.13, OpenSSL and zlib |
 
 The versions are those of the pinned digests (StageX release sx2026.10.0); `container/images`
 is the source of truth, and `container/update-images.sh` moves every pin to StageX's latest
