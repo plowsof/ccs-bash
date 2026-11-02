@@ -11,7 +11,7 @@ wallet into finished HTML; the web server only receives the files and serves the
 | | A live Node front (the proposed new ccs-front) | This design |
 |---|---|---|
 | Code reachable from the internet | the app and its npm tree | nginx serving files |
-| Supply chain on live machines | npm (today's ccs-front: Ruby gems) | bash, awk, jq (qrencode on the backend, only without a signed list) |
+| Supply chain on live machines | npm (today's ccs-front: Ruby gems) | bash, awk, jq (no qrencode: the QR codes are made once, with the signed list) |
 | Proposal Markdown rendered by | the framework, on the public server | a small awk renderer that escapes everything first, on the backend |
 | A compromised web server | can change any page until noticed | can too, but every page is pushed again each run, and ccs-watch alerts IRC within minutes |
 

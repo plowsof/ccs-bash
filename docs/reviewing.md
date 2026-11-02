@@ -112,7 +112,7 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
   address is in the list: a funding-required proposal whose address isn't is left off the site
   (its page, its cards, the counts) and the run exits 3; fills the Verify page. `qr_codes`: one QR
   code per checked address, `qr/<address>.png`: the signed list's own file (`LIST.qr/`, its sum the
-  one in `LIST.qr.sha256` that the `.pin` pins; else the run stops), or qrencode's without a list;
+  one in `LIST.qr.sha256` that the `.pin` pins; else the run stops; no list, no run);
   ccs-bash makes none. `relative_links`: the data's absolute links made relative,
   so `/dark/` and `/light/` stay while browsing.
 - `lib/fill.sh`: `fill_page` replaces each `<!-- ccs:x -->…<!-- /ccs:x -->` region in one pass,
