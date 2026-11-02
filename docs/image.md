@@ -13,7 +13,7 @@ push and backup make most of it):
   host Docker's.
 
 `container/build.sh` (needs Docker with buildx and its own image store, not the containerd one,
-whose image IDs are the manifest's digest: [setup](setup.md#dependencies); `git`, `gpg`, `jq`):
+whose image IDs are the manifest's digest: [setup](setup.md#the-backend); `git`, `gpg`, `jq`):
 
 1. **Checks the signatures** of every pin ([below](#signatures)).
 2. **Downloads** the pinned images and the sources; `fetch.sh` keeps only files whose sha256 matches.
@@ -76,10 +76,8 @@ fixes: CI's `vulncheck` workflow says when one is needed ([ccs-check](ccs-check.
 Push a tag `vX.Y.Z` on `master` (or make the release on GitHub, which makes the tag). The
 `release` workflow builds, tests, runs `check-pinned.sh`, pushes `ghcr.io/plowsof/ccs-bash:vX.Y.Z`
 and the gate's image beside it, adds each one's pull-by-digest line and image ID to the release
-notes, and attaches `ccs-check-vX.Y.Z-linux-amd64`, copied out of the gate's image (its sha256
-in the notes: CI's, not attested; a host setup takes it out of the attested image itself,
-[two machines](two-machines.md#without-docker)). If it fails the release has
+notes. If it fails the release has
 no notes: rerun it, or delete tag and release and redo them. A release proves nothing by
-itself; anyone can rebuild the tag and compare IDs ([setup](setup.md) step 3), and sign what they
+itself; anyone can rebuild the tag and compare IDs ([deploying a set](handover.md#deploying-a-set-the-docker-setup), 2), and sign what they
 got into [ccs-sigs](https://github.com/plowsof/ccs-sigs) with `contrib/release/build` and
 `attest`, as Feather Wallet's releases are attested ([contrib/release](../contrib/release/README.md)).

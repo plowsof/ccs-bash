@@ -2,9 +2,8 @@
 
 The backend takes no incoming connections; after each run it pushes the site to the web server,
 whose push key runs only the gate: it checks every file before it goes live, and nginx serves what
-passed. In Docker, the production setup, the gate and its heartbeat run from the gate's attested
-image, with their own sshd on port 2223 ([the web server in Docker](docker.md#the-web-server-in-docker));
-nginx stays on the host. Without Docker, the host's sshd and a timer do it ([below](#without-docker)).
+passed. The gate and its heartbeat run from the gate's attested image, with their own sshd on
+port 2223 ([the web server in Docker](docker.md#the-web-server-in-docker)); nginx stays on the host.
 
 **The push account:**
 
@@ -347,7 +346,7 @@ when pushes return:
 ```
 
 `ccs-receive --heartbeat`, as ccs-data (the push key can't pass it arguments), every 5 minutes:
-the web server compose's `heartbeat` service ([without Docker](#without-docker): a timer).
+the web server compose's `heartbeat` service.
 `tests/gate.sh` checks each of those cases.
 
 ## Watching the web server: the backend raises the alarm
@@ -370,8 +369,7 @@ or from another at random; keep their versions current with `WATCH_FIREFOX_ESR`,
 `/dark/` or `/light/` at random (`WATCH_THEMES=1`), through a proxy picked at random each fetch;
 among them, at a random place, a page never pushed, named as the site's own are, and the theme
 button on a page. It runs right after each push and between pushes at random times
-(in Docker the compose's `watch` does both, [docker](docker.md); the host setup:
-`ccs-watch.timer`, [setup](setup.md#the-update-script-the-host-setup)), so a web server that serves its own pages once
+(the compose's `watch` does both, [docker](docker.md)), so a web server that serves its own pages once
 the check after a push is over is seen too.
 
 A web server can still tell it apart: a page fetched without its stylesheets and fonts, and curl's
@@ -384,85 +382,23 @@ Alerts go to one URL as a plain-text POST: an IRC bot (CptHook's `simple` module
 `https://<host>/<endpoint>?channel=%23<channel>`), ntfy, or anything that takes a POST; or wmb's
 `/directedMessage` with `ALERT_TARGET` and `ALERT_PASSWORD` (the bot must be in the channel).
 `ccs-watch --test https://<the site>` sends one. Its config, readable only by root and the
-watch's user (without Docker: `ccs`):
+watch's user:
 
 ```
 install -m 640 -g ccs-watch /dev/null /etc/ccs/alert.conf
 cat > /etc/ccs/alert.conf <<'CONF'
 ALERT_URL=https://<the bot>/simple?channel=%23<channel>
 SUBADDRESSES=/etc/ccs-front/subaddresses.txt        # to name addresses not on the list
-WATCH_PROXY=socks5h://host.docker.internal:9050 socks5h://host.docker.internal:1080   # one at random a fetch: Tor (apt install tor) and a clearnet one elsewhere, on the bridge's address (handover, 1); the host setup: 127.0.0.1
+WATCH_PROXY=socks5h://host.docker.internal:9050 socks5h://host.docker.internal:1080   # one at random a fetch: Tor (apt install tor) and a clearnet one elsewhere, on the bridge's address (handover, 1)
 WATCH_THEMES=1                                      # also /dark/ and /light/ (the theme lines above)
 WATCH_SAMPLE=10                                     # other pages, at random, each run
 CONF
 ```
 
 It runs after each push (also exit 7: a web server that lies can't hide behind a held-back page),
-and is given how each run went (the compose's `push` hands it each run's result; without Docker,
-the update script's `ccs-watch --run`), so a stopped backend is an alarm too. One alert per problem
+and is given how each run went (the compose's `push` hands it each run's result), so a stopped backend is an alarm too. One alert per problem
 an hour; "could not be fetched" after three checks; "the backend has failed N runs in a row" after
 three failed runs (about six minutes), and "runs again" after: [every line](troubleshooting.md#what-irc-says).
 A careful attacker on the web server can still tell the watcher apart (above). Hence the Verify
 page, asking visitors to check the address their wallet shows. `tests/watch.sh` runs it against a
 local web server and a fake bot, including web servers that try each trick above.
-
-## Without Docker
-
-The host's own sshd takes the push key, and a timer runs the heartbeat. As root, with the
-folders and files above:
-
-```
-apt install git   # the proposals fetched (the push is received by ccs-check)
-install -m 755 contrib/ccs-receive /usr/local/bin/ccs-receive        # from this repository at the attested commit, checked out here
-install -m 755 ccs-check /usr/local/bin/ccs-check                   # the attested gate image's own (see below)
-install -o ccs-data -m 644 /dev/null /var/log/ccs-gate.log          # optional: the refusals, as a file (in Docker: /var/log/ccs-web/)
-```
-
-`ccs-check`: what attesters sign is the gate image's ID, and the binary is that image's own
-`/usr/local/bin/ccs-check`. So take it from there: pull the gate image by its digest, check its ID
-(`docker image inspect`, the attested one), and copy it out (`c=$(docker create <image>)`,
-`docker cp "$c:/usr/local/bin/ccs-check" .`); or build it from the attested commit
-(`contrib/ccs-check/build.sh OUT`, Docker: the same bytes). The release's asset
-(`ccs-check-vX.Y.Z-linux-amd64`) and the sha256 in its notes are CI's, not attested: compare
-them with the one you copied out, not instead of it.
-
-At the end of `/etc/ssh/sshd_config`, then `systemctl reload ssh` (so sshd reads no other key file
-for ccs-data: one in its own home it could replace):
-
-```
-Match User ccs-data
-    AuthorizedKeysFile /etc/ssh/authorized_keys/%u
-```
-
-The heartbeat:
-
-```
-cat > /etc/systemd/system/ccs-heartbeat.service <<'UNIT'
-[Unit]
-Description=ccs-gate: alert when no push has come from the backend
-
-[Service]
-Type=oneshot
-User=ccs-data
-ExecStart=/usr/local/bin/ccs-receive --heartbeat
-UNIT
-cat > /etc/systemd/system/ccs-heartbeat.timer <<'UNIT'
-[Unit]
-Description=ccs-gate heartbeat, every 5 minutes
-
-[Timer]
-OnBootSec=5min
-OnUnitActiveSec=5min
-
-[Install]
-WantedBy=timers.target
-UNIT
-systemctl daemon-reload && systemctl enable --now ccs-heartbeat.timer
-```
-
-On the backend, the push key is `ccs`'s (`/var/lib/ccs/.ssh/id_ed25519`, made as above as `ccs`), its `known_hosts` the
-web server's own host key (`/etc/ssh/ssh_host_ed25519_key.pub`) for `<web server>` on port 22,
-and [the update script](setup.md#the-update-script-the-host-setup) pushes with `-p 22` in full, as
-the backend's `ssh_config` may default to another port (a push that hangs is the sign). Keep
-sshd and git updated (`unattended-upgrades`); `ccs-check` is the next release's
-(it reads every push: install each release's).

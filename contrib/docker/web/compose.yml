@@ -5,7 +5,7 @@
 # a test setup may run both on one, COMPOSE_PROFILES=backup); nginx stays on the host, serving
 # /var/lib/ccs-data as before (docs/two-machines.md). The image by ID, never pulled
 # (container/gate.Dockerfile, attested as ccs-bash's). The host's folders, users and key files
-# are the host setup's, so either one can run them, never both. Its settings: .env (env.example).
+# are the host's (docs/two-machines.md, docs/setup.md). Its settings: .env (env.example).
 #
 #   docker compose --profile init run --rm -T init     once: the host key, passwd (and after an upgrade)
 #   docker compose up -d                               start
@@ -68,7 +68,7 @@ services:
     healthcheck: {<<: *health, test: ["CMD", "bash", "-c", ": > /dev/tcp/127.0.0.1/${CCS_GATE_PORT:-2223}"]}
     volumes:
       # sshd's host key, passwd and group (init writes them), read-only here; the key files,
-      # root-owned, outside any home: the host setup's, with their from= and command=
+      # root-owned, outside any home: the host's, with their from= and command=
       - ${CCS_SSH_DIR:-/etc/ccs-gate/ssh}:/etc/ccs-ssh/keys:ro
       - ${CCS_AUTHORIZED_KEYS:-/etc/ssh/authorized_keys}:/etc/ccs-ssh/authorized_keys:ro
       - /etc/ccs-gate:/etc/ccs-gate:ro
@@ -92,7 +92,7 @@ services:
     healthcheck: {<<: *health, test: ["CMD", "bash", "-c", ": > /dev/tcp/127.0.0.1/${CCS_BACKUP_PORT:-2224}"]}
     volumes:
       # sshd's host key, passwd and group (init writes them), read-only here; the key files,
-      # root-owned, outside any home: the host setup's, with their from= and command=
+      # root-owned, outside any home: the host's, with their from= and command=
       - ${CCS_SSH_DIR:-/etc/ccs-gate/ssh}:/etc/ccs-ssh/keys:ro
       - ${CCS_AUTHORIZED_KEYS:-/etc/ssh/authorized_keys}:/etc/ccs-ssh/authorized_keys:ro
       - /etc/ccs-backup:/etc/ccs-backup:ro

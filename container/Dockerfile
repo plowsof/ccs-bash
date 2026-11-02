@@ -81,7 +81,7 @@ RUN cd /rootfs \
 FROM scratch AS image
 COPY --from=fix /rootfs/ /
 ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-# only a default: ccs-bash-run passes the host's ccs user (docs/setup.md step 3)
+# only a default: the compose runs each stage as its own user (contrib/docker/backend/compose.yml)
 USER 10001:10001
 ENTRYPOINT ["/opt/ccs-bash/ccs-back.sh"]
 CMD ["/etc/ccs/ccs.conf"]

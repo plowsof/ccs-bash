@@ -326,7 +326,7 @@ cmd_check() {
         file /var/lib/ccs/pushed $pu $pu 755 && ok "/var/lib/ccs/pushed (what was pushed)"
         [[ $(kv "$env" COMPOSE_FILE) == *compose.host.yml* ]] && hostmode=1
     else
-        warn "no $env: the host setup (setup.md), not the compose; its run scripts aren't checked here"
+        warn "no $env: the compose isn't set up yet (docs/docker.md, setting it up)"
     fi
 
     echo "== they agree"
