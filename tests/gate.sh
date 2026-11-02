@@ -339,6 +339,18 @@ for sep in ' - ' ', ' ' | ' '/'; do
 done
 v=$((v + 1)); site "$v" "$good"; change "$p" "<h1>A proposal</h1>" "<h1>Send to $(tgroups ' - ')</h1>"
 held "$v" "$p" "review 5: an address in groups split by ' - ', in a name" "$(tgroups ' - ')"
+# ---- review 9 ----
+# M-1: an address split between two elements a browser lays side by side, here two tag labels on
+# a card (each half under TEXT's 90: one run on screen). Labels of words go live (the page's form
+# is right); the address's halves are held back, the address found
+labels() { on backend "sed -i 's#<p class=\"labels\"></p>#<p class=\"labels\"><span class=\"label tag-0\">$1</span><span class=\"label tag-1\">$2</span></p>#' /out/ideas/index.html"; }
+v=$((v + 1)); site "$v" "$good" "$good" "An idea"; labels Abandoned Repurposed
+passes "$v" ideas/index.html "two tag labels on a card" '<span class="label tag-1">Repurposed</span>'
+v=$((v + 1)); site "$v" "$good" "$good" "An idea"; labels "${taddr:0:48}" "${taddr:48}"
+rc=0; push > /dev/null || rc=$?
+if ((rc == 7)) && [[ $(live) == "$v" && $(livefile ideas/index.html) != *"${taddr:48}"* ]] && on web "grep -q 'ideas/index.html: $taddr' /var/log/ccs-gate.log"; then
+    ok "held back: review 9: an address split between two tag labels, found"
+else echo "push exit $rc, live $(live)"; on web 'tail -n 3 /var/log/ccs-gate.log'; fail "review 9: an address split between two tag labels"; fi
 # ... and in projects.json, its groups split by a JSON escaped space (json_py reads no groups; scan_py reads the raw text)
 v=$((v + 1)); site "$v" "$good"
 put projects.json <<<"[{\"address\": \"$good\", \"title\": \"Send to $(tgroups "$(printf '\x5cu0020')")\"}]"
@@ -457,6 +469,10 @@ v=$((v + 1)); site "$v" "$good"; feedxml evil.example p "Proposal" | put feed.xm
 held "$v" feed.xml "a feed with a link to another site" "evil.example"
 v=$((v + 1)); site "$v" "$good"; feedxml ccs.test nope "Gone" | put feed.xml
 held "$v" feed.xml "a feed with a link to no proposal page of this site" "Gone"
+# review 8's M-1: an address in groups in an item's title (the feed's form, which feed_awk passes;
+# the address scan finds it)
+v=$((v + 1)); site "$v" "$good"; feedxml ccs.test p "Send to $(tgroups ' ')" | put feed.xml
+held "$v" feed.xml "review 8: an address in groups in the feed" "$(tgroups ' ')"
 v=$((v + 1)); site "$v" "$good"; on backend "qrencode -s 4 -o /tmp/q.png 'monero:$fake'"; docker exec "$name-backend" sh -c 'mkdir -p /out/images/p && cp /tmp/q.png /out/images/p/qr.png'
 held "$v" images/p/qr.png "a proposal image that is a QR code of another address" "PNG"
 v=$((v + 1)); site "$v" "$good"; docker exec "$name-backend" sh -c "mkdir -p /out/images/p && qrencode -s 4 --foreground=FFFFFF --background=000000 -o /out/images/p/inv.png 'monero:$fake'"

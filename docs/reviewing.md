@@ -167,7 +167,8 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
   - `kinds`: no symlink, no folder in a file's place or file in a folder's;
   - `scan` (`ccs-check scan`, one pass): every address in pages and JSON as written (entities
     decoded, a non-ASCII or control character read both as nothing and as a space; in groups split
-    by up to three spaces or punctuation, by its checksum: `addr`, a budget of checksums and time a
+    by up to three spaces or punctuation, or between elements side by side (the text with its tags
+    dropped), by its checksum: `addr`, a budget of checksums and time a
     file), the JSON as JSON too (`ccs-check json`, its strings read the same way); every `data:`
     image is, pixel for pixel, the `qrencode -s 10` of a listed or allowed address (`qrknown`; a
     donation box's of its own address: `qrof`; `ccs-check pixels`, never decoded; each image
