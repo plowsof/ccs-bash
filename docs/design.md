@@ -149,10 +149,8 @@ site serves from its copy. What the 268 proposals checked use:
 ## The signed subaddress list
 
 The wallet's subaddresses are listed once, in advance, and every address shown is checked
-against it on both machines (the same files on each: the list, `.asc` its signature, `.key.asc`
-the key, `.pin` its sha256, fingerprint and its QR codes' sums' sha256, `.viewkey` for the Verify
-page, `.qr.sha256` the sums; the backend also has the QR codes, `.qr/`); visitors check the
-wallet itself:
+against it on both machines ([the signed list](signed-list.md): its files, and how it is made and
+installed); visitors check the wallet itself:
 
 | Where | Its job |
 |---|---|
