@@ -40,7 +40,7 @@ new set replaces the row (earlier sets: this file's history, and ccs-sigs).
 
 | Set | ccs-bash | ccs-front-bash | ccs-front-hugo | Running on |
 |---|---|---|---|---|
-| 2026-11-01 | v0.2.40 | v0.1.25 | v0.1.29 | [ccs.monerodevs.org](https://ccs.monerodevs.org), in mirror mode, with its onion and its feed: the backend compose (without `compose.host.yml`) and the web server compose (its gate still v0.2.40's, before `ccs-check`). **Not attested:** each machine built the images from the tags and checked their IDs against the release notes; the last attested set is v0.2.39 / v0.1.24 / v0.1.28 (throwaway-39) |
+| 2026-11-02 | v0.2.42 (the gate: v0.2.41) | v0.1.26 | v0.1.29 | [ccs.monerodevs.org](https://ccs.monerodevs.org), in mirror mode, with its onion and its feed: the backend compose (v0.2.42) and the web server compose (its gate v0.2.41's: v0.2.42 changed only the backend's `ccs-push`). The Go gate (`ccs-check`, no module), QR codes as the list's files, the push as a tar. **Not attested:** each machine built the images from the tags and checked their IDs against the release notes; the last attested set is v0.2.39 / v0.1.24 / v0.1.28 (throwaway-39) |
 
 Each is reproducible, and attested in [ccs-sigs](https://github.com/plowsof/ccs-sigs) by those who
 rebuilt it: on the testnet so far by one throwaway key a set (one person; the CCS's should be two
