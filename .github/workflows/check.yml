@@ -52,6 +52,8 @@ jobs:
         run: docker run --rm --network none --read-only --tmpfs /tmp:exec -v "$PWD:/src:ro" --entrypoint bash ccs-bash /src/tests/compose.sh
       - name: the stages' own tools (git, ssh, tar, openssl, ccs-watch's), and only those
         run: docker run --rm --network none --read-only --tmpfs /tmp -v "$PWD:/src:ro" --entrypoint bash ccs-bash /src/tests/image.sh
+      - name: the same as a stage's own user, its files another's (review 10's L-4)
+        run: docker run --rm --network none --read-only --tmpfs /tmp --user 10005:10005 -v "$PWD:/src:ro" --entrypoint bash ccs-bash /src/tests/image.sh
       - name: ccs-watch as the image runs it (its busybox; the test's servers on the host's 127.0.0.1)
         run: CCS_WATCH_IMAGE=ccs-bash tests/watch.sh
       - name: the image's size (only what is run; 71 MB with git and ssh)
