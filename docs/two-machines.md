@@ -33,7 +33,7 @@ backend's own push: `rsync -a --delay-updates SITE/ host:`) into its staging fol
 with a stricter CSP; A+ on securityheaders.com):
 
 ```
-add_header Content-Security-Policy "default-src 'none'; style-src 'self'; img-src 'self' data:; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'none'" always;
+add_header Content-Security-Policy "default-src 'none'; style-src 'self'; img-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'none'" always;
 add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
 add_header X-Content-Type-Options "nosniff" always;
 add_header X-Frame-Options "DENY" always;
@@ -216,7 +216,8 @@ what it is sent; it knows what a page may be. Each push, one at a time, it
      (its last two commits, for a merge landing mid-push; the last fetch if it can't). A backend
      can't change what a reviewed proposal says, or what it is paid for;
    - the donation box: **one address of the signed list** (not `allowed`'s: those are no
-     proposal's), the same in its text and `monero:` link, its QR code that address's.
+     proposal's), the same in its text and `monero:` link, its QR code that address's file,
+     `qr/<address>.png` (step 4).
 
    A page not checked in time (5 minutes) or over 2 MB is held back: what isn't known good
    doesn't go live;
@@ -227,12 +228,14 @@ what it is sent; it knows what a page may be. Each push, one at a time, it
    side, two tag labels, where its checksum says it is one), the JSON as JSON
    too, its strings read the same way. One pass, 2 minutes at most for all; a file that needs more
    than 3000 checksums or 20 s is held back alone ("too many runs that could be addresses"), not
-   every file with it; and **every QR code**: each `data:image/png;base64,` image must be, pixel for pixel,
-   `qrencode -s 10` of such an address. Pages and JSON must start with `<`, `[` or `{` (a
-   browser shows `<img src="x.html">` by its bytes);
+   every file with it. No `data:` image at all (the site's QR codes are files, step 4). Pages
+   and JSON must start with `<`, `[` or `{` (a browser shows `<img src="x.html">` by its bytes);
 4. checks every other file the push changes: the design's, byte for byte (`design.sha256`: a
    stylesheet can hide an address, an image be a QR code); a proposal's image the proposals
    repository has, byte for byte at that path (its QR codes as a browser shows them, of listed addresses);
+   a donation box's QR code, `qr/<address>.png`: the signed list's own file of that address, byte
+   for byte (its sum in `subaddresses.txt.qr.sha256`, which the `.pin`'s `qr` line pins; made with
+   the list, ccs-front-bash's `tools/make-qr.sh`): the gate never makes or reads one;
    `projects.json`; `feed.xml`, line for line as ccs-front-bash writes it (its items plain text,
    each a link to one of this site's proposal pages under `SITE_URL`, 100 at most, and no address
    at all, however written); or the list's files as installed here. Each a plain file where the live site
@@ -246,8 +249,8 @@ what it is sent; it knows what a page may be. Each push, one at a time, it
    and its `images/<name>/`, off the live site, and the push is good; but never more than 3 at
    once (`CCS_GATE_REMOVE`): more (a branch emptied or rewritten, a forge answering wrong) stay
    held back, and IRC is told;
-6. refuses the whole push without its pinned list, `design.sha256`, the design, `markdown.awk`,
-   `proposals.conf`, `ccs-check`, `qrencode` or `git`, a design release (`design/vX.Y.Z/`), or
+6. refuses the whole push without its pinned list and QR codes' sums, `design.sha256`, the design,
+   `markdown.awk`, `proposals.conf`, `ccs-check` or `git`, a design release (`design/vX.Y.Z/`), or
    for a file name with a control character in it.
 
 With `/etc/ccs-gate/alert.conf` it tells IRC itself (once an hour per address or file, three a
@@ -265,7 +268,7 @@ install -m 640 -g ccs-data /dev/null /etc/ccs-gate/alert.conf        # optional:
 printf 'ALERT_URL=http://<bot>:8086/<path>\nSITE_URL=https://<site>\n' > /etc/ccs-gate/alert.conf
 # (SITE_URL: also the feed's address; feed.xml passes only with links under it, the backend's CCS_SITE_URL)
 # the signed list, its pin, signature and key (ccs-front-bash, setup step 5); its view key file too, if the backend has one
-install -m 644 subaddresses.txt subaddresses.txt.pin subaddresses.txt.asc subaddresses.txt.key.asc subaddresses.txt.viewkey /etc/ccs-gate/
+install -m 644 subaddresses.txt subaddresses.txt.pin subaddresses.txt.asc subaddresses.txt.key.asc subaddresses.txt.viewkey subaddresses.txt.qr.sha256 /etc/ccs-gate/
 cat > /etc/ccs-gate/allowed <<'LIST'                                # other addresses allowed on the site, one a line
 888tNkZrPN6JsEgekjMnABU4TBzc2Dt29EPAvkRxbANsAnjyPbb3iQ1YBRk1UXcdRsiKc9dhwMVgN5S9cQUiyoogDavup3H  # the General Fund
 LIST
@@ -281,7 +284,9 @@ install -m 644 <ccs-front-bash checkout at the attested commit>/lib/markdown.awk
 The list's files are the backend's (`/etc/ccs-front/`, checked there:
 [handover](handover.md#4-the-signed-subaddress-list), step 4); check them here too, the same way
 (`tools/verify-subaddresses.sh` with a `list-signers` of your own), not only against the backend's
-sums: a taken-over backend would bring both.
+sums: a taken-over backend would bring both. It also remakes every QR code with qrencode and checks
+`subaddresses.txt.qr.sha256` is the `.pin`'s: run it where the `subaddresses.txt.qr/` folder and
+qrencode are (your own machine), then install only the sums here.
 
 **The design**, the release zip the backend runs, unpacked, and the sums of every file but the pages:
 
@@ -305,7 +310,8 @@ refusal names it; on the testnet, two). A new list: its files, the same way.
 each way around it, each case named in its output:
 
 - **held back:** an address split, disguised (entities, invisible or look-alike characters, bidi)
-  or in a QR code of another address; a page or text that isn't the design's or the repository's;
+  or in a QR code of another address; a QR code that isn't the list's file of the box's address,
+  or a `data:` image; a page or text that isn't the design's or the repository's;
   a link out of the repository; a stylesheet, image or list that isn't the installed one;
 - **refused, every push:** no design or `markdown.awk`, a list that isn't the pinned one;
   deleting, and anything outside the folder;
@@ -320,9 +326,9 @@ the wallet's subaddresses on another proposal's page (the money stays in the CCS
 proposal's name, author, dates, goal or stage as ccs-bash read its front matter (a renamed
 proposal, a completed one with a donation box, a listed address still). Nor anything once the web
 server itself is taken over: then ccs-watch and visitors are the defence. The checks are
-`ccs-check` ([ccs-check.md](ccs-check.md): Go, memory-safe, one static binary). The backend's
-QR codes are never decoded: each is compared, pixel for pixel, with qrencode's of the address it
-must be. Only a proposal's images, from the proposals repository, are read for QR codes, as a
+`ccs-check` ([ccs-check.md](ccs-check.md): Go, memory-safe, one static binary). The donation
+boxes' QR codes are never made or decoded here: each is the signed list's file of its address,
+taken by its sum, and the web server has no qrencode. Only a proposal's images, from the proposals repository, are read for QR codes, as a
 browser shows them (Go's own decoders, by the format the bytes are, the size checked first; a
 GIF's frames drawn one over another; inverted and faint codes too); one it can't check (over
 8 MB or 40 million pixels, an animated PNG, a GIF of over 100 frames, or not in time) is held
@@ -408,7 +414,7 @@ The host's own sshd takes the push key, and a timer runs the heartbeat. As root,
 folders and files above:
 
 ```
-apt install rsync qrencode git   # the push received, the QR codes it compares with made, the proposals fetched
+apt install rsync git   # the push received, the proposals fetched
 install -m 755 contrib/ccs-receive /usr/local/bin/ccs-receive        # from this repository at the attested commit, checked out here
 install -m 755 ccs-check /usr/local/bin/ccs-check                   # the attested gate image's own (see below)
 install -o ccs-data -m 644 /dev/null /var/log/ccs-gate.log          # optional: the refusals, as a file (in Docker: /var/log/ccs-web/)
@@ -460,5 +466,5 @@ On the backend, the push key is `ccs`'s (`/var/lib/ccs/.ssh/id_ed25519`, made as
 web server's own host key (`/etc/ssh/ssh_host_ed25519_key.pub`) for `<web server>` on port 22,
 and [the update script](setup.md#the-update-script-the-host-setup) pushes with `-p 22` in full, as
 the backend's `ssh_config` may default to another port (a push that hangs is the sign). Keep
-sshd, rsync, qrencode and git updated (`unattended-upgrades`); `ccs-check` is the next release's
+sshd, rsync and git updated (`unattended-upgrades`); `ccs-check` is the next release's
 (it reads every push: install each release's).

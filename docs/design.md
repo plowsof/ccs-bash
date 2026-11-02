@@ -11,7 +11,7 @@ wallet into finished HTML; the web server only receives the files and serves the
 | | A live Node front (the proposed new ccs-front) | This design |
 |---|---|---|
 | Code reachable from the internet | the app and its npm tree | nginx serving files |
-| Supply chain on live machines | npm (today's ccs-front: Ruby gems) | bash, awk, jq, qrencode |
+| Supply chain on live machines | npm (today's ccs-front: Ruby gems) | bash, awk, jq (no qrencode: the QR codes are made once, with the signed list) |
 | Proposal Markdown rendered by | the framework, on the public server | a small awk renderer that escapes everything first, on the backend |
 | A compromised web server | can change any page until noticed | can too, but every page is pushed again each run, and ccs-watch alerts IRC within minutes |
 
@@ -35,7 +35,8 @@ machine and the IRC bot; ccs-watch through Tor and a proxy; a mirror to the site
 - **ccs-front-bash**: fills a fresh copy of the original each run (about 1.5 s for 316
   proposals): every proposal page, the stage lists, each donation box. Every donation address is
   checked against the wallet's signed list (below); a proposal whose address isn't on it is left
-  off and the run counts as failed. It makes the QR codes itself, from checked addresses.
+  off and the run counts as failed. Each box's QR code is the signed list's own file of its
+  address (`qr/<address>.png`, made with the list), never ccs-bash's.
 - **ccs-watch**, after each push and between pushes at random times: fetches the live donation
   pages, the files they use, ten other pages at random and `/projects`, as a visitor's browser
   would (one of three) and through Tor and a clearnet proxy, and alerts IRC if any differs from
@@ -145,15 +146,16 @@ site serves from its copy. What the 268 proposals checked use:
 ## The signed subaddress list
 
 The wallet's subaddresses are listed once, in advance, and every address shown is checked
-against it on both machines (the same five files on each: the list, `.asc` its signature,
-`.key.asc` the key, `.pin` its sha256 and fingerprint, `.viewkey` for the Verify page); visitors
-check the wallet itself:
+against it on both machines (the same files on each: the list, `.asc` its signature, `.key.asc`
+the key, `.pin` its sha256, fingerprint and its QR codes' sums' sha256, `.viewkey` for the Verify
+page, `.qr.sha256` the sums; the backend also has the QR codes, `.qr/`); visitors check the
+wallet itself:
 
 | Where | Its job |
 |---|---|
-| the offline machine | made from a view-only wallet and signed by a Core Team member's own key (the one the Monero repository publishes); kept in ccs-bash's `subaddresses/<wallet>/` with `wallet.txt` (the wallet's address and view key), where others reproduce its sha256 |
-| backend, `/etc/ccs-front/` | ccs-front-bash checks the list against its pin, then every donation address, and makes the QR codes from them: what ccs-bash's account writes can't change one |
-| web server, `/etc/ccs-gate/` (installed by hand) | the gate checks every address on every pushed page, however written and in every QR code: a taken-over backend can't get a wrong one live |
+| the offline machine | made from a view-only wallet, with each address's QR code (qrencode), and signed by a Core Team member's own key (the one the Monero repository publishes); kept in ccs-bash's `subaddresses/<wallet>/` with `wallet.txt` (the wallet's address and view key), where others reproduce its sha256 and its QR codes' |
+| backend, `/etc/ccs-front/` | ccs-front-bash checks the list against its pin, then every donation address, and puts each one's QR code from the list on the site: what ccs-bash's account writes can't change one |
+| web server, `/etc/ccs-gate/` (installed by hand) | the gate checks every address on every pushed page, however written, and takes a donation QR code only as the list's file of the box's address (by its sum: it never makes or reads one): a taken-over backend can't get a wrong one live |
 | the Verify page | visitors check the address their wallet shows in a view-only copy of the CCS wallet, from its published address and view key: the defence left if the web server is taken over |
 
 So a wrong address has to get past the backend, the web server, ccs-watch and anyone who looks
