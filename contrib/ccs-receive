@@ -54,7 +54,12 @@ alert() {
     if [[ -f $stamp && $(($(date +%s) - $(stat -c %Y "$stamp"))) -lt 3600 ]]; then return 0; fi
     touch "$stamp" 2> /dev/null || true
     sent=1
-    curl -fsS --max-time 10 --data-binary "[${blue}CCS-watch${off}] ${2//@SITE@/${site:-}}" -H 'Content-Type: text/plain' "$url" > /dev/null 2>&1 \
+    # no whole address in the channel, whatever a reason quotes (a file's name, a page's): a run of
+    # 20 base58 characters or more shortened as the address alerts are (review 10's L-1), the
+    # message 500 characters at most
+    local msg
+    msg=$(sed -E 's/([1-9A-HJ-NP-Za-km-z]{6})[1-9A-HJ-NP-Za-km-z]{10,}([1-9A-HJ-NP-Za-km-z]{4})/\1…\2/g' <<<"$2" | head -c 500)
+    curl -fsS --max-time 10 --data-binary "[${blue}CCS-watch${off}] ${msg//@SITE@/${site:-}}" -H 'Content-Type: text/plain' "$url" > /dev/null 2>&1 \
         || say "could not send the alert"
 }
 
@@ -77,7 +82,7 @@ refuse() {
 
 # The pages' and JSON's addresses, as written (pages() says what can be on a page at all), as
 # "file<TAB>address" lines; "file<TAB>!reason" for what the gate can't accept; "file<TAB>?qr<TAB>
-# base64" for each data: image (held back below: the site has none). An address is a run of 95 (standard) or 106
+# data: URI" for each data: image of any type (held back below: the site has none). An address is a run of 95 (standard) or 106
 # (integrated) base58 characters, tags and attributes included (a monero: link, an alt text),
 # entities read as a browser reads them (&#56; is 8). A byte that isn't ASCII, or a control
 # character, is read twice: dropped (a zero-width space mustn't split an address) and as a space

@@ -257,3 +257,26 @@ func TestFoldersOnlyForFiles(t *testing.T) {
 		t.Errorf("a file put where a folder holds something")
 	}
 }
+
+// review 10's L-3: a temp file a killed copy left is removed by the next, never copied, and no
+// push may name one
+func TestTempLeftOver(t *testing.T) {
+	root := t.TempDir()
+	src, dst := filepath.Join(root, "src"), filepath.Join(root, "dst")
+	os.MkdirAll(filepath.Join(src, "p"), 0o755)
+	os.MkdirAll(filepath.Join(dst, "p"), 0o755)
+	os.WriteFile(filepath.Join(src, "p", ".ccs-push-111"), []byte("half"), 0o600)
+	os.WriteFile(filepath.Join(dst, "p", ".ccs-push-222"), []byte("half a page"), 0o600)
+	os.WriteFile(filepath.Join(src, "p", "a.html"), []byte("<p>"), 0o644)
+	if err := Copy(src, dst, false); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []string{".ccs-push-111", ".ccs-push-222"} {
+		if _, err := os.Lstat(filepath.Join(dst, "p", n)); err == nil {
+			t.Errorf("%s left in the copy", n)
+		}
+	}
+	if _, err := Receive(bytes.NewReader(stream(t, file("p/.ccs-push-9", "x"))), dst, Default); err == nil {
+		t.Errorf("a push named a temp file")
+	}
+}
