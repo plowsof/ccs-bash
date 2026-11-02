@@ -122,6 +122,7 @@ folders, for those who can't run Docker; not recommended.
 - [The backend in Docker](docs/docker.md): the update and ccs-watch as one container a stage (its own user, network, folders and secret) and monero-wallet-rpc, with docker compose; its design: [docker-design.svg](docs/docker-design.svg); and [the web server's side](docs/docker.md#the-web-server-in-docker) (the gate and the backup receiver behind their own sshd, from one attested image; nginx on the host)
 - [Two machines](docs/two-machines.md): the backend pushes, the web server only receives; the gate, the alerts, the theme
 - [The signed list](docs/signed-list.md): the wallet's subaddresses and their QR codes: made, signed, checked, installed
+- [Upgrading](docs/upgrading.md): steps a release needs once
 - [The web server](docs/web-server.md): the one machine to review: what runs there, by version, the code to read, what is installed by hand
 - [Admin access](docs/admin-access.md): your own ssh to the machines: a VPN or an allowlist, the risks, a way back in
 - [The pinned image](docs/image.md): how B is built and checked, changing the pin, releases
