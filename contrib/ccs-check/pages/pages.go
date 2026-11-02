@@ -308,11 +308,16 @@ type Checker struct {
 	max     int64
 }
 
+// MaxPage: a larger page is not read (held back)
+const MaxPage = 2 << 20
+
 // New: as pages_py's first lines (site, designs, bodies, list, viewkey, hosts, onion)
 func New(designs, bodies, lst, viewkey, hosts, onion string) (*Checker, error) {
-	c := &Checker{onion: onion, viewkey: viewkey, cache: map[string]*compiled{}, diag: 10, max: 8 << 20}
+	// (2 MB at most, CCS_GATE_MAX if less: the largest page is under 200 kB, and matching one
+	// takes memory as it goes, about 130 MB a MB)
+	c := &Checker{onion: onion, viewkey: viewkey, cache: map[string]*compiled{}, diag: 10, max: MaxPage}
 	if v, err := strconv.ParseInt(os.Getenv("CCS_GATE_MAX"), 10, 64); err == nil {
-		c.max = v
+		c.max = min(v, MaxPage)
 	}
 	var err error
 	if c.l, err = readList(lst); err != nil {
