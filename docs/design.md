@@ -15,7 +15,8 @@ wallet into finished HTML; the web server only receives the files and serves the
 | Proposal Markdown rendered by | the framework, on the public server | a small awk renderer that escapes everything first, on the backend |
 | A compromised web server | can change any page until noticed | can too, but every page is pushed again each run, and ccs-watch alerts IRC within minutes |
 
-The donation addresses are what an attacker wants, and the web server shows them: keep it smallest.
+The donation addresses are what an attacker wants, and the web server shows them: keep it smallest
+([the web server](web-server.md): everything on it, to review).
 
 ## The parts
 

@@ -7,7 +7,9 @@ built offline). Every script is `set -euo pipefail`, `LC_ALL=C` and shellcheck-c
 POSIX (mawk, gawk, busybox).
 
 The rule everything serves: every donation address shown, as text, link or QR code, is one of the
-wallet's. [The design](design.md) says why it is built this way.
+wallet's. [The design](design.md) says why it is built this way. To trust the site without
+trusting the backend, only the web server needs reviewing: [its list](web-server.md) (the code,
+the image's parts, what is installed by hand); its files are walked through below too.
 
 ## Backend (no inbound connections)
 
