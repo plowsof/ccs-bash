@@ -32,11 +32,13 @@ func TestPages(t *testing.T) {
 		ents += "&#" + strconv.Itoa(int(c)) + ";"
 	}
 	for name, c := range map[string]struct{ in, want string }{
-		"as written":            {"<p>" + fund + "</p>", fund + "\n"},
-		"entities":              {"<p>" + ents + "</p>", fund + "\n"},
-		"split by a zero-width": {"<p>" + fund[:40] + "\u200b" + fund[40:] + "</p>", fund + "\n"},
-		"not a page":            {"GIF89a", "!not text that starts as a page or JSON does (<, [ or {): a browser would show it as an image\n"},
-		"a data: image":         {"<img src=\"data:image/png;base64,QUJD\">", "?qr\tQUJD\n"},
+		"as written":              {"<p>" + fund + "</p>", fund + "\n"},
+		"entities":                {"<p>" + ents + "</p>", fund + "\n"},
+		"split by a zero-width":   {"<p>" + fund[:40] + "\u200b" + fund[40:] + "</p>", fund + "\n"},
+		"not a page":              {"GIF89a", "!not text that starts as a page or JSON does (<, [ or {): a browser would show it as an image\n"},
+		"a data: image":           {"<img src=\"data:image/png;base64,QUJD\">", "?qr\tdata:image/png;base64,QUJD\n"},
+		"an SVG data: image":      {"<img src=\"data:image/svg+xml,%3Csvg%3E\">", "?qr\tdata:image/svg+xml,%3Csvg%3E\n"},
+		"a data: image, any case": {"<img src=\"DATA:Image/JPEG;base64,QUJD\">", "?qr\tDATA:Image/JPEG;base64,QUJD\n"},
 		// split between elements a browser lays side by side: two tag labels, a tag and its count
 		"two labels": {`<p><span class="label tag-0">` + fund[:48] + `</span><span class="label tag-1">` + fund[48:] + `</span></p>`, fund + "\n"},
 		"tag, count": {`<a class="filter" href="x/">` + fund[:89] + `<span class="count">` + fund[89:] + `</span></a>`, fund + "\n"},

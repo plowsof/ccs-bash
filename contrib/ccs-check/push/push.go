@@ -47,6 +47,10 @@ func (c *counter) Read(p []byte) (int, error) {
 	return n, err
 }
 
+// temp: the start of a file's name while it is written (write): never a name of the site's, and
+// one left by a copy that was killed is removed by the next (review 10's L-3)
+const temp = ".ccs-push-"
+
 // Name: a tar entry's name as a path under the folder ("./a/b", "a/b/" read as "a/b"), or why it
 // isn't one: absolute, a "." or ".." step, an empty step, a control character, too long
 func Name(n string) (string, error) {
@@ -64,6 +68,9 @@ func Name(n string) (string, error) {
 	for _, s := range strings.Split(q, "/") {
 		if len(s) > 255 {
 			return "", fmt.Errorf("a name with a part over 255 bytes")
+		}
+		if strings.HasPrefix(s, temp) {
+			return "", fmt.Errorf("a name starting %s (the gate's own while it writes)", temp)
 		}
 	}
 	return q, nil
@@ -163,7 +170,7 @@ func mkdirs(dir, name string) error {
 
 // write: r's size bytes as the file t, written beside it and renamed over it, 644, its time mt
 func write(t string, r io.Reader, size int64, mt time.Time) error {
-	f, err := os.CreateTemp(filepath.Dir(t), ".ccs-push-*")
+	f, err := os.CreateTemp(filepath.Dir(t), temp+"*")
 	if err != nil {
 		return err
 	}
@@ -199,6 +206,9 @@ func Copy(src, dst string, del bool) error {
 			return err
 		}
 		rel, _ := filepath.Rel(src, p)
+		if !d.IsDir() && strings.HasPrefix(d.Name(), temp) {
+			return nil // a copy's left-over, never copied
+		}
 		t := filepath.Join(dst, rel)
 		st, terr := os.Lstat(t)
 		switch {
@@ -252,15 +262,22 @@ func Copy(src, dst string, del bool) error {
 			return fmt.Errorf("%s: not a plain file or folder", rel)
 		}
 	})
-	if err != nil || !del {
+	if err != nil {
 		return err
 	}
+	// what dst has and src hasn't: with del, it goes; a copy's left-over temp file always does
 	return filepath.WalkDir(dst, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		rel, _ := filepath.Rel(dst, p)
 		if rel == "." {
+			return nil
+		}
+		if !d.IsDir() && strings.HasPrefix(d.Name(), temp) {
+			return os.Remove(p)
+		}
+		if !del {
 			return nil
 		}
 		if _, err := os.Lstat(filepath.Join(src, rel)); errors.Is(err, fs.ErrNotExist) {
