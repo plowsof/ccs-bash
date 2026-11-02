@@ -641,8 +641,7 @@ func (d *design) slots(depth int, body bool) (pats, error) {
 		"pending_note": pending(), "gitlab_url": alt(lit("#"), d.c.link), "segments": seg,
 		"needed_note": opt(seq(lit(" "), XMR, lit(" XMR would fund it 100%!"))),
 		"address":     rep(class(b58), 95, 95, false),
-		"qr": seq(lit("data:image/png;base64,"), rep(class(func(r rune) bool { return r < 0x80 && (isAlnum(r) || r == '+' || r == '/') }), 1, -1, false),
-			rep(class(func(r rune) bool { return r == '=' }), 0, -1, false)),
+		"qr":          seq(lit(prefixOf(depth)+"qr/"), rep(class(b58), 95, 95, false), lit(".png")),
 		"verify_link": lit(strip(vl)), "milestones_list": empty, "payouts_list": empty, "tag_links": star(ll)}
 	if body {
 		s["body"] = group("body", lazy)
@@ -853,11 +852,8 @@ func (d *design) compiled(key, text string, depth int, tagpage, body bool) (c *c
 
 var tagPage = regexp.MustCompile(`^explore/tag/[^/]+/index\.html\n?$`)
 
-// box: a donation box's address and its QR code's base64
-type box struct{ addr, qr string }
-
-// check: ("", box or nil) if the page passes, else (reason, nil)
-func (d *design) check(rp, got string) (string, *box, error) {
+// check: "" if the page passes, else the reason
+func (d *design) check(rp, got string) (string, error) {
 	depth := strings.Count(rp, "/")
 	var want []body
 	var tries []*compiled
@@ -866,46 +862,46 @@ func (d *design) check(rp, got string) (string, *box, error) {
 		name := rp[len("proposals/"):]
 		name = name[:max(0, len(name)-len(".html"))]
 		if strings.Contains(name, "/") {
-			return "a page the design does not have", nil, nil
+			return "a page the design does not have", nil
 		}
 		w, ok := d.c.md[name]
 		if !ok {
-			return "a proposal page with no proposal (" + name + ".md) in the proposals repository", nil, nil
+			return "a proposal page with no proposal (" + name + ".md) in the proposals repository", nil
 		}
 		want = w
 		for _, s := range []string{"fr", "wip", "cp"} {
 			t, err := d.part("proposal-" + s)
 			if err != nil {
-				return "", nil, err
+				return "", err
 			}
 			c, err := d.compiled("proposal-"+s, t+"\n", depth, false, true)
 			if err != nil {
-				return "", nil, err
+				return "", err
 			}
 			tries = append(tries, c)
 		}
 	case tagPage.MatchString(rp):
 		t, err := read(filepath.Join(d.d, "explore/tag/example/index.html"))
 		if err != nil {
-			return "", nil, err
+			return "", err
 		}
 		c, err := d.compiled("tag", t, depth, true, false)
 		if err != nil {
-			return "", nil, err
+			return "", err
 		}
 		tries = append(tries, c)
 	case !strings.HasPrefix(rp, "parts/") && !strings.HasPrefix(rp, "explore/tag/") && isFile(pyJoin(d.d, rp)):
 		t, err := read(pyJoin(d.d, rp))
 		if err != nil {
-			return "", nil, err
+			return "", err
 		}
 		c, err := d.compiled(rp, t, depth, false, false)
 		if err != nil {
-			return "", nil, err
+			return "", err
 		}
 		tries = append(tries, c)
 	default:
-		return "a page the design does not have", nil, nil
+		return "a page the design does not have", nil
 	}
 	s := []rune(got)
 	best, why := 0, "not a page of the design as ccs-front-bash fills it"
@@ -925,7 +921,7 @@ func (d *design) check(rp, got string) (string, *box, error) {
 				if hasM {
 					ms, err := d.milestones(b, depth)
 					if err != nil {
-						return "", nil, err
+						return "", err
 					}
 					if !same(string(s[gm[0]:gm[1]]), ms) {
 						continue
@@ -934,7 +930,7 @@ func (d *design) check(rp, got string) (string, *box, error) {
 				if hasP {
 					ps, err := d.payouts(b, depth)
 					if err != nil {
-						return "", nil, err
+						return "", err
 					}
 					if !same(string(s[gp[0]:gp[1]]), ps) {
 						continue
@@ -952,15 +948,19 @@ func (d *design) check(rp, got string) (string, *box, error) {
 		if m {
 			a, ok := cx.g["address"]
 			if !ok {
-				return "", nil, nil
+				return "", nil
 			}
 			addr := string(s[a[0]:a[1]])
 			if !d.c.l.listed[addr] {
-				return "a donation box with an address that is not in the signed list (" + addr + ")", nil, nil
+				return "a donation box with an address that is not in the signed list (" + addr + ")", nil
 			}
-			q := cx.g["qr"]
-			qr := string(s[q[0]:q[1]])
-			return "", &box{addr, qr[strings.Index(qr, ",")+1:]}, nil
+			// its QR code: the list's own file of that address (qr/<address>.png: the gate takes
+			// it only as its sum in the list's .qr.sha256), not another address's
+			if q, ok := cx.g["qr"]; ok && string(s[q[0]:q[1]]) != prefixOf(depth)+"qr/"+addr+".png" {
+				qr := string(s[q[0]:q[1]])
+				return "a donation box whose QR code is not its address's (" + qr + ")", nil
+			}
+			return "", nil
 		}
 		if d.c.diag <= 0 {
 			continue
@@ -977,7 +977,7 @@ func (d *design) check(rp, got string) (string, *box, error) {
 	if d.c.diag >= 0 {
 		why += fmt.Sprintf(" (it differs at character %d: %s)", best, pyJSON(s[best:min(len(s), best+60)]))
 	}
-	return why, nil, nil
+	return why, nil
 }
 
 func isFile(p string) bool {
@@ -1047,10 +1047,10 @@ func (c *Checker) Run(site string, in io.Reader, w *bufio.Writer) error {
 			w.Flush()
 			continue
 		}
-		why, bx := "", (*box)(nil)
+		why := ""
 		for _, d := range c.designs {
 			var err error
-			why, bx, err = d.check(rp, got)
+			why, err = d.check(rp, got)
 			var ke keyError
 			var pe pyError
 			switch {
@@ -1068,9 +1068,6 @@ func (c *Checker) Run(site string, in io.Reader, w *bufio.Writer) error {
 		if why != "" {
 			fmt.Fprintf(w, "%s\t!%s\n", p, why)
 		} else {
-			if bx != nil {
-				fmt.Fprintf(w, "%s\t=box\t%s\t%s\n", p, bx.addr, bx.qr)
-			}
 			fmt.Fprintf(w, "%s\t=ok\n", p)
 		}
 		w.Flush()

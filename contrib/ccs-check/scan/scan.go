@@ -1,6 +1,6 @@
 // Package scan: the addresses in the pages, the feed and the JSON, as ccs-receive's scan_py and
 // json_py read them: each file's lines "file<TAB>address", "file<TAB>!reason", and for a page's
-// data: images "file<TAB>?qr<TAB>base64" (the QR codes, read after).
+// data: images "file<TAB>?qr<TAB>base64" (held back: the site's QR codes are files, qr/).
 package scan
 
 import (

@@ -20,3 +20,8 @@ Installed on the backend (`/etc/ccs-front/`) and the web server (`/etc/ccs-gate/
 [handover](../../docs/handover.md#4-the-signed-subaddress-list), step 2: never one that comes with
 the list (this folder has none), which a forged folder would bring with its own key. Until a Core
 Team member signs it, that means the placeholder's fingerprint above, knowingly.
+
+Its QR codes, the files the site shows (`qr/<address>.png`), aren't kept here (11.5 MB): make them
+with ccs-front-bash's `tools/make-qr.sh subaddresses.txt` (`subaddresses.txt.qr/` and their sums,
+`subaddresses.txt.qr.sha256`, sha256 `6abe46c8ba77c3cb587119ce34d98f1aac6faf30b41e8390120abd77f21c2c11`: the `.pin`'s `qr` line, added by hand when
+the QR codes became the list's files; `verify-subaddresses.sh` remakes and checks them).

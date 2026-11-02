@@ -213,7 +213,8 @@ ccs-front-hugo's release zip, sha256 checked, unpacked on the backend: ccs-front
 Every donation address shown must be one of the live wallet's first 15,000 subaddresses, a list
 checked by the backend and the web server. Each wallet's is in this repository, in
 `subaddresses/<wallet>/` (the mainnet's: [`subaddresses/ccs2/`](../subaddresses/ccs2/)), with its
-signature, key, `.pin` and view key file (not `list-signers`: you write that from the fingerprints
+signature, key, `.pin` and view key file (its QR codes and their sums: `tools/make-qr.sh`, below;
+not `list-signers`: you write that from the fingerprints
 in step 2, so a forged folder can't bring its own). In full: ccs-front-bash's
 [setup](https://github.com/plowsof/ccs-front-bash/blob/master/docs/setup.md), step 5. The three
 scripts are **ccs-front-bash's** (its `tools/`, not this repository's), run from a checkout of it:
@@ -224,18 +225,25 @@ scripts are **ccs-front-bash's** (its `tools/`, not this repository's), run from
 1. **Made** by a Core Team member on the offline machine from the wallet's address and view key,
    which it asks for (an offline `monero-wallet-rpc` makes them in a view-only copy it deletes
    after; no spend key, no daemon): `tools/make-subaddresses.sh <path to monero-wallet-rpc> 15000
-   subaddresses.txt`. Line 0 is `WALLET_ADDRESS`.
+   subaddresses.txt`. Line 0 is `WALLET_ADDRESS`. Then each address's QR code, as its last step
+   (`tools/make-qr.sh`, qrencode): `subaddresses.txt.qr/<address>.png` and their sums,
+   `subaddresses.txt.qr.sha256` (a list from before: run `tools/make-qr.sh subaddresses.txt`).
 2. **Signed with their own key**, as the Monero repository publishes it (`utils/gpg_keys/`):
    binaryFate `81AC591FE9C4B65C5806AFC3F0AF4D462A0BDF92` or luigi1111
    `8777AB8F778EE89487A2F8E7F4ACA0183641E010`
-   (`SIGNING_KEY=<fingerprint> tools/sign-subaddresses.sh subaddresses.txt`).
-3. **Published and reproduced:** the signer posts its sha256 and fingerprint on meta #935; two
-   contributors make it themselves from the same public data and post the same sha256.
-4. **Checked, then installed** in `/etc/ccs-front/` (root, 644): the four files, and
-   `list-signers` (the two fingerprints above). It must say OK:
+   (`SIGNING_KEY=<fingerprint> tools/sign-subaddresses.sh subaddresses.txt`); the `.pin` also
+   gets `qr <sha256 of subaddresses.txt.qr.sha256>` (a list from before: add that line by hand).
+3. **Published and reproduced:** the signer posts its sha256, the `qr` sha256 and the fingerprint
+   on meta #935; two contributors make it themselves from the same public data and post the
+   same two sha256.
+4. **Checked, then installed** in `/etc/ccs-front/` (root, 644): the four files, the QR codes'
+   sums and their folder (`subaddresses.txt.qr/`, 755), and `list-signers` (the two fingerprints
+   above). It must say OK (it remakes every QR code: needs qrencode):
    `SIGNER_KEYS=<the signer's key from the Monero repository's utils/gpg_keys/> tools/verify-subaddresses.sh /etc/ccs-front/subaddresses.txt /etc/ccs-front/list-signers <WALLET_ADDRESS>`
    (without `SIGNER_KEYS` it uses the key that came with the list, which may predate a revocation).
-5. The same files go to the web server **by hand** (step 6), never pushed.
+5. The same files go to the web server **by hand** (step 6), never pushed (the QR codes'
+   sums, not their folder: the backend pushes the images the site shows, and the gate takes
+   each only as its sum).
 
 From then on, each machine trusts the `.pin`; changing it, or `list-signers`, needs root there
 ([where each address is checked](reviewing.md#where-an-address-is-checked-against-the-signed-list)).
@@ -386,7 +394,7 @@ agreeing, answering) and changes nothing.
 | | `MIN_CONFIRMATIONS` | `10` | 2 |
 | the proposals checkout | its remote | `https://repo.getmonero.org/monero-project/ccs-proposals.git` | 2 |
 | `/opt/ccs-front-hugo/public` | the design | the release zip of [the releases](#the-releases), its sha256 checked | 3 |
-| `/etc/ccs-front/` | `subaddresses.txt` and its `.asc`, `.key.asc`, `.pin` | made by a Core Team member, signed with their own key (binaryFate's or luigi1111's), checked with `tools/verify-subaddresses.sh` | 4 |
+| `/etc/ccs-front/` | `subaddresses.txt` and its `.asc`, `.key.asc`, `.pin`, `.qr.sha256`, `.qr/` | made by a Core Team member, signed with their own key (binaryFate's or luigi1111's), checked with `tools/verify-subaddresses.sh` | 4 |
 | | `list-signers` | `81AC591FE9C4B65C5806AFC3F0AF4D462A0BDF92  # binaryFate` and `8777AB8F778EE89487A2F8E7F4ACA0183641E010  # luigi1111`, from the Monero repository's `utils/gpg_keys/` | 4 |
 | | `subaddresses.txt.viewkey` | as in step 4 | 4 |
 | `/etc/ccs/push/` (the host setup: `/var/lib/ccs/.ssh/`) | `id_ed25519` (the push key), `known_hosts` | the web server's host key: in Docker its gate's (`/etc/ccs-gate/ssh/ssh_host_ed25519_key.pub` there, as `[<web server>]:2223 ssh-ed25519 …`); the host setup, its `/etc/ssh/ssh_host_ed25519_key.pub`; `ccs-push` (the host setup: `ccs`), 600 | 6 |
@@ -409,9 +417,9 @@ agreeing, answering) and changes nothing.
 | File | Setting | For ccs.getmonero.org | Step |
 |---|---|---|---|
 | `/etc/ssh/authorized_keys/ccs-data` | `from=`, the key | the backend's address and its push key, `command="/usr/local/bin/ccs-receive"`; `sshd_config`'s `Match User ccs-data` reads only it | 6 |
-| `/etc/ccs-gate/` | `subaddresses.txt` and its `.pin`, `.asc`, `.key.asc` | the same files as the backend's | 6 |
+| `/etc/ccs-gate/` | `subaddresses.txt` and its `.pin`, `.asc`, `.key.asc`, `.qr.sha256` | the same files as the backend's (not `.qr/`) | 6 |
 | | `design.sha256` | the design release's files, from its zip (two-machines, "The gate") | 6 |
-| the host setup's packages | the gate's tools | `apt install rsync curl qrencode git`, and `ccs-check` copied out of the attested gate image ([two machines, without Docker](two-machines.md#without-docker)) (in Docker: none, the gate's image has them) | 6 |
+| the host setup's packages | the gate's tools | `apt install rsync curl git`, and `ccs-check` copied out of the attested gate image ([two machines, without Docker](two-machines.md#without-docker)) (in Docker: none, the gate's image has them) | 6 |
 | | `design/<release>/` | the design's release zip, unpacked (the same as the backend's); `design.sha256` from it | 6 |
 | | `markdown.awk` | `lib/markdown.awk` of the ccs-front-bash release the backend runs | 6 |
 | | `proposals.conf` | `PROPOSALS_GIT=https://repo.getmonero.org/monero-project/ccs-proposals.git`, `PROPOSALS_BRANCH=master` (and `LINK_HOSTS`, other repositories a proposal's merge request link may be in, as host/path) | 6 |
@@ -491,8 +499,8 @@ later (a deposit still too young, a saved address, a QR code shared before) is r
    moves `deposits.csv` and `assigned.tsv` aside.
 3. **The new wallet:** its files and `wallet-rpc.conf` (step 1; `systemctl restart
    ccs-wallet-rpc`), `WALLET_ADDRESS` (step 2), and its list on both machines in place of the old
-   one's: `subaddresses.txt`, `.asc`, `.key.asc`, `.pin` and `.viewkey` (the Verify page's), in
-   `/etc/ccs-front/` and `/etc/ccs-gate/`, checked as in step 4 (`list-signers` too, if the signer
+   one's: `subaddresses.txt`, `.asc`, `.key.asc`, `.pin`, `.qr.sha256` and `.viewkey` (the Verify
+   page's), in `/etc/ccs-front/` and `/etc/ccs-gate/` (and `.qr/` in `/etc/ccs-front/`), checked as in step 4 (`list-signers` too, if the signer
    changes). Every address shown from then on is the new wallet's. On the backup machine, as
    root, move the old `deposits.csv` aside (it only takes one with every deposit it has).
 4. **One run by hand**, then `systemctl start ccs-bash`: the same totals, new addresses.
