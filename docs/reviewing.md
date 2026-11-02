@@ -215,7 +215,7 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
 The rule everything serves, step by step, from a new proposal's subaddress to the visitor's
 wallet. The list is the wallet's first 15,000 subaddresses, signed by a Core Team member's own
 key; its `.pin` (sha256 and key) is what each machine trusts, installed by hand once
-`tools/verify-subaddresses.sh` (ccs-front-bash) has checked who signed it ([handover](handover.md#4-the-signed-subaddress-list), step 4).
+`tools/verify-subaddresses.sh` (ccs-front-bash) has checked who signed it ([the signed list](signed-list.md)).
 
 | Step | Where | What is checked | If not |
 |---|---|---|---|

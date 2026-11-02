@@ -106,7 +106,7 @@ The gate trusts only what root installs here; each from its own source, checked 
 
 | File, in `/etc/ccs-gate/` | From | Checked by |
 |---|---|---|
-| `subaddresses.txt`, `.asc`, `.key.asc`, `.pin`, `.viewkey` | the signed list (this repository's `subaddresses/<wallet>/`) | `tools/verify-subaddresses.sh` with a `list-signers` of your own ([handover](handover.md#4-the-signed-subaddress-list), step 4) |
+| `subaddresses.txt`, `.asc`, `.key.asc`, `.pin`, `.viewkey` | the signed list (this repository's `subaddresses/<wallet>/`) | `tools/verify-subaddresses.sh` with a `list-signers` of your own ([the signed list](signed-list.md)) |
 | `subaddresses.txt.qr.sha256` | the list's QR codes' sums (`tools/make-qr.sh`) | the same: it remakes every QR code, and the `.pin`'s `qr` line pins the sums |
 | `design/<release>/`, `design.sha256` | the design's release zip | its sha256, the attested one |
 | `markdown.awk` | ccs-front-bash's `lib/markdown.awk`, at its attested commit | the commit |

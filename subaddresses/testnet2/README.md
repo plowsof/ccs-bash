@@ -11,7 +11,5 @@ ccs-front-bash's `tools/make-subaddresses.sh --testnet` (v0.1.20; sha256
 `wallet.txt` states the wallet's address and view key together (a view-only wallet needs both);
 the Verify page links to it.
 
-Its QR codes, the files the site shows (`qr/<address>.png`), aren't kept here (11.5 MB): make them
-with ccs-front-bash's `tools/make-qr.sh subaddresses.txt` (`subaddresses.txt.qr/` and their sums,
-`subaddresses.txt.qr.sha256`, sha256 `63821c64da0c11a0fbf1a0fafbbfa450e3f602dbcc2bd099817fdf204a5072db`: the `.pin`'s `qr` line, added by hand when
-the QR codes became the list's files; `verify-subaddresses.sh` remakes and checks them).
+Its QR codes aren't kept here: made again from the list ([the signed list](../../docs/signed-list.md),
+step 1), their sums' sha256 `63821c64da0c11a0fbf1a0fafbbfa450e3f602dbcc2bd099817fdf204a5072db`, the `.pin`'s `qr` line.
