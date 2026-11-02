@@ -824,11 +824,17 @@ type compiled struct {
 	segs []node
 }
 
-func (d *design) compiled(key, text string, depth int, tagpage, body bool) (*compiled, error) {
+func (d *design) compiled(key, text string, depth int, tagpage, body bool) (c *compiled, err error) {
 	k := fmt.Sprintf("%s\x00%s\x00%d\x00%v", d.d, key, depth, tagpage)
 	if c, ok := d.c.cache[k]; ok {
 		return c, nil
 	}
+	// a pattern match.go can't match as re would (star's): this page can't be checked
+	defer func() {
+		if p := recover(); p != nil {
+			c, err = nil, pyError{"error"}
+		}
+	}()
 	segs, groups, err := d.page(text, depth, tagpage, body)
 	if err != nil {
 		return nil, err
@@ -840,7 +846,7 @@ func (d *design) compiled(key, text string, depth int, tagpage, body bool) (*com
 			return nil, pyError{"error"}
 		}
 	}
-	c := &compiled{seq(segs...), segs}
+	c = &compiled{seq(segs...), segs}
 	d.c.cache[k] = c
 	return c, nil
 }
@@ -1016,6 +1022,10 @@ func pyJSON(rs []rune) string {
 // Run: pages_py: SITE, then the pages (NUL-separated, relative to SITE) from in; a line per
 // page as pages_py's, each written as soon as it is known
 func (c *Checker) Run(site string, in io.Reader, w *bufio.Writer) error {
+	// (no design: no page could fail, so none is checked; ccs-receive gives at least one)
+	if len(c.designs) == 0 {
+		return errors.New("no design to check the pages against")
+	}
 	all, err := io.ReadAll(in)
 	if err != nil {
 		return err
