@@ -32,6 +32,7 @@ var (
 	controls = regexp.MustCompile(`[\x00-\x08\x0b\x0e-\x1f\x7f]`)
 	entities = regexp.MustCompile(`&#[0-9]+;?|&#[xX][0-9A-Fa-f]+;?|&[A-Za-z][A-Za-z0-9]*;`)
 	qrs      = regexp.MustCompile(`data:image/png;base64,[A-Za-z0-9+/]+=*`)
+	tags     = regexp.MustCompile(`<[^>]*>`)
 	named    = map[string]int{"amp": 38, "lt": 60, "gt": 62, "quot": 34, "apos": 39}
 )
 
@@ -117,12 +118,20 @@ func Pages(files []string, w io.Writer) error {
 	return nil
 }
 
-// both: the addresses of t, read with each \x01 dropped and as a space; ErrTooMany keeps what
-// was found before it
+// both: the addresses of t, read with each \x01 dropped and as a space; then of t as a browser
+// lays it out, its tags dropped (an address split between two elements side by side, two tag
+// labels or a tag and its count, is one run there), by checksum only. ErrTooMany keeps what was
+// found before it
 func both(c *addr.Checker, t string, out map[string]bool) error {
 	c.Start()
 	for _, v := range []string{strings.ReplaceAll(t, "\x01", ""), strings.ReplaceAll(t, "\x01", " ")} {
 		if err := c.Runs(v, out); err != nil {
+			return err
+		}
+	}
+	shown := tags.ReplaceAllString(t, "")
+	for _, v := range []string{strings.ReplaceAll(shown, "\x01", ""), strings.ReplaceAll(shown, "\x01", " ")} {
+		if err := c.Checked(v, out); err != nil {
 			return err
 		}
 	}
