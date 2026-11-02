@@ -570,6 +570,22 @@ if ((rc == 0)) && [[ $(checking) == *"(all of them"* ]]; then ok "allowed as bef
 # and once a day whatever happens
 on web 'touch -d "-25 hours" /var/lib/ccs-gate/checked-with'
 if push > /dev/null && [[ $(checking) == *"(all of them"* ]]; then ok "a day after the last full check: every page checked again"; else checking; fail "the daily full check"; fi
+# a new ccs-check (here the same with a byte more: an ELF ignores what follows it) is a new gate:
+# every page checked again
+on web 'printf x >> /usr/local/bin/ccs-check'
+if push > /dev/null && [[ $(checking) == *"(all of them"* ]]; then ok "ccs-check changed: every page checked again"; else checking; fail "ccs-check changed"; fi
+# a proposal image that went live past an older QR reader (put there by hand here, the backend's
+# own bytes): a push that doesn't change it leaves it unread; the next full check reads its QR
+# codes again and holds it back (it stays as it was, and IRC is told: a person decides)
+v=$((v + 1)); site "$v" "$good"; on backend "mkdir -p /out/images/p && qrencode -s 4 -o /out/images/p/qr.png 'monero:$fake'"
+on backend 'base64 /out/images/p/qr.png' | docker exec -i "$name-web" sh -c 'mkdir -p /var/lib/ccs-data/images/p && base64 -d > /var/lib/ccs-data/images/p/qr.png && chown -R ccs-data /var/lib/ccs-data/images'
+rc1=0; push > /dev/null || rc1=$?
+on web 'touch -d "-25 hours" /var/lib/ccs-gate/checked-with'
+rc2=0; push > /dev/null || rc2=$?
+if ((rc1 == 0 && rc2 == 7)) && on web "grep -q 'images/p/qr.png: $fake' /var/log/ccs-gate.log"; then
+    ok "a live proposal image read again on the full check: its foreign QR code found"
+else echo "exits $rc1 $rc2"; on web 'tail -n 3 /var/log/ccs-gate.log'; fail "a live image read again"; fi
+on web 'rm -rf /var/lib/ccs-data/images/p'
 # a NUL byte, which HTML drops from the text
 v=$((v + 1)); site "$v" "$good"; on backend "printf '<p>%s\\000%s</p>\\n' '${fake:0:40}' '${fake:40}' > /out/proposals/nul.html"
 held "$v" proposals/nul.html "an address split by a NUL byte" "${fake:40}"

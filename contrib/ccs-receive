@@ -3,7 +3,7 @@
 # key runs only this (command= in authorized_keys). It receives the push as rrsync always did, but
 # into a staging folder, one push at a time; then, for each page and JSON file the push changed
 # (and those held back last time; all of them when the list, design, markdown.awk, proposals
-# commit or this script changed, and once a day),
+# commit, this script or ccs-check changed, and once a day),
 #   - every page must be one of the design's own (the release zips unpacked in design/, installed
 #     here by hand), each region filled with the design's parts and each {{slot}} with a value of
 #     its kind (a number, escaped text that can't hold an address, a link into the proposals
@@ -129,11 +129,12 @@ qrof() {
 
 # qrknown IMAGE: the address (of the list's or the allowed file's) whose QR code IMAGE exactly is,
 # or 1. The QR codes qrencode makes of all of them, as pixels' lines, are made once a list and
-# allowed file (and qrencode): $state/qr-<their sha256>, the older ones deleted.
+# allowed file (and qrencode, and ccs-check, whose pixels makes the lines): $state/qr-<their
+# sha256>, the older ones deleted.
 qrknown() {
     local got key table a tmp
     got=$(pixels "$1") && [[ $got ]] || return 1
-    key=$( { cat -- "$list"; cat -- "$conf/allowed" 2> /dev/null || true; qrencode -V 2>&1 || true; } | sha256sum | cut -c1-16)
+    key=$( { cat -- "$list"; cat -- "$conf/allowed" 2> /dev/null || true; qrencode -V 2>&1 || true; cat -- "$check"; } | sha256sum | cut -c1-16)
     table=$state/qr-$key
     if [[ ! -s $table ]]; then
         tmp=$(mktemp)
@@ -494,13 +495,19 @@ feed() {
 }
 
 # changes: every file the push brings that isn't already live, byte for byte, as "file<TAB>!reason"
-# for any that isn't allowed, and "file<TAB>address" for the addresses in a proposal image's QR codes
+# for any that isn't allowed, and "file<TAB>address" for the addresses in a proposal image's QR codes.
+# A proposal image already live passed the QR reader of its day: on a full check its codes are
+# read again (a newer ccs-check may find what an older one missed; held back, it stays live as it
+# was, and IRC is told: a person decides)
 changes() {
     local f rel sum repo=''
     [[ $fetched ]] && repo=$(repo_images)
     while IFS= read -r -d '' f; do
         rel=${f#"$staging"/}
-        cmp -s "$f" "$live/$rel" 2> /dev/null && continue
+        if cmp -s "$f" "$live/$rel" 2> /dev/null; then
+            if [[ $full && $rel =~ ^images/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+\.(png|jpg|jpeg|gif)$ ]]; then qr "$f" "$f" || true; fi
+            continue
+        fi
         case $rel in
             *.html | projects.json) ;;   # the pages and the /projects JSON: checked, all of them
             feed.xml) feed "$f" ;;
@@ -566,7 +573,9 @@ if ! flock -w 600 8; then
 fi
 
 # (before the push is received: ccs-check receives it too)
-ccs-check --check > /dev/null 2>&1 || refuse "it has no ccs-check (contrib/ccs-check: the release's, its sha256 attested) to check the push with" ccs-check
+if ! check=$(command -v ccs-check) || ! ccs-check --check > /dev/null 2>&1; then
+    refuse "it has no ccs-check (contrib/ccs-check: the release's, its sha256 attested) to check the push with" ccs-check
+fi
 # Staging starts as the live site each time: the push account can't delete, so whatever a
 # refused push left in it would otherwise stay there and refuse every push after it.
 rsync -a --delete "$live/" "$staging/"
@@ -601,8 +610,9 @@ fetch && fetched=1
 # Which pages and JSON to check: the ones the push changed, and the ones held back last time
 # (their last good copy is live, so the same file sent again must fail again). The live site
 # holds only what passed, so a file the same as its live copy passed before, against the same
-# list, allowed file, design, markdown.awk, proposals commit and gate: when any of those changes
-# (a proposal taken out is a new commit), and once a day whatever happens, all are checked again.
+# list, allowed file, design, markdown.awk, proposals commit and gate (this script and ccs-check):
+# when any of those changes (a proposal taken out is a new commit), and once a day whatever
+# happens, all are checked again, the proposal images' QR codes too (changes).
 mapfile -d '' all < <(find "$staging" -type f \( -name '*.html' -o -name '*.json' -o -path "$staging/feed.xml" \) -print0)
 inputs=$( {
     cat -- "${BASH_SOURCE[0]}" "$list" "$list.pin" "$design" "$conf"/markdown*.awk "$conf/proposals.conf"
@@ -611,6 +621,7 @@ inputs=$( {
     (cd "$conf/design" && find . -type f -print0 | sort -z | xargs -0 -r sha256sum)
     git -C "$git" rev-parse -q --verify refs/heads/ccs 2> /dev/null || true
     qrencode -V 2>&1 || true
+    cat -- "$check"
 } | sha256sum | cut -c1-64)
 full=''
 [[ $inputs == "$(cat "$state/checked-with" 2> /dev/null)" && $(find "$state/checked-with" -mmin -1440 2> /dev/null) ]] || full=1
