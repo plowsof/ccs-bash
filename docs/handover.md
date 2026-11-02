@@ -38,7 +38,7 @@ new set replaces the row (earlier sets: this file's history, and ccs-sigs).
 
 | Set | ccs-bash | ccs-front-bash | ccs-front-hugo | Running on |
 |---|---|---|---|---|
-| 2026-11-02 | v0.2.44 | v0.1.26 | v0.1.29 | [ccs.monerodevs.org](https://ccs.monerodevs.org), in mirror mode, with its onion and its feed: the backend compose and the web server compose, both v0.2.44 (retiring a wallet in the compose; `ccs` for the compose only, in ccs-back's words; review 10's fixes since v0.2.43). **Not attested:** each machine built the images from the tag and checked their IDs against the release notes; the last attested set is v0.2.39 / v0.1.24 / v0.1.28 (throwaway-39) |
+| 2026-11-02 | v0.2.44 | v0.1.27 | v0.1.29 | [ccs.monerodevs.org](https://ccs.monerodevs.org), in mirror mode, with its onion and its feed: the backend compose and the web server compose, each machine verifying with its own `trusted-signers` (throwaway-44, ccs-sigs #47). Retiring a wallet in the compose; `ccs` for the compose only, in ccs-back's words; review 10's fixes |
 
 Each is reproducible, and attested in [ccs-sigs](https://github.com/plowsof/ccs-sigs) by those who
 rebuilt it: on the testnet so far by one throwaway key a set (one person; the CCS's should be two
