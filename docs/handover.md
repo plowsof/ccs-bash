@@ -543,27 +543,8 @@ design alone: the design lines of steps 3 to 5). Each machine: as root, a backup
    docker load`, its ID checked there). A build that stops with `sources has files that are not
    in sources.lock`: a source an older release needed is still in `container/sources/` (a
    download cache, not in git); move it aside.
-   **Once, the first set whose QR codes are the list's files** (ccs-bash after v0.2.40,
-   ccs-front-bash after v0.1.25): the list's QR codes, made from the installed list on a machine
-   with qrencode (your own, or the backend's host), with `tools/make-qr.sh` from ccs-front-bash's
-   attested commit, then checked with the `.pin` from this repository's `subaddresses/<wallet>/`
-   (the same list, a third line `qr …`):
-   ```
-   install -d -m 700 /tmp/l && cp /etc/ccs-front/subaddresses.txt* /tmp/l/ && cp /opt/ccs-bash/subaddresses/<wallet>/subaddresses.txt.pin /tmp/l/
-   /opt/ccs-front-bash/tools/make-qr.sh /tmp/l/subaddresses.txt          # .qr/ and .qr.sha256, about 30 s
-   SIGNER_KEYS=<the signer's key> /opt/ccs-front-bash/tools/verify-subaddresses.sh /tmp/l/subaddresses.txt /etc/ccs-front/list-signers <WALLET_ADDRESS>
-   ```
-   OK: the new `.pin` and `.qr.sha256` go to `/etc/ccs-front/` and `/etc/ccs-gate/` (root, 644),
-   `subaddresses.txt.qr/` to `/etc/ccs-front/` only (755); copy each file into place, the pin last
-   (the old releases ignore the `qr` line and the new files). Without them the new gate refuses
-   every push and the new ccs-front-bash stops. The web server's nginx: `img-src 'self'` (no
-   `data:`), [two machines](two-machines.md), once the backend's new release is live.
-   **Once, the first set whose push is a tar** (ccs-bash after v0.2.40: `contrib/ccs-push`, the
-   gate's `ccs-check receive`; no rsync on either machine): the new gate refuses the old
-   backend's rsync push, and the old gate the new backend's tar, so pushes fail from step 3 until
-   step 5 (the live site stays as it is; past 15 minutes the heartbeat tells IRC, then that they
-   arrive again). Do the backend right after the web server. The first push sends every file
-   (no record yet of what the gate took).
+   **Steps a release needs once**, from the running release to the new one:
+   [upgrading](upgrading.md). Read it before step 3.
 3. **The web server first**, so its gate allows the new pages (`/opt/ccs-bash` here is the web
    server's own checkout, at ccs-bash's attested commit):
    ```
