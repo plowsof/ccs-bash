@@ -39,8 +39,12 @@ Caddy serves `/var/lib/ccs-data` (read-only), the files the gate let through, ov
 `CCS_SITE_HOST`; it gets and renews its certificate itself (Let's Encrypt, ACME, as
 `CCS_ACME_EMAIL`), so no certbot. It speaks HTTP/1.1 only, ignores `Range`, caps a request's
 headers at 16 KB and drops slow clients: a site of small static files loses nothing, and the
-parts of Go's HTTP server with the most known denial-of-service bugs are never reached (the
-`vulncheck` workflow checks the pinned Caddy's binary weekly). The security headers, on every
+parts of Go's HTTP server with the most known denial-of-service bugs are never reached. The
+`vulncheck` workflow checks the pinned Caddy's binary weekly against Go's vulnerability database:
+each one found is listed in [`container/caddy-vulns-accepted`](../container/caddy-vulns-accepted)
+with why it doesn't reach the site (turned off here, or code this config never runs), and any
+other fails it; the `upstream` workflow says when StageX has a newer Caddy (or Tor a newer
+release) to pin. The security headers, on every
 answer, the 404 page too (beta.getmonero.org's, with a stricter CSP; A+ on securityheaders.com),
 and no `Server` header:
 

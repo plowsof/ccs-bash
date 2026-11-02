@@ -41,7 +41,7 @@ if [[ ${1:-} == vulncheck || ${1:-} == vulncheck-binary ]]; then
     go go "${net[@]}" -e GOFLAGS=-mod=mod -e GOPROXY=https://proxy.golang.org -e GOSUMDB=sum.golang.org -- install "$govulncheck"
     if [[ -n ${2:-} && $1 == vulncheck-binary ]]; then
         cp "$2" "$tmp/bin/program"
-        go /gobin/govulncheck "${net[@]}" -- -mode binary /gobin/program
+        go /gobin/govulncheck "${net[@]}" -- -mode binary "${@:3}" /gobin/program
     else
         go /gobin/govulncheck "${net[@]}" -- "${@:2}" ./...
     fi

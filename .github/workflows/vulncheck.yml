@@ -1,7 +1,8 @@
 name: vulncheck
 # ccs-check (contrib/ccs-check): the known vulnerabilities (Go's database) in what it calls, of
 # Go's standard library as StageX's pinned Go has it (it has no module); and in the pinned
-# Caddy's binary (the web server's www: its Go and its modules). Weekly too: a new one is
+# Caddy's binary (the web server's www: its Go and its modules), failing on any not in
+# container/caddy-vulns-accepted (each there with why it doesn't reach the site). Weekly too: a new one is
 # found in code that hasn't changed. A failure: refresh the Go pin (container/update-images.sh),
 # a release (docs/ccs-check.md, Keeping it patched).
 on:
@@ -36,4 +37,11 @@ jobs:
           ref=$(awk '$1 == "caddy" { print $2 }' container/images)
           docker pull -q "$ref" > /dev/null
           c=$(docker create "$ref" /x) && docker cp "$c:/usr/bin/caddy" "$RUNNER_TEMP/caddy" && docker container rm "$c" > /dev/null
-          contrib/ccs-check/build.sh vulncheck-binary "$RUNNER_TEMP/caddy"
+          contrib/ccs-check/build.sh vulncheck-binary "$RUNNER_TEMP/caddy" -format json > "$RUNNER_TEMP/caddy.json" || true
+          jq -r 'select(.finding) | .finding.osv' "$RUNNER_TEMP/caddy.json" | sort -u > "$RUNNER_TEMP/found"
+          [[ -s $RUNNER_TEMP/found ]] || grep -q '"config"' "$RUNNER_TEMP/caddy.json" || { echo "govulncheck gave no answer"; exit 1; }
+          grep -oE '^GO-[0-9]+-[0-9]+' container/caddy-vulns-accepted | sort -u > "$RUNNER_TEMP/accepted"
+          echo "found $(wc -l < "$RUNNER_TEMP/found"), accepted $(wc -l < "$RUNNER_TEMP/accepted") (container/caddy-vulns-accepted)"
+          gone=$(comm -13 "$RUNNER_TEMP/found" "$RUNNER_TEMP/accepted"); [[ -z $gone ]] || echo "no longer found (take them out): $gone"
+          new=$(comm -23 "$RUNNER_TEMP/found" "$RUNNER_TEMP/accepted")
+          [[ -z $new ]] || { echo "new, not accepted:"; jq -r --arg n "$new" 'select(.osv) | .osv | select(.id as $i | $n | split("\n") | index($i)) | "\(.id)  \(.summary)"' "$RUNNER_TEMP/caddy.json" | sort -u; exit 1; }
