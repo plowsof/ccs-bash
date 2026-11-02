@@ -15,15 +15,19 @@
 - **Zero-cost abstractions:** there are no abstractions.
 - **A strong type system:** everything is a string, the money too. That's how the amounts stay exact.
 - **A friendly compiler:** `shellcheck`.
-- **Cargo:** `apt install jq`.
+- **Cargo:** none. Every tool is in an image pinned by digest, built from source by StageX.
 
 Not a crustacean. A mollusc.
 
-A small replacement for [ccs-back](https://repo.getmonero.org/monero-project/ccs-back), the
-backend of the Monero Community Crowdfunding System: a bash script, every 2 minutes and on each
-donation, with a view-only `monero-wallet-rpc`. No web server, database or PHP. It writes the
-JSON the site is made from (`proposals.json`, `completed-proposals.json`, and `projects.json` for
-`/projects`).
+The backend of the Monero Community Crowdfunding System (ccs.getmonero.org), replacing
+[ccs-back](https://repo.getmonero.org/monero-project/ccs-back): a bash script, every 2 minutes and
+on each donation, with a view-only `monero-wallet-rpc`. No web server, database or PHP. It writes
+the JSON the site is made from (`proposals.json`, `completed-proposals.json`, and `projects.json`
+for `/projects`).
+
+**These docs are for the CCS maintainers**, the Monero Core Team and whoever they hand the site
+to: one setup, Docker on each machine, every image attested, as [the handover](docs/handover.md)
+builds it.
 
 ## The project
 
@@ -90,7 +94,7 @@ filename,gitlab_url,subaddr_index,address,funding_required_date[,funded_date]
 ```
 
 It maps proposals to subaddresses and can't be recreated, so **back it up**: each new version
-to another machine, which only adds copies ([setup](docs/setup.md#backing-up-the-state)). If it is
+to another machine, which only adds copies ([setup](docs/setup.md#the-backup-machine)). If it is
 lost or wrong, runs stop rather than hand out new addresses ([troubleshooting](docs/troubleshooting.md)).
 
 Two caches sit beside it, so a run doesn't redo work: `deposits.csv`, the wallet's deposits 30
@@ -100,39 +104,38 @@ Deleted, either is made again on the next run. `deposits.csv` is backed up too, 
 only replaced by one with every deposit it has. A wallet the CCS no longer uses is recorded in
 `retired/<name>.csv`, state like `proposals.csv` ([retiring a wallet](docs/handover.md#retiring-a-wallet)).
 
-## Three ways to run it
-
-| | A) packages on the host | B) the pinned container | C) the compose |
-|---|---|---|---|
-| Tools from | Debian's packages | [StageX](https://stagex.tools): source-built, pinned, signatures checked ([details](docs/image.md)) | B's images, one container a step ([details](docs/docker.md)) |
-| Host needs | the [dependencies](docs/setup.md#dependencies) | Docker with buildx, `git`; `gpg` and `jq` to build | B's, and docker compose |
-| The loop | systemd, as root | systemd, as root | each stage its own container and user |
-| Updates | `apt upgrade` | [change the pin](docs/image.md#changing-the-pin) and rebuild | B's, then the IDs in `.env` |
-
-**C is the production setup**, the one [the handover](docs/handover.md) builds and upgrades: it
-pins everything that runs and keeps each secret in the one container that needs it (the testnet
-runs it). A and B, the host setup ([setup](docs/setup.md)), use the same scripts, config and
-folders, for those who can't run Docker; not recommended.
-
 ## Documentation
 
-- [Handover](docs/handover.md): start here, from ccs-back and Jekyll to this, step by step; what you fill in
-- [Recommended design](docs/design.md): bash renders the site on the backend, the web server only serves files
-- [Setup](docs/setup.md): dependencies, installing step by step, backing up the state
-- [The backend in Docker](docs/docker.md): the update and ccs-watch as one container a stage (its own user, network, folders and secret) and monero-wallet-rpc, with docker compose; its design: [docker-design.svg](docs/docker-design.svg); and [the web server's side](docs/docker.md#the-web-server-in-docker) (the gate and the backup receiver behind their own sshd, from one attested image; nginx on the host)
-- [Two machines](docs/two-machines.md): the backend pushes, the web server only receives; the gate, the alerts, the theme
+**Setting it up**
+- [Handover](docs/handover.md): start here, from ccs-back and Jekyll to this, step by step; what you fill in; who can do what
+- [Preparing the machines](docs/setup.md): the hosts' accounts, folders, config and keys
+- [The backend in Docker](docs/docker.md): one container a stage, its own user, network, folders and secret; and [the web server's side](docs/docker.md#the-web-server-in-docker), the gate and the backup receiver
+- [Two machines](docs/two-machines.md): the backend pushes, the web server only receives; the gate, the alerts, nginx
 - [The signed list](docs/signed-list.md): the wallet's subaddresses and their QR codes: made, signed, checked, installed
-- [Upgrading](docs/upgrading.md): steps a release needs once
-- [The web server](docs/web-server.md): the one machine to review: what runs there, by version, the code to read, what is installed by hand
-- [Admin access](docs/admin-access.md): your own ssh to the machines: a VPN or an allowlist, the risks, a way back in
-- [The pinned image](docs/image.md): how B is built and checked, changing the pin, releases
-- [Attesting a release](contrib/release/README.md): rebuild a release, sign what came out into ccs-sigs, as Feather Wallet does
-- [When something is wrong](docs/troubleshooting.md): what the log lines mean
-- [ccs-check](docs/ccs-check.md): the gate's checks, in Go: what they do, who can reach them, keeping them patched
-- [Reviewing](docs/reviewing.md): what each file that runs on the live machines does, and checks
-- [The testnet](docs/testnet.md): https://ccs.monerodevs.org, and where it differs from the setup (not to copy)
+- [Admin access](docs/admin-access.md): your own ssh to the machines: a VPN or an allowlist, a way back in
 
-## Tests
+**Day to day**
+- [When something is wrong](docs/troubleshooting.md): `ccs`, what each log and IRC line means, doing things by hand, restoring the state, moving the proposals to another forge
+- [Retiring a wallet](docs/handover.md#retiring-a-wallet): moving the CCS to a new wallet, its donations kept
+
+**Upgrading**
+- [Deploying a set](docs/handover.md#deploying-a-set-the-docker-setup): checking a release's attestations, building it, switching
+- [Upgrading](docs/upgrading.md): steps a release needs once
+- [Attesting a release](contrib/release/README.md): rebuild a release, sign what came out into ccs-sigs, as Feather Wallet does
+
+**Deciding what to trust**
+- [The web server](docs/web-server.md): the one machine to review: what runs there, by version, the code to read, what is installed by hand
+- [Reviewing](docs/reviewing.md): what each file that runs on the live machines does, and checks
+- [ccs-check](docs/ccs-check.md): the gate's checks, in Go: what they do, who can reach them, keeping them patched
+- [The pinned image](docs/image.md): how the images are built and checked, changing the pin
+- [The design](docs/design.md): why it is built this way
+
+## Developing
+
+For whoever changes the code. [The testnet](docs/testnet.md), https://ccs.monerodevs.org, is the
+developers' test deployment of this setup (a mirror of the mainnet CCS, view-only), where each
+release runs before it is proposed (its differences from the setup: not to copy).
+
 
 ```
 tests/run.sh             # end-to-end on tests/fixtures, fake wallet and GitLab (and review5.sh's cases)
@@ -145,5 +148,5 @@ tests/web.sh             # the web server compose's sshd, attacked from the back
 tests/image.sh           # inside the backend image: the tools each stage runs (CI)
 tests/gate-image.sh      # inside the gate's image: ccs-check, sshd, no Python, qrencode, rsync or jq (CI)
 contrib/ccs-check/build.sh test   # ccs-check's Go tests (fuzz [SECONDS]: its fuzz targets; vulncheck)
-shellcheck -x ccs-back.sh notify-loop.sh lib/*.sh tests/*.sh container/*.sh contrib/ccs-receive ...   # the list: .github/workflows/check.yml
+shellcheck -x ccs-back.sh lib/*.sh tests/*.sh container/*.sh contrib/ccs-receive ...   # the list: .github/workflows/check.yml
 ```

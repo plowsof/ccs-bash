@@ -54,7 +54,7 @@ before that.
   `proposals.conf`: `PROPOSALS_GIT=https://gitlab.com/plowsof/ccs-proposals.git`,
   `PROPOSALS_BRANCH=testnet`, `LINK_HOSTS=repo.getmonero.org/monero-project/ccs-proposals`, where
   the older proposals' merge requests are. The backend's checkout had a commit of its own (tags),
-  rebased on each pull: it is in `testnet` now. Moving it: [another forge](setup.md#proposals-on-another-forge).
+  rebased on each pull: it is in `testnet` now. Moving it: [another forge](troubleshooting.md#move-the-proposals-to-another-forge).
   Its CI/CD configuration file is ccs-proposal-pre-parser's `gitlab_comment_workflow.yml`, by its
   raw URL at a commit (the API's `ci_config_path`): one comment on each merge request, edited in
   place, from n1oc (a project access token named so: Reporter, scope `api`, until 2027-10-27, in

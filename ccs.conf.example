@@ -15,7 +15,7 @@ RPC_PASSWORD=change-me
 #   Forgejo: https://<host>/api/v1/repos/<owner>/<repo>   (git.disroot.org, codeberg.org...)
 REPOSITORY_URL=https://repo.getmonero.org/api/v4/projects/54
 
-# Checkout of the proposals repository (pulled by ccs-bash-update).
+# Checkout of the proposals repository (pulled by the compose's pull stage).
 PROPOSALS_DIR=/var/lib/ccs/proposals
 
 # Where the address mapping (proposals.csv) is kept. Back this up.
