@@ -76,8 +76,12 @@ func never(c *ctx, i int, k func(int) bool) bool { return false }
 
 func opt(n node) node { return alt(n, empty) }
 
-// star: (?:n)*, greedy; an iteration that matched nothing ends it (as re)
+// star: (?:n)*, greedy, of a body that can't match nothing: re orders the tries of one that can
+// otherwise (FuzzMatchVsRegexp), so it is refused (a panic, the page held back); pages.go has none
 func star(n node) node {
+	if n(newCtx(nil), 0, func(int) bool { return true }) {
+		panic("pages: a repeat of a body that can match nothing")
+	}
 	var loop func(c *ctx, i int, k func(int) bool) bool
 	loop = func(c *ctx, i int, k func(int) bool) bool {
 		if n(c, i, func(e int) bool { return e != i && loop(c, e, k) }) {
