@@ -691,6 +691,16 @@ for k in symlink hardlink device dotdot absolute twice backslash clash; do
         ok "refused whole: a push with a $k entry (nothing live changed, nothing outside, no link)"
     else echo "exit $rc"; on web 'tail -n 2 /var/log/ccs-gate.log'; fail "a push with a $k entry"; fi
 done
+# review 10's M-1: a file held back under a future page's name leaves no folder live (where it
+# would refuse that page's push), nor does a folder entry
+v=$((v + 1)); site "$v" "$(addr 2)"
+put proposals/next.html/x.css <<<'a {}'
+push > /dev/null 2>&1 || true
+rc=0; on backend "python3 -c 'import io,sys,tarfile; o=tarfile.open(fileobj=sys.stdout.buffer,mode=\"w|\"); t=tarfile.TarInfo(\"explore/tag/new/\"); t.type=tarfile.DIRTYPE; o.addfile(t); o.close()' | ssh -T -o BatchMode=yes ccs-data@$web receive > /dev/null 2>&1" || rc=$?
+if on web '! test -e /var/lib/ccs-data/proposals/next.html && ! test -e /var/lib/ccs-data/explore/tag/new'; then
+    ok "review 10 (M-1): no folder of a held-back file, nor of a folder entry, goes live"
+else on web 'ls -la /var/lib/ccs-data/proposals /var/lib/ccs-data/explore/tag'; fail "review 10 (M-1): a folder went live"; fi
+on backend 'rm -rf /out/proposals/next.html'
 if bot | grep -qF "the web server refused a push it could not take"; then ok "... and IRC is told"; else bot | tail -n 3; fail "no alert for a refused tar"; fi
 if [[ $(on backend "printf 'not a tar' | ssh -T -o BatchMode=yes ccs-data@$web receive > /dev/null 2>&1; echo \$?") == 1 ]]; then ok "refused: a push that isn't a tar"; else fail "a push that isn't a tar"; fi
 

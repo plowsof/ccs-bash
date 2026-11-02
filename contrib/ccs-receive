@@ -632,6 +632,17 @@ if [[ $bad ]]; then
         awk -F '\t' "$k" <<<"$bad"
     done)
 fi
+# a folder in staging that the live site hasn't and that holds no file (a held-back file's: its
+# file is gone): not made live, where it would stand in the way of a page that comes later
+# (review 10's M-1). From the deepest up, until none is left
+while :; do
+    n=0
+    while IFS= read -r -d '' d; do
+        [[ -d $live/${d#"$staging"/} ]] && continue
+        rmdir -- "$d" 2> /dev/null && n=$((n + 1))
+    done < <(find "$staging" -mindepth 1 -depth -type d -empty -print0)
+    ((n)) || break
+done
 # staging into the live site: each file that changed written beside its live copy and renamed over
 # it (644, folders 755: a page pushed 600 would be a 403 for visitors, with no alert)
 ccs-check copy "$staging" "$live"

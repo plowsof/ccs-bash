@@ -167,7 +167,7 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
 - [`contrib/ccs-receive`](../contrib/ccs-receive), the push key's forced command, as `ccs-data`,
   one push at a time (`flock`); only `receive` asked (anything else refused); staging made a copy
   of the live site (`ccs-check copy --delete`), the push's tar read into it (`ccs-check receive`,
-  contrib/ccs-check/push: plain files and folders at clean paths, written beside and renamed,
+  contrib/ccs-check/push: plain files at clean paths (folders only as files need them; a held-back file's left none live), written beside and renamed,
   644/755, within its limits, else the whole push refused and IRC told; refused before it without
   `ccs-check`). Once
   received, before anything goes live, refuses the whole push without its pinned list and QR

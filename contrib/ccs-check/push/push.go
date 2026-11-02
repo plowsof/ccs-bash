@@ -70,11 +70,14 @@ func Name(n string) (string, error) {
 }
 
 // Receive: the tar on r written into dir, each file as a new file renamed into place (so a file
-// dir shares with another folder is never written through), 644, its folders 755; the names of
-// the files written. Any entry but a plain file or folder (a link of either kind, a device, a
-// FIFO), a name that isn't one (Name), a name twice, a file where dir has a folder or a folder
-// where it has a file, a broken stream or one past lim: an error, and the push is refused (what
-// was written stays in dir, which the gate makes the live site again before the next push).
+// dir shares with another folder is never written through), 644, the folders it needs 755; the
+// names of the files written. A folder entry makes nothing (a folder holding no file would go
+// live and stand where a page may come later: review 10's M-1). A file where dir has an empty
+// folder takes its place. Any entry but a plain file or folder (a link of either kind, a device,
+// a FIFO), a name that isn't one (Name), a name twice, a file where dir has a folder with
+// something in it or a folder where it has a file, a broken stream or one past lim: an error, and
+// the push is refused (what was written stays in dir, which the gate makes the live site again
+// before the next push).
 func Receive(r io.Reader, dir string, lim Limits) ([]string, error) {
 	c := &counter{r: r, max: lim.Total + int64(lim.Entries+2)*1536 + 2<<20}
 	tr := tar.NewReader(c)
@@ -102,9 +105,7 @@ func Receive(r io.Reader, dir string, lim Limits) ([]string, error) {
 		seen[name] = true
 		switch h.Typeflag {
 		case tar.TypeDir:
-			if err := mkdirs(dir, name); err != nil {
-				return files, err
-			}
+			// nothing made: a file's folders are made with it
 		case tar.TypeReg, '\x00':
 			if h.Size < 0 || h.Size > lim.File {
 				return files, fmt.Errorf("%s: over %d MB", name, lim.File>>20)
@@ -117,7 +118,10 @@ func Receive(r io.Reader, dir string, lim Limits) ([]string, error) {
 			}
 			t := filepath.Join(dir, filepath.FromSlash(name))
 			if st, err := os.Lstat(t); err == nil && !st.Mode().IsRegular() {
-				return files, fmt.Errorf("%s: a file where the site has a folder (or something else)", name)
+				// an empty folder (one an older gate let go live) gives way; anything else refuses
+				if !st.IsDir() || os.Remove(t) != nil {
+					return files, fmt.Errorf("%s: a file where the site has a folder (or something else)", name)
+				}
 			}
 			if err := write(t, io.LimitReader(tr, h.Size), h.Size, time.Now()); err != nil {
 				return files, fmt.Errorf("%s: %v", name, err)
@@ -230,7 +234,8 @@ func Copy(src, dst string, del bool) error {
 				return nil
 			}
 			if terr == nil && !st.Mode().IsRegular() {
-				if !del {
+				// an empty folder gives way (one an older gate let go live: review 10's M-1)
+				if !del && (!st.IsDir() || os.Remove(t) != nil) {
 					return fmt.Errorf("%s: a file where %s has a folder (or something else)", rel, dst)
 				}
 				if err := os.RemoveAll(t); err != nil {
