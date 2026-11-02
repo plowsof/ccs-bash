@@ -29,6 +29,7 @@ else fail "ssh or tar: $out"; fi
 here=$(dirname "$(readlink -f "$0")")
 # (a function, exported: /tmp here is noexec)
 mkdir -p "$t/pushed" "$t/state"
+# shellcheck disable=SC2317,SC2329  # (exported: ccs-push calls it)
 ssh() { tar -t -f - > "$T/got"; }
 export -f ssh
 export T=$t
