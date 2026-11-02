@@ -211,50 +211,11 @@ ccs-front-hugo's release zip, sha256 checked, unpacked on the backend: ccs-front
 ## 4. The signed subaddress list
 
 Every donation address shown must be one of the live wallet's first 15,000 subaddresses, a list
-checked by the backend and the web server. Each wallet's is in this repository, in
-`subaddresses/<wallet>/` (the mainnet's: [`subaddresses/ccs2/`](../subaddresses/ccs2/)), with its
-signature, key, `.pin` and view key file (its QR codes and their sums: `tools/make-qr.sh`, below;
-not `list-signers`: you write that from the fingerprints
-in step 2, so a forged folder can't bring its own). In full: ccs-front-bash's
-[setup](https://github.com/plowsof/ccs-front-bash/blob/master/docs/setup.md), step 5. The four
-scripts are **ccs-front-bash's** (its `tools/`, not this repository's), run from a checkout of it:
-[`make-subaddresses.sh`](https://github.com/plowsof/ccs-front-bash/blob/a225b7af965c31c087639e60df59a9caaec14c5d/tools/make-subaddresses.sh),
-[`make-qr.sh`](https://github.com/plowsof/ccs-front-bash/blob/a225b7af965c31c087639e60df59a9caaec14c5d/tools/make-qr.sh),
-[`sign-subaddresses.sh`](https://github.com/plowsof/ccs-front-bash/blob/a225b7af965c31c087639e60df59a9caaec14c5d/tools/sign-subaddresses.sh) and
-[`verify-subaddresses.sh`](https://github.com/plowsof/ccs-front-bash/blob/a225b7af965c31c087639e60df59a9caaec14c5d/tools/verify-subaddresses.sh) (ccs-front-bash #53's, with the QR codes). In short:
-
-1. **Made** by a Core Team member on the offline machine from the wallet's address and view key,
-   which it asks for (an offline `monero-wallet-rpc` makes them in a view-only copy it deletes
-   after; no spend key, no daemon): `tools/make-subaddresses.sh <path to monero-wallet-rpc> 15000
-   subaddresses.txt`. Line 0 is `WALLET_ADDRESS`. Then each address's QR code, as its last step
-   (`tools/make-qr.sh`, qrencode): `subaddresses.txt.qr/<address>.png` and their sums,
-   `subaddresses.txt.qr.sha256` (a list from before: run `tools/make-qr.sh subaddresses.txt`).
-2. **Signed with their own key**, as the Monero repository publishes it (`utils/gpg_keys/`):
-   binaryFate `81AC591FE9C4B65C5806AFC3F0AF4D462A0BDF92` or luigi1111
-   `8777AB8F778EE89487A2F8E7F4ACA0183641E010`
-   (`SIGNING_KEY=<fingerprint> tools/sign-subaddresses.sh subaddresses.txt`); the `.pin` also
-   gets `qr <sha256 of subaddresses.txt.qr.sha256>` (a list from before: add that line by hand).
-3. **Published and reproduced:** the signer posts its sha256, the `qr` sha256 and the fingerprint
-   on meta #935; two contributors make it themselves from the same public data and post the
-   same two sha256.
-4. **Checked, then installed** in `/etc/ccs-front/` (root, 644): the four files, the QR codes'
-   sums and their folder (`subaddresses.txt.qr/`, 755), and `list-signers` (the two fingerprints
-   above). It must say OK (it remakes every QR code: needs qrencode):
-   `SIGNER_KEYS=<the signer's key from the Monero repository's utils/gpg_keys/> tools/verify-subaddresses.sh /etc/ccs-front/subaddresses.txt /etc/ccs-front/list-signers <WALLET_ADDRESS>`
-   (without `SIGNER_KEYS` it uses the key that came with the list, which may predate a revocation).
-5. The same files go to the web server **by hand** (step 6), never pushed (the QR codes'
-   sums, not their folder: the backend pushes the images the site shows, and the gate takes
-   each only as its sum).
-
-From then on, each machine trusts the `.pin`; changing it, or `list-signers`, needs root there
-([where each address is checked](reviewing.md#where-an-address-is-checked-against-the-signed-list)).
-Beside it, `subaddresses.txt.viewkey`, for the Verify page:
-
-```
-62ad19781466882d8df0ae85743abcc5c8ef81e52e051e7cc56fe3c610d18001
-source https://github.com/monero-project/meta/issues/935#issuecomment-1867257410
-source-text shared by luigi1111 here
-```
+a Core Team member makes and signs, kept in `subaddresses/<wallet>/` (the mainnet's:
+[`subaddresses/ccs2/`](../subaddresses/ccs2/)). Making it, signing it, checking it and installing
+it on both machines, with its QR codes and the view key file: [the signed list](signed-list.md).
+Write `list-signers` yourself from the fingerprints in step 2, never one that comes with a list.
+From then on each machine trusts the `.pin`; changing it, or `list-signers`, needs root there.
 
 ## 5. ccs-front-bash (the backend)
 

@@ -285,12 +285,9 @@ printf 'PROPOSALS_GIT=https://repo.getmonero.org/monero-project/ccs-proposals.gi
 install -m 644 <ccs-front-bash checkout at the attested commit>/lib/markdown.awk /etc/ccs-gate/markdown.awk
 ```
 
-The list's files are the backend's (`/etc/ccs-front/`, checked there:
-[handover](handover.md#4-the-signed-subaddress-list), step 4); check them here too, the same way
-(`tools/verify-subaddresses.sh` with a `list-signers` of your own), not only against the backend's
-sums: a taken-over backend would bring both. It also remakes every QR code with qrencode and checks
-`subaddresses.txt.qr.sha256` is the `.pin`'s: run it where the `subaddresses.txt.qr/` folder and
-qrencode are (your own machine), then install only the sums here.
+The list's files: as [the signed list](signed-list.md) says, checked for this machine too (a
+taken-over backend would bring both a list and the sums it is compared with), the QR codes' sums
+here but not their images.
 
 **The design**, the release zip the backend runs, unpacked, and the sums of every file but the pages:
 
