@@ -4,7 +4,7 @@
 # (container/sources.lock, fetched by container/fetch.sh, unpacked by deps.sh), no network in
 # the build, so the same bytes as the gate image's /usr/local/bin/ccs-check (a host setup checks
 # its sha256 against the release's). build.sh test: gofmt, go vet and the Go tests, the same
-# way. build.sh fuzz [SECONDS]: each fuzz test (*/fuzz_test.go) for SECONDS (30), no network; an
+# way. build.sh fuzz [SECONDS]: each fuzz test (*/*fuzz_test.go) for SECONDS (30), no network; an
 # input that fails it is kept in its package's testdata/fuzz/ (commit it: go test runs it
 # after). build.sh vulncheck: govulncheck (pinned below, checked against Go's checksum database)
 # on this code as built, Go's standard library and its modules: the known vulnerabilities in
@@ -50,7 +50,7 @@ if [[ ${1:-} == vulncheck ]]; then
 fi
 if [[ ${1:-} == fuzz ]]; then
     src=''   # (writable: go test keeps a failing input in testdata/fuzz/)
-    for f in "$here"/*/fuzz_test.go; do
+    for f in "$here"/*/*fuzz_test.go; do
         pkg=$(basename "$(dirname "$f")")
         while read -r name; do
             echo "fuzz: $pkg $name, ${2:-30} s" >&2
