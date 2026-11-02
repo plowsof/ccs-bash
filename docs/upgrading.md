@@ -49,15 +49,18 @@ file (no record yet of what the gate took).
 
 ## ccs-bash v0.2.41 and ccs-front-bash v0.1.26 (2026-11-02): the QR codes are the list's files
 
-The list's QR codes, made from the installed list with `tools/make-qr.sh` from ccs-front-bash's
-attested commit on a machine with qrencode (your own, or the backend's host), then checked with
-the `.pin` from this repository's `subaddresses/<wallet>/` (the same list, a third line `qr …`;
+The list's QR codes, made from the list with `tools/make-qr.sh` from ccs-front-bash's attested
+commit, on a computer you trust with qrencode (the signer's offline machine, or your own; not the
+backend, which could print OK over a list it swapped), then checked with the `.pin` from this
+repository's `subaddresses/<wallet>/` (the same list, a third line `qr …`;
 [the signed list](signed-list.md)):
 
 ```
-install -d -m 700 /tmp/l && cp /etc/ccs-front/subaddresses.txt* /tmp/l/ && cp /opt/ccs-bash/subaddresses/<wallet>/subaddresses.txt.pin /tmp/l/
-/opt/ccs-front-bash/tools/make-qr.sh /tmp/l/subaddresses.txt          # .qr/ and .qr.sha256, about 30 s
-SIGNER_KEYS=<the signer's key> /opt/ccs-front-bash/tools/verify-subaddresses.sh /tmp/l/subaddresses.txt /etc/ccs-front/list-signers <WALLET_ADDRESS>
+git clone -q https://github.com/plowsof/ccs-front-bash && git -C ccs-front-bash checkout -q <its attested commit>
+git clone -q https://github.com/plowsof/ccs-bash && git -C ccs-bash checkout -q <its attested commit>
+install -d -m 700 l && cp ccs-bash/subaddresses/<wallet>/subaddresses.txt* l/
+ccs-front-bash/tools/make-qr.sh l/subaddresses.txt                    # .qr/ and .qr.sha256, about 30 s
+SIGNER_KEYS=<the signer's key> ccs-front-bash/tools/verify-subaddresses.sh l/subaddresses.txt <your list-signers> <WALLET_ADDRESS>
 ```
 
 OK: the new `.pin` and `.qr.sha256` go to `/etc/ccs-front/` and `/etc/ccs-gate/` (root, 644),

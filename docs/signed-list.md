@@ -104,8 +104,9 @@ gpg --show-keys --with-colons luigi1111.asc | awk -F: '$1 == "pub" { print ($2 =
 
 A revoked key: don't install the list; ask the Core Team for one signed again.
 
-Run the check where the QR folder and qrencode are (the backend, or your own machine), then copy
-the files to each machine as the table above says: the web server gets the sums, not the images,
+Run the check on a computer you trust, with qrencode: the offline machine the list was made on, or
+your own; not the backend, which could print OK over a list it swapped. Then copy the files to
+each machine as the table above says: the web server gets the sums, not the images,
 and checks the list's files too ([the web server](web-server.md), "What is installed by hand"):
 a taken-over backend would bring both a list and the sums it is compared with.
 
