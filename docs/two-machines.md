@@ -25,7 +25,7 @@ by rsync or any other C program, into its staging folder, so:
 |---|---|
 | `restrict` | shells, forwarding, a terminal |
 | `command=` the gate, which takes `receive` only | any other command (a shell, scp, rsync, reading back) |
-| `ccs-check receive`: plain files and folders, at clean paths under the folder | writing outside it (`..`, an absolute path), links of either kind (a `projects.json` link to any file would get nginx to publish it), devices, a name twice, a file under a page: any of them refuses the whole push |
+| `ccs-check receive`: plain files, at clean paths under the folder (folders only as a file needs them, and none left live by a held-back file) | an empty folder standing where a page comes later; writing outside it (`..`, an absolute path), links of either kind (a `projects.json` link to any file would get nginx to publish it), devices, a name twice, a file under a page: any of them refuses the whole push |
 | no delete in the push at all | deleting |
 | its limits: 512 MB a push, 64 MB a file, 100,000 files, 5 minutes | filling the disk, holding the gate |
 | `from=` | use from another machine |
