@@ -8,6 +8,7 @@ import (
 	"hash/crc32"
 	"image"
 	"image/png"
+	"os"
 	"testing"
 )
 
@@ -49,4 +50,29 @@ func TestRefused(t *testing.T) {
 			t.Errorf("%s: read: %q", name, got)
 		}
 	}
+}
+
+// read as another decoder reads them, or not at all (review 9): twoplte.png has two PLTEs, the
+// first drawing another code, the last X.png's (qrencode's of a listed address, which it hashes
+// to); a CRC wrong; qrencode's own PNG read
+func TestOneReading(t *testing.T) {
+	x, two := file(t, "X.png"), file(t, "twoplte.png")
+	if _, err := Of(bytes.NewReader(x)); err != nil {
+		t.Errorf("qrencode's: %v", err)
+	}
+	bad := append([]byte{}, x...)
+	bad[len(bad)-1] ^= 1 // IEND's CRC
+	for name, b := range map[string][]byte{"two PLTEs": two, "a CRC wrong": bad} {
+		if got, err := Of(bytes.NewReader(b)); err == nil {
+			t.Errorf("%s: read: %q", name, got)
+		}
+	}
+}
+
+func file(t *testing.T, name string) []byte {
+	b, err := os.ReadFile("testdata/" + name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
 }
