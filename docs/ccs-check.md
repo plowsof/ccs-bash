@@ -13,7 +13,7 @@ machine.
 |---|---|
 | `pages` | every page is the design's, its regions filled only with the design's parts, a proposal's text as the proposals repository has it, a donation box one address of the signed list, its QR code `qr/<that address>.png` (the file itself: the list's, by its sum, `ccs-receive`; never decoded) |
 | `scan`, `json`, `nul` | every address in the pages, JSON and feed, also spaced out, split (between elements too) or drawn with look-alikes (Monero's base58 and Keccak checksum), is the wallet's or allowed; `projects.json` reads as JSON; no NUL byte |
-| `receive` | receives the push, a tar of the files that changed (`contrib/ccs-push`): plain files and folders only, at clean paths under staging, each written beside and renamed into place, within its limits; anything else refuses the whole push (in place of rsync, which the gate no longer has) |
+| `receive` | receives the push, a tar of the files that changed (`contrib/ccs-push`): plain files only (a folder only as a file needs it: a folder entry makes nothing), at clean paths under staging, each written beside and renamed into place, within its limits; anything else refuses the whole push (in place of rsync, which the gate no longer has) |
 | `copy` | the live site into staging before a push, staging into the live site after (rsync -a's quick check, each file renamed into place, 644/755) |
 
 Each subcommand takes the command line the Python block it replaced took and printed the same
