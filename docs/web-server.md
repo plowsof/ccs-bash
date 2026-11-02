@@ -1,0 +1,132 @@
+# The web server: the one machine to review
+
+The web server is the only machine a visitor reaches, and its gate decides, file by file, what goes
+live. The backend (ccs-bash, ccs-front-bash, the wallet) makes the site and pushes it; the gate
+checks every push against what it holds itself and keeps a file that fails out. So whoever is
+asked to trust the site (the Core Team) reviews this machine, and needn't trust the backend or
+whoever runs it: a backend taken over can't put an address on the site that isn't the wallet's.
+
+This page is the list: what runs there, its exact parts and versions, the code to read, the files
+installed by hand, and how to check the running machine is the one reviewed. How the gate checks
+each file: [two machines, "The gate"](two-machines.md#the-gate-the-web-server-checks-every-page);
+setting it up: [the web server in Docker](docker.md#the-web-server-in-docker).
+
+## What it guarantees, and what not
+
+Every address on the site, as text, link or QR code, however written, split or disguised, is one
+of the signed list's (the wallet's 15,000 subaddresses, signed by a Core Team member) or in
+`allowed` (the General Fund); every page is the design's, filled; a proposal's text, milestones
+and payouts are what the proposals repository has (the gate fetches it itself); a donation box's
+QR code is the list's own file of its address. A file that fails keeps its last good copy, and the
+gate tells IRC.
+
+Not: what only the backend knows, a total or percentage that is wrong but a number, one of the
+wallet's subaddresses on another proposal's page (the money stays in the wallet), a proposal's
+stage or dates as the backend read them ([in full](two-machines.md#the-gate-the-web-server-checks-every-page),
+"What it can't see"). Nor anything once this machine itself is taken over: then ccs-watch (the
+backend fetching the site as a visitor) and the Verify page (visitors checking an address in a
+view-only copy of the wallet) are what's left.
+
+## What runs on it
+
+| Part | From | Reviewed as |
+|---|---|---|
+| **the gate** (sshd on 2223, the push key's forced command `ccs-receive`) and **the heartbeat** | the gate's image, `contrib/docker/web/compose.yml` | this page: its code, its image's parts |
+| nginx (serves `/var/lib/ccs-data`, the live site; the security headers) | the host's Debian package; its config, [two machines](two-machines.md) | the config only |
+| Tor (the onion), certbot, Docker, the OS | the host's Debian packages, `unattended-upgrades` | not reviewed here: the distribution's |
+| your own ssh | [admin access](admin-access.md) | yours |
+
+The backup receiver (`ccs-backup-receive`, the same image) runs on **the backup machine**, not
+here ([the design](design.md)).
+
+### The gate's image
+
+One image, built from the attested ccs-bash commit (`container/build.sh ccs-gate
+gate.Dockerfile`), the same image ID from the same commit anywhere, attested in
+[ccs-sigs](https://github.com/plowsof/ccs-sigs) as `ccs-gate-vX.Y.Z`. Every package is
+[StageX](https://stagex.tools)'s: built from source from a small bootstrap, reproduced and signed
+by two or more of its maintainers, pinned here by digest (`container/images`) and its signatures
+checked on every build ([the pinned image](image.md#signatures)). Nothing is downloaded while it
+builds.
+
+| Package | Version | Why it is there |
+|---|---|---|
+| openssh (`sshd`, `ssh-keygen` only) | 10.5p1 | receives the push, runs only the forced command |
+| rsync | 3.5.0 | the push's other end (`ccs-check rrsync` runs it, with only the backend's options) |
+| git | 2.55.0 | fetches the proposals repository itself (https) |
+| curl, openssl, ca-certificates | 8.22.0, 3.6.4 | the gate's IRC alerts; git's https |
+| bash 5.3, coreutils 9.11, findutils 4.11.0, grep 3.12, sed 4.10, gawk 5.4.1, diffutils 3.12, tar 1.35, util-linux 2.42.3 (`flock` only), jq 1.8.2 | | `ccs-receive`, as written and tested |
+| musl 1.2.6, ncurses 6.6, zlib 1.3.2, libzstd 1.5.7, xxhash 0.8.3, acl 2.4.0, attr 2.6.0 | | their libraries |
+| **ccs-check** | this repository's `contrib/ccs-check` | the checks (below), built by StageX's Go 1.27.1, no cgo |
+
+The versions are those of the pinned digests (StageX release sx2026.10.0); `container/images`
+is the source of truth, and `container/update-images.sh` moves every pin to StageX's latest
+release, checking its signatures (review the diff, as any other). Not in it: Python, qrencode,
+libpng, zbar, libjpeg, giflib, an ssh client, sftp, git's servers (`tests/gate-image.sh` fails if
+any is). No image library reads a push: the only image decoder is Go's own, in ccs-check.
+
+`ccs-check`'s two modules come from archives pinned by sha256 (`container/sources.lock`), each
+checked against Go's checksum database before use (`contrib/ccs-check/deps.sh`):
+**gozxing** (its QR reader's 63 files only, at `95e256b`, with `deps/gozxing.patch`) and
+**golang.org/x/xerrors** (`5ec99f8`). [ccs-check.md](ccs-check.md): what each check does, and
+keeping them patched (`govulncheck` in CI).
+
+## The code to read
+
+About 3,700 lines of this repository's own, plus gozxing's QR reader:
+
+| File | Lines | What it is |
+|---|---|---|
+| [`contrib/ccs-receive`](../contrib/ccs-receive) | 669 | the gate: receives into staging, runs the checks, copies only what passed live, alerts; the heartbeat |
+| [`contrib/ccs-check/`](../contrib/ccs-check) (Go, tests aside) | 2,338 | `pages` (`pages/pages.go`, `pages/match.go`: a page is the design's, filled), `scan` (`scan/scan.go`, `addr/addr.go`: every address, by Monero's checksum), `qr` (`qr/qr.go`: QR codes in the proposals' own images), `rrsync` |
+| `contrib/ccs-check/deps.sh`, `build.sh`, `deps/gozxing.patch` | 266 | how the modules are unpacked, checked and patched |
+| [`container/gate.Dockerfile`](../container/gate.Dockerfile) | 87 | what goes in the image |
+| [`contrib/docker/web/`](../contrib/docker/web) (`compose.yml`, `sshd_config`, `init`, `env.example`) | 179 | how it runs: one user, the forced command, read-only, three capabilities, limits |
+| `container/build.sh`, `verify-images.sh`, `fetch.sh`, `verify.sh` | 206 | the build: the pins' signatures and sums checked |
+| gozxing's QR reader (pinned, not ours) | about 7,600 | reads QR codes; its patch is ours |
+
+And what the gate checks pages against, from the other two repositories:
+ccs-front-hugo's **design** (its release zip: the pages, the parts they are filled with, the
+stylesheets and images; installed by its sha256) and ccs-front-bash's **`lib/markdown.awk`** (265 lines: the gate renders each proposal
+from the repository itself and requires the page's text to be exactly that).
+
+The tests show each way around it, by name: `tests/gate.sh` (130 cases: every check, with this
+image as the web server), `tests/gate-image.sh`, `tests/web.sh` (its sshd, attacked),
+`contrib/ccs-check/build.sh test` and `fuzz`. [Reviewing](reviewing.md) walks each function.
+
+## What is installed by hand
+
+The gate trusts only what root installs here; each from its own source, checked here, never pushed:
+
+| File, in `/etc/ccs-gate/` | From | Checked by |
+|---|---|---|
+| `subaddresses.txt`, `.asc`, `.key.asc`, `.pin`, `.viewkey` | the signed list (this repository's `subaddresses/<wallet>/`) | `tools/verify-subaddresses.sh` with a `list-signers` of your own ([handover](handover.md#4-the-signed-subaddress-list), step 4) |
+| `subaddresses.txt.qr.sha256` | the list's QR codes' sums (`tools/make-qr.sh`) | the same: it remakes every QR code, and the `.pin`'s `qr` line pins the sums |
+| `design/<release>/`, `design.sha256` | the design's release zip | its sha256, the attested one |
+| `markdown.awk` | ccs-front-bash's `lib/markdown.awk`, at its attested commit | the commit |
+| `allowed` | you: other addresses the site may show (the General Fund) | you |
+| `proposals.conf` | you: the proposals repository and branch | you |
+| `alert.conf`, `onion` | you: the IRC bot, `SITE_URL`; the site's onion | you |
+| `ssh/` | the gate's own sshd host key | made by `init` the first time |
+| `/etc/ssh/authorized_keys/ccs-data` (outside `/etc/ccs-gate/`) | the backend's push key, its line with `from=`, `command=`, `restrict` | you ([two machines](two-machines.md)) |
+
+A list, QR codes' sums or design that isn't the pinned one refuses every push.
+
+## Checking the running machine is the one reviewed
+
+1. **The image:** its ID in `contrib/docker/web/.env` (`CCS_GATE_IMAGE`) is the one two or more
+   signers attested for that release: `contrib/release/verify ccs-gate-vX.Y.Z` with your own
+   `trusted-signers`; and the image you built from that commit has that ID
+   ([deploying a set](handover.md#deploying-a-set-the-docker-setup), steps 1 and 2).
+2. **What is running:** `docker compose ps` (the gate and the heartbeat, healthy) and
+   `docker inspect --format '{{.Image}}' web-gate-1`: the attested ID.
+3. **Its files:** the table above, each against its source.
+4. **What it serves:** ccs-watch, on the backend, fetches the live pages as a visitor and compares
+   them byte for byte with what was pushed; any visitor can check an address on the Verify page.
+
+## What doesn't need reviewing
+
+The backend: ccs-bash (the totals, the JSON), ccs-front-bash (the site builder; but its
+`markdown.awk`, above), monero-wallet-rpc, the backend's compose and its host. Whatever they get
+wrong or are made to do, the gate holds back what isn't the design's, the repository's or the
+list's. They are reviewed for the numbers, not the addresses: see [reviewing](reviewing.md).
