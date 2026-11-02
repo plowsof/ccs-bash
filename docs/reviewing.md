@@ -199,7 +199,7 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
   user, `ForceCommand ccs-receive`, keys only, no shell, forwarding or subsystem), as root with
   only `SETUID`, `SETGID`, `SYS_CHROOT`; [`contrib/docker/web/init`](../contrib/docker/web/init)
   writes its host key and passwd once. The backup receiver the same, on 2224, on its own machine.
-- nginx: static files, the security headers, the theme map ([two machines](two-machines.md)).
+- Caddy and Tor (`www`, `tor`): static files, the security headers, the theme redirects, the onion ([`Caddyfile`](../contrib/docker/web/Caddyfile), [`torrc`](../contrib/docker/web/torrc), [two machines](two-machines.md)).
 
 ## Where an address is checked against the signed list
 

@@ -10,7 +10,7 @@ wallet into finished HTML; the web server only receives the files and serves the
 
 | | A live Node front (the proposed new ccs-front) | This design |
 |---|---|---|
-| Code reachable from the internet | the app and its npm tree | nginx serving files |
+| Code reachable from the internet | the app and its npm tree | Caddy serving files, from a pinned, attested image |
 | Supply chain on live machines | npm (today's ccs-front: Ruby gems) | bash, awk, jq (no qrencode: the QR codes are made once, with the signed list) |
 | Proposal Markdown rendered by | the framework, on the public server | a small awk renderer that escapes everything first, on the backend |
 | A compromised web server | can change any page until noticed | can too, but every page is pushed again each run, and ccs-watch alerts IRC within minutes |
@@ -66,8 +66,9 @@ machine and the IRC bot; ccs-watch through Tor and a proxy; a mirror to the site
   gate last took (`contrib/ccs-push`: their sums against its record; every file once a day), as a
   tar over ssh; the gate answers which it held back, and those go again next time.
 
-**Web server:** the distribution's nginx (StageX has none, and builds for amd64 only) serving
-`/var/lib/ccs-data`, and a write-only push account whose key runs only the gate
+**Web server:** Caddy (StageX's) serving `/var/lib/ccs-data` over HTTPS, its certificates its
+own, and Tor (built from its signed source) serving it as an onion, both in the gate's image;
+and a write-only push account whose key runs only the gate
 (`contrib/ccs-receive`, its checks [ccs-check](ccs-check.md), one static Go binary): through the
 host's sshd, or in Docker through the gate image's own sshd on its own port (StageX, attested
 with ccs-bash's release). The gate holds back any page that isn't the design's own, filled as

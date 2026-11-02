@@ -1,0 +1,109 @@
+# The site, as the web server compose's www serves it (docs/two-machines.md): the files the gate
+# let through (/srv, read-only), over HTTPS at CCS_SITE_HOST, its certificates Caddy's own (ACME,
+# CCS_ACME_EMAIL), and to the onion's Tor through a socket only the two share. No admin API, no
+# server name in a response. The same answers on both: the security headers, the cache rules,
+# /projects, the theme's /dark/ and /light/ copies, the 404 page.
+{
+	admin off
+	email {$CCS_ACME_EMAIL}
+	storage file_system /data
+	# HTTP/1.1 only, headers capped, slow clients cut off (as nginx's defaults): a static site of a
+	# few pages loses nothing, and Go's HTTP/2 server code is never reached (the most of its known
+	# denial-of-service bugs: govulncheck, the vulncheck workflow)
+	servers {
+		protocols h1
+		max_header_size 16KB
+		timeouts {
+			read_header 10s
+			idle 2m
+		}
+	}
+}
+
+# the security headers, on every answer, the 404 page too; no server name
+(ccs-headers) {
+	header {
+		Content-Security-Policy "default-src 'none'; style-src 'self'; img-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'none'"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "accelerometer=(), ambient-light-sensor=(), autoplay=(), battery=(), camera=(), clipboard-read=(), clipboard-write=(), display-capture=(), document-domain=(), encrypted-media=(), fullscreen=(), geolocation=(), gyroscope=(), hid=(), idle-detection=(), interest-cohort=(), magnetometer=(), microphone=(), midi=(), payment=(), picture-in-picture=(), publickey-credentials-get=(), screen-wake-lock=(), serial=(), sync-xhr=(), usb=(), xr-spatial-tracking=()"
+		X-XSS-Protection "0"
+		Cache-Control {ccs_cache}
+		-Server
+	}
+}
+
+(ccs) {
+	root * /srv
+	# a page's address without its /dark or /light: where the theme button's ?theme= sends it. Never
+	# one starting // or /\ (another site's address to a browser)
+	map {http.request.orig_uri.path} {ccs_page} {
+		~^/(?:dark|light)$ "/"
+		~^/(?:dark|light)(/(?:[^/\\][^?]*)?)$ "${1}"
+		~^(/(?:[^/\\][^?]*)?)$ "${1}"
+		default "/"
+	}
+	map {http.request.orig_uri.path} {ccs_cache} {
+		/projects "no-cache, must-revalidate"
+		~\.[0-9a-f]{64}\.(css|png|avif|woff2)$ "public, max-age=31536000, immutable"
+		/assets/general-fund-qr.png "public, max-age=86400"
+		default "no-cache"
+	}
+	import ccs-headers
+	encode {
+		gzip
+		match {
+			header Content-Type text/html*
+			header Content-Type text/css*
+			header Content-Type text/xml*
+			header Content-Type application/xml*
+			header Content-Type application/json*
+		}
+	}
+
+	@light query theme=light
+	@dark query theme=dark
+	@system query theme=system
+	redir @light /light{ccs_page} 302
+	redir @dark /dark{ccs_page} 302
+	redir @system {ccs_page} 302
+
+	route {
+		# no partial downloads: net/http's Range parsing isn't reached (a denial-of-service bug of
+		# its own), and the site's files are small
+		request_header -Range
+		rewrite /projects /projects.json
+		rewrite /dark/assets/theme.css /assets/theme-dark.css
+		rewrite /light/assets/theme.css /assets/theme-light.css
+		uri /dark/* strip_prefix /dark
+		uri /light/* strip_prefix /light
+		file_server
+	}
+
+	# nothing there, or a folder without its page: the 404 page, with the same headers
+	handle_errors 403 404 {
+		import ccs-headers
+		rewrite * /404.html
+		file_server {
+			status 404
+		}
+	}
+}
+
+{$CCS_SITE_HOST} {
+	import ccs
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		Onion-Location "http://{$CCS_ONION}{uri}"
+	}
+}
+
+# the onion: Tor (the compose's tor) connects through this socket, in a volume only the two share
+http:// {
+	bind unix//run/ccs-www/onion.sock|0666
+	import ccs
+}
+
+# sites of this machine's own, if any (another host's ACME challenges, say): one file each
+import /etc/ccs-www/sites/*.caddy

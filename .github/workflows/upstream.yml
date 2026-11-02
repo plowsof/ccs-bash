@@ -1,0 +1,34 @@
+name: upstream
+# Weekly: what the web server and the images run, against its makers' newest releases. Fails (so
+# GitHub tells the repository's owner) when StageX has a newer release of a pinned image
+# (container/images: then container/update-images.sh, review, a release) or Tor a newer
+# release than sources.lock's (then its tarball's sum from its signed .sha256sum, a release).
+# Nothing is changed here: a pin moves only by a reviewed pull request.
+on:
+  schedule:
+    - cron: '41 6 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  newer:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, pinned by commit
+      - name: StageX's latest of each pinned image
+        if: always()
+        run: |
+          old=0
+          while read -r name ref; do
+            now=$(docker buildx imagetools inspect "${ref%@*}:latest" | awk '/^Digest:/ { print $2 }')
+            [[ $now == "${ref#*@}" ]] || { echo "newer: $name (${ref%@*}: $now, pinned ${ref#*@})"; old=1; }
+          done < <(grep -v '^#' container/images)
+          ((old == 0)) && echo "every pin is StageX's latest"
+          exit "$old"
+      - name: Tor's newest release
+        if: always()
+        run: |
+          pinned=$(grep -o 'tor-[0-9.]*[0-9]\.tar\.gz' container/sources.lock | head -n 1)
+          newest=$(curl -fsS --max-time 60 https://dist.torproject.org/ | grep -o 'tor-0\.[0-9.]*[0-9]\.tar\.gz' | sort -uV | tail -n 1)
+          echo "pinned $pinned, newest $newest"
+          [[ $pinned == "$newest" ]]

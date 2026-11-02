@@ -1,0 +1,47 @@
+# The known vulnerabilities (Go's database) govulncheck finds in the pinned Caddy's binary
+# (container/images, the web server's www), each accepted for a reason: "ID  why". The vulncheck
+# workflow fails on any other, and names the ones here no longer found (take them out). Each is
+# gone once StageX's next Caddy, with a newer Go and modules, is pinned (the upstream workflow).
+#
+# HTTP/2: the Caddyfile serves HTTP/1.1 only, so Go's HTTP/2 server is never reached
+GO-2026-6603  HTTP/2 only (HTTP/1.1 served)
+GO-2026-6610  HTTP/2 only (HTTP/1.1 served)
+GO-2026-6611  HTTP/2 only (HTTP/1.1 served)
+GO-2026-6612  HTTP/2 only (HTTP/1.1 served)
+GO-2026-6617  HTTP/2 only (HTTP/1.1 served)
+GO-2026-6348  gRPC's HTTP/2 (no gRPC; HTTP/1.1 served)
+GO-2026-6061  gRPC's xDS and HTTP/2 (no gRPC)
+# turned off in the Caddyfile
+GO-2026-6609  Range headers: dropped before the file server
+GO-2026-6608  MIME header parsing: request headers capped at 16 KB (max_header_size)
+# code the site's config never runs: no proxy, no templates, no tracing, no gRPC, no SSH, no CEL
+# expressions, no s2 compression (gzip only), no openpgp
+GO-2026-6605  net/http client after a CONNECT (no proxying)
+GO-2026-6613  net/http after a CONNECT (no proxying)
+GO-2026-6599  html/template (no templates)
+GO-2026-6600  html/template (no templates)
+GO-2026-6860  x/net/html (no templates)
+GO-2026-6866  x/net/html (no templates)
+GO-2026-6441  gRPC xDS RBAC (no gRPC)
+GO-2026-6443  gRPC server (no gRPC)
+GO-2026-5158  OpenTelemetry baggage (no tracing)
+GO-2026-6505  OpenTelemetry exporter (no tracing)
+GO-2026-6508  OpenTelemetry exporter (no tracing)
+GO-2026-6615  OpenTelemetry log processor (no tracing)
+GO-2026-5774  chi RealIP middleware (not used)
+GO-2026-5775  chi RealIP middleware (not used)
+GO-2026-5777  chi RealIP middleware (not used)
+GO-2026-6094  CEL expressions (none in the Caddyfile)
+GO-2026-5841  s2 compression (gzip only)
+GO-2026-5932  x/crypto/openpgp (not used)
+GO-2026-6303  x/crypto/ssh (not used: sshd is OpenSSH)
+GO-2026-6354  x/crypto/ssh (not used)
+GO-2026-6355  x/crypto/ssh (not used)
+# parsing that can panic or loop on hostile input, where it can reach: a crash restarts the
+# container (restart: unless-stopped); none changes what is served
+GO-2026-5942  DNS answers (the resolver's, for Caddy's ACME requests)
+GO-2026-5970  x/text, invalid input
+GO-2026-6629  x/text precis, crafted input
+# waiting on StageX's Go (1.27.2, 1.27.3): no ECH is configured; x509: Caddy's own ACME requests
+GO-2026-6607  crypto/tls ECH extensions (no ECH configured)
+GO-2026-6809  crypto/x509 distrusted intermediates (Caddy's ACME client)
