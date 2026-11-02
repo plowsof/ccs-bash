@@ -268,6 +268,10 @@ step 5). It makes `/var/lib/ccs/www/site` each run. The design's release in
 [Two machines](two-machines.md): the write-only push account, nginx with HTTPS and its headers,
 and the gate's files (its design, `markdown.awk`, the list's files, `allowed`, `proposals.conf`);
 then the gate in Docker ([the web server in Docker](docker.md#the-web-server-in-docker)).
+Everything on it, by version, and what a reviewer reads to trust it without trusting the
+backend: [the web server](web-server.md). It takes the proposals repository as reviewed: a
+proposal's text, links and images go live as merged, its images never read, so whoever merges
+proposals checks their images too (an address or a QR code in one goes live).
 
 ## 7. The backup machine
 

@@ -197,8 +197,7 @@ what it is sent; it knows what a page may be. Each push, one at a time, it
    the same file sent again fails again): the live site holds only what passed. Every page and JSON file is checked again
    when what they were checked against changes (the list or its pin, `allowed`, the design,
    `markdown.awk`, `proposals.conf`, the proposals commit fetched, `ccs-receive` itself or
-   `ccs-check`), and once a day whatever happens; then the QR codes in the proposal images
-   already live are read again too (one that fails stays as it was, and IRC is told). Its log says how many: `checking 3 of 1022 pages and JSON files`;
+   `ccs-check`), and once a day whatever happens. Its log says how many: `checking 3 of 1022 pages and JSON files`;
 2. checks **every page against the design**: the design's release zip, unpacked here, has every
    page and every part ccs-front-bash fills them with (ccs-front-hugo's README, "What
    ccs-front-bash fills in"). A page must be one of the design's own, byte for byte outside its
@@ -236,7 +235,8 @@ what it is sent; it knows what a page may be. Each push, one at a time, it
    and JSON must start with `<`, `[` or `{` (a browser shows `<img src="x.html">` by its bytes);
 4. checks every other file the push changes: the design's, byte for byte (`design.sha256`: a
    stylesheet can hide an address, an image be a QR code); a proposal's image the proposals
-   repository has, byte for byte at that path (its QR codes as a browser shows them, of listed addresses);
+   repository has, byte for byte at that path (never read: the repository's review vouches for
+   what it shows, [the web server](web-server.md#what-it-guarantees-and-what-not));
    a donation box's QR code, `qr/<address>.png`: the signed list's own file of that address, byte
    for byte (its sum in `subaddresses.txt.qr.sha256`, which the `.pin`'s `qr` line pins; made with
    the list, ccs-front-bash's `tools/make-qr.sh`): the gate never makes or reads one;
@@ -332,12 +332,9 @@ proposal, a completed one with a donation box, a listed address still). Nor anyt
 server itself is taken over: then ccs-watch and visitors are the defence. The checks are
 `ccs-check` ([ccs-check.md](ccs-check.md): Go, memory-safe, one static binary). The donation
 boxes' QR codes are never made or decoded here: each is the signed list's file of its address,
-taken by its sum, and the web server has no qrencode. Only a proposal's images, from the proposals repository, are read for QR codes, as a
-browser shows them (Go's own decoders, by the format the bytes are, the size checked first; a
-GIF's frames drawn one over another; inverted and faint codes too); one it can't check (over
-8 MB or 40 million pixels, an animated PNG, a GIF of over 100 frames, or not in time) is held
-back. Not caught: a colour profile whose curve scrambles the greys into a code (a reviewer of
-the proposal sees that code).
+taken by its sum, and the web server has no qrencode. No image is read at all: a proposal's is
+the proposals repository's, byte for byte, and what it shows (an address, a QR code of one) is
+that repository's review's to catch, as its text's links are.
 
 ### The heartbeat: the web server notices a silent backend
 

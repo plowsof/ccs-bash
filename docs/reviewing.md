@@ -176,7 +176,7 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
   the push changed and each it held back last time (`held` in its state folder; every one when the
   list, its pin or QR codes' sums, `allowed`, the design, `markdown.awk`, `proposals.conf`, the
   proposals commit, `ccs-receive` or `ccs-check` changed, and once a day: `checked-with`; the live site
-  holds only what passed; then the live proposal images' QR codes are read again too), and every
+  holds only what passed), and every
   other file the push changed:
   - `fetch`: the proposals repository's last two commits (the last fetch if it can't);
   - `pages` (`ccs-check pages`, contrib/ccs-check/pages): a page is one of the design's
@@ -195,8 +195,8 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
     file), the JSON as JSON too (`ccs-check json`, its strings read the same way); a `data:` image is
     held back (the site has none); pages and JSON start with `<`, `[` or `{`;
   - `changes`: any other file is the design's (`design.sha256`), a proposal image the repository
-    has at that path (`repo_images`: `git hash-object` against `ls-tree`; its QR codes read, by
-    `ccs-check qr`, as a browser shows it; one it can't check held back), `feed.xml` (`feed`,
+    has at that path, byte for byte (`repo_images`: `git hash-object` against `ls-tree`; never
+    read: the repository's review vouches for it), `feed.xml` (`feed`,
     `feed_awk`: line for line as ccs-front-bash writes it, its links this site's proposal pages),
     `projects.json`, the list's files as installed, or a donation QR code `qr/<address>.png`
     exactly the list's (its line in `.qr.sha256`: never made or decoded here);

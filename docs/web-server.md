@@ -13,12 +13,21 @@ setting it up: [the web server in Docker](docker.md#the-web-server-in-docker).
 
 ## What it guarantees, and what not
 
-Every address on the site, as text, link or QR code, however written, split or disguised, is one
-of the signed list's (the wallet's 15,000 subaddresses, signed by a Core Team member) or in
-`allowed` (the General Fund); every page is the design's, filled; a proposal's text, milestones
-and payouts are what the proposals repository has (the gate fetches it itself); a donation box's
-QR code is the list's own file of its address. A file that fails keeps its last good copy, and the
-gate tells IRC.
+Every address on the site, as text or link, however written, split or disguised, is one of the
+signed list's (the wallet's 15,000 subaddresses, signed by a Core Team member) or in `allowed`
+(the General Fund); every page is the design's, filled; a proposal's text, milestones, payouts
+and images are what the proposals repository has (the gate fetches it itself); a donation box's
+address is the list's, and its QR code the list's own file of that address. A file that fails
+keeps its last good copy, and the gate tells IRC.
+
+**The proposals repository is trusted as reviewed.** What a merged proposal says, links to and
+shows is that repository's review's to vouch for: the gate checks a page is exactly what its file
+makes, not what the file says. Its images are taken byte for byte as the repository has them, and
+never read: an image can show an address, or a QR code of one, as any picture can. So reviewers
+check a proposal's images when merging. A taken-over forge could rewrite proposals, link out of
+the site from one, or show an address in an image; it could not change a donation box (its
+address and QR code are the wallet's and the list's) or put an address on a page as text, and the
+money stays in the CCS wallet.
 
 Not: what only the backend knows, a total or percentage that is wrong but a number, one of the
 wallet's subaddresses on another proposal's page (the money stays in the wallet), a proposal's
@@ -56,33 +65,30 @@ builds.
 | curl, openssl, ca-certificates | 8.22.0, 3.6.4 | the gate's IRC alerts; git's https |
 | bash 5.3, coreutils 9.11, findutils 4.11.0, grep 3.12, sed 4.10, gawk 5.4.1, diffutils 3.12 (`cmp`), tar 1.35 (unpacks `git archive`, the proposals' own), util-linux 2.42.3 (`flock` only) | | `ccs-receive`, as written and tested |
 | musl 1.2.6, ncurses 6.6 (bash's `libncursesw` only), zlib 1.3.2, libzstd 1.5.7 | | their libraries (each linked by one of the above: checked) |
-| **ccs-check** | this repository's `contrib/ccs-check` | the checks (below), built by StageX's Go 1.27.1, no cgo |
+| **ccs-check** | this repository's `contrib/ccs-check` | the checks (below), built by StageX's Go 1.27.1, no cgo, no module |
 
 The versions are those of the pinned digests (StageX release sx2026.10.0); `container/images`
 is the source of truth, and `container/update-images.sh` moves every pin to StageX's latest
 release, checking its signatures (review the diff, as any other). Not in it: Python, qrencode,
 libpng, zbar, libjpeg, giflib, rsync, xxhash, jq, acl, attr, an ssh client, sftp, git's servers
-(`tests/gate-image.sh` fails if any is). No image library reads a push: the only image decoder is Go's own, in ccs-check.
+(`tests/gate-image.sh` fails if any is). Nothing on it decodes an image.
 
-`ccs-check`'s two modules come from archives pinned by sha256 (`container/sources.lock`), each
-checked against Go's checksum database before use (`contrib/ccs-check/deps.sh`):
-**gozxing** (its QR reader's 63 files only, at `95e256b`, with `deps/gozxing.patch`) and
-**golang.org/x/xerrors** (`5ec99f8`). [ccs-check.md](ccs-check.md): what each check does, and
-keeping them patched (`govulncheck` in CI).
+`ccs-check` has **no module**: Go's standard library and this repository's code only, nothing
+third-party to pin or review. [ccs-check.md](ccs-check.md): what each check does, and keeping it
+patched (`govulncheck` in CI, for Go itself).
 
 ## The code to read
 
-About 4,000 lines of this repository's own, plus gozxing's QR reader:
+About 3,400 lines, all of this repository's own:
 
 | File | Lines | What it is |
 |---|---|---|
-| [`contrib/ccs-receive`](../contrib/ccs-receive) | 688 | the gate: takes only `receive`, receives into staging, runs the checks, copies only what passed live, tells the backend what it held back, alerts; the heartbeat |
-| [`contrib/ccs-check/`](../contrib/ccs-check) (Go, tests aside) | 2,607 | `receive` and `copy` (`push/push.go`: the push's tar, plain files only, at clean paths, within limits), `pages` (`pages/pages.go`, `pages/match.go`: a page is the design's, filled), `scan` (`scan/scan.go`, `addr/addr.go`: every address, by Monero's checksum), `qr` (`qr/qr.go`: QR codes in the proposals' own images) |
-| `contrib/ccs-check/deps.sh`, `build.sh`, `deps/gozxing.patch` | 266 | how the modules are unpacked, checked and patched |
-| [`container/gate.Dockerfile`](../container/gate.Dockerfile) | 83 | what goes in the image |
+| [`contrib/ccs-receive`](../contrib/ccs-receive) | 647 | the gate: takes only `receive`, receives into staging, runs the checks, copies only what passed live, tells the backend what it held back, alerts; the heartbeat |
+| [`contrib/ccs-check/`](../contrib/ccs-check) (Go, tests aside) | 2,230 | `receive` and `copy` (`push/push.go`: the push's tar, plain files only, at clean paths, within limits), `pages` (`pages/pages.go`, `pages/match.go`: a page is the design's, filled), `scan` (`scan/scan.go`, `addr/addr.go`: every address, by Monero's checksum) |
+| `contrib/ccs-check/build.sh` | 66 | how it is built and tested (StageX's Go, no network) |
+| [`container/gate.Dockerfile`](../container/gate.Dockerfile) | 74 | what goes in the image |
 | [`contrib/docker/web/`](../contrib/docker/web) (`compose.yml`, `sshd_config`, `init`, `env.example`) | 179 | how it runs: one user, the forced command, read-only, three capabilities, limits |
 | `container/build.sh`, `verify-images.sh`, `fetch.sh`, `verify.sh` | 206 | the build: the pins' signatures and sums checked |
-| gozxing's QR reader (pinned, not ours) | about 7,600 | reads QR codes; its patch is ours |
 
 And what the gate checks pages against, from the other two repositories:
 ccs-front-hugo's **design** (its release zip: the pages, the parts they are filled with, the

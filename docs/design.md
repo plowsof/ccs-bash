@@ -72,10 +72,12 @@ machine and the IRC bot; ccs-watch through Tor and a proxy; a mirror to the site
 host's sshd, or in Docker through the gate image's own sshd on its own port (StageX, attested
 with ccs-bash's release). The gate holds back any page that isn't the design's own, filled as
 ccs-front-bash fills it (a proposal's text as the proposals repository has it), any file with an
-address that isn't the wallet's (as text, link or QR code, however split or disguised), a feed
-that isn't ccs-front-bash's, a proposal image the repository doesn't have or whose QR codes hold
-another address, and any other file that isn't the design release's
-([details](two-machines.md#the-gate-the-web-server-checks-every-page)). Nothing
+address that isn't the wallet's (as text or link, however split or disguised), a donation QR
+code that isn't the signed list's file, a feed that isn't ccs-front-bash's, a proposal image that
+isn't the repository's own (byte for byte: what it shows is that repository's review's to vouch
+for), and any other file that isn't the design release's
+([details](two-machines.md#the-gate-the-web-server-checks-every-page); what to review there:
+[the web server](web-server.md)). Nothing
 else of the CCS runs there but the gate's heartbeat (an alert when pushes stop).
 
 ccs-front-bash runs on the backend: whatever writes the addresses into pages can redirect
