@@ -1,15 +1,31 @@
 # Reviewing: what each file does
 
-Only the code that runs on the live machines, in the order a run uses it, with what each part
-checks. Left out: the tests, the container build (`container/`), the release tools
+**To trust the site, review only the web server.** It decides what goes live, and it doesn't
+believe the backend: every push is checked there, against copies the backend never sends. So the
+backend, its code and its machine can stay untrusted; a taken-over backend can stop the site
+updating, not put a foreign address on it. What runs on the web server, by version, the code to
+read (about 3,600 lines, its build files included) and what is installed there by hand: [the web server](web-server.md).
+
+**Why the web server fetches the proposals repository itself.** A proposal's page is mostly its
+own text, which the design leaves free. To know that text is genuine, the gate needs its own copy
+of the source: it fetches the repository from the forge over HTTPS, renders each proposal with
+the same `markdown.awk` the backend uses (installed by hand, at the attested commit), and a page
+goes live only if it is that rendering, byte for byte. Without it, a backend could write anything
+into a proposal's page (a proposal that doesn't exist, other goals, "donate by contacting…", a
+link to another site); its addresses would still be caught by the signed list, everything else
+would pass. The same copy tells the gate which proposals exist (a page whose file is gone is taken
+off) and where a proposal's link may go (its own merge request). So the trust moves from the
+backend to the proposals repository, whose merges are reviewed already, and the one gap is its
+images, which nothing on the web server reads: whoever merges a proposal checks them too.
+
+The rest of this page is every file that runs on the live machines, in the order a run uses it,
+with what each part checks: the web server's, and the backend's for those who want them too. Left out: the tests, the container build (`container/`), the release tools
 (`contrib/release/`) and the design ([ccs-front-hugo](https://github.com/plowsof/ccs-front-hugo),
 built offline). Every script is `set -euo pipefail`, `LC_ALL=C` and shellcheck-clean; the awk is
 POSIX (mawk, gawk, busybox).
 
 The rule everything serves: every donation address shown, as text, link or QR code, is one of the
-wallet's. [The design](design.md) says why it is built this way. To trust the site without
-trusting the backend, only the web server needs reviewing: [its list](web-server.md) (the code,
-the image's parts, what is installed by hand); its files are walked through below too.
+wallet's. [The design](design.md) says why it is built this way.
 
 ## Backend (no inbound connections)
 
