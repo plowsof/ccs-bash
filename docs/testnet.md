@@ -16,7 +16,7 @@ before that.
   own wallet and signed list ([subaddresses/testnet2](../subaddresses/testnet2/README.md)): every
   address the site shows is the testnet wallet's. A full wallet (its spend key too), so testnet
   donations can be sent from it.
-- **The backend in Docker** (since 2026-10-29, [docker](docker.md)); since v0.2.35 (2026-10-30; now v0.2.36)
+- **The backend in Docker** (since 2026-10-29, [docker](docker.md)); since v0.2.35 (2026-10-30; now v0.2.40)
   without `compose.host.yml`, as [the handover, 1](handover.md#1-monerod-and-monero-wallet-rpc-the-backend)
   has it: the wallet syncs from node3's own monerod through its public restricted RPC,
   `host.docker.internal:18089` (unchanged for its other users; its flood rules count the wallet
@@ -30,10 +30,11 @@ before that.
 - **An onion service** (since 2026-10-31): http://euofv4oczbu32vr4my73diw3dwelcnazsnx55wd7ouoimrvstk4wqyid.onion,
   node2's `tor@default` (`/var/lib/tor/hidden_service/ccs`) to nginx on `127.0.0.1:8096`, the same
   site body as the clearnet one (`snippets/ccs-site.conf`), and `Onion-Location` on the clearnet
-  site; in the footer once v0.2.37's set is deployed ([handover](handover.md#the-onion-address)).
+  site; in every page's footer since v0.2.37's set ([handover](handover.md#the-onion-address)).
+- **The RSS feed** (since v0.2.38's set): https://ccs.monerodevs.org/feed.xml, checked by the gate.
 - **The web server's side in Docker** ([the web server in Docker](docker.md#the-web-server-in-docker)):
   node2 is the web server and the backup machine both, so its compose (`/opt/ccs-bash-web`, at
-  the release's commit, the gate's attested image) runs the backup receiver too
+  the release's commit, the gate's image of the release) runs the backup receiver too
   (`COMPOSE_PROFILES=backup`), which production must not copy. Its host sshd takes no key of
   `ccs-data` or `ccs-backup` (`AuthorizedKeysFile none` for them).
 - **A retired wallet, rehearsed** (2026-10-28, [retiring a wallet](handover.md#retiring-a-wallet)):
@@ -71,8 +72,8 @@ before that.
   CCS's bot belongs on a third machine.
 - **ccs-watch fetches through Tor only** (no clearnet proxy): a web server that serves Tor's exits
   the right pages and everyone else others isn't seen.
-- **A Forgejo Actions runner on the backend**, for every repository of its owner on disroot (the
-  testnet proposals' pre-parser among them, while they were there): anyone opening a pull request
+- **CI runners on the backend** (Forgejo Actions runners for every repository of its owner on
+  disroot, the testnet proposals' pre-parser among them while they were there, and a GitLab runner): anyone opening a pull request
   there starts a job on the wallet's machine (master's script, in an unprivileged container with
   no Docker socket and no route to the wallet's RPC). A risk the testnet takes; the CCS's backend
   runs nothing but the CCS.

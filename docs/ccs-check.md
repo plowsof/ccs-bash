@@ -19,7 +19,10 @@ machine.
 
 Each subcommand takes the command line the Python block it replaced took and printed the same
 lines: it was checked against that Python on generated and mutated files, and on the live
-testnet site (326 pages, every answer the same), before the Python was removed. Its own tests:
+testnet site (326 pages, every answer the same), before the Python was removed. Since then,
+review 9: `qr` reads what the Python missed (animation frames, a format other than the name's,
+inverted and faint codes beside others), `scan` an address split between elements, and `pixels`
+refuses a PNG another decoder would read otherwise. Its own tests:
 `contrib/ccs-check/build.sh test` (Go tests) and `fuzz` (CI).
 Anything that can be plain text matching stays awk (the feed check, `feed_awk`).
 
@@ -27,7 +30,8 @@ Anything that can be plain text matching stays awk (the feed check, `feed_awk`).
 
 - **Go:** StageX's (`container/images`, `go`), by digest, its signatures checked
   ([image.md](image.md)); `CGO_ENABLED=0`, `-trimpath`, no network: `contrib/ccs-check/build.sh`
-  and the gate's image make the same bytes (the release attests its sha256, for host setups).
+  and the gate's image make the same bytes (attesters sign the gate image; a host setup copies it
+  out of that image, [two-machines](two-machines.md#without-docker)).
 - **Two modules**, from pinned archives (`container/sources.lock`, each archive's files the ones
   Go's checksum database has for that version), unpacked by `contrib/ccs-check/deps.sh`:
   gozxing, only its QR reader's files (`deps/gozxing.files`) with `deps/gozxing.patch` (a code's
@@ -48,8 +52,10 @@ ccs-check never sees a visitor. Its only input is a push from the backend:
 ## What limits it
 
 - **Memory-safe**: Go, no cgo, no `unsafe` (nor in the two modules): a bug is a wrong answer or
-  a crash, which is held back, not code run. No C library reads anything a push brings (the
-  image's libpng is qrencode's, writing the reference QR codes).
+  a crash, not code run. A crash holds the files back; a wrong answer may pass one, which is what
+  the reviews and fuzz tests look for. Of what a push brings, only rsync (C, as before) reads it
+  unchecked, receiving it; no C library decodes it (the image's libpng is qrencode's, writing the
+  reference QR codes).
 - **Limits:** a time limit on every run (`timeout`, 20 seconds to 5 minutes; `qr` has its own,
   15 s); a file over 8 MB isn't read, a page over 2 MB isn't matched; `qr` decodes nothing over
   40 million pixels; `qr` and `pages` take 1 GB at most; the container has 2 GB and 256 processes.

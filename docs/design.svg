@@ -136,7 +136,7 @@
     <text x="890" y="273" font-size="14" font-weight="700" fill="#0f172a">ccs-data + the gate</text>
     <use href="#signedlist" x="964" y="252" width="26" height="26"/>
     <text x="908" y="291" font-size="12" fill="#475569">write-only push to staging;</text>
-    <text x="908" y="306" font-size="12" fill="#475569">pages, files vs the design;</text>
+    <text x="908" y="306" font-size="12" fill="#475569">pages, feed vs the design;</text>
     <text x="908" y="321" font-size="12" fill="#475569">texts, images vs the repo;</text>
     <text x="908" y="336" font-size="12" fill="#475569">addresses, QR codes vs</text>
     <text x="908" y="351" font-size="12" font-weight="600" fill="#b45309">the signed list</text>
