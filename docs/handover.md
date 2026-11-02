@@ -216,11 +216,12 @@ checked by the backend and the web server. Each wallet's is in this repository, 
 signature, key, `.pin` and view key file (its QR codes and their sums: `tools/make-qr.sh`, below;
 not `list-signers`: you write that from the fingerprints
 in step 2, so a forged folder can't bring its own). In full: ccs-front-bash's
-[setup](https://github.com/plowsof/ccs-front-bash/blob/master/docs/setup.md), step 5. The three
+[setup](https://github.com/plowsof/ccs-front-bash/blob/master/docs/setup.md), step 5. The four
 scripts are **ccs-front-bash's** (its `tools/`, not this repository's), run from a checkout of it:
-[`make-subaddresses.sh`](https://github.com/plowsof/ccs-front-bash/blob/0c6d294918b344b27e6fc0999c4f75fe86294189/tools/make-subaddresses.sh),
-[`sign-subaddresses.sh`](https://github.com/plowsof/ccs-front-bash/blob/0c6d294918b344b27e6fc0999c4f75fe86294189/tools/sign-subaddresses.sh) and
-[`verify-subaddresses.sh`](https://github.com/plowsof/ccs-front-bash/blob/0c6d294918b344b27e6fc0999c4f75fe86294189/tools/verify-subaddresses.sh) (v0.1.21's). In short:
+[`make-subaddresses.sh`](https://github.com/plowsof/ccs-front-bash/blob/a225b7af965c31c087639e60df59a9caaec14c5d/tools/make-subaddresses.sh),
+[`make-qr.sh`](https://github.com/plowsof/ccs-front-bash/blob/a225b7af965c31c087639e60df59a9caaec14c5d/tools/make-qr.sh),
+[`sign-subaddresses.sh`](https://github.com/plowsof/ccs-front-bash/blob/a225b7af965c31c087639e60df59a9caaec14c5d/tools/sign-subaddresses.sh) and
+[`verify-subaddresses.sh`](https://github.com/plowsof/ccs-front-bash/blob/a225b7af965c31c087639e60df59a9caaec14c5d/tools/verify-subaddresses.sh) (ccs-front-bash #53's, with the QR codes). In short:
 
 1. **Made** by a Core Team member on the offline machine from the wallet's address and view key,
    which it asks for (an offline `monero-wallet-rpc` makes them in a view-only copy it deletes
