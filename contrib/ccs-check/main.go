@@ -2,7 +2,7 @@
 // Python blocks (docs/python.md). Each subcommand takes the command line of the block it
 // replaces and prints the same lines ("file<TAB>ok", "file<TAB>!reason", "file<TAB>address"),
 // so ccs-receive changes one line per check. Built by StageX's Go (build.sh, gate.Dockerfile)
-// from vendor/ alone: no network, no cgo.
+// from Go's standard library alone (no module): no network, no cgo.
 package main
 
 import (
@@ -19,7 +19,7 @@ func main() {
 		os.Exit(0) // it runs: the gate's image test (tests/gate-image.sh)
 	}
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: ccs-check scan|json|nul FILE... | qr KIND IMAGE [inverted] | pages SITE DESIGNS BODIES LIST VIEWKEY HOSTS ONION < pages | receive DIR < tar | copy [--delete] SRC DST (--check: it runs)")
+		fmt.Fprintln(os.Stderr, "usage: ccs-check scan|json|nul FILE... | pages SITE DESIGNS BODIES LIST VIEWKEY HOSTS ONION < pages | receive DIR < tar | copy [--delete] SRC DST (--check: it runs)")
 		os.Exit(2)
 	}
 	run, ok := commands[os.Args[1]]

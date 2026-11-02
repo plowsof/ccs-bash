@@ -4,25 +4,16 @@
 # signatures checked), sources by sha256 (sources.lock), no network in the steps, every file the
 # commit's time, one layer in an empty image. GNU userland, as the gate was written and tested
 # for (Debian's); its checks ccs-check's (contrib/ccs-check: Go, built here), which also
-# receives the push (a tar, read in Go: no rsync). No Python, and no C library reads an image a
-# push brings; no QR code is made here (the donation boxes' are the signed list's files, taken
-# by their sums).
+# receives the push (a tar, read in Go: no rsync). No Python, and nothing here reads an image: a
+# proposal's is taken byte for byte as the proposals repository's, a donation box's QR code as
+# the signed list's file, by its sum.
 
-# ccs-check's modules (gozxing, golang.org/x/xerrors) from their pinned archives (sources.lock:
-# the files Go's checksum database has for their versions), the QR reader's files only, patched
-# (contrib/ccs-check/deps.sh), at /deps, where its go.mod has them
-FROM toolchain AS ccs-check-deps
-COPY --from=bash / /
-COPY --from=ncurses / /
-RUN --mount=type=bind,source=container,target=/pin --mount=type=bind,source=contrib/ccs-check,target=/c \
-    bash /pin/verify.sh /pin/sources.lock /pin/sources && bash /c/deps.sh /pin/sources /deps
-
-# ccs-check, the gate's checks in Go (contrib/ccs-check), as its build.sh builds it: StageX's Go
-# alone (it has no shell: the exec form), as root (a clone made under umask 077 is its owner's
-# alone: StageX's user couldn't read it), with no network, so the same bytes
+# ccs-check, the gate's checks in Go (contrib/ccs-check: Go's standard library alone, no module),
+# as its build.sh builds it: StageX's Go alone (it has no shell: the exec form), as root (a clone
+# made under umask 077 is its owner's alone: StageX's user couldn't read it), with no network, so
+# the same bytes
 FROM go AS ccs-check
 USER 0
-COPY --from=ccs-check-deps /deps /deps
 ENV HOME=/tmp GOCACHE=/tmp/cache GOPATH=/tmp/go CGO_ENABLED=0 GOFLAGS=-mod=readonly GOPROXY=off GOTOOLCHAIN=local
 RUN --mount=type=bind,source=contrib/ccs-check,target=/src ["/usr/bin/go", "-C", "/src", "build", "-trimpath", "-buildvcs=false", "-ldflags=-buildid=", "-o", "/tmp/ccs-check", "."]
 
