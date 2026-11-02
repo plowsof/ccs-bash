@@ -37,6 +37,10 @@ func TestPages(t *testing.T) {
 		"split by a zero-width": {"<p>" + fund[:40] + "\u200b" + fund[40:] + "</p>", fund + "\n"},
 		"not a page":            {"GIF89a", "!not text that starts as a page or JSON does (<, [ or {): a browser would show it as an image\n"},
 		"a data: image":         {"<img src=\"data:image/png;base64,QUJD\">", "?qr\tQUJD\n"},
+		// split between elements a browser lays side by side: two tag labels, a tag and its count
+		"two labels": {`<p><span class="label tag-0">` + fund[:48] + `</span><span class="label tag-1">` + fund[48:] + `</span></p>`, fund + "\n"},
+		"tag, count": {`<a class="filter" href="x/">` + fund[:89] + `<span class="count">` + fund[89:] + `</span></a>`, fund + "\n"},
+		"not one":    {`<p><span>` + fund[:48] + `</span><span>` + fund[48:94] + `x</span></p>`, ""},
 	} {
 		if got := run(t, pages, c.in); got != c.want {
 			t.Errorf("%s: %q", name, got)

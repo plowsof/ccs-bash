@@ -223,7 +223,8 @@ what it is sent; it knows what a page may be. Each push, one at a time, it
 3. checks **every address** (95 or 106 base58 characters) in pages and JSON against the signed
    list and `allowed`, as written (tags and attributes too, entities decoded, a non-ASCII
    character read both as nothing and as a space; one in groups split by up to three spaces or
-   punctuation, `4A9b - xZq3`, `4A9b/xZq3`, where its checksum says it is one), the JSON as JSON
+   punctuation, `4A9b - xZq3`, `4A9b/xZq3`, or split between two elements a browser lays side by
+   side, two tag labels, where its checksum says it is one), the JSON as JSON
    too, its strings read the same way. One pass, 2 minutes at most for all; a file that needs more
    than 3000 checksums or 20 s is held back alone ("too many runs that could be addresses"), not
    every file with it; and **every QR code**: each `data:image/png;base64,` image must be, pixel for pixel,
