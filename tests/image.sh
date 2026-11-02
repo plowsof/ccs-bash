@@ -24,6 +24,21 @@ mkdir -p "$t/site/p" && echo x > "$t/site/p/a b.html" && printf './p/a b.html\n'
 if [[ $out == *OpenSSH* || $out == *"No user exists for uid"* ]] && (cd "$t/site" && tar -c -f - -T "$t/list") | tar -t -f - | grep -qx './p/a b.html'; then
     ok "ssh, and busybox's tar (a tar of the files listed)"
 else fail "ssh or tar: $out"; fi
+# ccs-push with busybox's tools: a first push (every file), then one with nothing changed (an
+# empty tar, two zero blocks); ssh a stand-in that reads the tar and answers as the gate does
+here=$(dirname "$(readlink -f "$0")")
+# (a function, exported: /tmp here is noexec)
+mkdir -p "$t/pushed" "$t/state"
+ssh() { tar -t -f - > "$T/got"; }
+export -f ssh
+export T=$t
+r1=0; bash "$here/../contrib/ccs-push" "$t/site" "$t/pushed" "$t/state" host > "$t/p1" 2>&1 || r1=$?
+n1=$(wc -l < "$t/got")
+r2=0; bash "$here/../contrib/ccs-push" "$t/site" "$t/pushed" "$t/state" host > "$t/p2" 2>&1 || r2=$?
+unset -f ssh
+if ((r1 == 0 && r2 == 0 && n1 == 1)) && [[ ! -s $t/got ]] && cmp -s "$t/site/p/a b.html" "$t/pushed/p/a b.html" && grep -q 'sending 0 of 1' "$t/p2"; then
+    ok "ccs-push: the first push every file, the next an empty tar, pushed/ the site"
+else cat "$t/p1" "$t/p2"; fail "ccs-push with busybox (exits $r1 $r2)"; fi
 if [[ $(printf '' | openssl dgst -keccak-256 -r) == c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470* ]]; then ok "openssl's Keccak-256"; else fail "openssl's Keccak-256"; fi
 missing=''
 for c in basename cmp comm find head paste shuf sort stat curl jq flock timeout; do command -v "$c" > /dev/null || missing+=" $c"; done
