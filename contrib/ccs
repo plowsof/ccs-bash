@@ -1,17 +1,21 @@
 #!/usr/bin/env bash
 # ccs COMMAND: looking at the backend, by the names of ccs-back's artisan commands (so what a CCS
-# maintainer typed there works here; docs/troubleshooting.md, "Looking"). As root on the backend,
-# installed as /usr/local/bin/ccs. Only proposal:process changes anything (it runs the update).
+# maintainer typed there works here, and says it as ccs-back did; docs/troubleshooting.md,
+# "Looking"). As root on the backend compose's host, installed as /usr/local/bin/ccs. Only
+# proposal:process changes anything (it starts a run).
 #
-#   ccs proposal:process          one run by hand, the loop paused for it (and started again after,
-#                                 if it was running): this run's lines
-#   ccs proposal:update           the ideas: each open MR looked at, and why it is or isn't one
+#   ccs proposal:process          a run at once (the compose's next one, started now): its lines
+#   ccs proposal:update           each open MR looked at: "Idea MR #N 'title': file", or
+#                                 "Skipping MR #N: why"
 #   ccs generate:addresses [F.md] which proposal has which subaddress (proposals.csv)
-#   ccs wallet:notify [N]         the funding-required proposals' donations, and the last N (20)
-#   ccs deposit:list [F.md]       every deposit as JSON: the live wallet's and each retired one's
+#   ccs wallet:notify [N]         the last N (20) donations, 'Donation to "file" address: …
+#                                 amount: … txid: …', and the funding-required proposals' totals
+#   ccs deposit:list [F.md]       every deposit as JSON, ccs-back's names (tx_id, amount,
+#                                 subaddr_index, block_received): the live wallet's and each
+#                                 retired one's
 #   ccs log [N]                   the errors and warnings of the last N runs (3), once each, with
 #                                 what troubleshooting.md says of them
-#   ccs status                    the loop, the last run, the wallet, the forge, the backup, the
+#   ccs status                    the compose, the last run, the wallet, the forge, the backup, the
 #                                 web server, the releases
 #   ccs config:check              every file setup needs (contrib/examples/backend): there, as
 #                                 setup makes it, filled in, agreeing, and answering
@@ -32,36 +36,22 @@ STATE_DIR=$(conf STATE_DIR /var/lib/ccs/state)
 OUTPUT_DIR=$(conf OUTPUT_DIR /var/lib/ccs/out)
 PROPOSALS_DIR=$(conf PROPOSALS_DIR /var/lib/ccs/proposals)
 read_ccs() { "${as_ccs[@]}" cat -- "$1"; }
-# the backend compose (docs/docker.md): its run folder, and its containers running (or, all of
-# them stopped, the host's loop not running either)
+# the backend compose (docs/docker.md): its run folder
 RUN_DIR=${CCS_RUN_DIR:-/var/lib/ccs/run}
-compose() {
-    [[ -d $RUN_DIR/push ]] || return 1
-    docker ps -q --filter label=com.docker.compose.project=backend 2> /dev/null | grep -q . && return 0
-    ! systemctl is-active -q ccs-bash 2> /dev/null
-}
-# the log: the host loop's file; the compose's is journald's (journalctl -t ccs), its last lines
-# copied to a file here and read as the host's is. CCS_LOG: a file, either way
+# the log: journald's (journalctl -t ccs), its last lines copied to a file here. CCS_LOG: a file
+# instead (the tests)
 LOG=${CCS_LOG:-} LOG_NAME=''
 journal() { journalctl -q -o cat -t ccs "$@" > "$LOG" 2> /dev/null || true; }
 if [[ -z $LOG ]]; then
-    if compose; then
-        LOG=$(mktemp) LOG_NAME="the journal's last lines (journalctl -t ccs)"; trap 'rm -f "$LOG"' EXIT
-        journal -n 20000
-    else
-        LOG=/var/log/ccs-bash.log
-    fi
+    LOG=$(mktemp) LOG_NAME="the journal's last lines (journalctl -t ccs)"; trap 'rm -f "$LOG"' EXIT
+    journal -n 20000
 fi
 # a compose service's container: SERVICE
 container() { docker ps -q --filter label=com.docker.compose.project=backend --filter "label=com.docker.compose.service=$1" | head -n 1; }
 stage_num() { local v; v=$(cat "$RUN_DIR/$1/${2:-done}" 2> /dev/null) || v=0; [[ $v =~ ^[0-9]+$ ]] && echo "$v" || echo 0; }
-# a run going now: the host's update script, or the compose's pull past its push
+# a run going now: the compose's pull past its push
 running() {
-    if compose; then
-        (($(stage_num pull) > $(stage_num push))) || (($(stage_num pull started) > $(stat -c %Y "$RUN_DIR/push/done" 2> /dev/null || echo 0)))
-    else
-        pgrep -x ccs-bash-update > /dev/null
-    fi
+    (($(stage_num pull) > $(stage_num push))) || (($(stage_num pull started) > $(stat -c %Y "$RUN_DIR/push/done" 2> /dev/null || echo 0)))
 }
 
 # the state as JSON: {"file.md": {index, address, since, url}}
@@ -73,7 +63,7 @@ state_json() {
 }
 xmr() { jq -r '. / 1e12 | . * 1e4 | floor / 1e4 | tostring'; }
 
-# "FROM TO": the lines of the last N runs that have ended, by "== run <time>" (ccs-bash-update
+# "FROM TO": the lines of the last N runs that have ended, by "== run <time>" (the pull stage
 # writes it at each start); a run going now is left out (it hasn't said everything yet). A log
 # from before the markers: its last 400 lines
 runs_range() {
@@ -124,38 +114,24 @@ compose_process() {
     echo "(run $n of the compose; $(tail -n +"${at:-1}" "$LOG" | grep -cE '^(skipping|ignoring) ' || true) proposal files skipped or ignored: ccs log shows why)"
 }
 
-cmd_process() {
-    local was start
-    if compose; then compose_process; return; fi
-    was=$(systemctl is-active ccs-bash 2> /dev/null || true)
-    for _ in $(seq 60); do pgrep -x ccs-bash-update > /dev/null || break; sleep 5; done
-    if [[ $was == active ]]; then
-        trap 'systemctl start ccs-bash; echo "(the loop: $(systemctl is-active ccs-bash))"' EXIT
-        systemctl stop ccs-bash
-        for _ in $(seq 60); do pgrep -x ccs-bash-update > /dev/null || break; sleep 5; done
-    fi
-    pgrep -x ccs-bash-update > /dev/null && die "a run is still going after 5 minutes: look at it first (ccs status)"
-    start=$(wc -l < "$LOG")
-    /usr/local/bin/ccs-bash-update || true
-    tail -n +"$((start + 1))" "$LOG" | grep -vE '^\s*$|^(skipping|ignoring) ' || true
-    echo "($(tail -n +"$((start + 1))" "$LOG" | grep -cE '^(skipping|ignoring) ' || true) proposal files skipped or ignored: ccs log shows why)"
-}
+cmd_process() { compose_process; }
 
+# as ccs-back's proposal:update printed them: "Idea MR #N 'title': file", "Skipping MR #N: why"
 cmd_ideas() {
-    local cache=$STATE_DIR/ideas.cache iid sha file rc why
-    echo "Ideas shown (open MRs adding a proposal that reads):"
-    read_ccs "$OUTPUT_DIR/proposals.json" | jq -r '[.. | objects | select(has("upvotes") and has("gitlab-url"))] | if length == 0 then "  (none)" else .[] | "  \(."gitlab-url"): \(.name) (\(.author), \(.date); 👍 \(.upvotes // "?") 👎 \(.downvotes // "?"))" end'
-    echo "Every open MR looked at (the most recently updated, at most IDEAS_MAX):"
-    "${as_ccs[@]}" test -s "$cache" || { echo "  (none yet: no run since the cache was emptied)"; return; }
-    while IFS=$'\t' read -r iid sha file rc; do
+    local cache=$STATE_DIR/ideas.cache iid file rc titles
+    "${as_ccs[@]}" test -s "$cache" || { echo "(no MR looked at yet: no run since the cache was emptied)"; return; }
+    # the ideas the site shows, by MR number: "N<TAB>title"
+    titles=$(read_ccs "$OUTPUT_DIR/proposals.json" | jq -r '.. | objects | select(has("upvotes") and has("gitlab-url"))
+        | "\(."gitlab-url" | capture("(?<n>[0-9]+)$").n)\t\(.name)"')
+    while IFS=$'\t' read -r iid _ file rc; do
         [[ $iid =~ ^[0-9]+$ ]] || continue
-        if [[ $file == - ]]; then why="adds no proposal (one new .md at the root, and only its images)"
-        elif "${as_ccs[@]}" test -e "$PROPOSALS_DIR/$file"; then why="$file: merged already"
-        elif [[ $rc == 0 ]]; then why="$file: an idea"
-        else why="$file: doesn't read as a proposal: $(grep -F "MR !$iid's" "$LOG" | tail -n 1 | sed 's/.*doesn.t read as a proposal: //')"
+        if [[ $file == - ]]; then echo "Skipping MR #$iid: doesn't add exactly one .md at the root (and only its images)"
+        elif "${as_ccs[@]}" test -e "$PROPOSALS_DIR/$file"; then echo "Skipping MR #$iid: already have a project $file"
+        elif [[ $rc == 0 ]]; then echo "Idea MR #$iid '$(awk -F'\t' -v n="$iid" '$1 == n { print $2; exit }' <<<"$titles")': $file"
+        else echo "Skipping MR #$iid: $file doesn't read as a proposal: $(grep -F "MR !$iid's" "$LOG" | tail -n 1 | sed 's/.*doesn.t read as a proposal: //')"
         fi
-        echo "  MR !$iid (${sha:0:8}): $why"
     done < <(read_ccs "$cache")
+    echo "($(grep -c . <<<"$titles") idea(s) on the site; the open MRs looked at: the most recently updated, at most IDEAS_MAX)"
 }
 
 cmd_addresses() {
@@ -165,32 +141,37 @@ cmd_addresses() {
           "(\($all | map(select(.value.index == null)) | length) without a subaddress: not funding required yet, retired, or never)"'
 }
 
+# as ccs-back's wallet:notify printed them: 'Donation to "file" address: A amount: X txid: T', the
+# last N (20) the live wallet's deposits.csv has (the confirmed ones a run kept); then the
+# funding-required proposals' totals
 cmd_notify() {
     local n=${1:-20} st
     [[ $n =~ ^[0-9]+$ ]] || die "wallet:notify N: a number"
     st=$(state_json)
+    read_ccs "$STATE_DIR/deposits.csv" 2> /dev/null | awk -F, 'NR > 1' | tail -n "$n" | jq -R -r --argjson s "$st" '
+        split(",") as $d | ($s | to_entries | map(select(.value.index == ($d[2] | tonumber))) | .[0]) as $p
+        | "address: \($p.value.address // "subaddress \($d[2])") amount: \($d[3] | tonumber / 1e12) txid: \($d[1])" as $details
+        | if $p then "Donation to \"\($p.key)\" \($details)" else "Unrecognized donation, \($details)" end'
     echo "Funding required:"
-    read_ccs "$OUTPUT_DIR/projects.json" | jq -r '
+    { read_ccs "$OUTPUT_DIR/projects.json" 2> /dev/null || echo '[]'; } | jq -r '
         map(select(.state == "FUNDING-REQUIRED")) | sort_by(.filename) | if length == 0 then "  (none)" else .[]
         | "  \(.filename): \(.raised_amount) of \(.target_amount) XMR raised, \(.contributions) donation(s), \(.percentage_funded)%" end'
-    echo "The last $n donations to the live wallet (deposits.csv: the confirmed ones a run kept):"
-    read_ccs "$STATE_DIR/deposits.csv" 2> /dev/null | awk -F, 'NR > 1' | tail -n "$n" | jq -R -r --argjson s "$st" '
-        split(",") as $d | ($s | to_entries | map(select(.value.index == ($d[2] | tonumber))) | .[0].key // "subaddress \($d[2]), no proposal") as $p
-        | "Donation to \"\($p)\": \($d[3] | tonumber / 1e12) XMR, height \($d[0]), tx \($d[1][0:16])…"'
 }
 
+# as ccs-back's deposit:list: every deposit as JSON, its table's names (tx_id, amount in atomic
+# units, subaddr_index, block_received), and which wallet and proposal it is
 cmd_deposits() {
     local st f
     st=$(state_json)
     {
         read_ccs "$STATE_DIR/deposits.csv" 2> /dev/null | awk -F, 'NR > 1' | jq -R --argjson s "$st" '
-            split(",") as $d | {wallet: "live", proposal: ($s | to_entries | map(select(.value.index == ($d[2] | tonumber))) | .[0].key // null),
-                height: ($d[0] | tonumber), txid: $d[1], subaddress: ($d[2] | tonumber), amount: (($d[3] | tonumber) / 1e12)}'
+            split(",") as $d | {tx_id: $d[1], amount: $d[3], subaddr_index: ($d[2] | tonumber), block_received: ($d[0] | tonumber),
+                wallet: "live", proposal: ($s | to_entries | map(select(.value.index == ($d[2] | tonumber))) | .[0].key // null)}'
         for f in $("${as_ccs[@]}" find "$STATE_DIR/retired" -maxdepth 1 -name '*.csv' 2> /dev/null | sort); do
             read_ccs "$f" | awk -F, 'NR > 1' | jq -R --arg w "$(basename "$f" .csv)" '
-                split(",") as $d | {wallet: $w, proposal: $d[5], height: ($d[0] | tonumber), txid: $d[1], subaddress: ($d[2] | tonumber), amount: (($d[3] | tonumber) / 1e12)}'
+                split(",") as $d | {tx_id: $d[1], amount: $d[3], subaddr_index: ($d[2] | tonumber), block_received: ($d[0] | tonumber), wallet: $w, proposal: $d[5]}'
         done
-    } | jq -s --arg f "${1:-}" 'map(select($f == "" or .proposal == $f))'
+    } | jq -s --arg f "${1:-}" 'map(select($f == "" or .proposal == $f)) | to_entries | map({id: (.key + 1)} + .value)'
 }
 
 cmd_log() {
@@ -217,14 +198,11 @@ cmd_log() {
 cmd_status() {
     local last at failed f
     age() { local t; t=$("${as_ccs[@]}" stat -c %Y "$1" 2> /dev/null) || { echo "never"; return; }; echo "$(( ($(date +%s) - t) / 60 )) min ago"; }
-    if compose; then
-        # each service: running or not, and its healthcheck's last word
-        echo "the loop: the backend compose ($(docker ps -a --filter label=com.docker.compose.project=backend --format '{{.Label "com.docker.compose.service"}} {{.State}} {{.Status}}' 2> /dev/null \
-            | grep -v '^init ' | sed -E 's/^([^ ]+ [^ ]+) .*\((healthy|unhealthy|health: starting)\).*/\1 \2/; t; s/^([^ ]+ [^ ]+) .*/\1/' | sort | paste -sd ',' - | sed 's/,/, /g'))$(running && echo ", a run going now")"
-        echo "the stages: $(for s in pull ccs-bash backup front push watch; do printf '%s %s; ' "$s" "$(cat "$RUN_DIR/$s/status" 2> /dev/null || echo '?')"; done)"
-    else
-        echo "the loop: $(systemctl is-active ccs-bash 2> /dev/null || true)$(running && echo ", a run going now")"
-    fi
+    # each service: running or not, and its healthcheck's last word
+    f=$(docker ps -a --filter label=com.docker.compose.project=backend --format '{{.Label "com.docker.compose.service"}} {{.State}} {{.Status}}' 2> /dev/null \
+            | grep -v '^init ' | sed -E 's/^([^ ]+ [^ ]+) .*\((healthy|unhealthy|health: starting)\).*/\1 \2/; t; s/^([^ ]+ [^ ]+) .*/\1/' | sort | paste -sd ',' - | sed 's/,/, /g') || f=''
+    echo "the compose: ${f:-not running}$(running && echo ", a run going now")"
+    echo "the stages: $(for s in pull ccs-bash backup front push watch; do printf '%s %s; ' "$s" "$(cat "$RUN_DIR/$s/status" 2> /dev/null || echo '?')"; done)"
     at=$(grep -n '^== run ' "$LOG" | tail -n 1) || at=''
     if [[ $at ]]; then
         read -r f last <<<"$(runs_range 1)"
@@ -236,28 +214,13 @@ cmd_status() {
         if [[ $last == *"this run failed"* ]]; then echo "the last run: ${last#*ccs-watch: }"; else echo "the last run: ok (${last:0:19})"; fi
     fi
     echo "the proposals pulled: $(age /var/lib/ccs/pull-ok); GitLab/Forgejo answered: $(age "$STATE_DIR/forge-ok")"
-    if compose; then
-        f=$(find "$RUN_DIR/backup" -maxdepth 1 -name 'sent-*' -printf '%T@ %p\n' 2> /dev/null | sort -rn | head -n 1 | cut -d' ' -f2-)
-        echo "the state backed up: $(age "${f:-/nonexistent}") (sent when it changes; the backup stage: $(cat "$RUN_DIR/backup/status" 2> /dev/null || echo '?'))"
-    else
-        echo "the state backed up: $(age /var/lib/ccs/backup-sent) (sent when it changes)"
-    fi
+    f=$({ find "$RUN_DIR/backup" -maxdepth 1 -name 'sent-*' -printf '%T@ %p\n' 2> /dev/null || true; } | sort -rn | head -n 1 | cut -d' ' -f2-)
+    echo "the state backed up: $(age "${f:-/nonexistent}") (sent when it changes; the backup stage: $(cat "$RUN_DIR/backup/status" 2> /dev/null || echo '?'))"
     echo "the web server: $(grep -E 'ccs-watch: (the [0-9]+ pages|ALERT)' "$LOG" | tail -n 1 | cut -c1-160)"
     f=$(read_ccs "$OUTPUT_DIR/projects.json" 2> /dev/null | jq -r '[length, (map(select(.state == "FUNDING-REQUIRED")) | length)] | "\(.[0]) proposals, \(.[1]) funding required"' 2> /dev/null || echo "no projects.json")
     echo "the site: $f"
     echo "the wallet: $(wallet_line)"
-    if compose; then
-        echo "the releases: the compose's images: $(docker ps --filter label=com.docker.compose.project=backend --format '{{.Label "com.docker.compose.service"}}={{.Image}}' 2> /dev/null | sort -u -t= -k2,2 | sed 's/sha256:\(.\{12\}\).*/\1/' | paste -sd ' ' -), design $(cut -d' ' -f1 /opt/ccs-front-hugo/VERSION 2> /dev/null || echo '?')"
-    else
-        echo "the releases: ccs-bash $(release /usr/local/bin/ccs-bash-run), ccs-front-bash $(release /usr/local/bin/ccs-front-run), design $(cut -d' ' -f1 /opt/ccs-front-hugo/VERSION 2> /dev/null || echo '?')"
-    fi
-}
-# release RUN_SCRIPT: the version its comment names ("# v0.2.29, by ID"), else the image ID it starts
-release() {
-    local v
-    v=$(grep -o '# v[0-9.]*, by ID' "$1" 2> /dev/null | head -n 1 | sed 's/# //; s/, by ID//')
-    [[ $v ]] || v="image $(grep -o -- '--pull never sha256:[0-9a-f]\{12\}' "$1" 2> /dev/null | head -n 1 | sed 's/.*sha256://')"
-    echo "${v:-?}"
+    echo "the releases: the compose's images: $(docker ps --filter label=com.docker.compose.project=backend --format '{{.Label "com.docker.compose.service"}}={{.Image}}' 2> /dev/null | sort -u -t= -k2,2 | sed 's/sha256:\(.\{12\}\).*/\1/' | paste -sd ' ' -), design $(cut -d' ' -f1 /opt/ccs-front-hugo/VERSION 2> /dev/null || echo '?')"
 }
 # the wallet's height and the node's, the wallet's main address (its config's login, not shown)
 wallet_line() {
@@ -265,8 +228,10 @@ wallet_line() {
     url=$(conf RPC_URL http://127.0.0.1:18082/json_rpc) user=$(conf RPC_USER '') pass=$(conf RPC_PASSWORD '')
     # (the login on stdin, not in a command line other users could see; the compose's wallet
     # asked from ccs-bash's container, the one that can reach it)
-    local in=()
-    if compose; then in=(docker exec -i "$(container ccs-bash)"); fi
+    local in c
+    c=$(container ccs-bash) || c=''
+    [[ $c ]] || { echo "not asked: the compose's ccs-bash isn't running (the wallet answers only it)"; return; }
+    in=(docker exec -i "$c")
     r() { printf 'user = "%s:%s"\n' "$user" "$pass" | "${in[@]}" curl -fsS -m 20 --digest -K - "$url" -d "{\"jsonrpc\":\"2.0\",\"id\":\"0\",\"method\":\"$1\"$2}"; }
     h=$(r get_height '' | jq -r .result.height) || { echo "doesn't answer at $url"; return; }
     a=$(r get_address ',"params":{"account_index":0}' | jq -r .result.address) || a='?'
@@ -361,8 +326,10 @@ cmd_check() {
 
     [[ ${CCS_CHECK_OFFLINE:-} ]] && { echo "($fails failed, $warns warnings; nothing asked: CCS_CHECK_OFFLINE)"; ((fails == 0)); return; }
     echo "== they answer"
-    local in=() user pass a k
-    if compose; then in=(docker exec -i "$(container ccs-bash)"); fi
+    local in c user pass a k
+    c=$(container ccs-bash) || c=''
+    [[ $c ]] || { bad "the compose's ccs-bash isn't running: the wallet, asked through it, can't be"; echo "($fails failed, $warns warnings)"; return 1; }
+    in=(docker exec -i "$c")
     user=$(kv /etc/ccs/ccs.conf RPC_USER) pass=$(kv /etc/ccs/ccs.conf RPC_PASSWORD)
     rq() { printf 'user = "%s:%s"\n' "$user" "$pass" | "${in[@]}" curl -fsS -m 20 --digest -K - "$url" -d "{\"jsonrpc\":\"2.0\",\"id\":\"0\",\"method\":\"$1\"$2}"; }
     if a=$(rq get_address ',"params":{"account_index":0}' | jq -er .result.address); then
