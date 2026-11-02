@@ -18,8 +18,8 @@
 #     its .pin, installed here by hand) or in the allowed file, and no data: image at all; the
 #     JSON read as JSON;
 #   - every other file it changes must be the design's (design.sha256, from the release zip), a
-#     proposal's image that the proposals repository has at that path (any QR code in it holding
-#     only such addresses), projects.json, the signed list's own files, the same as the ones
+#     proposal's image that the proposals repository has at that path, byte for byte (its review
+#     there vouches for what it shows: no image is read here), projects.json, the signed list's own files, the same as the ones
 #     installed here, or a donation QR code, qr/<address>.png, exactly the list's file of that
 #     address (its sum in the list's .qr.sha256, pinned in its .pin: the gate never makes or reads
 #     one); and a plain file where the site has one (no symlink, no folder for a page);
@@ -91,41 +91,6 @@ refuse() {
 # elements side by side (two tag labels, a tag and its count) is one run there. Each file has a budget of checksums (CCS_GATE_KECCAK, 3000) and of time (CCS_GATE_SECS,
 # 20 s): past either, it is held back alone ("too many..."), not every file with it (text made
 # to look like an address everywhere, an idea's title, costs a checksum a place).
-# qrscan KIND IMAGE [inverted]: ccs-check qr: each QR code's text in IMAGE on a line, as a browser
-# shows it; exit 1 if there is none, or IMAGE is no image; anything else (exit 2, or past the time
-# limit) if it couldn't be checked (over 8 MB, over 40 million pixels, an animated PNG, a GIF of
-# over 100 frames, out of memory). Decoded as the format its bytes are, as a browser does (KIND,
-# from its name, needn't be it), by Go's own (memory-safe) decoders, its size read first; a GIF's
-# frames each drawn over the ones before; with "inverted", every frame also read inverted (light
-# on dark, which phones read) and with its local contrast raised (a faint code). QR codes only. (A test's: with CCS_GATE_SCANLOG, each image read is
-# noted there: its kind and first bytes.)
-qrscan() { CCS_GATE_SCANLOG=$([[ -e $state/scan.log ]] && echo "$state/scan.log") timeout 20 ccs-check qr "$@"; }
-
-# qr FILE IMAGE: the addresses in every QR code in IMAGE as "FILE<TAB>address" lines (none if it
-# has no QR code); "FILE<TAB>!reason" if it couldn't be checked (too large, animated, not read in
-# time): held back, never taken for an image without one. ccs-check qr reads it, as ccs-data, with
-# a time limit; inverted codes (light on dark) too. Each code's text read for addresses as a
-# page's is (ccs-check scan: a zero-width space or a grouping doesn't hide one). (Only the
-# proposals' images, from their repository: the donation QR codes are the list's files, taken by
-# their sums, never read: changes.)
-qr() {
-    local out rc=0 kind=${2##*.} t
-    case ${kind,,} in png) kind=png ;; jpg | jpeg) kind=jpeg ;; gif) kind=gif ;; *) return 1 ;; esac
-    out=$(qrscan "$kind" "$2" inverted 2> /dev/null) || rc=$?
-    if ((rc > 1)); then
-        printf '%s\t%s\n' "$1" "!an image the QR reader could not check (over 8 MB or 40 million pixels, animated, or not read in time)"
-        return 0
-    fi
-    ((rc == 0)) || return 1
-    t=$(mktemp)
-    printf '<\n%s\n' "$out" > "$t"
-    rc=0
-    out=$(timeout 60 ccs-check scan "$t" 2> /dev/null) || rc=$?
-    rm -f "$t"
-    if ((rc)); then printf '%s\t%s\n' "$1" "!its QR codes' text could not be read in time"; return 0; fi
-    cut -f2- <<<"$out" | awk -F '\t' -v f="$1" '$1 != "?qr" && NF { print f "\t" $1; n++ } END { exit !n }'
-}
-
 # json (ccs-check json) FILE...: each JSON file's strings as a reader of it gets them (\u escapes read, every key
 # and value, a key twice both), their addresses as "file<TAB>address" lines, read as the pages'
 # text is: a character that isn't ASCII dropped (it mustn't split an address), and again as a
@@ -231,8 +196,8 @@ forge_up() {
 }
 
 # repo_images: "blob path" for each proposal image in the fetched repository, as git ls-tree has
-# them: a backend that isn't the one it was can't add an image of its own (a QR code cut into
-# pieces, shown side by side, that a QR reader reads in none of them)
+# them: a backend can't add an image of its own, or change one (an image can show an address, or
+# a QR code of one: the repository's review vouches for its images, nothing here reads them)
 repo_images() {
     git -C "$git" ls-tree -r refs/heads/ccs -- images/ | awk -F '\t' '{ split($1, m, " ") } m[2] == "blob" { print m[3] " " $2 }'
 }
@@ -439,19 +404,15 @@ feed() {
 }
 
 # changes: every file the push brings that isn't already live, byte for byte, as "file<TAB>!reason"
-# for any that isn't allowed, and "file<TAB>address" for the addresses in a proposal image's QR codes.
-# A proposal image already live passed the QR reader of its day: on a full check its codes are
-# read again (a newer ccs-check may find what an older one missed; held back, it stays live as it
-# was, and IRC is told: a person decides)
+# for any that isn't allowed. A proposal's image is taken as the proposals repository has it, byte
+# for byte at that path: what it shows is that repository's review's to vouch for (no image is
+# read here)
 changes() {
     local f rel sum repo=''
     [[ $fetched ]] && repo=$(repo_images)
     while IFS= read -r -d '' f; do
         rel=${f#"$staging"/}
-        if cmp -s "$f" "$live/$rel" 2> /dev/null; then
-            if [[ $full && $rel =~ ^images/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+\.(png|jpg|jpeg|gif)$ ]]; then qr "$f" "$f" || true; fi
-            continue
-        fi
+        cmp -s "$f" "$live/$rel" 2> /dev/null && continue
         case $rel in
             *.html | projects.json) ;;   # the pages and the /projects JSON: checked, all of them
             feed.xml) feed "$f" ;;
@@ -473,8 +434,6 @@ changes() {
                     printf '%s\t%s\n' "$f" "!a new image, and the proposals repository could not be read to check it"
                 elif ! grep -qxF "$(git hash-object --no-filters -- "$f") $rel" <<<"$repo"; then
                     printf '%s\t%s\n' "$f" "!not the proposals repository's $rel"
-                else
-                    qr "$f" "$f" || true
                 fi ;;
             *)
                 sum=$(sha256sum < "$f" | cut -d' ' -f1)
@@ -580,7 +539,7 @@ fetch && fetched=1
 # holds only what passed, so a file the same as its live copy passed before, against the same
 # list, allowed file, design, markdown.awk, proposals commit and gate (this script and ccs-check):
 # when any of those changes (a proposal taken out is a new commit), and once a day whatever
-# happens, all are checked again, the proposal images' QR codes too (changes).
+# happens, all are checked again.
 mapfile -d '' all < <(find "$staging" -type f \( -name '*.html' -o -name '*.json' -o -path "$staging/feed.xml" \) -print0)
 inputs=$( {
     cat -- "${BASH_SOURCE[0]}" "$list" "$list.pin" "$list.qr.sha256" "$design" "$conf"/markdown*.awk "$conf/proposals.conf"

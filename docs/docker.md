@@ -221,7 +221,7 @@ change. The host keeps the accounts' ids, folders, key files and `/etc/ccs-gate`
   `/var/log/ccs-web/ccs-gate.log` (a folder mounted: a rotated file would stay the old one; the
   image has no syslog socket for `logger`).
 - **Tests:** `tests/gate.sh` with `GATE_IMAGE` runs every check of the gate with this image as the
-  web server; `tests/gate-image.sh`, inside it, its QR reader and tools; `tests/web.sh` attacks
+  web server; `tests/gate-image.sh`, inside it, what it holds (and doesn't); `tests/web.sh` attacks
   its sshd, run as `compose.yml` runs it, from the backend's keys and from another machine.
 
 ### Setting it up
