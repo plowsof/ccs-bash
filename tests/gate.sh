@@ -156,6 +156,7 @@ if k == "absolute": add("/tmp/escaped")
 if k == "twice": add("evil.html", b"<p>one"); add("./evil.html", b"<p>two")
 if k == "backslash": add("proposals/back\\slash.html")
 if k == "clash": add("index.html/evil.html")
+if k == "address": add("pay/" + sys.argv[2] + "/../x.html")
 out.close()
 PY
 docker cp "$files/hostile.py" "$name-backend:/hostile.py"
@@ -236,7 +237,7 @@ open(p, "w", encoding="utf-8").write(s.replace(a, b, 1))' "/out/$1" "$2" "$3"
 # push: as the backend pushes (contrib/ccs-push): the files that changed, a tar over ssh
 push() { on backend "/ccs-push /out /pushed /state -T -o BatchMode=yes -o StrictHostKeyChecking=yes ccs-data@$web 2>&1"; }
 # hostile KIND: hostile.py's tar sent as a push; its exit
-hostile() { on backend "python3 /hostile.py $1 | ssh -T -o BatchMode=yes ccs-data@$web receive > /dev/null 2>&1"; }
+hostile() { on backend "python3 /hostile.py $1 ${2:-} | ssh -T -o BatchMode=yes ccs-data@$web receive > /dev/null 2>&1"; }
 live() { on web "sed -n '/<!-- ccs:count fr -->/{n;p}' /var/lib/ccs-data/index.html 2> /dev/null"; }
 livefile() { on web "cat '/var/lib/ccs-data/$1' 2> /dev/null || true"; }
 livepage() { livefile proposals/p.html; }
@@ -702,6 +703,10 @@ if on web '! test -e /var/lib/ccs-data/proposals/next.html && ! test -e /var/lib
 else on web 'ls -la /var/lib/ccs-data/proposals /var/lib/ccs-data/explore/tag'; fail "review 10 (M-1): a folder went live"; fi
 on backend 'rm -rf /out/proposals/next.html'
 if bot | grep -qF "the web server refused a push it could not take"; then ok "... and IRC is told"; else bot | tail -n 3; fail "no alert for a refused tar"; fi
+# review 10's L-1: IRC is told why, but never a whole address the backend chose (a name quoting one)
+on web 'rm -f /var/lib/ccs-gate/alert-receive'
+hostile address "$fake" || true
+if bot | grep -qF "${fake:0:6}…${fake: -4}" && ! bot | grep -qF "$fake"; then ok "review 10 (L-1): a refused push's reason in IRC with its address shortened"; else bot | tail -n 2; fail "review 10 (L-1): a whole address in an alert"; fi
 if [[ $(on backend "printf 'not a tar' | ssh -T -o BatchMode=yes ccs-data@$web receive > /dev/null 2>&1; echo \$?") == 1 ]]; then ok "refused: a push that isn't a tar"; else fail "a push that isn't a tar"; fi
 
 # the key still runs nothing but the gate

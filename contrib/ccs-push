@@ -55,8 +55,8 @@ if ((rc == 0 || rc == 7)); then
     [[ ! $full ]] || touch "$state/full"
     # ccs-watch's copy: the files sent copied in, the ones SITE no longer has taken out
     while IFS= read -r f; do
-        # (no -p: the push's user doesn't own the front's files, and busybox's cp fails on keeping
-        # their owner; ccs-watch compares bytes)
+        # (no -p: the push's user doesn't own the front's files, so busybox's cp -p warns of each
+        # owner it can't keep; ccs-watch compares bytes)
         mkdir -p "$pushed/$(dirname "$f")" && cp "$site/$f" "$pushed/$f"
     done < "$tmp/send"
     (cd "$pushed" && find . -type f -print) | awk 'FILENAME == ARGV[1] { has[substr($0, 67)] = 1; next } !($0 in has)' "$tmp/now" - | while IFS= read -r f; do

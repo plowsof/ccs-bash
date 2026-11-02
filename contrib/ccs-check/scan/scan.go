@@ -31,9 +31,10 @@ var (
 	starts   = regexp.MustCompile(`^[ \t\n\r]*[<\[{]`)
 	controls = regexp.MustCompile(`[\x00-\x08\x0b\x0e-\x1f\x7f]`)
 	entities = regexp.MustCompile(`&#[0-9]+;?|&#[xX][0-9A-Fa-f]+;?|&[A-Za-z][A-Za-z0-9]*;`)
-	qrs      = regexp.MustCompile(`data:image/png;base64,[A-Za-z0-9+/]+=*`)
-	tags     = regexp.MustCompile(`<[^>]*>`)
-	named    = map[string]int{"amp": 38, "lt": 60, "gt": 62, "quot": 34, "apos": 39}
+	// a data: image of any type, as a browser reads the scheme (any case: review 10's L-2)
+	qrs   = regexp.MustCompile(`(?i)data:image/[A-Za-z0-9.+-]*[;,][A-Za-z0-9+/=;,.:%_-]*`)
+	tags  = regexp.MustCompile(`<[^>]*>`)
+	named = map[string]int{"amp": 38, "lt": 60, "gt": 62, "quot": 34, "apos": 39}
 )
 
 // char: printable ASCII as itself, a space as one, anything else \x01 (read both ways)
@@ -107,7 +108,7 @@ func Pages(files []string, w io.Writer) error {
 		}
 		d = entities.ReplaceAllStringFunc(controls.ReplaceAllString(d, "\x01"), entity)
 		for _, m := range qrs.FindAllString(d, -1) {
-			fmt.Fprintf(w, "%s\t?qr\t%s\n", f, m[22:])
+			fmt.Fprintf(w, "%s\t?qr\t%s\n", f, m)
 		}
 		d = qrs.ReplaceAllString(d, " ")
 		if err := both(c, d, out); err != nil {
