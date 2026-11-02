@@ -18,6 +18,7 @@ mkdir -p "$t/srv/assets" "$t/srv/proposals" "$t/onion" "$t/data" "$t/sites"
 echo '<!doctype html><title>home</title>' > "$t/srv/index.html"
 echo '<!doctype html><title>not found</title>' > "$t/srv/404.html"
 echo '<!doctype html><title>a proposal</title>' > "$t/srv/proposals/a.html"
+echo '<!doctype html><title>a proposal</title>' > "$t/srv/proposals/b-(2022).html"
 printf 'body{color:red}%.0s' $(seq 200) > "$t/srv/assets/style.$h.css"
 echo 'dark' > "$t/srv/assets/theme-dark.css"
 echo 'light' > "$t/srv/assets/theme-light.css"
@@ -76,9 +77,11 @@ loc() { hdr "$(get "$1")" location; }
 if [[ $(code "$(get '/?theme=light')") == 302 && $(loc '/?theme=light') == /light/ && $(loc '/proposals/a.html?theme=dark') == /dark/proposals/a.html \
     && $(loc '/dark/proposals/a.html?theme=system') == /proposals/a.html && $(loc '/light/proposals/a.html?theme=dark') == /dark/proposals/a.html \
     && $(loc '/dark?theme=system') == / && $(loc '//evil.example/x?theme=light') == /light/ && $(loc '/dark//evil.example?theme=system') == /dark//evil.example \
-    && $(loc '/%5Cevil.example?theme=dark') == /dark/ ]]; then
-    ok "www: the theme button's redirects, never to another site (//host, /\\host; /dark//host stays this site's path, as nginx had it)"
-else for p in '/?theme=light' '/proposals/a.html?theme=dark' '/dark/proposals/a.html?theme=system' '/dark?theme=system' '//evil.example/x?theme=light' '/dark//evil.example?theme=system' '/%5Cevil.example?theme=dark'; do echo "$p -> $(loc "$p")"; done; fail "www: the theme redirects"; fi
+    && $(loc '/%5Cevil.example?theme=dark') == /dark/%5Cevil.example \
+    && $(loc '/dark/proposals/b-%282022%29.html?theme=dark') == /dark/proposals/b-%282022%29.html \
+    && $(loc '/proposals/b-%282022%29.html?theme=light') == /light/proposals/b-%282022%29.html ]]; then
+    ok "www: the theme button's redirects, the page as it was asked for (%28 stays %28), never to another site (//host, /\\host; /dark//host and /%5Chost stay this site's paths, as nginx had them)"
+else for p in '/?theme=light' '/proposals/a.html?theme=dark' '/dark/proposals/a.html?theme=system' '/dark?theme=system' '//evil.example/x?theme=light' '/dark//evil.example?theme=system' '/%5Cevil.example?theme=dark' '/dark/proposals/b-%282022%29.html?theme=dark'; do echo "$p -> $(loc "$p")"; done; fail "www: the theme redirects"; fi
 
 r=$(get -H 'Range: bytes=0-3' /index.html) r2=$(docker exec "$name" curl -sS -o /dev/null -w '%{http_version}' --http2-prior-knowledge http://127.0.0.1:18080/ 2>&1 || true)
 if [[ $(code "$r") == 200 && $(body "$r") == *"<title>home"* && $r2 != 2 ]]; then
