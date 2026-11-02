@@ -1,43 +1,21 @@
 #!/usr/bin/env bash
-# In the gate's image (the CI's gate-image job, no network): its QR reader as it ships (ccs-check
-# qr): a code read in a PNG, a JPEG and a GIF; an inverted one only when asked; an SVG named
-# .png, a JPEG named .png read as nothing; a PNG claiming 30000 by 30000 pixels not checked (2),
-# never "none"; QR codes only; ccs-check root's and running; sshd; and none of what the image
-# leaves out (Python, libffi, zbar, libjpeg, giflib, qrencode, libpng: the gate makes no QR code;
-# rsync and xxhash: the push is a tar, read by ccs-check; jq, acl, attr, ncurses' other libraries:
-# nothing used them; an ssh client, sftp, git's servers).
+# In the gate's image (the CI's gate-image job, no network): ccs-check root's and running, with
+# no QR reader (nothing on the web server reads an image); sshd; and none of what the image
+# leaves out (Python, libffi, zbar, libjpeg, giflib, qrencode, libpng: the gate makes and reads
+# no image; rsync and xxhash: the push is a tar, read by ccs-check; jq, acl, attr, ncurses' other
+# libraries: nothing used them; an ssh client, sftp, git's servers).
 set -uo pipefail
-here=$(dirname "$(readlink -f "$0")")
-fx=$here/fixtures/qr
 status=0
 ok() { echo "ok   $1"; }
 fail() { echo "FAIL $1"; status=1; }
 t=$(mktemp -d)
-q() { ccs-check qr "$@" 2> /dev/null; }
-a="monero:4$(printf '%094d' 1 | tr 0 1)"
 
 # ccs-check: root's (its build stage's user's uid ccs-data may have), runs
 if [[ $(stat -c '%u:%g %a' /usr/local/bin/ccs-check) == '0:0 755' ]] && ccs-check --check; then
     ok "ccs-check: root's, 755, runs"
 else fail "ccs-check: $(stat -c '%u:%g %a' /usr/local/bin/ccs-check 2>&1)"; fi
-cp "$fx/qr.png" "$t/qr.png"   # (qrencode -s 4 of $a)
-if [[ $(q png "$t/qr.png") == "$a" && $(q jpeg "$fx/qr.jpg") == "$a" && $(q gif "$fx/qr.gif") == "$a" ]]; then
-    ok "a QR code read in a PNG (qrencode's), a JPEG and a GIF"
-else fail "reading: png '$(q png "$t/qr.png")' jpeg '$(q jpeg "$fx/qr.jpg")' gif '$(q gif "$fx/qr.gif")'"; fi
-cp "$fx/inverted.png" "$t/inv.png"   # (qrencode -s 4 --foreground=FFFFFF --background=000000)
-if ! q png "$t/inv.png" > /dev/null && [[ $(q png "$t/inv.png" inverted) == "$a" && $(q gif "$fx/inverted.gif" inverted) == "$a" ]]; then
-    ok "an inverted code (light on dark): read only with inverted"
-else fail "inverted codes"; fi
-printf '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>' > "$t/s.png"
-cp "$fx/qr.jpg" "$t/j.png"
-q png "$t/s.png" inverted > /dev/null; s=$?
-if ((s == 1)) && [[ $(q png "$t/j.png" inverted) == "$a" ]]; then ok "read as the format its bytes are, as a browser does: a JPEG named .png read, an SVG none"
-else fail "a file not the format its name says: exit $s, $(q png "$t/j.png" inverted)"; fi
-# a PNG claiming 30000x30000 pixels (fixtures/qr/bomb.png: its header and a little data)
-q png "$fx/bomb.png" inverted > /dev/null; b=$?
-if ((b == 2)); then ok "a PNG of 30000x30000 pixels: not checked (2), never none"; else fail "a PNG of 30000x30000 pixels: exit $b"; fi
-# QR codes only: an EAN-13 barcode (fixtures/qr/ean.png) reads as nothing, a QR code still does
-if [[ -f $fx/ean.png ]] && ! q png "$fx/ean.png" > /dev/null && [[ $(q png "$t/qr.png") == "$a" ]]; then ok "QR codes only: an EAN-13 barcode reads as nothing, a QR code still reads"; else fail "a barcode other than QR, or none to try"; fi
+out=$(ccs-check qr png /dev/null 2>&1); rc=$?
+if ((rc == 2)) && [[ $out == *"no such check"* ]]; then ok "no QR reader (ccs-check qr is gone)"; else fail "ccs-check still reads QR codes: exit $rc, $out"; fi
 if grep -q OpenSSH <<<"$(/usr/sbin/sshd -V 2>&1)"; then ok "sshd"; else fail "sshd"; fi
 present=''
 for c in ssh scp sftp git-daemon git-shell ssh-agent python3 python rrsync rsync qrencode jq getfacl; do command -v "$c" > /dev/null && present+=" $c"; done

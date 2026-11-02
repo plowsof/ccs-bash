@@ -91,7 +91,7 @@ jobs:
           echo "pinned: commit ${GITHUB_SHA::7} builds to $a"
   gate-image:
     # The gate's image (container/gate.Dockerfile, the web server compose): built as the ccs-bash
-    # image is, its QR reader and tools tested inside it, the gate's tests with it as the web
+    # image is, its contents tested inside it, the gate's tests with it as the web
     # server, its sshd as compose.yml runs it attacked from the backend's keys. (gate-pinned: a
     # second clean build, from a clone made under umask 077, gives the same ID.)
     runs-on: ubuntu-24.04
@@ -106,7 +106,7 @@ jobs:
           key: sources-${{ hashFiles('container/sources.lock') }}
       - name: build (download, then install offline)
         run: container/build.sh ccs-gate gate.Dockerfile
-      - name: its QR reader and tools, inside it, no network
+      - name: its contents (ccs-check, sshd, nothing else), inside it, no network
         run: docker run --rm --network none --read-only --tmpfs /tmp -v "$PWD:/src:ro" --entrypoint bash ccs-gate /src/tests/gate-image.sh
       - name: ccs-check, gofmt'd, vetted and its Go tests, in StageX's Go; build.sh's bytes the image's
         run: |

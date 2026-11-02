@@ -1,15 +1,13 @@
 #!/usr/bin/env bash
 # build.sh OUT: build ccs-check into OUT with StageX's Go (container/images' pin, signatures
-# checked), as gate.Dockerfile builds it: its modules from their pinned archives
-# (container/sources.lock, fetched by container/fetch.sh, unpacked by deps.sh), no network in
+# checked), as gate.Dockerfile builds it: Go's standard library alone (no module), no network in
 # the build, so the same bytes as the gate image's /usr/local/bin/ccs-check (a host setup checks
 # its sha256 against the release's). build.sh test: gofmt, go vet and the Go tests, the same
 # way. build.sh fuzz [SECONDS]: each fuzz test (*/*fuzz_test.go) for SECONDS (30), no network; an
 # input that fails it is kept in its package's testdata/fuzz/ (commit it: go test runs it
 # after). build.sh vulncheck: govulncheck (pinned below, checked against Go's checksum database)
-# on this code as built, Go's standard library and its modules: the known vulnerabilities in
-# what it calls (Go's database, so a network). Needs docker, and the network once for the
-# archives.
+# on this code as built and Go's standard library: the known vulnerabilities in what it calls
+# (Go's database, so a network). Needs docker.
 set -euo pipefail
 here=$(dirname "$(readlink -f "$0")")
 repo=$(dirname "$(dirname "$here")")
@@ -18,15 +16,11 @@ ref=$(awk '$1 == "go" { print $2 }' "$repo/container/images")
 "$repo/container/verify-images.sh" <(grep -E '^go ' "$repo/container/images") 2> /dev/null \
     || { echo "error: StageX's Go ($ref) isn't signed as container/images needs" >&2; exit 1; }
 docker pull -q "$ref" > /dev/null
-# the modules, at ../deps as go.mod has them (each archive checked by its sha256)
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-"$repo/container/fetch.sh" "$repo/container/sources" 2> /dev/null \
-    || { echo "error: the pinned archives (container/sources.lock) could not be fetched" >&2; exit 1; }
-"$here/deps.sh" "$repo/container/sources" "$tmp/deps"
 network=(--network none) src=:ro
 # go TOOL [DOCKER OPTION...] -- ARG...: StageX's TOOL (go, gofmt; or a path) on a read-only copy
-# of this folder and the modules, as the build stage runs it (/tmp exec: go test runs its
+# of this folder, as the build stage runs it (/tmp exec: go test runs its
 # binaries there)
 go() {
     local tool=$1 opts=()
@@ -34,7 +28,7 @@ go() {
     while [[ $1 != -- ]]; do opts+=("$1"); shift; done
     shift
     docker run --rm "${network[@]}" --read-only --tmpfs /tmp:exec -u "$(id -u):$(id -g)" \
-        -v "$here:/src$src" -v "$tmp/deps:/deps:ro" -w /src -e HOME=/tmp -e GOCACHE=/tmp/cache -e GOPATH=/tmp/go \
+        -v "$here:/src$src" -w /src -e HOME=/tmp -e GOCACHE=/tmp/cache -e GOPATH=/tmp/go \
         -e CGO_ENABLED=0 -e GOFLAGS=-mod=readonly -e GOPROXY=off -e GOTOOLCHAIN=local \
         "${opts[@]}" --entrypoint "$([[ $tool == /* ]] && echo "$tool" || echo "/usr/bin/$tool")" "$ref" "$@"
 }
