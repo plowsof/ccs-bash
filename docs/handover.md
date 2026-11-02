@@ -419,7 +419,7 @@ agreeing, answering) and changes nothing.
 | `/etc/ssh/authorized_keys/ccs-data` | `from=`, the key | the backend's address and its push key, `command="/usr/local/bin/ccs-receive"`; `sshd_config`'s `Match User ccs-data` reads only it | 6 |
 | `/etc/ccs-gate/` | `subaddresses.txt` and its `.pin`, `.asc`, `.key.asc`, `.qr.sha256` | the same files as the backend's (not `.qr/`) | 6 |
 | | `design.sha256` | the design release's files, from its zip (two-machines, "The gate") | 6 |
-| the host setup's packages | the gate's tools | `apt install rsync curl git`, and `ccs-check` copied out of the attested gate image ([two machines, without Docker](two-machines.md#without-docker)) (in Docker: none, the gate's image has them) | 6 |
+| the host setup's packages | the gate's tools | `apt install curl git`, and `ccs-check` copied out of the attested gate image ([two machines, without Docker](two-machines.md#without-docker)) (in Docker: none, the gate's image has them) | 6 |
 | | `design/<release>/` | the design's release zip, unpacked (the same as the backend's); `design.sha256` from it | 6 |
 | | `markdown.awk` | `lib/markdown.awk` of the ccs-front-bash release the backend runs | 6 |
 | | `proposals.conf` | `PROPOSALS_GIT=https://repo.getmonero.org/monero-project/ccs-proposals.git`, `PROPOSALS_BRANCH=master` (and `LINK_HOSTS`, other repositories a proposal's merge request link may be in, as host/path) | 6 |
@@ -592,6 +592,12 @@ design alone: the design lines of steps 3 to 5). Each machine: as root, a backup
    (the old releases ignore the `qr` line and the new files). Without them the new gate refuses
    every push and the new ccs-front-bash stops. The web server's nginx: `img-src 'self'` (no
    `data:`), [two machines](two-machines.md), once the backend's new release is live.
+   **Once, the first set whose push is a tar** (ccs-bash after v0.2.40: `contrib/ccs-push`, the
+   gate's `ccs-check receive`; no rsync on either machine): the new gate refuses the old
+   backend's rsync push, and the old gate the new backend's tar, so pushes fail from step 3 until
+   step 5 (the live site stays as it is; past 15 minutes the heartbeat tells IRC, then that they
+   arrive again). Do the backend right after the web server. The first push sends every file
+   (no record yet of what the gate took).
 3. **The web server first**, so its gate allows the new pages (`/opt/ccs-bash` here is the web
    server's own checkout, at ccs-bash's attested commit):
    ```

@@ -16,10 +16,10 @@ apt install bash coreutils findutils grep sed diffutils mawk util-linux curl ca-
 | `jq` | all JSON | 1.6 or newer |
 | `git` | the proposals checkout | |
 | `logrotate` | the log | optional |
-| `rsync`, `openssh-client` | pushing the site to the web server, and the state to the backup machine | |
+| `tar`, `openssh-client` | pushing the site to the web server (`contrib/ccs-push`: a tar of the files that changed), and the state to the backup machine | `tar` is priority required |
 
 **B) The container:** Docker with buildx (on Debian, Docker's own packages: bookworm's `docker.io`
-has no buildx), `git`, optionally `logrotate`, and `rsync` + `openssh-client`. Docker's own image
+has no buildx), `git`, optionally `logrotate`, and `openssh-client`. Docker's own image
 store, not its containerd one (a fresh Docker 29's default, where an image ID isn't the attested
 one): `{"features": {"containerd-snapshotter": false}}` in `/etc/docker/daemon.json`, before
 building. Where the image is built, also `gpg` and `jq`. Everything
@@ -245,17 +245,16 @@ ccs-front-run >> $L 2>&1 || failed="${failed:+$failed, }ccs-front-bash"
 # so the web server's alarm only sounds when this machine can't reach it (its own alerts cover
 # a failed run). The push exits 7 when the gate held a file back but the rest went live: a failed
 # run, and the live pages are still checked (a web server that lies must not hide behind it).
-# The push and pushed/, the copy of what went that ccs-watch compares with, under one lock: a
-# check on ccs-watch.timer (below) never sees one without the other
+# The push (contrib/ccs-push: a tar of the files that changed since what the gate last took,
+# /var/lib/ccs/push its record) and pushed/, the copy of what went that ccs-watch compares with,
+# under one lock: a check on ccs-watch.timer (below) never sees one without the other
 exec 9> /run/ccs-watch.lock; flock -w 600 9
 rc=0
-timeout -k 5 120 runuser -u ccs -- rsync -a --checksum --delay-updates \
-    -e "ssh -p 22 -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15" \
-    /var/lib/ccs/www/site/ ccs-data@<web server>: >> $L 2>&1 || rc=$?
+timeout -k 5 600 runuser -u ccs -- /opt/ccs-bash/contrib/ccs-push /var/lib/ccs/www/site /var/lib/ccs/pushed /var/lib/ccs/push \
+    -T -p 22 -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15 ccs-data@<web server> >> $L 2>&1 || rc=$?
 [ "$rc" = 7 ] && failed="${failed:+$failed, }the push (the web server held a file back)"
 [ "$rc" = 0 ] || [ "$rc" = 7 ] || failed="${failed:+$failed, }the push"
 if [ "$rc" = 0 ] || [ "$rc" = 7 ]; then
-    runuser -u ccs -- rsync -a --delete /var/lib/ccs/www/site/ /var/lib/ccs/pushed/
     runuser -u ccs -- $W https://ccs.getmonero.org /var/lib/ccs/pushed >> $L 2>&1
 fi
 exec 9>&-
