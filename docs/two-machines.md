@@ -23,9 +23,8 @@ backend's own push: `rsync -a --delay-updates SITE/ host:`) into its staging fol
 | If the key is stolen, this stops | |
 |---|---|
 | `restrict` | shells, forwarding, a terminal |
-| `-wo` | reading back, writing outside the folder |
-| `-no-del` | deleting |
-| `-munge` | symlinks (a `projects.json` link to any file would get nginx to publish it) |
+| `ccs-check rrsync`: the push's own command, nothing else | reading back, writing outside the folder, deleting, any other rsync option |
+| `--munge-links` (added by it) | symlinks (a `projects.json` link to any file would get nginx to publish it) |
 | `from=` | use from another machine |
 | key file root-owned, outside its home | loosening the key line, adding a key |
 | own filesystem / quota | filling the disk |
@@ -219,7 +218,7 @@ what it is sent; it knows what a page may be. Each push, one at a time, it
    - the donation box: **one address of the signed list** (not `allowed`'s: those are no
      proposal's), the same in its text and `monero:` link, its QR code that address's.
 
-   A page not checked in time (5 minutes) or over 8 MB is held back: what isn't known good
+   A page not checked in time (5 minutes) or over 2 MB is held back: what isn't known good
    doesn't go live;
 3. checks **every address** (95 or 106 base58 characters) in pages and JSON against the signed
    list and `allowed`, as written (tags and attributes too, entities decoded, a non-ASCII
@@ -234,7 +233,9 @@ what it is sent; it knows what a page may be. Each push, one at a time, it
 4. checks every other file the push changes: the design's, byte for byte (`design.sha256`: a
    stylesheet can hide an address, an image be a QR code); a proposal's image the proposals
    repository has, byte for byte at that path (its QR codes as a browser shows them, of listed addresses);
-   `projects.json`; or the list's files as installed here. Each a plain file where the live site
+   `projects.json`; `feed.xml`, line for line as ccs-front-bash writes it (its items plain text,
+   each a link to one of this site's proposal pages under `SITE_URL`, 100 at most, and no address
+   at all, however written); or the list's files as installed here. Each a plain file where the live site
    has one (a symlink or a folder in a page's place would take the page away);
 5. copies staging into the live site, except a file that fails, which keeps its last good copy:
    one bad page doesn't stop the rest. The push then exits 7 (a refused one: 1); which file and
@@ -285,7 +286,7 @@ sums: a taken-over backend would bring both.
 **The design**, the release zip the backend runs, unpacked, and the sums of every file but the pages:
 
 ```
-v=v0.1.24                                                            # the handover's releases table
+v=v0.1.29                                                            # the handover's releases table
 sha256sum ccs-front-hugo-$v.zip                                      # the attested one
 unzip -q ccs-front-hugo-$v.zip -d /etc/ccs-gate/design/$v
 (cd /etc/ccs-gate/design/$v && find . -type f ! -name '*.html' -exec sha256sum {} +) > /etc/ccs-gate/design.sha256
@@ -298,7 +299,7 @@ beside the old as `markdown-<release>.awk` first. Empty `/var/lib/ccs-data` befo
 if anything is in it (the gate trusts what is live).
 
 A proposal quoting another address doesn't update until that address is in `allowed` (the
-refusal names it; on the testnet, two). A new list: its four files, the same way.
+refusal names it; on the testnet, two). A new list: its files, the same way.
 
 `tests/gate.sh` builds this in containers (with `GATE_IMAGE`, from the gate's image) and pushes
 each way around it, each case named in its output:
@@ -409,15 +410,17 @@ folders and files above:
 ```
 apt install rsync qrencode git   # the push received, the QR codes it compares with made, the proposals fetched
 install -m 755 contrib/ccs-receive /usr/local/bin/ccs-receive        # from this repository at the attested commit, checked out here
-install -m 755 ccs-check-vX.Y.Z-linux-amd64 /usr/local/bin/ccs-check  # the release's, its sha256 the notes' (see below)
+install -m 755 ccs-check /usr/local/bin/ccs-check                   # the attested gate image's own (see below)
 install -o ccs-data -m 644 /dev/null /var/log/ccs-gate.log          # optional: the refusals, as a file (in Docker: /var/log/ccs-web/)
 ```
 
-`ccs-check` is the release's asset (`ccs-check-vX.Y.Z-linux-amd64`): check `sha256sum` against
-the notes' "ccs-check sha256". It is the attested gate image's own `/usr/local/bin/ccs-check`:
-to check it against the attestation itself, pull the gate image by its digest, check its ID
-(`docker image inspect`, the attested one), and copy it out (`docker create`, `docker cp`); or
-build it (`contrib/ccs-check/build.sh OUT`, Docker, the same bytes).
+`ccs-check`: what attesters sign is the gate image's ID, and the binary is that image's own
+`/usr/local/bin/ccs-check`. So take it from there: pull the gate image by its digest, check its ID
+(`docker image inspect`, the attested one), and copy it out (`c=$(docker create <image>)`,
+`docker cp "$c:/usr/local/bin/ccs-check" .`); or build it from the attested commit
+(`contrib/ccs-check/build.sh OUT`, Docker: the same bytes). The release's asset
+(`ccs-check-vX.Y.Z-linux-amd64`) and the sha256 in its notes are CI's, not attested: compare
+them with the one you copied out, not instead of it.
 
 At the end of `/etc/ssh/sshd_config`, then `systemctl reload ssh` (so sshd reads no other key file
 for ccs-data: one in its own home it could replace):
@@ -456,5 +459,6 @@ systemctl daemon-reload && systemctl enable --now ccs-heartbeat.timer
 On the backend, the push key is `ccs`'s (`/var/lib/ccs/.ssh/id_ed25519`, made as above as `ccs`), its `known_hosts` the
 web server's own host key (`/etc/ssh/ssh_host_ed25519_key.pub`) for `<web server>` on port 22,
 and [the update script](setup.md#the-update-script-the-host-setup) pushes with `-p 22` in full, as
-the backend's `ssh_config` may default to another port (a push that hangs is the sign). Keep the
-QR reader's libraries updated (`unattended-upgrades`): the gate's image pins and attests them.
+the backend's `ssh_config` may default to another port (a push that hangs is the sign). Keep
+sshd, rsync, qrencode and git updated (`unattended-upgrades`); `ccs-check` is the next release's
+(it reads every push: install each release's).

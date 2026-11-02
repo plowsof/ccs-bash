@@ -27,6 +27,13 @@ So the same commit always builds to the same image ID, anywhere; `build.sh` prin
 `container/check-pinned.sh` proves it on every push: two clean builds from separate clones and
 one on a cache from another commit must agree.
 
+**The gate's image** (the web server's, `container/build.sh ccs-gate gate.Dockerfile`) is built
+the same way, from the same pins: StageX's sshd, rsync, git, coreutils and the rest of a GNU
+userland; qrencode built here from its pinned source, with PNG output, as ccs-front-bash builds
+it; and [ccs-check](ccs-check.md) built here by StageX's Go (`go` in `container/images`) from its
+two modules' pinned archives (`container/sources.lock`), with no network. No Python.
+`tests/gate-image.sh` checks what is in it.
+
 ## Signatures
 
 StageX publishes an image once two or more maintainers have rebuilt it and signed its digest
@@ -63,11 +70,17 @@ ones with `docker buildx rm stagex-buildkit-<id>`. For a newer busybox, change i
 line in `container/sources.lock` and the version in the Dockerfile. More applets go in
 `container/busybox-applets`.
 
+A new Go pin (StageX publishes a Go release some days after Go does) is how ccs-check gets Go's
+fixes: CI's `vulncheck` workflow says when one is needed ([ccs-check](ccs-check.md#keeping-it-patched)).
+
 ## Releases
 
 Push a tag `vX.Y.Z` on `master` (or make the release on GitHub, which makes the tag). The
 `release` workflow builds, tests, runs `check-pinned.sh`, pushes `ghcr.io/plowsof/ccs-bash:vX.Y.Z`
-and adds the pull-by-digest line and image ID to the release notes. If it fails the release has
+and the gate's image beside it, adds each one's pull-by-digest line and image ID to the release
+notes, and attaches `ccs-check-vX.Y.Z-linux-amd64`, copied out of the gate's image (its sha256
+in the notes: CI's, not attested; a host setup takes it out of the attested image itself,
+[two machines](two-machines.md#without-docker)). If it fails the release has
 no notes: rerun it, or delete tag and release and redo them. A release proves nothing by
 itself; anyone can rebuild the tag and compare IDs ([setup](setup.md) step 3), and sign what they
 got into [ccs-sigs](https://github.com/plowsof/ccs-sigs) with `contrib/release/build` and

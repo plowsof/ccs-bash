@@ -28,7 +28,7 @@
 
   <!-- the wallet network -->
   <rect x="285" y="180" width="565" height="172" rx="12" fill="#f5f0ff" stroke="#7c3aed" stroke-width="1.6" stroke-dasharray="5 4"/>
-  <text x="300" y="344" font-size="12" fill="#6d28d9">network "wallet": internal, no way out (ccs-bash and the wallet only)</text>
+  <text x="442" y="344" font-size="12" fill="#6d28d9">network "wallet": internal, no way out (ccs-bash and the wallet only)</text>
 
   <!-- connections out (grey), drawn first -->
   <g fill="none" stroke="#64748b" stroke-width="1.8" marker-end="url(#s)">
@@ -161,12 +161,13 @@
     <text x="920" y="504">the design and the proposals, every</text>
     <text x="920" y="522">address against the signed list</text>
 
-    <g filter="url(#sh)"><rect x="905" y="680" width="270" height="50" rx="10" fill="#ffffff" stroke="#94a3b8"/></g>
+    <g filter="url(#sh)"><rect x="905" y="680" width="270" height="64" rx="10" fill="#ffffff" stroke="#94a3b8"/></g>
     <text x="920" y="704" font-size="14" font-weight="700" fill="#0f172a">IRC (alerts)</text>
-    <text x="920" y="721">three failed runs (or none); a page not as pushed</text>
+    <text x="920" y="721">three failed runs (or none);</text>
+    <text x="920" y="737">a page not as pushed</text>
   </g>
   <text x="838" y="468" font-size="11" fill="#475569">rsync</text>
-  <text x="880" y="640" font-size="11" fill="#475569" transform="rotate(-90 880 640)">fetch, as a visitor</text>
+  <text x="880" y="640" font-size="11" fill="#475569" transform="rotate(-90 880 640)">via Tor, as a visitor</text>
 
   <!-- legend -->
   <g font-size="12" fill="#334155">
