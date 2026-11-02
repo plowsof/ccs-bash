@@ -231,7 +231,7 @@ what it is sent; it knows what a page may be. Each push, one at a time, it
    browser shows `<img src="x.html">` by its bytes);
 4. checks every other file the push changes: the design's, byte for byte (`design.sha256`: a
    stylesheet can hide an address, an image be a QR code); a proposal's image the proposals
-   repository has, byte for byte at that path (its QR codes, inverted too, of listed addresses);
+   repository has, byte for byte at that path (its QR codes as a browser shows them, of listed addresses);
    `projects.json`; or the list's files as installed here. Each a plain file where the live site
    has one (a symlink or a folder in a page's place would take the page away);
 5. copies staging into the live site, except a file that fails, which keeps its last good copy:
@@ -319,9 +319,12 @@ proposal, a completed one with a donation box, a listed address still). Nor anyt
 server itself is taken over: then ccs-watch and visitors are the defence. The checks are
 `ccs-check` ([ccs-check.md](ccs-check.md): Go, memory-safe, one static binary). The backend's
 QR codes are never decoded: each is compared, pixel for pixel, with qrencode's of the address it
-must be. Only a proposal's images, from the proposals repository, are read for QR codes (Go's
-own decoders, as the format the name says, the size checked first); one it can't check (over
-8 MB or 40 million pixels, or not in time) is held back.
+must be. Only a proposal's images, from the proposals repository, are read for QR codes, as a
+browser shows them (Go's own decoders, by the format the bytes are, the size checked first; a
+GIF's frames drawn one over another; inverted and faint codes too); one it can't check (over
+8 MB or 40 million pixels, an animated PNG, a GIF of over 100 frames, or not in time) is held
+back. Not caught: a colour profile whose curve scrambles the greys into a code (a reviewer of
+the proposal sees that code).
 
 ### The heartbeat: the web server notices a silent backend
 

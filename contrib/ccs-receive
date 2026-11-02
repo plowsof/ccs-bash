@@ -84,30 +84,38 @@ refuse() {
 # one). Each file has a budget of checksums (CCS_GATE_KECCAK, 3000) and of time (CCS_GATE_SECS,
 # 20 s): past either, it is held back alone ("too many..."), not every file with it (text made
 # to look like an address everywhere, an idea's title, costs a checksum a place).
-# qrscan KIND IMAGE [inverted]: ccs-check qr: each QR code's text in IMAGE on a line; exit 1 if
-# there is none, or IMAGE isn't a KIND; anything else (exit 2, or past the time limit) if it
-# couldn't be checked (over 8 MB, over 40 million pixels, out of memory). KIND is the format its
-# name says (never one picked by the bytes), decoded by Go's own (memory-safe) decoders, its size
-# read first; with "inverted", a frame where none is found is read again inverted (light on
-# dark, which phones read). QR codes only. (A test's: with CCS_GATE_SCANLOG, each image read is
+# qrscan KIND IMAGE [inverted]: ccs-check qr: each QR code's text in IMAGE on a line, as a browser
+# shows it; exit 1 if there is none, or IMAGE is no image; anything else (exit 2, or past the time
+# limit) if it couldn't be checked (over 8 MB, over 40 million pixels, an animated PNG, a GIF of
+# over 100 frames, out of memory). Decoded as the format its bytes are, as a browser does (KIND,
+# from its name, needn't be it), by Go's own (memory-safe) decoders, its size read first; a GIF's
+# frames each drawn over the ones before; with "inverted", every frame also read inverted (light
+# on dark, which phones read) and with its local contrast raised (a faint code). QR codes only. (A test's: with CCS_GATE_SCANLOG, each image read is
 # noted there: its kind and first bytes.)
 qrscan() { CCS_GATE_SCANLOG=$([[ -e $state/scan.log ]] && echo "$state/scan.log") timeout 20 ccs-check qr "$@"; }
 
 # qr FILE IMAGE: the addresses in every QR code in IMAGE as "FILE<TAB>address" lines (none if it
-# has no QR code); "FILE<TAB>!reason" if it couldn't be checked (too large, not read in time):
-# held back, never taken for an image without one. ccs-check qr reads it, as ccs-data, with a time
-# limit; inverted codes (light on dark) too. Read as the format its name says. (Only the
+# has no QR code); "FILE<TAB>!reason" if it couldn't be checked (too large, animated, not read in
+# time): held back, never taken for an image without one. ccs-check qr reads it, as ccs-data, with
+# a time limit; inverted codes (light on dark) too. Each code's text read for addresses as a
+# page's is (ccs-check scan: a zero-width space or a grouping doesn't hide one). (Only the
 # proposals' images, from their repository: the backend's QR codes are compared, not read: qrof.)
 qr() {
-    local out rc=0 kind=${2##*.}
+    local out rc=0 kind=${2##*.} t
     case ${kind,,} in png) kind=png ;; jpg | jpeg) kind=jpeg ;; gif) kind=gif ;; *) return 1 ;; esac
     out=$(qrscan "$kind" "$2" inverted 2> /dev/null) || rc=$?
     if ((rc > 1)); then
-        printf '%s\t%s\n' "$1" "!an image the QR reader could not check (over 8 MB or 40 million pixels, or not read in time)"
+        printf '%s\t%s\n' "$1" "!an image the QR reader could not check (over 8 MB or 40 million pixels, animated, or not read in time)"
         return 0
     fi
     ((rc == 0)) || return 1
-    grep -oE '[0-9A-Za-z]+' <<<"$out" | awk -v f="$1" '(length($0) == 95 || length($0) == 106) && !/[0OIl]/ { print f "\t" $0; n++ } END { exit !n }'
+    t=$(mktemp)
+    printf '<\n%s\n' "$out" > "$t"
+    rc=0
+    out=$(timeout 60 ccs-check scan "$t" 2> /dev/null) || rc=$?
+    rm -f "$t"
+    if ((rc)); then printf '%s\t%s\n' "$1" "!its QR codes' text could not be read in time"; return 0; fi
+    cut -f2- <<<"$out" | awk -F '\t' -v f="$1" '$1 != "?qr" && NF { print f "\t" $1; n++ } END { exit !n }'
 }
 
 # pixels PNG: "<width> <height> <sha256 of its RGBA pixels>", as a browser shows it; nothing (and
