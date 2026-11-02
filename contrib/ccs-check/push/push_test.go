@@ -183,6 +183,7 @@ func TestCopy(t *testing.T) {
 	put(filepath.Join(dst, "changed"), "old", 100)
 	put(filepath.Join(src, "p", "new"), "n", 300)
 	put(filepath.Join(src, "swap"), "file now", 400)
+	put(filepath.Join(dst, "swap", "in"), "a folder with something in it", 1)
 	put(filepath.Join(dst, "extra"), "x", 1)
 	put(filepath.Join(src, "resent"), "same bytes", 500) // sent again, another time: not rewritten
 	put(filepath.Join(dst, "resent"), "same bytes", 100)
@@ -223,5 +224,36 @@ func TestCopy(t *testing.T) {
 	syscall.Mkfifo(filepath.Join(src, "fifo"), 0o600)
 	if err := Copy(src, dst, true); err == nil {
 		t.Errorf("a FIFO copied")
+	}
+}
+
+// review 10's M-1: a folder entry makes nothing; a file takes an empty folder's place (in the
+// push and in the copy to the live site), a folder with something in it still refuses
+func TestFoldersOnlyForFiles(t *testing.T) {
+	root := t.TempDir()
+	live, staging := filepath.Join(root, "live"), filepath.Join(root, "staging")
+	os.MkdirAll(filepath.Join(live, "proposals", "next.html"), 0o755) // left live by an older gate
+	os.MkdirAll(filepath.Join(live, "proposals", "full.html"), 0o755)
+	os.WriteFile(filepath.Join(live, "proposals", "full.html", "x"), []byte("x"), 0o644)
+	if err := Copy(live, staging, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Receive(bytes.NewReader(stream(t, entry{name: "explore/tag/x/", typ: tar.TypeDir})), staging, Default); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(staging, "explore")); err == nil {
+		t.Errorf("a folder entry made a folder")
+	}
+	if _, err := Receive(bytes.NewReader(stream(t, file("proposals/next.html", "<p>new"))), staging, Default); err != nil {
+		t.Fatalf("a page where an empty folder was: %v", err)
+	}
+	if err := Copy(staging, live, false); err != nil {
+		t.Fatalf("copied live: %v", err)
+	}
+	if b, err := os.ReadFile(filepath.Join(live, "proposals", "next.html")); err != nil || string(b) != "<p>new" {
+		t.Errorf("the page isn't live: %q %v", b, err)
+	}
+	if _, err := Receive(bytes.NewReader(stream(t, file("proposals/full.html", "<p>"))), staging, Default); err == nil {
+		t.Errorf("a file put where a folder holds something")
 	}
 }
