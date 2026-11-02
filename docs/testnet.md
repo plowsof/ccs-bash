@@ -23,7 +23,7 @@ before that.
   too); ccs-watch's Tor (`tor@default`) listens on `172.17.0.1:9050` as well as 127.0.0.1, for
   Docker's networks only (`SocksPolicy`, ufw), and starts after Docker; the bot by
   `host.docker.internal:8086`. `WALLET_PORT=18182`, `RPC_URL=http://wallet-rpc:18182/json_rpc`.
-  `retire-wallet` now needs the wallet's RPC from the host ([docker](docker.md#running-it)). The host's
+  `retire-wallet` runs in ccs-bash's container ([docker](docker.md#running-it)). The host's
   `ccs-bash`, `ccs-wallet-rpc` and ccs-watch units are disabled, kept for going back. The
   compose runs from `/opt/ccs-bash` at the release's commit, its images by their attested IDs
   (`ccs config:check`: none failing).

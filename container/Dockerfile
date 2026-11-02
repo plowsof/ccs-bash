@@ -52,6 +52,8 @@ COPY lib/ /opt/ccs-bash/lib/
 COPY contrib/docker/backend/step /opt/ccs-bash/contrib/docker/backend/step
 COPY contrib/ccs-watch /opt/ccs-bash/contrib/ccs-watch
 COPY contrib/ccs-push /opt/ccs-bash/contrib/ccs-push
+# run by hand when the CCS moves to a new wallet (docs/handover.md, "Retiring a wallet")
+COPY contrib/retire-wallet /opt/ccs-bash/contrib/retire-wallet
 
 # Drop headers, static libraries and manuals, fix our files' modes (whatever the umask),
 # give every file the commit's time. And only the programs something here runs: of git, git

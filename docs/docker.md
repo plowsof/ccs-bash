@@ -171,10 +171,9 @@ follows every stage; `docker compose logs -f <service>` one. A stage that fails 
   compose start pull`. The other stages wait for the pull, so nothing else runs meanwhile. (No
   results come either: past 5 minutes the watch counts the pause as failed runs, so three
   alert at 15. Longer: say so on IRC first.)
-- **Retiring a wallet** ([the handover](handover.md#retiring-a-wallet)): `retire-wallet` runs on
-  the host and asks the wallet's RPC, so with `compose.host.yml` it works as in the host setup;
-  with the wallet on its internal network, run it from the host setup for the switch (paused as
-  above) until the compose has a way.
+- **Retiring a wallet** ([the handover](handover.md#retiring-a-wallet)): `retire-wallet` runs in
+  ccs-bash's container (`docker compose run`), paused as above; the old wallet's copy, for
+  `--again`, is the `retired-wallet-rpc` service (`--profile retired`).
 - **A design upgrade** needs nothing more: `front` mounts `/opt/ccs-front-hugo`, so a renamed
   `public` is seen. Likewise the site: `push` mounts `/var/lib/ccs/www`, not `www/site`, which
   ccs-front-bash replaces each run (a mount of a folder keeps the one it was given).
