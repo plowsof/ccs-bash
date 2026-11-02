@@ -14,7 +14,8 @@ machine.
 | `pages` | every page is the design's, its regions filled only with the design's parts, a proposal's text as the proposals repository has it, a donation box one address of the signed list, its QR code `qr/<that address>.png` (the file itself: the list's, by its sum, `ccs-receive`; never decoded) |
 | `scan`, `json`, `nul` | every address in the pages, JSON and feed, also spaced out, split (between elements too) or drawn with look-alikes (Monero's base58 and Keccak checksum), is the wallet's or allowed; `projects.json` reads as JSON; no NUL byte |
 | `qr` | the QR codes in a proposal's images (from the proposals repository), as a browser shows them: Go's own image decoders (the format by the bytes, a GIF's frames drawn over each other; an animated PNG or a GIF of over 100 frames held back), gozxing's QR reader, inverted and faint codes too |
-| `rrsync` | receives the push, as `rrsync -wo -no-del -munge` did: only the backend's push (`rsync -a --delay-updates SITE/ host:`), nothing else |
+| `receive` | receives the push, a tar of the files that changed (`contrib/ccs-push`): plain files and folders only, at clean paths under staging, each written beside and renamed into place, within its limits; anything else refuses the whole push (in place of rsync, which the gate no longer has) |
+| `copy` | the live site into staging before a push, staging into the live site after (rsync -a's quick check, each file renamed into place, 644/755) |
 
 Each subcommand takes the command line the Python block it replaced took and printed the same
 lines: it was checked against that Python on generated and mutated files, and on the live
@@ -54,8 +55,9 @@ ccs-check never sees a visitor. Its only input is a push from the backend:
 
 - **Memory-safe**: Go, no cgo, no `unsafe` (nor in the two modules): a bug is a wrong answer or
   a crash, not code run. A crash holds the files back; a wrong answer may pass one, which is what
-  the reviews and fuzz tests look for. Of what a push brings, only rsync (C, as before) reads it
-  unchecked, receiving it; no C library decodes it (the image has no image library at all).
+  the reviews and fuzz tests look for. What a push brings is read by Go alone: the tar by
+  `receive`, the files by the checks; no C program parses it (no rsync, no image library). The
+  only C that touches the backend is sshd, before any of this.
 - **Limits:** a time limit on every run (`timeout`, 20 seconds to 5 minutes; `qr` has its own,
   15 s); a file over 8 MB isn't read, a page over 2 MB isn't matched; `qr` decodes nothing over
   40 million pixels; `qr` and `pages` take 1 GB at most; the container has 2 GB and 256 processes.

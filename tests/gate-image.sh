@@ -2,9 +2,10 @@
 # In the gate's image (the CI's gate-image job, no network): its QR reader as it ships (ccs-check
 # qr): a code read in a PNG, a JPEG and a GIF; an inverted one only when asked; an SVG named
 # .png, a JPEG named .png read as nothing; a PNG claiming 30000 by 30000 pixels not checked (2),
-# never "none"; QR codes only; ccs-check root's and running; rsync and sshd; and none of what the
-# image leaves out (Python, libffi, zbar, libjpeg, giflib, qrencode, libpng: the gate makes no QR
-# code; an ssh client, sftp, git's servers).
+# never "none"; QR codes only; ccs-check root's and running; sshd; and none of what the image
+# leaves out (Python, libffi, zbar, libjpeg, giflib, qrencode, libpng: the gate makes no QR code;
+# rsync and xxhash: the push is a tar, read by ccs-check; jq, acl, attr, ncurses' other libraries:
+# nothing used them; an ssh client, sftp, git's servers).
 set -uo pipefail
 here=$(dirname "$(readlink -f "$0")")
 fx=$here/fixtures/qr
@@ -37,13 +38,15 @@ q png "$fx/bomb.png" inverted > /dev/null; b=$?
 if ((b == 2)); then ok "a PNG of 30000x30000 pixels: not checked (2), never none"; else fail "a PNG of 30000x30000 pixels: exit $b"; fi
 # QR codes only: an EAN-13 barcode (fixtures/qr/ean.png) reads as nothing, a QR code still does
 if [[ -f $fx/ean.png ]] && ! q png "$fx/ean.png" > /dev/null && [[ $(q png "$t/qr.png") == "$a" ]]; then ok "QR codes only: an EAN-13 barcode reads as nothing, a QR code still reads"; else fail "a barcode other than QR, or none to try"; fi
-if grep -q 'rsync  version' <<<"$(rsync --version 2>&1)" && grep -q OpenSSH <<<"$(/usr/sbin/sshd -V 2>&1)"; then ok "rsync, sshd"; else fail "rsync or sshd"; fi
+if grep -q OpenSSH <<<"$(/usr/sbin/sshd -V 2>&1)"; then ok "sshd"; else fail "sshd"; fi
 present=''
-for c in ssh scp sftp git-daemon git-shell ssh-agent python3 python rrsync qrencode; do command -v "$c" > /dev/null && present+=" $c"; done
+for c in ssh scp sftp git-daemon git-shell ssh-agent python3 python rrsync rsync qrencode jq getfacl; do command -v "$c" > /dev/null && present+=" $c"; done
 [[ -e /usr/lib/ssh/sftp-server ]] && present+=" sftp-server"
-for l in /usr/lib/libzbar.so* /usr/lib/libjpeg.so* /usr/lib/libturbojpeg.so* /usr/lib/libgif.so* /usr/lib/libffi.so* /usr/lib/libpython* /usr/lib/libpng*.so* /usr/lib/libqrencode.so*; do
+for l in /usr/lib/libzbar.so* /usr/lib/libjpeg.so* /usr/lib/libturbojpeg.so* /usr/lib/libgif.so* /usr/lib/libffi.so* /usr/lib/libpython* /usr/lib/libpng*.so* /usr/lib/libqrencode.so* \
+    /usr/lib/libxxhash.so* /usr/lib/libjq.so* /usr/lib/libonig.so* /usr/lib/libacl.so* /usr/lib/libattr.so* \
+    /usr/lib/libformw.so* /usr/lib/libmenuw.so* /usr/lib/libpanelw.so* /usr/lib/libncurses++w.so*; do
     [[ -e $l ]] && present+=" ${l##*/}"
 done
-if [[ -z $present ]]; then ok "no Python, libffi, zbar, libjpeg, giflib, qrencode or libpng; no ssh client, sftp or git server"; else fail "in the image:$present"; fi
+if [[ -z $present ]]; then ok "no Python, libffi, zbar, libjpeg, giflib, qrencode, libpng, rsync, xxhash, jq, acl, attr or unused ncurses; no ssh client, sftp or git server"; else fail "in the image:$present"; fi
 rm -rf "$t"
 exit "$status"

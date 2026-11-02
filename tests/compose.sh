@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # The backend compose's stages (contrib/docker/backend/step) without Docker: the six run as
-# processes here, ccs-back.sh, ccs-front-bash, ccs-watch, git, ssh and rsync stand-ins, and take
+# processes here, ccs-back.sh, ccs-front-bash, ccs-watch, git and ssh stand-ins (the push is
+# contrib/ccs-push itself, its ssh the stand-in), and take
 # turns as the compose's containers do: each run's result on the push's "watch" pipe, the
 # "== run" lines in the pull's output, the backup's sums (a file sent once until it changes), a
 # failed ccs-bash in the run's result, a line on the pull's "now" starting a run at once; the
@@ -23,8 +24,8 @@ mkdir -p "$t/bin" "$t/state/retired" "$t/www/site" "$t/pushed" "$t/proposals"
 : > "$t/pull-ok" && : > "$t/watched"
 echo "a.md,1" > "$t/state/proposals.csv"
 # stand-ins: ccs-back.sh fails when $t/fail-bash exists; ccs-front-bash writes the site; ssh
-# keeps what the backup sent; rsync to "host:" is the push, any other the local copy; ccs-watch
-# keeps how it was asked
+# keeps what the backup sent, and counts a push (asked to "receive": its tar read and listed);
+# ccs-watch keeps how it was asked
 cat > "$t/bin/ccs-back" <<'EOF'
 #!/usr/bin/env bash
 [[ ! -e $T/fail-bash ]] || { echo "error: the stand-in fails"; exit 1; }
@@ -44,12 +45,8 @@ echo pulled >> "$T/pulls"
 EOF
 cat > "$t/bin/ssh" <<'EOF'
 #!/usr/bin/env bash
+if [[ ${*: -1} == receive ]]; then echo push >> "$T/pushes"; tar -t -f - >> "$T/pushed-files" 2>&1; exit 0; fi
 cat >> "$T/sent"
-EOF
-cat > "$t/bin/rsync" <<'EOF'
-#!/usr/bin/env bash
-dst=${*: -1}
-if [[ $dst == *: ]]; then echo push >> "$T/pushes"; else cp -a "${*: -2:1}". "$dst"; fi
 EOF
 cat > "$t/bin/ccs-watch" <<'EOF'
 #!/usr/bin/env bash
@@ -61,7 +58,7 @@ chmod 755 "$t/bin"/*
 export T=$t PATH="$t/bin:$PATH" CCS_RUN=$t/run CCS_EVERY=1 STATE_DIR=$t/state \
     CCS_BACK=$t/bin/ccs-back CCS_FRONT=$t/bin/ccs-front CCS_PROPOSALS=$t/proposals CCS_PULL_OK=$t/pull-ok \
     CCS_BACKUP=backup@test CCS_BACKUP_KEYS=$t CCS_PUSH=data@test CCS_SITE=$t/www/site CCS_PUSHED=$t/pushed \
-    CCS_WATCH=$t/bin/ccs-watch CCS_OUT=$t/out CCS_FRONT_SITE=$t/www/site
+    CCS_WATCH=$t/bin/ccs-watch CCS_OUT=$t/out CCS_FRONT_SITE=$t/www/site CCS_PUSH_SCRIPT=$here/../contrib/ccs-push
 me="$(id -u):$(id -g)"
 if ! CCS_UIDS="pull=$me ccs-bash=$me backup=$me front=$me push=$me watch=$me" CCS_NOW_GID=$me CCS_WATCH_GID=$(id -g) "$step" init > /dev/null; then
     fail "init"; exit 1

@@ -10,12 +10,10 @@ openssl                    stagex/core-openssl@sha256:0ea25b654c044622a62c0a8707
 libzstd                    stagex/core-libzstd@sha256:84c78c0000a4134df8a45661ab7e8ecb91dead720ff6b46c315380fb33cd0607
 zlib                       stagex/core-zlib@sha256:6b843e1875989a330d0b2051ddd1ab0178f01c9f476fb64727c8bd388eda9839
 jq                         stagex/user-jq@sha256:4148299a2beb46fa5f0494ea456f1968500ca99c7fd96298be766195cf716855
-# the backend compose (contrib/docker/backend): git for the proposals, rsync and ssh for the
-# push and the backups
+# the backend compose (contrib/docker/backend): git for the proposals, ssh for the push and the
+# backups
 git                        stagex/core-git@sha256:b416d4b29eb7c3b5ebcb4906ebce509abee7a9442abb769d95e3fae08de3142e
-rsync                      stagex/user-rsync@sha256:17962b9271cc6134c1aa5edc6a3fafe18e27bdc8786f1fd400bbf82208fa2fb4
 openssh                    stagex/user-openssh@sha256:0881c9ba25e4f5d7efabbb639a6a2e4ad25847d6de42738f56e44cfa60081f38
-xxhash                     stagex/core-xxhash@sha256:630d2e562bdb65c3006d481bbc8c093f39cc378a8fd64084865fe966360ce208
 # the gate's image (gate.Dockerfile, the web server compose: contrib/docker/web): GNU userland as
 # the gate was written for
 coreutils                  stagex/core-coreutils@sha256:4941d68c446516fbe639dc711d6aad2c662f3899abf56aa5a936764f79da4d1f
@@ -26,8 +24,6 @@ gawk                       stagex/core-gawk@sha256:0e66dcf083a4de152d7b710bdd062
 diffutils                  stagex/core-diffutils@sha256:41cd16b99eac8acae840912cefa728210bef1a759b7e2696c284382e75183e38
 tar                        stagex/core-tar@sha256:2f799a1b404cbaf831e2bf26f3a0af06b94100dbf75b0f39522fd30f6f715ddd
 util-linux                 stagex/core-util-linux@sha256:3fb52dc65ef1c441de100512bc980bdcb5127cbd3f41e37dbff39d5743d9ab65
-acl                        stagex/core-acl@sha256:391bb96f0b9cdcf1b8b31c3a47f53f47a71b1e617b70e72cd301c152a15c6a12
-attr                       stagex/core-attr@sha256:0bc3969c19f015f6408b7b952abca973f745e066120554f77038ea3d52f6d061
 # the gate's checks, ccs-check (contrib/ccs-check: gate.Dockerfile, build.sh): Go, building only
 # from vendor/
 go                         stagex/core-go@sha256:689ff4afffb574203ec8039fd4663101b07bec04805d53fb198bee1a51bb1736

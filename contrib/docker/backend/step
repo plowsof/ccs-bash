@@ -191,10 +191,12 @@ push)
         rc=0
         {
             timeout 600 flock 9 || say "warning: ccs-watch's lock not had in 10 minutes, pushing all the same"
-            run timeout -k 5 120 rsync -a --checksum --delay-updates \
-                -e "ssh -p ${CCS_PUSH_PORT:-22} -i $pkeys/id_ed25519 -o UserKnownHostsFile=$pkeys/known_hosts -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15" "$site/" "${CCS_PUSH:?}:" || rc=$?
+            # the files that changed, as a tar (contrib/ccs-push), and pushed/ made the site's
+            run timeout -k 5 600 "${CCS_PUSH_SCRIPT:-/opt/ccs-bash/contrib/ccs-push}" "$site" "$pushed" "$R/push" \
+                -T -p "${CCS_PUSH_PORT:-22}" -i "$pkeys/id_ed25519" -o UserKnownHostsFile="$pkeys/known_hosts" -o IdentitiesOnly=yes -o BatchMode=yes \
+                -o StrictHostKeyChecking=yes -o ConnectTimeout=15 "${CCS_PUSH:?}" || rc=$?
             # (and which run's site it is: the front's run N, which it waited for)
-            if ((rc == 0 || rc == 7)); then rsync -a --delete "$site/" "$pushed/" && put "$R/push/pushed" "$n"; fi
+            if ((rc == 0 || rc == 7)); then put "$R/push/pushed" "$n"; fi
         } 9< "$(lock)"
         # the run's result, as ccs-bash-update says it (a failed pull is no failed run)
         result=''

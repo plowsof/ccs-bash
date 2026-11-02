@@ -20,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, pinned by commit
       - name: shellcheck
-        run: shellcheck -x ccs-back.sh notify-loop.sh lib/*.sh tests/*.sh container/*.sh contrib/ccs-receive contrib/ccs-watch contrib/ccs-backup-receive contrib/retire-wallet contrib/migrate/compare-deposits contrib/ccs contrib/docker/backend/step contrib/docker/backend/wallet-rpc/ccs-notify contrib/docker/web/init contrib/ccs-check/build.sh
+        run: shellcheck -x ccs-back.sh notify-loop.sh lib/*.sh tests/*.sh container/*.sh contrib/ccs-receive contrib/ccs-push contrib/ccs-watch contrib/ccs-backup-receive contrib/retire-wallet contrib/migrate/compare-deposits contrib/ccs contrib/docker/backend/step contrib/docker/backend/wallet-rpc/ccs-notify contrib/docker/web/init contrib/ccs-check/build.sh
       - name: tests (Ubuntu's awk is mawk)
         run: tests/run.sh
       - name: the backend compose's stages (contrib/docker/backend/step)
@@ -50,7 +50,7 @@ jobs:
         run: docker run --rm --network none --read-only --tmpfs /tmp -v "$PWD:/src:ro" --entrypoint bash ccs-bash /src/tests/run.sh
       - name: the backend compose's stages, in the image (its busybox; the stand-ins run from /tmp)
         run: docker run --rm --network none --read-only --tmpfs /tmp:exec -v "$PWD:/src:ro" --entrypoint bash ccs-bash /src/tests/compose.sh
-      - name: the stages' own tools (git, ssh, rsync, openssl, ccs-watch's), and only those
+      - name: the stages' own tools (git, ssh, tar, openssl, ccs-watch's), and only those
         run: docker run --rm --network none --read-only --tmpfs /tmp -v "$PWD:/src:ro" --entrypoint bash ccs-bash /src/tests/image.sh
       - name: ccs-watch as the image runs it (its busybox; the test's servers on the host's 127.0.0.1)
         run: CCS_WATCH_IMAGE=ccs-bash tests/watch.sh
@@ -152,7 +152,7 @@ jobs:
           [[ $a == sha256:* && $a == "$b" ]] || { echo "error: the gate image's builds differ, or one is missing" >&2; exit 1; }
   fuzz:
     # ccs-check's fuzz tests (contrib/ccs-check/*/*fuzz_test.go), a minute each, in StageX's Go: no
-    # panic or hang on any input, and what each must always say (rrsync: only the push's shape;
+    # panic or hang on any input, and what each must always say (receive: nothing outside its folder;
     # pages: one line a page...). A failing input is printed; commit it under testdata/fuzz/.
     runs-on: ubuntu-24.04
     steps:
@@ -182,8 +182,8 @@ jobs:
       - name: tests/regtest.sh
         run: FRONT_BASH="$RUNNER_TEMP/ccs-front-bash" tests/regtest.sh
   host-tests:
-    name: host tests (rrsync, the gate, the watcher)
-    # The two-machine setup (docs/two-machines.md, rrsync), attacked from the wallet machine's key.
+    name: host tests (the gate, the watcher)
+    # The two-machine setup (docs/two-machines.md): the gate, pushed to and attacked from the backend's key.
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, pinned by commit
@@ -192,12 +192,6 @@ jobs:
         with:
           path: container/sources
           key: sources-${{ hashFiles('container/sources.lock') }}
-      - name: rrsync restrictions
-        run: tests/rrsync.sh
-      - name: the same, on ccs-check rrsync (the gate's, in place of rrsync)
-        run: |
-          contrib/ccs-check/build.sh "$RUNNER_TEMP/ccs-check"
-          CCS_CHECK="$RUNNER_TEMP/ccs-check" tests/rrsync.sh
       - name: the gate (contrib/ccs-receive)
         run: tests/gate.sh
       - name: the watcher (contrib/ccs-watch)

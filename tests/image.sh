@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # In the image (the CI's image job, no network): the tools the backend compose's stages run, as
 # the image has them (only git and its https transport of git's, only ssh of openssh): a pull,
-# git's https transport there, ssh, rsync, openssl's Keccak (ccs-bash), ccs-watch's applets.
+# git's https transport there, ssh, busybox's tar (the push: contrib/ccs-push), openssl's Keccak
+# (ccs-bash), ccs-watch's applets.
 set -uo pipefail
 status=0
 ok() { echo "ok   $1"; }
@@ -19,11 +20,14 @@ if [[ $out == *"unable to access"* ]]; then ok "git: its https transport (no net
 # (ssh -V as a user /etc/passwd hasn't: "No user exists", it runs all the same; compose.yml
 # mounts the host's for the push and the backup)
 out=$(ssh -V 2>&1)
-if [[ $out == *OpenSSH* || $out == *"No user exists for uid"* ]] && rsync --version > /dev/null; then ok "ssh and rsync"; else fail "ssh and rsync: $out"; fi
+mkdir -p "$t/site/p" && echo x > "$t/site/p/a b.html" && printf './p/a b.html\n' > "$t/list"
+if [[ $out == *OpenSSH* || $out == *"No user exists for uid"* ]] && (cd "$t/site" && tar -c -f - -T "$t/list") | tar -t -f - | grep -qx './p/a b.html'; then
+    ok "ssh, and busybox's tar (a tar of the files listed)"
+else fail "ssh or tar: $out"; fi
 if [[ $(printf '' | openssl dgst -keccak-256 -r) == c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470* ]]; then ok "openssl's Keccak-256"; else fail "openssl's Keccak-256"; fi
 missing=''
 for c in basename cmp comm find head paste shuf sort stat curl jq flock timeout; do command -v "$c" > /dev/null || missing+=" $c"; done
 if [[ -z $missing ]]; then ok "ccs-watch's and the stages' commands"; else fail "missing:$missing"; fi
-for c in sshd ssh-agent ssh-keygen scp git-daemon git-shell scalar; do command -v "$c" > /dev/null && fail "$c is in the image"; done
+for c in sshd ssh-agent ssh-keygen scp git-daemon git-shell scalar rsync; do command -v "$c" > /dev/null && fail "$c is in the image"; done
 rm -rf "$t"
 exit "$status"

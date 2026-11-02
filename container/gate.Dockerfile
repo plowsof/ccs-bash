@@ -4,8 +4,9 @@
 # signatures checked), sources by sha256 (sources.lock), no network in the steps, every file the
 # commit's time, one layer in an empty image. GNU userland, as the gate was written and tested
 # for (Debian's); its checks ccs-check's (contrib/ccs-check: Go, built here), which also
-# receives the push. No Python, and no C library reads an image a push brings; no QR code is
-# made here (the donation boxes' are the signed list's files, taken by their sums).
+# receives the push (a tar, read in Go: no rsync). No Python, and no C library reads an image a
+# push brings; no QR code is made here (the donation boxes' are the signed list's files, taken
+# by their sums).
 
 # ccs-check's modules (gozxing, golang.org/x/xerrors) from their pinned archives (sources.lock:
 # the files Go's checksum database has for their versions), the QR reader's files only, patched
@@ -35,11 +36,8 @@ COPY --from=curl / /
 COPY --from=openssl / /
 COPY --from=libzstd / /
 COPY --from=zlib / /
-COPY --from=jq / /
 COPY --from=git / /
-COPY --from=rsync / /
 COPY --from=openssh / /
-COPY --from=xxhash / /
 COPY --from=coreutils / /
 COPY --from=findutils / /
 COPY --from=grep / /
@@ -48,8 +46,6 @@ COPY --from=gawk / /
 COPY --from=diffutils / /
 COPY --from=tar / /
 COPY --from=util-linux /usr/bin/flock /usr/bin/flock
-COPY --from=acl / /
-COPY --from=attr / /
 COPY contrib/ccs-receive contrib/ccs-backup-receive /usr/local/bin/
 COPY --from=ccs-check --chown=0:0 /tmp/ccs-check /usr/local/bin/ccs-check
 COPY contrib/docker/web/sshd_config /etc/ssh/sshd_config
@@ -57,7 +53,7 @@ COPY contrib/docker/web/init /usr/local/bin/ccs-web-init
 
 # Only what the gate, the backup receiver and sshd run: of openssh, sshd (and ssh-keygen, for the
 # host key the first time); of git, git, its https transport and upload-pack (a file:// fetch);
-# of util-linux, flock; of rsync, rsync (ccs-check rrsync runs it). /bin/sh is bash
+# of util-linux, flock; of ncurses, the library bash needs. /bin/sh is bash
 # (git runs a file:// fetch's upload-pack through it); /var/log, where compose.yml mounts the gate's log. /etc/passwd and group: links to the ones
 # init writes in the mounted key folder (a mounted file replaced would stay the old one). Headers, static libraries and manuals
 # dropped; every file the commit's time.
@@ -72,11 +68,11 @@ RUN cd /rootfs \
     && ln -s git-remote-https usr/libexec/git-core/git-remote-http && ln -s /usr/bin/git usr/libexec/git-core/git-upload-pack \
     && rm -rf usr/bin/ssh usr/bin/scp usr/bin/sftp usr/bin/ssh-add usr/bin/ssh-agent usr/bin/ssh-keyscan \
         usr/lib/ssh/sftp-server usr/lib/ssh/ssh-keysign usr/lib/ssh/ssh-pkcs11-helper usr/lib/ssh/ssh-sk-helper \
-        etc/ssh/ssh_config usr/bin/rsync-ssl usr/bin/xxh*sum usr/bin/*zstd* usr/bin/*-config usr/bin/wcurl \
+        etc/ssh/ssh_config usr/bin/*zstd* usr/bin/*-config usr/bin/wcurl \
         usr/bin/bashbug usr/bin/c_rehash usr/bin/ldd usr/sbin/update-ca-certificates usr/bin/captoinfo \
         usr/bin/clear usr/bin/infocmp usr/bin/infotocap usr/bin/reset usr/bin/tabs usr/bin/tic usr/bin/toe \
         usr/bin/tput usr/bin/tset \
-    && rm -f usr/bin/getfacl usr/bin/setfacl usr/bin/chacl usr/bin/getfattr usr/bin/setfattr usr/bin/attr \
+    && rm -f usr/lib/libform*.so* usr/lib/libmenu*.so* usr/lib/libpanel*.so* usr/lib/libncurses++*.so* \
     && mkdir -p var/log && ln -s bash usr/bin/sh && ln -sf /etc/ccs-ssh/keys/passwd etc/passwd && ln -sf /etc/ccs-ssh/keys/group etc/group \
     && chmod 755 usr/local/bin/ccs-receive usr/local/bin/ccs-backup-receive usr/local/bin/ccs-check usr/local/bin/ccs-web-init && chmod 644 etc/ssh/sshd_config \
     && find . -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
