@@ -193,8 +193,9 @@ what it is sent; it knows what a page may be. Each push, one at a time, it
    files the push changed, and the ones it held back last time (their last good copy is live, so
    the same file sent again fails again): the live site holds only what passed. Every page and JSON file is checked again
    when what they were checked against changes (the list or its pin, `allowed`, the design,
-   `markdown.awk`, `proposals.conf`, the proposals commit fetched, `ccs-receive` itself), and
-   once a day whatever happens. Its log says how many: `checking 3 of 1022 pages and JSON files`;
+   `markdown.awk`, `proposals.conf`, the proposals commit fetched, `ccs-receive` itself or
+   `ccs-check`), and once a day whatever happens; then the QR codes in the proposal images
+   already live are read again too (one that fails stays as it was, and IRC is told). Its log says how many: `checking 3 of 1022 pages and JSON files`;
 2. checks **every page against the design**: the design's release zip, unpacked here, has every
    page and every part ccs-front-bash fills them with (ccs-front-hugo's README, "What
    ccs-front-bash fills in"). A page must be one of the design's own, byte for byte outside its
