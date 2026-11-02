@@ -10,21 +10,25 @@
 #     repository...), a proposal's text, milestones and payouts exactly what markdown.awk
 #     (ccs-front-bash's, installed here) makes of its file in the proposals repository
 #     (proposals.conf), fetched here, and a donation box one address of the signed list, in its
-#     text, link and QR code: nothing else can be on a page, whatever a browser would make of it.
+#     text and link, its QR code that address's file (qr/<address>.png): nothing else can be on a
+#     page, whatever a browser would make of it.
 #     A page it couldn't check (in time, or at all) is held back like one that failed;
 #   - every Monero address in the pages and JSON must be one of the wallet's (the signed list and
-#     its .pin, installed here by hand) or in the allowed file, and every data: image, pixel for
-#     pixel, the QR code qrencode makes of such an address; the JSON read as JSON;
+#     its .pin, installed here by hand) or in the allowed file, and no data: image at all; the
+#     JSON read as JSON;
 #   - every other file it changes must be the design's (design.sha256, from the release zip), a
 #     proposal's image that the proposals repository has at that path (any QR code in it holding
-#     only such addresses), projects.json, or the signed list's own files, the same as the ones
-#     installed here; and a plain file where the site has one (no symlink, no folder for a page);
+#     only such addresses), projects.json, the signed list's own files, the same as the ones
+#     installed here, or a donation QR code, qr/<address>.png, exactly the list's file of that
+#     address (its sum in the list's .qr.sha256, pinned in its .pin: the gate never makes or reads
+#     one); and a plain file where the site has one (no symlink, no folder for a page);
 #   - feed.xml, the feed, exactly as ccs-front-bash writes it: its items plain text, each a link to
 #     one of this site's proposal pages (SITE_URL, alert.conf), nothing else (feed_awk).
 # The push goes live, except a file that fails: that one keeps its last good copy (a new one stays
-# out), IRC is told (alert.conf), and it exits 7 (the backend's rsync exits 7 too). A list that
-# isn't the pinned one, or no design.sha256, design or markdown.awk, refuses the whole push. Needs
-# bash, awk, grep, rsync, coreutils, curl, qrencode, git, and ccs-check (contrib/ccs-check: the
+# out), IRC is told (alert.conf), and it exits 7 (the backend's rsync exits 7 too). A list or QR
+# codes' sums that aren't the pinned ones, or no design.sha256, design or markdown.awk, refuses
+# the whole push. Needs
+# bash, awk, grep, rsync, coreutils, curl, git, and ccs-check (contrib/ccs-check: the
 # checks in Go, one static binary: the release's, its sha256 attested; it also receives the
 # push, as rrsync did). Root-owned, 755.
 set -euo pipefail
@@ -71,7 +75,7 @@ refuse() {
 
 # The pages' and JSON's addresses, as written (pages() says what can be on a page at all), as
 # "file<TAB>address" lines; "file<TAB>!reason" for what the gate can't accept; "file<TAB>?qr<TAB>
-# base64" for each data: image (compared below: qrknown). An address is a run of 95 (standard) or 106
+# base64" for each data: image (held back below: the site has none). An address is a run of 95 (standard) or 106
 # (integrated) base58 characters, tags and attributes included (a monero: link, an alt text),
 # entities read as a browser reads them (&#56; is 8). A byte that isn't ASCII, or a control
 # character, is read twice: dropped (a zero-width space mustn't split an address) and as a space
@@ -100,7 +104,8 @@ qrscan() { CCS_GATE_SCANLOG=$([[ -e $state/scan.log ]] && echo "$state/scan.log"
 # time): held back, never taken for an image without one. ccs-check qr reads it, as ccs-data, with
 # a time limit; inverted codes (light on dark) too. Each code's text read for addresses as a
 # page's is (ccs-check scan: a zero-width space or a grouping doesn't hide one). (Only the
-# proposals' images, from their repository: the backend's QR codes are compared, not read: qrof.)
+# proposals' images, from their repository: the donation QR codes are the list's files, taken by
+# their sums, never read: changes.)
 qr() {
     local out rc=0 kind=${2##*.} t
     case ${kind,,} in png) kind=png ;; jpg | jpeg) kind=jpeg ;; gif) kind=gif ;; *) return 1 ;; esac
@@ -119,42 +124,6 @@ qr() {
     cut -f2- <<<"$out" | awk -F '\t' -v f="$1" '$1 != "?qr" && NF { print f "\t" $1; n++ } END { exit !n }'
 }
 
-# pixels PNG: "<width> <height> <sha256 of its RGBA pixels>", as a browser shows it; nothing (and
-# 1) for a PNG it can't read, or with any chunk qrencode doesn't write (an animated PNG's frames,
-# a gamma or colour profile could show something else). ccs-check pixels: its own reader, only
-# the chunks and formats qrencode writes.
-pixels() { timeout 20 ccs-check pixels < "$1" 2> /dev/null; }
-
-# qrof IMAGE ADDRESS: IMAGE is exactly the QR code qrencode makes of ADDRESS (as ccs-front-bash
-# does: qrencode -s 10 "monero:<address>"), pixel for pixel; else 1. Compared, never decoded: no
-# QR reader sees the backend's bytes, only pixels (its own reader of the plain PNGs qrencode
-# writes), and an image with a good QR code beside a piece of another is no copy of it.
-qrof() {
-    local got ref
-    got=$(pixels "$1") && [[ $got ]] || return 1
-    ref=$(qrencode -s 10 -o - -- "monero:$2" | pixels /dev/stdin) && [[ $ref == "$got" ]]
-}
-
-# qrknown IMAGE: the address (of the list's or the allowed file's) whose QR code IMAGE exactly is,
-# or 1. The QR codes qrencode makes of all of them, as pixels' lines, are made once a list and
-# allowed file (and qrencode, and ccs-check, whose pixels makes the lines): $state/qr-<their
-# sha256>, the older ones deleted.
-qrknown() {
-    local got key table a tmp
-    got=$(pixels "$1") && [[ $got ]] || return 1
-    key=$( { cat -- "$list"; cat -- "$conf/allowed" 2> /dev/null || true; qrencode -V 2>&1 || true; cat -- "$check"; } | sha256sum | cut -c1-16)
-    table=$state/qr-$key
-    if [[ ! -s $table ]]; then
-        tmp=$(mktemp)
-        while read -r a; do
-            printf '%s %s\n' "$(qrencode -s 10 -o - -- "monero:$a" | pixels /dev/stdin)" "$a"
-        done < <({ cut -d' ' -f2 "$list"; awk '!/^#/ && NF { print $1 }' "$conf/allowed" 2> /dev/null; } | sort -u) > "$tmp"
-        find "$state" -maxdepth 1 -name 'qr-*' ! -name "qr-$key" -delete 2> /dev/null || true
-        mv -- "$tmp" "$table" 2> /dev/null || table=$tmp
-    fi
-    awk -v g="$got" '$1 " " $2 " " $3 == g { print $4; f = 1; exit } END { exit !f }' "$table"
-}
-
 # json (ccs-check json) FILE...: each JSON file's strings as a reader of it gets them (\u escapes read, every key
 # and value, a key twice both), their addresses as "file<TAB>address" lines, read as the pages'
 # text is: a character that isn't ASCII dropped (it mustn't split an address), and again as a
@@ -162,23 +131,24 @@ qrknown() {
 # ccs-check pages SITE DESIGNS BODIES LIST VIEWKEY HOSTS ONION < pages (NUL-separated, relative to SITE): each must
 # be one of the design's own, every region filled with the design's parts and every {{slot}} with a
 # value of its kind, as ccs-front-bash fills them; a proposal's text, milestones and payouts exactly
-# what markdown.awk makes of its file; a donation box one address of the signed list. DESIGNS:
+# what markdown.awk makes of its file; a donation box one address of the signed list, its QR code
+# that address's qr/<address>.png. DESIGNS:
 # unpacked release zips, ":"-separated (any one will do); BODIES: markdown.awk's lines,
 # ":"-separated (one file per commit of the proposals, and markdown.awk); LIST: the signed list (its
 # .pin beside it); VIEWKEY: its .viewkey or ""; HOSTS: where a link to a proposal may go (a host, or
 # a host and the path under it). Prints "page<TAB>=ok" for each page that passes (a page without
-# one is held back: one it never got to, in time or at all, too), after "page<TAB>=box<TAB>address
-# <TAB>QR code base64" for its donation box; else "page<TAB>!reason". Its regexes (TEXT: no markup,
+# one is held back: one it never got to, in time or at all, too), else "page<TAB>!reason". Its regexes (TEXT: no markup,
 # no bidi controls, at most 1000 characters, no run of 90 base58 or non-ASCII characters, an
 # address padded, split or drawn with look-alikes) matched by its own matcher (pages/match.go).
 
-# scan FILE...: the addresses (and reasons) of the pages, JSON and feed among FILEs; every data:
-# image exactly the QR code of an address. The feed (feed.xml) has none, ever: an address found in
-# it, spaced, split, drawn with look-alikes or even the wallet's own, holds it back
+# scan FILE...: the addresses (and reasons) of the pages, JSON and feed among FILEs; a data: image
+# is held back: the site has none (its QR codes are files, qr/<address>.png: changes). The feed
+# (feed.xml) has no address, ever: one found in it, spaced, split, drawn with look-alikes or even
+# the wallet's own, holds it back
 scan() {
-    local file tag payload png out jsons=() texts=()
+    local file tag out jsons=() texts=()
     (($#)) || return 0
-    png=$(mktemp) out=$(mktemp)
+    out=$(mktemp)
     # a NUL byte: HTML drops it from the text, so it could split an address (ccs-check nul: a grep
     # without PCRE, the image's, can't look for one)
     mapfile -d '' texts < <(printf '%s\0' "$@" | grep -zE '\.(html|json)$|/feed\.xml$')
@@ -196,34 +166,14 @@ scan() {
     if ((${#texts[@]})) && ! timeout 120 ccs-check scan "${texts[@]}" > "$out" 2> /dev/null; then
         printf '%s\t!its addresses could not be read in time\n' "${texts[@]}" >> "$out"
     fi
-    # each QR code: one image read once however often it is pushed (a page of 200 copies took a
-    # minute), 4 a file at most (a proposal's page has one), and all of them within 5 minutes: past
-    # that, a file is held back unchecked (the pushes after this one wait on its lock)
-    local -A seen=() many=()
-    local res end=$((SECONDS + 300))
-    while IFS=$'\t' read -r file tag payload; do
+    while IFS=$'\t' read -r file tag _; do
         if [[ $file == "$staging/feed.xml" && $tag != '!'* ]]; then
             printf '%s\t%s\n' "$file" "!an address in the feed, which never has one (${tag:0:12}…)"; continue
         fi
-        if [[ $tag != '?qr' ]]; then printf '%s\t%s\n' "$file" "$tag"; continue; fi
-        many[$file]=$((${many[$file]:-0} + 1))
-        if ((many[$file] > 4)); then
-            ((many[$file] == 5)) && printf '%s\t%s\n' "$file" "!more than 4 QR codes in one file"
-            continue
-        fi
-        if [[ ! -v seen[$payload] ]]; then
-            if ((SECONDS >= end)); then
-                res="!its QR codes could not be checked in time"
-            elif base64 -d <<<"$payload" > "$png" 2> /dev/null && res=$(qrknown "$png"); then
-                :
-            else
-                res="!an image that is not exactly qrencode's QR code of one of the wallet's (or allowed) addresses"
-            fi
-            seen[$payload]=$res
-        fi
-        printf '%s\t%s\n' "$file" "${seen[$payload]}"
+        if [[ $tag == '?qr' ]]; then printf '%s\t%s\n' "$file" "!a data: image (the site has none: its QR codes are files, qr/<address>.png)"; continue; fi
+        printf '%s\t%s\n' "$file" "$tag"
     done < "$out"
-    rm -f "$png" "$out"
+    rm -f "$out"
 }
 
 # fetch: the proposals repository (/etc/ccs-gate/proposals.conf: PROPOSALS_GIT, its URL;
@@ -329,13 +279,13 @@ bodies() {
 
 # pages FILE...: the pages among FILEs (in staging) as ccs-check pages checks them ("page<TAB>!reason").
 # Only a page it passed goes live: one it didn't get to (out of time, or stopped) is held back
-# too. A donation box's QR code must be, pixel for pixel, qrencode's of the address the box shows.
+# too. (A donation box's QR code is qr/<address>.png of the address it shows: ccs-check checks
+# that; the file itself, changes.)
 pages() {
-    local designs='' d b vk='' out png file tag a q html=()
-    local -A ok=() box=()
+    local designs='' d b vk='' out file tag html=()
+    local -A ok=()
     for file in "$@"; do [[ $file == *.html ]] && html+=("${file#"$staging"/}"); done
     ((${#html[@]})) || return 0
-    local end=$((SECONDS + 300))
     # (releases only, design/vX.Y.Z: a build of the design's of no release, left there, isn't one)
     for d in "$conf"/design/v*/; do [[ ${d%/} =~ /v[0-9]+\.[0-9]+\.[0-9]+$ && -d $d/parts ]] && designs+=${designs:+:}${d%/}; done
     # none: every page held back (given no design, the check would fail none of them)
@@ -349,32 +299,16 @@ pages() {
     local onion=''
     onion=$(tr -d ' \n' < "$conf/onion" 2> /dev/null) || onion=''
     [[ $onion =~ ^[a-z2-7]{56}\.onion$ ]] || onion=
-    out=$(mktemp) png=$(mktemp)
+    out=$(mktemp)
     printf '%s\0' "${html[@]}" \
         | timeout 300 ccs-check pages "$staging" "$designs" "$b" "$list" "$vk" "$hosts" "$onion" > "$out" 2> /dev/null || true
-    while IFS=$'\t' read -r file tag a q; do
+    while IFS=$'\t' read -r file tag; do
         case $tag in
             =ok) [[ ${ok[$file]:-} == no ]] || ok[$file]=1 ;;
-            =box)
-                # each box's QR code read once (one address's is on several pages), all within 5
-                # minutes: past that, the page is held back unchecked
-                if [[ ! -v box[$a$q] ]]; then
-                    if ((SECONDS >= end)); then
-                        box[$a$q]=late
-                    elif base64 -d <<<"$q" > "$png" 2> /dev/null && qrof "$png" "$a"; then
-                        box[$a$q]=ok
-                    else
-                        box[$a$q]=no
-                    fi
-                fi
-                case ${box[$a$q]} in
-                    late) printf '%s\t%s\n' "$file" "!its donation box's QR code could not be checked in time"; ok[$file]=no ;;
-                    no) printf '%s\t%s\n' "$file" "!a donation box whose QR code is not exactly qrencode's of its address"; ok[$file]=no ;;
-                esac ;;
             *) printf '%s\t%s\n' "$file" "$tag"; ok[$file]=no ;;
         esac
     done < "$out"
-    rm -f "$out" "$png"
+    rm -f "$out"
     # (a page held back for a reason already says why; only one never checked gets this)
     for file in "${html[@]}"; do
         [[ ${ok[$staging/$file]:-} ]] || printf '%s\t%s\n' "$staging/$file" "!a page the gate could not check (in time)"
@@ -521,6 +455,15 @@ changes() {
             feed.xml) feed "$f" ;;
             subaddresses.txt | subaddresses.txt.asc | subaddresses.txt.key.asc)
                 cmp -s "$f" "$conf/$rel" || printf '%s\t%s\n' "$f" "!not the $rel installed in $conf" ;;
+            qr/*)
+                # a donation box's QR code: the signed list's file of that address, byte for byte
+                # (its sum in the list's .qr.sha256, which its .pin pins: tools/make-qr.sh)
+                sum=$(sha256sum < "$f" | cut -d' ' -f1)
+                if [[ ! $rel =~ ^qr/[1-9A-HJ-NP-Za-km-z]{95}\.png$ ]]; then
+                    printf '%s\t%s\n' "$f" "!not a QR code of the list's (qr/<address>.png)"
+                elif ! grep -qxF "$sum  ${rel#qr/}" "$list.qr.sha256"; then
+                    printf '%s\t%s\n' "$f" "!not the signed list's QR code of that address (its .qr.sha256)"
+                fi ;;
             images/*/*)
                 if [[ ! $rel =~ ^images/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+\.(png|jpg|jpeg|gif)$ ]]; then
                     printf '%s\t%s\n' "$f" "!not a proposal image (images/<proposal>/<file>.png|jpg|jpeg|gif)"
@@ -595,7 +538,9 @@ touch "$state/last-push" 2> /dev/null || true   # the backend's heartbeat (--hea
 list=$conf/subaddresses.txt
 [[ -f $list && $(sha256sum < "$list" | cut -d' ' -f1) == "$(sed -n 's/^sha256 *//p' "$list.pin" 2> /dev/null)" ]] \
     || refuse "$list is not the list $list.pin names" list "its signed list isn't the one its .pin names"
-command -v qrencode > /dev/null || refuse "it has no qrencode to check the QR codes with (apt install qrencode)" qrencode
+# its QR codes' sums (tools/make-qr.sh), the .pin's qr line: what a qr/<address>.png must be
+[[ -f $list.qr.sha256 && $(sha256sum < "$list.qr.sha256" | cut -d' ' -f1) == "$(sed -n 's/^qr *//p' "$list.pin" 2> /dev/null)" ]] \
+    || refuse "$list.qr.sha256 is not the QR codes' sums $list.pin names (its qr line)" qrsums "its signed list's QR codes' sums aren't the ones its .pin names"
 command -v git > /dev/null || refuse "it has no git to read the proposals repository with (apt install git)" git
 # the design's files, "sha256  path" as sha256sum writes them (./ and binary-mode * dropped);
 # several releases' may be in it
@@ -623,12 +568,11 @@ fetch && fetched=1
 # happens, all are checked again, the proposal images' QR codes too (changes).
 mapfile -d '' all < <(find "$staging" -type f \( -name '*.html' -o -name '*.json' -o -path "$staging/feed.xml" \) -print0)
 inputs=$( {
-    cat -- "${BASH_SOURCE[0]}" "$list" "$list.pin" "$design" "$conf"/markdown*.awk "$conf/proposals.conf"
+    cat -- "${BASH_SOURCE[0]}" "$list" "$list.pin" "$list.qr.sha256" "$design" "$conf"/markdown*.awk "$conf/proposals.conf"
     cat -- "$conf/allowed" "$list.viewkey" "$conf/onion" 2> /dev/null || true
     grep '^SITE_URL=' "$conf/alert.conf" 2> /dev/null || true   # (the feed's links)
     (cd "$conf/design" && find . -type f -print0 | sort -z | xargs -0 -r sha256sum)
     git -C "$git" rev-parse -q --verify refs/heads/ccs 2> /dev/null || true
-    qrencode -V 2>&1 || true
     cat -- "$check"
 } | sha256sum | cut -c1-64)
 full=''

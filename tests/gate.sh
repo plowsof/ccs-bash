@@ -90,7 +90,8 @@ FNR == 1 { if (started) out(); started = 1; name = FILENAME; sub(/.*\//, "", nam
 { body = body (body == "" ? "" : " ") $0 }
 END { if (started) out() }
 AWK
-# the backend's site, as ccs-front-bash fills the design: gen OUT N ADDRESS QR64 [IDEA TITLE...]
+# the backend's site, as ccs-front-bash fills the design: gen OUT N ADDRESS QR [IDEA TITLE...]
+# (QR: the address whose qr/<address>.png the donation box shows)
 cat > "$files/gen.py" <<'PY'
 import html, os, re, sys
 design, out, n, addr, qr = sys.argv[1:6]
@@ -115,11 +116,19 @@ if os.environ.get("FUNDED"):   # at its goal: "Fully funded" (donate-funded), it
     page = region(page, "donate", fill(part("donate-funded"), {"raised": "10", "amount": "10", "pending_note": "", "percentage": os.environ["FUNDED"]}))
 else:
     page = region(page, "donate", fill(part("donate"), {"raised": "1.5", "amount": "10", "pending_note": os.environ.get("PENDING_NOTE", ""), "address": addr,
-             "qr": "data:image/png;base64," + qr, "verify_link": read(design + "/parts/verify-link.html").rstrip("\n")}))
+             "qr": "../qr/" + qr + ".png", "verify_link": read(design + "/parts/verify-link.html").rstrip("\n")}))
 write("proposals/p.html", region(page, "milestones", part("no-milestones")) + "\n")
 PY
 
 on backend 'mkdir -p ~/.ssh && ssh-keygen -q -t ed25519 -N "" -f ~/.ssh/id_ed25519'
+# the list's QR codes (as ccs-front-bash's tools/make-qr.sh makes them): the backend's /qr/, their
+# sums installed on the web server, which has no qrencode; and the proposals repository's images
+on backend "mkdir -p /qr && cd /qr && printf '%s\n' '$list' | while read -r _ a; do qrencode -s 10 -o \$a.png monero:\$a; done \
+    && printf '%s\n' '$list' | while read -r _ a; do sha256sum \$a.png; done > /qr.sha256"
+on backend "mkdir -p /repo-images && qrencode -s 4 -o /repo-images/qr.png 'monero:$(addr 9 B)' \
+    && qrencode -s 4 --foreground=FFFFFF --background=000000 -o /repo-images/inv.png 'monero:$(addr 9 B)' && qrencode -s 4 -o /repo-images/ok.png 'monero:$(addr 2)'"
+docker cp "$name-backend:/qr.sha256" "$files/qr.sha256" && docker cp "$name-backend:/repo-images" "$files/repo-images"
+docker cp "$files/qr.sha256" "$name-web:/tmp/qr.sha256" && docker cp "$files/repo-images" "$name-web:/tmp/repo-images"
 key=$(on backend 'cat ~/.ssh/id_ed25519.pub')
 [[ $img ]] || docker cp "$here/../contrib/ccs-receive" "$name-web:/usr/local/bin/ccs-receive"
 if [[ ! $img ]]; then
@@ -139,19 +148,18 @@ on web "
     install -d -o ccs-data -m 755 /var/lib/ccs-gate
     printf 'ALERT_URL=http://$backend:9999/simple\nSITE_URL=https://ccs.test\n' > /etc/ccs-gate/alert.conf
     printf '%s\n' '$list' > /etc/ccs-gate/subaddresses.txt
-    printf 'sha256 %s\nkey %040d\n' \"\$(sha256sum < /etc/ccs-gate/subaddresses.txt | cut -d' ' -f1)\" 0 > /etc/ccs-gate/subaddresses.txt.pin
+    cp /tmp/qr.sha256 /etc/ccs-gate/subaddresses.txt.qr.sha256
+    printf 'sha256 %s\nkey %040d\nqr %s\n' \"\$(sha256sum < /etc/ccs-gate/subaddresses.txt | cut -d' ' -f1)\" 0 \"\$(sha256sum < /etc/ccs-gate/subaddresses.txt.qr.sha256 | cut -d' ' -f1)\" > /etc/ccs-gate/subaddresses.txt.pin
     printf '%s  # the General Fund\n' '$fund' > /etc/ccs-gate/allowed
     echo sig > /etc/ccs-gate/subaddresses.txt.asc && echo key > /etc/ccs-gate/subaddresses.txt.key.asc
     # the design's release, unpacked; its files but the pages in design.sha256; markdown.awk
     cp -r /tmp/design /etc/ccs-gate/design/v0.0.1 && cp /tmp/markdown.awk /etc/ccs-gate/markdown.awk
     (cd /etc/ccs-gate/design/v0.0.1 && find . -type f ! -name '*.html' -exec sha256sum {} +) > /etc/ccs-gate/design.sha256
-    # the proposals repository, with a proposal and the images that may go live (the same
-    # qrencode makes them byte for byte on the backend)
+    # the proposals repository, with a proposal and the images that may go live (made on the
+    # backend, whose qrencode makes them byte for byte again)
     git init -q -b master /srv/proposals && mkdir -p /srv/proposals/images/p && cd /srv/proposals
     echo 'Monero: a guide, in 2 parts.' > p.md
-    qrencode -s 4 -o images/p/qr.png 'monero:$(addr 9 B)'
-    qrencode -s 4 --foreground=FFFFFF --background=000000 -o images/p/inv.png 'monero:$(addr 9 B)'
-    qrencode -s 4 -o images/p/ok.png 'monero:$(addr 2)'
+    cp /tmp/repo-images/*.png images/p/
     git add -A && git -c user.name=t -c user.email=t@t commit -q -m proposal && cd /
     chown -R ccs-data /srv/proposals   # git reads a local repository only as its owner
     printf 'PROPOSALS_GIT=file:///srv/proposals\nLINK_HOSTS=forge.test/ccs-proposals\n' > /etc/ccs-gate/proposals.conf
@@ -179,15 +187,16 @@ status=0
 ok() { echo "ok   $1"; }
 fail() { echo "FAIL $1"; status=1; }
 # site N ADDRESS [QR [IDEA TITLE...]]: the backend's site, version N (the home page's count), a
-# proposal with ADDRESS in its donation box and a QR code of QR (default ADDRESS), the ideas,
-# projects.json, the design's stylesheet and the signed list's files. Each version gets its own
+# proposal with ADDRESS in its donation box and the QR code qr/QR.png (default ADDRESS: the
+# list's file; none for an address not on it, as ccs-front-bash has none), the ideas, projects.json, the design's
+# stylesheet and the signed list's files. Each version gets its own
 # file times: two made in the same second, the same size, rsync would skip as unchanged.
 qr64() { on backend "qrencode -s ${2:-10} -o - 'monero:$1' | base64 -w0"; }
 site() {
-    local v=$1 a=$2 qr
-    qr=$(qr64 "${3:-$a}")
+    local v=$1 a=$2 qr=${3:-$2}
     shift $(($# < 3 ? $# : 3))
-    on backend "rm -rf /out && mkdir -p /out/assets && cp /design/assets/style.css /out/assets/"
+    on backend "rm -rf /out && mkdir -p /out/assets /out/qr && cp /design/assets/style.css /out/assets/"
+    on backend "cp /qr/$qr.png /out/qr/ 2> /dev/null || true"
     docker exec -e PENDING_NOTE="${PENDING_NOTE:-}" -e ONION="${ONION:-}" -e FUNDED="${FUNDED:-}" "$name-backend" python3 /gen.py /design /out "$v" "$a" "$qr" "$@"
     on backend "echo '[{\"address\": \"$a\"}]' > /out/projects.json"
     put subaddresses.txt < <(on web 'cat /etc/ccs-gate/subaddresses.txt')
@@ -291,7 +300,8 @@ for attack in \
     "entity|$p|$box|<div class=\"address\">&#$(printf '%d' "'${fake:0:1}");${fake:1}</div>|an address with an HTML entity in it" \
     "integrated|$p|<h1>A proposal</h1>|<h1>$integrated</h1>|an integrated address (106 characters)" \
     "qr|$p|$box|$box|the right address, the QR code of another" \
-    "small|$p|$box|$box|the wallet's QR code, but not as qrencode -s 10 makes it" \
+    "qrlisted|$p|$box|$box|the right address, the QR code of another of the list's" \
+    "data|$p|$box|$box|the QR code as a data: image (qrencode's of the right address)" \
     "link|ideas/index.html|https://forge.test/ccs-proposals/pulls/0|https://evil.example/pr/0|a link to another site than the proposals' forge" \
     "otherrepo|ideas/index.html|https://forge.test/ccs-proposals/pulls/0|https://forge.test/someone/else/pulls/0|a link to another repository on the proposals' forge" \
     "dotdot|ideas/index.html|https://forge.test/ccs-proposals/pulls/0|https://forge.test/ccs-proposals/../someone/else|a link that steps out of the proposals repository (..)" \
@@ -311,18 +321,45 @@ for attack in \
     v=$((v + 1))
     case $what in
         qr) site "$v" "$good" "$fake" ;;
-        small) site "$v" "$good"; change "$file" "$(qr64 "$good")" "$(qr64 "$good" 4)" ;;
+        qrlisted) site "$v" "$good" "$(addr 1)" ;;
+        data) site "$v" "$good"; change "$file" "../qr/$good.png" "data:image/png;base64,$(qr64 "$good")" ;;
         link | otherrepo | dotdot | issue | groupedidea | date) site "$v" "$good" "$good" "An idea" ;;
         allowedbox) site "$v" "$fund" ;;
         *) site "$v" "$good" ;;
     esac
     case $what in
         "new page") put "$file" <<<"$new"; held "$v" "$file" "$why" "$fake" ;;
-        qr) held "$v" "$file" "$why" "$(qr64 "$fake")" ;;
-        small) held "$v" "$file" "$why" "$(qr64 "$good" 4)" ;;
+        qr) held "$v" "$file" "$why" "qr/$fake.png" ;;
+        qrlisted) held "$v" "$file" "$why" "qr/$(addr 1).png" ;;
+        data) held "$v" "$file" "$why" "data:image" ;;
         *) [[ $old == "$new" ]] || change "$file" "$old" "$new"; held "$v" "$file" "$why" "$new" ;;
     esac
 done
+# the QR code files: only the list's own, byte for byte (its .qr.sha256), whatever page shows them
+qrlive() { on web "sha256sum < /var/lib/ccs-data/qr/$1.png 2> /dev/null | cut -d' ' -f1"; }
+qrsum() { awk -v f="$1.png" '$2 == f { print $1 }' "$files/qr.sha256"; }
+qrheld() {   # qrheld WHY FILE: the push held back FILE (qr/...), the list's copy of it still live, if any
+    local rc=0
+    on web ': > /var/log/ccs-gate.log'
+    push > /dev/null || rc=$?
+    if ((rc == 7)) && [[ $(live) == "$v" ]] && on web "grep -q '$2: !not' /var/log/ccs-gate.log" && [[ $(qrlive "$good") == "$(qrsum "$good")" ]]; then ok "held back: $1"
+    else echo "push exit $rc, live $(live)"; on web 'tail -n 3 /var/log/ccs-gate.log'; fail "$1"; fi
+}
+v=$((v + 1)); site "$v" "$good"
+if push > /dev/null && [[ $(qrlive "$good") == "$(qrsum "$good")" && $(livepage) == *"<img src=\"../qr/$good.png\""* ]]; then
+    ok "the list's QR code of the box's address, qr/<address>.png, goes live with the page"
+else fail "the list's QR code"; fi
+v=$((v + 1)); site "$v" "$good"; on backend "qrencode -s 4 -o /out/qr/$good.png 'monero:$good'"
+qrheld "qr/<address>.png: the address's QR code, but not as the list has it (qrencode -s 4)" "qr/$good.png"
+v=$((v + 1)); site "$v" "$good"; on backend "cp /qr/$(addr 1).png /out/qr/$good.png"
+qrheld "qr/<address>.png: another of the list's QR codes" "qr/$good.png"
+v=$((v + 1)); site "$v" "$good"; on backend "qrencode -s 10 -o /out/qr/$fake.png 'monero:$fake'"
+qrheld "qr/<address>.png of an address not on the list, on no page" "qr/$fake.png"
+v=$((v + 1)); site "$v" "$good"; on backend "cp /qr/$good.png /out/qr/x.png"
+qrheld "a file in qr/ not named as an address" "qr/x.png"
+v=$((v + 1)); site "$v" "$good"
+put projects.json <<<"[{\"address\": \"$good\", \"image\": \"data:image/png;base64,$(qr64 "$good")\"}]"
+held "$v" projects.json "a data: image in projects.json (the site has none)" "data:image"
 # what only a gate that reads too much would hold back: these go live
 for title in "Keep running the monero seed nodes for the next twenty four months starting in March and then a few more years" "Research data: an analysis" "Fix charset=latin1 in the docs" $'\xf0\x9f\x9f\xa2 Green light for X' $'\xe2\x96\xb6 Video tutorials' "R&D, <b>bold</b> and a=monero: in a title"; do
     v=$((v + 1)); site "$v" "$good" "$good" "$title"
@@ -374,14 +411,14 @@ docker update --cpus 0 "$name-web" > /dev/null
 # ---- end review 5 ----
 # ---- review 5, low ----
 # G5 / G7: what reaches a QR decoder. The gate notes each image it reads (its first bytes) in
-# its state folder's scan.log, when there is one. The backend's QR codes: none, ever (qrof and
-# qrknown compare them with qrencode's, pixel for pixel; only the proposals' images are read).
+# its state folder's scan.log, when there is one. The backend's QR codes: none, ever (the list's
+# files, taken by their sums; only the proposals' images are read).
 on web 'install -o ccs-data -m 644 /dev/null /var/lib/ccs-gate/scan.log'
 v=$((v + 1)); site "$v" "$good"
-svg64=$(printf '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>' | base64 -w0)
-change "$p" "$(qr64 "$good")" "$svg64"
-held "$v" "$p" "review 5: an SVG as a donation box's QR code" "$svg64"
-if on web '[[ ! -s /var/lib/ccs-gate/scan.log ]]'; then ok "review 5 (G5): no QR decoder read the backend's image (an SVG as a box's QR code): compared, not decoded"; else on web 'sort /var/lib/ccs-gate/scan.log | uniq -c'; fail "review 5 (G5): the backend's image reached a QR decoder"; fi
+svg='<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>'
+on backend "printf '%s' '$svg' > /out/qr/$good.png"
+qrheld "review 5: an SVG as a donation box's QR code" "qr/$good.png"
+if on web '[[ ! -s /var/lib/ccs-gate/scan.log ]]'; then ok "review 5 (G5): no QR decoder read the backend's image (an SVG as a box's QR code): taken by its sum, not decoded"; else on web 'sort /var/lib/ccs-gate/scan.log | uniq -c'; fail "review 5 (G5): the backend's image reached a QR decoder"; fi
 # G7: the same QR code on 5 proposal pages: read once (scan), or once per page (the box check)?
 on web 'cd /srv/proposals && for q in q1 q2 q3 q4; do cp p.md $q.md; done && git -c safe.directory=* add -A && git -c safe.directory=* -c user.name=t -c user.email=t@t commit -q -m more && chown -R ccs-data /srv/proposals'
 v=$((v + 1)); site "$v" "$good"
@@ -389,7 +426,7 @@ on backend 'for q in q1 q2 q3 q4; do cp /out/proposals/p.html /out/proposals/$q.
 on web ': > /var/lib/ccs-gate/scan.log'
 push > /dev/null || true
 n=$(on web 'grep -c . /var/lib/ccs-gate/scan.log || true')
-if ((n == 0)); then ok "review 5 (G7): one QR code on 5 pages: decoded none of the times (compared, as each box's)"; else fail "review 5 (G7): one QR code on 5 pages reached a QR decoder $n times"; fi
+if ((n == 0)); then ok "review 5 (G7): one QR code on 5 pages: decoded none of the times (the list's file, by its sum)"; else fail "review 5 (G7): one QR code on 5 pages reached a QR decoder $n times"; fi
 on web 'rm /var/lib/ccs-gate/scan.log'
 on backend 'rm -f /out/proposals/q?.html'
 # a folder pushed without read permission: its pages can't be listed by the checks, nor copied
@@ -608,9 +645,9 @@ q = [[0 if l[2 * x] == "#" else 255 for x in range(len(l) // 2) for _ in range(1
 rows = [r + [255] * 200 + [0 if (x // 10) % 2 else 255 for x in range(200)] for r in q]
 print(base64.b64encode(png(len(rows[0]), len(rows), rows)).decode())
 PY
-change "$p" "$(qr64 "$good")" "$(on backend 'cat /tmp/two.b64')"
+on backend "base64 -d /tmp/two.b64 > /out/qr/$good.png"
 # (the image read on the web server, by its QR reader: the good code is there to be read)
-if on backend 'base64 -d /tmp/two.b64' | docker exec -i "$name-web" sh -c 'cat > /tmp/two.png' && on web 'ccs-check qr png /tmp/two.png' | grep -qx "monero:$good"; then held "$v" "$p" "a good QR code with more drawn beside it" "$(on backend 'cat /tmp/two.b64')"; else fail "the two-part test image doesn't read"; fi
+if on backend 'base64 -d /tmp/two.b64' | docker exec -i "$name-web" sh -c 'cat > /tmp/two.png' && on web 'ccs-check qr png /tmp/two.png' | grep -qx "monero:$good"; then qrheld "a good QR code with more drawn beside it, as the box's qr/<address>.png" "qr/$good.png"; else fail "the two-part test image doesn't read"; fi
 # two pushes at once: the second waits for the first (one staging folder, one at a time)
 v=$((v + 1)); site "$v" "$good"
 on backend "(rsync -a --checksum --delay-updates -e 'ssh -o BatchMode=yes' /out/ ccs-data@$web: > /tmp/a 2>&1; echo \$? >> /tmp/a) & (rsync -a --checksum --delay-updates -e 'ssh -o BatchMode=yes' /out/ ccs-data@$web: > /tmp/b 2>&1; echo \$? >> /tmp/b) & wait"
@@ -639,6 +676,13 @@ v=$((v + 1)); site "$v" "$(addr 3)"
 if ! out=$(push) && [[ $(live) == "$last" && $out == *"is not the list"*".pin names"* ]] \
     && bot | grep -qF "[CCS-watch] the web server refuses every push: its signed list isn't the one its .pin names"; then ok "a list that isn't the pinned one: every push refused"; else echo "$out"; fail "a changed list"; fi
 
+on web "cp /etc/ccs-gate/subaddresses.txt.qr.sha256 /tmp/qr.keep && echo >> /etc/ccs-gate/subaddresses.txt.qr.sha256 && sed -i '\$d' /etc/ccs-gate/subaddresses.txt && : > /var/log/ccs-gate.log"
+v=$((v + 1)); site "$v" "$(addr 2)"
+if ! out=$(push) && [[ $(live) == "$last" ]] && on web "grep -q 'refused the push: .*subaddresses.txt.qr.sha256 is not the QR codes. sums' /var/log/ccs-gate.log"; then
+    ok "QR codes' sums that aren't the pinned ones: every push refused"
+else echo "$out"; on web 'tail -n 3 /var/log/ccs-gate.log'; fail "QR codes' sums not pinned"; fi
+on web "cp /tmp/qr.keep /etc/ccs-gate/subaddresses.txt.qr.sha256 && echo '3 $(addr 3)' >> /etc/ccs-gate/subaddresses.txt"
+
 # rrsync's limits still hold through the gate: no deleting, nothing outside its folder
 on web "echo keep > /var/lib/ccs-data/keep.txt"
 v=$((v + 1)); site "$v" "$(addr 2)"
@@ -655,7 +699,7 @@ if ! grep -q root <<<"$(on backend "ssh -o BatchMode=yes ccs-data@$web 'cat /etc
 # the heartbeat: pushes are the backend's; the web server's timer alerts when none arrive
 hb() { docker exec -u "$data" "$name-web" /usr/local/bin/ccs-receive --heartbeat; }
 late() { bot | grep -c 'no push from the backend' || true; }
-on web "printf 'sha256 %s\nkey %040d\n' \"\$(sha256sum < /etc/ccs-gate/subaddresses.txt | cut -d' ' -f1)\" 0 > /etc/ccs-gate/subaddresses.txt.pin"   # the list above, pinned again
+on web "printf 'sha256 %s\nkey %040d\nqr %s\n' \"\$(sha256sum < /etc/ccs-gate/subaddresses.txt | cut -d' ' -f1)\" 0 \"\$(sha256sum < /etc/ccs-gate/subaddresses.txt.qr.sha256 | cut -d' ' -f1)\" > /etc/ccs-gate/subaddresses.txt.pin"   # the list above, pinned again
 on web 'rm -f /var/lib/ccs-data/keep.txt'   # root's, from the test above: ccs-data can't copy it
 v=$((v + 1)); site "$v" "$(addr 2)"
 push > /dev/null

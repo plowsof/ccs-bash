@@ -11,9 +11,8 @@ machine.
 
 | Subcommand | What it checks |
 |---|---|
-| `pages` | every page is the design's, its regions filled only with the design's parts, a proposal's text as the proposals repository has it, a donation box one address of the signed list |
+| `pages` | every page is the design's, its regions filled only with the design's parts, a proposal's text as the proposals repository has it, a donation box one address of the signed list, its QR code `qr/<that address>.png` (the file itself: the list's, by its sum, `ccs-receive`; never decoded) |
 | `scan`, `json`, `nul` | every address in the pages, JSON and feed, also spaced out, split (between elements too) or drawn with look-alikes (Monero's base58 and Keccak checksum), is the wallet's or allowed; `projects.json` reads as JSON; no NUL byte |
-| `pixels` | a QR code is, pixel for pixel, qrencode's of the address it should be: the backend's QR codes are compared this way, never decoded |
 | `qr` | the QR codes in a proposal's images (from the proposals repository), as a browser shows them: Go's own image decoders (the format by the bytes, a GIF's frames drawn over each other; an animated PNG or a GIF of over 100 frames held back), gozxing's QR reader, inverted and faint codes too |
 | `rrsync` | receives the push, as `rrsync -wo -no-del -munge` did: only the backend's push (`rsync -a --delay-updates SITE/ host:`), nothing else |
 
@@ -21,8 +20,9 @@ Each subcommand takes the command line the Python block it replaced took and pri
 lines: it was checked against that Python on generated and mutated files, and on the live
 testnet site (326 pages, every answer the same), before the Python was removed. Since then,
 review 9: `qr` reads what the Python missed (animation frames, a format other than the name's,
-inverted and faint codes beside others), `scan` an address split between elements, and `pixels`
-refuses a PNG another decoder would read otherwise. Its own tests:
+inverted and faint codes beside others), and `scan` an address split between elements. `pixels`,
+which compared the backend's QR codes with qrencode's, is gone: they are the signed list's files
+now, taken by their sums. Its own tests:
 `contrib/ccs-check/build.sh test` (Go tests) and `fuzz` (CI).
 Anything that can be plain text matching stays awk (the feed check, `feed_awk`).
 
@@ -39,7 +39,7 @@ Anything that can be plain text matching stays awk (the feed check, `feed_awk`).
   bytes read as ISO-8859-1, so no byte of a multi-byte character hides an address's; no
   golang.org/x/text); and golang.org/x/xerrors.
 - **Our own code** for the rest (`addr`: base58 and Keccak; `pages/match.go`: the page patterns'
-  matcher; `pixels`: the PNG reader for qrencode's PNGs only).
+  matcher).
 
 ## Who can reach it
 
@@ -55,8 +55,7 @@ ccs-check never sees a visitor. Its only input is a push from the backend:
 - **Memory-safe**: Go, no cgo, no `unsafe` (nor in the two modules): a bug is a wrong answer or
   a crash, not code run. A crash holds the files back; a wrong answer may pass one, which is what
   the reviews and fuzz tests look for. Of what a push brings, only rsync (C, as before) reads it
-  unchecked, receiving it; no C library decodes it (the image's libpng is qrencode's, writing the
-  reference QR codes).
+  unchecked, receiving it; no C library decodes it (the image has no image library at all).
 - **Limits:** a time limit on every run (`timeout`, 20 seconds to 5 minutes; `qr` has its own,
   15 s); a file over 8 MB isn't read, a page over 2 MB isn't matched; `qr` decodes nothing over
   40 million pixels; `qr` and `pages` take 1 GB at most; the container has 2 GB and 256 processes.

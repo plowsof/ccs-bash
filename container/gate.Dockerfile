@@ -4,26 +4,8 @@
 # signatures checked), sources by sha256 (sources.lock), no network in the steps, every file the
 # commit's time, one layer in an empty image. GNU userland, as the gate was written and tested
 # for (Debian's); its checks ccs-check's (contrib/ccs-check: Go, built here), which also
-# receives the push. No Python, and no C library reads an image a push brings (qrencode's
-# libpng only writes the QR codes the gate compares the backend's with).
-
-# qrencode, built from source with PNG output (StageX's own is built without libpng), as
-# ccs-front-bash's image builds it: the same version and options, so the same QR codes, pixel for
-# pixel, as the backend's (the gate compares them)
-FROM toolchain AS qrencode
-COPY --from=libpng / /
-COPY --from=zlib / /
-COPY --from=bash / /
-COPY --from=ncurses / /
-RUN --mount=type=bind,source=container,target=/pin \
-    bash /pin/verify.sh /pin/sources.lock /pin/sources \
-    && tar -xzf /pin/sources/v4.1.1.tar.gz -C / \
-    && cd /libqrencode-4.1.1 \
-    && autoreconf -fi > /dev/null \
-    && ./configure -q --prefix=/usr --with-tools \
-    && make -s > /dev/null \
-    && make -s DESTDIR=/rootfs install > /dev/null \
-    && rm -rf /rootfs/usr/include /rootfs/usr/lib/pkgconfig /rootfs/usr/share /rootfs/usr/lib/*.a /rootfs/usr/lib/*.la
+# receives the push. No Python, and no C library reads an image a push brings; no QR code is
+# made here (the donation boxes' are the signed list's files, taken by their sums).
 
 # ccs-check's modules (gozxing, golang.org/x/xerrors) from their pinned archives (sources.lock:
 # the files Go's checksum database has for their versions), the QR reader's files only, patched
@@ -68,8 +50,6 @@ COPY --from=tar / /
 COPY --from=util-linux /usr/bin/flock /usr/bin/flock
 COPY --from=acl / /
 COPY --from=attr / /
-COPY --from=libpng / /
-COPY --from=qrencode /rootfs/ /
 COPY contrib/ccs-receive contrib/ccs-backup-receive /usr/local/bin/
 COPY --from=ccs-check --chown=0:0 /tmp/ccs-check /usr/local/bin/ccs-check
 COPY contrib/docker/web/sshd_config /etc/ssh/sshd_config
@@ -95,7 +75,7 @@ RUN cd /rootfs \
         etc/ssh/ssh_config usr/bin/rsync-ssl usr/bin/xxh*sum usr/bin/*zstd* usr/bin/*-config usr/bin/wcurl \
         usr/bin/bashbug usr/bin/c_rehash usr/bin/ldd usr/sbin/update-ca-certificates usr/bin/captoinfo \
         usr/bin/clear usr/bin/infocmp usr/bin/infotocap usr/bin/reset usr/bin/tabs usr/bin/tic usr/bin/toe \
-        usr/bin/tput usr/bin/tset usr/bin/png-fix-itxt usr/bin/pngfix \
+        usr/bin/tput usr/bin/tset \
     && rm -f usr/bin/getfacl usr/bin/setfacl usr/bin/chacl usr/bin/getfattr usr/bin/setfattr usr/bin/attr \
     && mkdir -p var/log && ln -s bash usr/bin/sh && ln -sf /etc/ccs-ssh/keys/passwd etc/passwd && ln -sf /etc/ccs-ssh/keys/group etc/group \
     && chmod 755 usr/local/bin/ccs-receive usr/local/bin/ccs-backup-receive usr/local/bin/ccs-check usr/local/bin/ccs-web-init && chmod 644 etc/ssh/sshd_config \

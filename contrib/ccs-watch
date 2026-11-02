@@ -3,7 +3,7 @@
 # and between pushes at random times (ccs-watch.timer, docs/handover.md), fetch the pages where
 # donations are asked for (home, Funding Required, Donate, Verify, every funding-required proposal)
 # from SITE_URL, as a visitor's browser would, and every file they use (stylesheets with
-# theme.css, fonts, icons, the General Fund's QR code, images), and compare each, byte for byte,
+# theme.css, fonts, icons, the QR codes, images), and compare each, byte for byte,
 # with LOCAL_SITE, what was last pushed. A difference means the web server serves something the
 # backend didn't make (a push skips a file whose size and time were kept: this doesn't): alert,
 # the second time it is seen within a day. Also a page never pushed (it must be the 404 page) and,
