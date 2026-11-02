@@ -36,12 +36,13 @@
 
 (ccs) {
 	root * /srv
-	# a page's address without its /dark or /light: where the theme button's ?theme= sends it. Never
-	# one starting // or /\ (another site's address to a browser)
-	map {http.request.orig_uri.path} {ccs_page} {
-		~^/(?:dark|light)$ "/"
-		~^/(?:dark|light)(/(?:[^/\\][^?]*)?)$ "${1}"
-		~^(/(?:[^/\\][^?]*)?)$ "${1}"
+	# a page's address without its /dark or /light, as the browser sent it (still percent-encoded:
+	# a page named with "(" is asked for as %28, and sent back so): where the theme button's ?theme=
+	# sends it. Never one starting // or /\ (another site's address to a browser)
+	map {http.request.orig_uri} {ccs_page} {
+		~^/(?:dark|light)(?:\?|$) "/"
+		~^/(?:dark|light)(/(?:[^/?\\][^?]*)?)(?:\?|$) "${1}"
+		~^(/(?:[^/?\\][^?]*)?)(?:\?|$) "${1}"
 		default "/"
 	}
 	map {http.request.orig_uri.path} {ccs_cache} {
