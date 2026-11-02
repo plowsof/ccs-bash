@@ -110,21 +110,49 @@ func TestInverted(t *testing.T) {
 	}
 }
 
-// read as the format its name says: a JPEG named .png, an SVG, nothing; an unknown kind an error
-func TestKindFromName(t *testing.T) {
+// read as the format its bytes are, as a browser picks the decoder: a JPEG named .png is read;
+// an SVG named .png has no codes (no format of the three); an unknown kind an error
+func TestKindFromBytes(t *testing.T) {
 	g := code(t, addr)
 	j := write(t, "j.png", func(b *bytes.Buffer) error { return jpeg.Encode(b, g, nil) })
+	if got := read(t, "png", j, true); !reflect.DeepEqual(got, []string{addr}) {
+		t.Errorf("a JPEG named .png: %q", got)
+	}
 	s := write(t, "s.png", func(b *bytes.Buffer) error {
 		_, err := b.WriteString(`<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>`)
 		return err
 	})
-	for _, p := range []string{j, s} {
-		if got := read(t, "png", p, true); len(got) != 0 {
-			t.Errorf("%s as a PNG: %q", p, got)
-		}
+	if got := read(t, "png", s, true); len(got) != 0 {
+		t.Errorf("an SVG as a PNG: %q", got)
 	}
 	if _, err := Read("bmp", j, false); err == nil {
 		t.Error("kind bmp: no error")
+	}
+}
+
+// images a browser shows with a QR code of 44AF... (review 9, testdata/shown): each is read, or
+// unchecked (held back); none is "no code"
+func TestAsShown(t *testing.T) {
+	for _, c := range []struct{ file, why string }{
+		{"apng.png", "APNG: the default image blank, the animation's last frame the code"},
+		{"halves.gif", "GIF: two frames, each half the code, drawn one over the other"},
+		{"many.gif", "GIF: 101 frames, the code the 101st"},
+		{"gif-named.png", "a GIF named .png"},
+		{"both.png", "a normal code beside an inverted one"},
+		{"nogama.png", "a code of 245 on 255"},
+		{"gama.png", "the same with gAMA 0.00455: black on white on screen"},
+	} {
+		got, err := Read("png", filepath.Join("testdata", "shown", c.file), true)
+		if errors.Is(err, ErrUnchecked) {
+			continue
+		}
+		found := false
+		for _, s := range got {
+			found = found || strings.Contains(s, "44AFFq5kSiGB")
+		}
+		if err != nil || !found {
+			t.Errorf("%s (%s): %q %v", c.file, c.why, got, err)
+		}
 	}
 }
 

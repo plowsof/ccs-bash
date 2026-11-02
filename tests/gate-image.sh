@@ -30,9 +30,8 @@ else fail "inverted codes"; fi
 printf '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>' > "$t/s.png"
 cp "$fx/qr.jpg" "$t/j.png"
 q png "$t/s.png" inverted > /dev/null; s=$?
-q png "$t/j.png" inverted > /dev/null; j=$?
-if ((s == 1 && j == 1)); then ok "read as the format its name says, nothing else: an SVG or a JPEG named .png: none"
-else fail "a file not the format its name says: exit $s, $j"; fi
+if ((s == 1)) && [[ $(q png "$t/j.png" inverted) == "$a" ]]; then ok "read as the format its bytes are, as a browser does: a JPEG named .png read, an SVG none"
+else fail "a file not the format its name says: exit $s, $(q png "$t/j.png" inverted)"; fi
 # a PNG claiming 30000x30000 pixels (fixtures/qr/bomb.png: its header and a little data)
 q png "$fx/bomb.png" inverted > /dev/null; b=$?
 if ((b == 2)); then ok "a PNG of 30000x30000 pixels: not checked (2), never none"; else fail "a PNG of 30000x30000 pixels: exit $b"; fi

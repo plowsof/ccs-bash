@@ -14,7 +14,7 @@ machine.
 | `pages` | every page is the design's, its regions filled only with the design's parts, a proposal's text as the proposals repository has it, a donation box one address of the signed list |
 | `scan`, `json`, `nul` | every address in the pages, JSON and feed, also spaced out, split (between elements too) or drawn with look-alikes (Monero's base58 and Keccak checksum), is the wallet's or allowed; `projects.json` reads as JSON; no NUL byte |
 | `pixels` | a QR code is, pixel for pixel, qrencode's of the address it should be: the backend's QR codes are compared this way, never decoded |
-| `qr` | the QR codes in a proposal's images (from the proposals repository): Go's own image decoders, gozxing's QR reader |
+| `qr` | the QR codes in a proposal's images (from the proposals repository), as a browser shows them: Go's own image decoders (the format by the bytes, a GIF's frames drawn over each other; an animated PNG or a GIF of over 100 frames held back), gozxing's QR reader, inverted and faint codes too |
 | `rrsync` | receives the push, as `rrsync -wo -no-del -munge` did: only the backend's push (`rsync -a --delay-updates SITE/ host:`), nothing else |
 
 Each subcommand takes the command line the Python block it replaced took and printed the same
