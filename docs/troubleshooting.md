@@ -6,18 +6,19 @@ jobs are at the end.
 
 ## Looking
 
-On the backend, as root, `ccs` does what ccs-back's artisan commands did (the same names), and
-reads the rest; only `proposal:process` changes anything:
+On the backend, as root, `ccs` does what ccs-back's artisan commands did, by the same names and,
+where they printed lines, the same lines; `monero:notify` (a rescan from a height) has no
+counterpart: every run asks the wallet. Only `proposal:process` changes anything:
 
 | ccs-back | Here | Says |
 |---|---|---|
 | `php artisan proposal:process` | `ccs proposal:process` | one run by hand: the next run starts at once, its lines |
-| `php artisan proposal:update` | `ccs proposal:update` | the Ideas shown, and each open MR looked at: an idea, merged already, no proposal, or why its file doesn't read |
+| `php artisan proposal:update` | `ccs proposal:update` | each open MR looked at, as ccs-back said it: `Idea MR #N 'title': file`, or `Skipping MR #N: why` (merged already, no proposal, or why its file doesn't read) |
 | `php artisan generate:addresses` | `ccs generate:addresses [file.md]` | which proposal has which subaddress and address, funding since when |
-| `php artisan wallet:notify` | `ccs wallet:notify [N]` | the funding-required proposals' raised and donations, and the last N donations |
-| `php artisan deposit:list` | `ccs deposit:list [file.md]` | every deposit as JSON: the live wallet's and each retired one's |
+| `php artisan wallet:notify` | `ccs wallet:notify [N]` | the last N (20) donations, as ccs-back said them: `Donation to "file" address: … amount: … txid: …` (`Unrecognized donation, …` at a subaddress no proposal has); then the funding-required proposals' totals |
+| `php artisan deposit:list` | `ccs deposit:list [file.md]` | every deposit as JSON, by ccs-back's table's names (`tx_id`, `amount` in atomic units, `subaddr_index`, `block_received`), and its `wallet` (live, or a retired one's) and `proposal` |
 | `laravel.log` | `ccs log [N]` | the errors and warnings of the last N runs (3), each once, with what this page says of it; then the proposal files left out, and why |
-| | `ccs status` | the loop (in Docker: each service and its health), the last run (ok, or the steps that failed), the forge, the backup, the web server, the wallet, the releases |
+| | `ccs status` | the compose (each service and its health), the last run (ok, or the steps that failed), the forge, the backup, the web server, the wallet, the releases |
 | | `ccs config:check` | every file the setup needs: there, owned as setup makes it, filled in, agreeing, answering ([the examples](../contrib/examples/backend/README.md)); changes nothing |
 
 It is `/opt/ccs-bash/contrib/ccs` ([setup](setup.md), the backend, step 2 links it as `/usr/local/bin/ccs`): it
