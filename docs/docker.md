@@ -164,20 +164,21 @@ follows every stage; `docker compose logs -f <service>` one. A stage that fails 
 
 ## The web server in Docker
 
-<p align="center"><img src="docker-web-design.svg" width="900" alt="The web server in Docker: nginx on the host serves /var/lib/ccs-data as before; the gate's sshd on port 2223 lets the push key run only ccs-receive, from the backend's address only; the heartbeat alerts when pushes stop; on the backup machine, the backup receiver's sshd on 2224; one attested StageX image"></p>
+<p align="center"><img src="docker-web-design.svg" width="900" alt="The web server in Docker: Caddy (www) serves /var/lib/ccs-data over HTTPS and, through a socket, to Tor (tor) as the onion; the gate's sshd on port 2223 lets the push key run only ccs-receive, from the backend's address only; the heartbeat alerts when pushes stop; on the backup machine, the backup receiver's sshd on 2224; one attested StageX image"></p>
 
 [`contrib/docker/web/compose.yml`](../contrib/docker/web/compose.yml) runs the web server's side
-of [two machines](two-machines.md), the gate and its heartbeat, and the backup machine's, the
-backup receiver, from one image, the gate's ([`container/gate.Dockerfile`](../container/gate.Dockerfile)),
-**nginx stays on the host**, serving
-`/var/lib/ccs-data` as before: the gate writes the same folder, so nginx's config doesn't
-change. The host keeps the accounts' ids, folders, key files and `/etc/ccs-gate`
+of [two machines](two-machines.md), the gate and its heartbeat, the site itself (Caddy and Tor),
+and the backup machine's, the backup receiver, from one image, the gate's
+([`container/gate.Dockerfile`](../container/gate.Dockerfile)). Nothing of the CCS runs on the host
+but Docker. The host keeps the accounts' ids, folders, key files and `/etc/ccs-gate`
 ([two machines](two-machines.md); the backup machine's: [setup](setup.md#the-backup-machine)).
 
 | Service | Its machine | Its user | Port | Its capabilities | What it may write |
 |---|---|---|---|---|---|
 | `gate` | the web server | sshd as root; the forced command as `ccs-data` | 2223 | `SETUID`, `SETGID`, `SYS_CHROOT` | staging, the live site, the gate's state, its log |
 | `heartbeat` | the web server | `ccs-data` | none | none | the gate's state, its log |
+| `www` | the web server | `ccs-www` | 80, 443 (published) | none | its certificates, the onion's socket |
+| `tor` | the web server | `ccs-tor` | none | none | its state and the onion's keys |
 | `backup` (profile `backup`) | **the backup machine** | sshd as root; the forced command as `ccs-backup` | 2224 | the same as the gate's | the backups |
 
 - **The backup receiver on its own machine:** the web server's root could rewrite every copy of

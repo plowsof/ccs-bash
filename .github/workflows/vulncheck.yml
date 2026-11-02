@@ -1,11 +1,13 @@
 name: vulncheck
 # ccs-check (contrib/ccs-check): the known vulnerabilities (Go's database) in what it calls, of
-# Go's standard library as StageX's pinned Go has it (it has no module). Weekly too: a new one is
+# Go's standard library as StageX's pinned Go has it (it has no module); and in the pinned
+# Caddy's binary (the web server's www: its Go and its modules). Weekly too: a new one is
 # found in code that hasn't changed. A failure: refresh the Go pin (container/update-images.sh),
 # a release (docs/ccs-check.md, Keeping it patched).
 on:
   pull_request:
     paths: [contrib/ccs-check/**, container/images, .github/workflows/vulncheck.yml]
+  workflow_dispatch:
   push:
     branches: [master]
     paths: [contrib/ccs-check/**, container/images, .github/workflows/vulncheck.yml]
@@ -28,3 +30,10 @@ jobs:
       - name: and all it found, called or not (the Go pin's own, waiting on StageX)
         if: always()
         run: contrib/ccs-check/build.sh vulncheck -show verbose | grep -E '^Vulnerability|Found in|Fixed in' || true
+      - name: the pinned Caddy's binary (fails on a vulnerability in code it calls)
+        if: always()
+        run: |
+          ref=$(awk '$1 == "caddy" { print $2 }' container/images)
+          docker pull -q "$ref" > /dev/null
+          c=$(docker create "$ref" /x) && docker cp "$c:/usr/bin/caddy" "$RUNNER_TEMP/caddy" && docker container rm "$c" > /dev/null
+          contrib/ccs-check/build.sh vulncheck-binary "$RUNNER_TEMP/caddy"

@@ -4,7 +4,8 @@
 # the build, so the same bytes as the gate image's /usr/local/bin/ccs-check. build.sh test: gofmt, go vet and the Go tests, the same
 # way. build.sh fuzz [SECONDS]: each fuzz test (*/*fuzz_test.go) for SECONDS (30), no network; an
 # input that fails it is kept in its package's testdata/fuzz/ (commit it: go test runs it
-# after). build.sh vulncheck: govulncheck (pinned below, checked against Go's checksum database)
+# after). build.sh vulncheck: govulncheck (pinned below, checked against Go's checksum database);
+# build.sh vulncheck-binary FILE: the same on a Go program's binary (Caddy's, the web server's)
 # on this code as built and Go's standard library: the known vulnerabilities in what it calls
 # (Go's database, so a network). Needs docker.
 set -euo pipefail
@@ -33,12 +34,17 @@ go() {
 }
 # govulncheck: Go's vulnerability scanner, by version (its module's checksum from Go's database)
 govulncheck=golang.org/x/vuln/cmd/govulncheck@v1.9.0
-if [[ ${1:-} == vulncheck ]]; then
+if [[ ${1:-} == vulncheck || ${1:-} == vulncheck-binary ]]; then
     mkdir "$tmp/bin"
     network=(--network bridge)
     net=(-v /etc/ssl/certs:/etc/ssl/certs:ro -v "$tmp/bin:/gobin" -e GOBIN=/gobin)
     go go "${net[@]}" -e GOFLAGS=-mod=mod -e GOPROXY=https://proxy.golang.org -e GOSUMDB=sum.golang.org -- install "$govulncheck"
-    go /gobin/govulncheck "${net[@]}" -- "${@:2}" ./...
+    if [[ -n ${2:-} && $1 == vulncheck-binary ]]; then
+        cp "$2" "$tmp/bin/program"
+        go /gobin/govulncheck "${net[@]}" -- -mode binary /gobin/program
+    else
+        go /gobin/govulncheck "${net[@]}" -- "${@:2}" ./...
+    fi
     exit
 fi
 if [[ ${1:-} == fuzz ]]; then
@@ -58,7 +64,7 @@ if [[ ${1:-} == test ]]; then
     go go -- vet ./... && go go -- test ./...
     exit
 fi
-mkdir -p "$(dirname "${1:?usage: build.sh OUT | test | fuzz [SECONDS] | vulncheck}")"
+mkdir -p "$(dirname "${1:?usage: build.sh OUT | test | fuzz [SECONDS] | vulncheck | vulncheck-binary FILE}")"
 out=$(readlink -f "$1")
 go go -v "$(dirname "$out"):/out" -- \
     build -trimpath -buildvcs=false -ldflags=-buildid= -o "/out/$(basename "$out")" .

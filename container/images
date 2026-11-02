@@ -24,6 +24,11 @@ gawk                       stagex/core-gawk@sha256:0e66dcf083a4de152d7b710bdd062
 diffutils                  stagex/core-diffutils@sha256:41cd16b99eac8acae840912cefa728210bef1a759b7e2696c284382e75183e38
 tar                        stagex/core-tar@sha256:2f799a1b404cbaf831e2bf26f3a0af06b94100dbf75b0f39522fd30f6f715ddd
 util-linux                 stagex/core-util-linux@sha256:3fb52dc65ef1c441de100512bc980bdcb5127cbd3f41e37dbff39d5743d9ab65
+# the web server's front (gate.Dockerfile, the web server compose's www and tor): Caddy serves
+# the site over HTTPS, its certificates its own (ACME); Tor, built here from its signed source
+# (sources.lock), serves it as an onion, with libevent
+caddy                      stagex/user-caddy@sha256:f2ee0153fc2cb7c8fa017e982e1c48f9660bd76a1b650c8b4c710a1168bfc900
+libevent                   stagex/user-libevent@sha256:60f8237eb11d7cf3101c616fc3bffb4a1275f5bbca553bbf869750b95939d2c9
 # the gate's checks, ccs-check (contrib/ccs-check: gate.Dockerfile, build.sh): Go, building only
 # from vendor/
 go                         stagex/core-go@sha256:689ff4afffb574203ec8039fd4663101b07bec04805d53fb198bee1a51bb1736

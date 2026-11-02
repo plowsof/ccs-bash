@@ -1,5 +1,6 @@
 # The gate's image: the web server's side (contrib/docker/web): sshd, the gate (ccs-receive), the
-# backup receiver (ccs-backup-receive) and what they run. Built as the ccs-bash image is
+# backup receiver (ccs-backup-receive) and what they run; and the site's front: Caddy (HTTPS, its
+# certificates its own) and Tor (the onion), each its own service. Built as the ccs-bash image is
 # (container/build.sh ccs-gate gate.Dockerfile): StageX images by digest (container/images,
 # signatures checked), sources by sha256 (sources.lock), no network in the steps, every file the
 # commit's time, one layer in an empty image. GNU userland, as the gate was written and tested
@@ -16,6 +17,26 @@ FROM go AS ccs-check
 USER 0
 ENV HOME=/tmp GOCACHE=/tmp/cache GOPATH=/tmp/go CGO_ENABLED=0 GOFLAGS=-mod=readonly GOPROXY=off GOTOOLCHAIN=local
 RUN --mount=type=bind,source=contrib/ccs-check,target=/src ["/usr/bin/go", "-C", "/src", "build", "-trimpath", "-buildvcs=false", "-ldflags=-buildid=", "-o", "/tmp/ccs-check", "."]
+
+# Tor, from its signed source (sources.lock): a client and onion service only (no relay or
+# directory authority code), with StageX's OpenSSL, zlib and libevent; no compression libraries,
+# seccomp or systemd. The toolchain's cc is clang.
+FROM toolchain AS tor
+COPY --from=bash / /
+COPY --from=ncurses / /
+COPY --from=openssl / /
+COPY --from=zlib / /
+COPY --from=libevent / /
+RUN --mount=type=bind,source=container,target=/pin \
+    bash /pin/verify.sh /pin/sources.lock /pin/sources \
+    && tar -xzf /pin/sources/tor-0.4.9.15.tar.gz -C / \
+    && cd /tor-0.4.9.15 \
+    && ./configure --prefix=/usr --sysconfdir=/etc --localstatedir=/var CC=cc \
+        --disable-module-relay --disable-module-dirauth --disable-unittests --disable-asciidoc \
+        --disable-manpage --disable-html-manual --disable-lzma --disable-zstd --disable-seccomp \
+        --disable-systemd --disable-libscrypt > /dev/null \
+    && make -j"$(nproc)" > /dev/null \
+    && install -D -m 755 src/app/tor /rootfs/usr/bin/tor
 
 FROM scratch AS tree
 COPY --from=filesystem / /
@@ -37,10 +58,15 @@ COPY --from=gawk / /
 COPY --from=diffutils / /
 COPY --from=tar / /
 COPY --from=util-linux /usr/bin/flock /usr/bin/flock
+COPY --from=caddy /usr/bin/caddy /usr/bin/caddy
+COPY --from=libevent / /
+COPY --from=tor /rootfs/ /
 COPY contrib/ccs-receive contrib/ccs-backup-receive /usr/local/bin/
 COPY --from=ccs-check --chown=0:0 /tmp/ccs-check /usr/local/bin/ccs-check
 COPY contrib/docker/web/sshd_config /etc/ssh/sshd_config
 COPY contrib/docker/web/init /usr/local/bin/ccs-web-init
+COPY contrib/docker/web/Caddyfile /etc/caddy/Caddyfile
+COPY contrib/docker/web/torrc /etc/tor/torrc
 
 # Only what the gate, the backup receiver and sshd run: of openssh, sshd (and ssh-keygen, for the
 # host key the first time); of git, git, its https transport and upload-pack (a file:// fetch);
@@ -62,10 +88,10 @@ RUN cd /rootfs \
         etc/ssh/ssh_config usr/bin/*zstd* usr/bin/*-config usr/bin/wcurl \
         usr/bin/bashbug usr/bin/c_rehash usr/bin/ldd usr/sbin/update-ca-certificates usr/bin/captoinfo \
         usr/bin/clear usr/bin/infocmp usr/bin/infotocap usr/bin/reset usr/bin/tabs usr/bin/tic usr/bin/toe \
-        usr/bin/tput usr/bin/tset \
+        usr/bin/tput usr/bin/tset usr/bin/event_rpcgen.py \
     && rm -f usr/lib/libform*.so* usr/lib/libmenu*.so* usr/lib/libpanel*.so* usr/lib/libncurses++*.so* \
     && mkdir -p var/log && ln -s bash usr/bin/sh && ln -sf /etc/ccs-ssh/keys/passwd etc/passwd && ln -sf /etc/ccs-ssh/keys/group etc/group \
-    && chmod 755 usr/local/bin/ccs-receive usr/local/bin/ccs-backup-receive usr/local/bin/ccs-check usr/local/bin/ccs-web-init && chmod 644 etc/ssh/sshd_config \
+    && chmod 755 usr/local/bin/ccs-receive usr/local/bin/ccs-backup-receive usr/local/bin/ccs-check usr/local/bin/ccs-web-init && chmod 644 etc/ssh/sshd_config etc/caddy/Caddyfile etc/tor/torrc \
     && find . -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
 
 FROM scratch AS image

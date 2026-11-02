@@ -1,5 +1,9 @@
 # sha256 size url... -- source tarballs built here: busybox (with only the applets in
-# busybox-applets). fetch.sh tries the urls in order and keeps a file only if its sha256
-# matches. Its sum is the one StageX pins for the same tarball (core/busybox). (ccs-check has
+# busybox-applets) and Tor (the web server's onion, gate.Dockerfile). fetch.sh tries the urls in
+# order and keeps a file only if its sha256 matches. busybox's sum is the one StageX pins for the
+# same tarball (core/busybox); Tor's is the one in its .sha256sum, signed by two of Tor's release
+# signers (David Goulet B74417EDDF22AC9F9E90F49142E86A2A11F48D36, Alexander Færøy
+# 514102454D0A87DB0767A1EBBE6A0531C18A9179), checked when it was pinned. (ccs-check has
 # no module: Go's standard library alone.)
 34f9ea6ff8636f2c9241153b9114eefa9e65674a45318ae1ef95bb5f31c53bb2 2695723 https://busybox.net/downloads/busybox-1.38.0.tar.bz2 https://www.busybox.net/downloads/busybox-1.38.0.tar.bz2
+1911f5b216a6814ed143a08bbcff1c6dc96d2ca3b505df9a21876080a92963f3 11076674 https://dist.torproject.org/tor-0.4.9.15.tar.gz https://archive.torproject.org/tor-package-archive/tor-0.4.9.15.tar.gz

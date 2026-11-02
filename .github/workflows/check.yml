@@ -120,6 +120,8 @@ jobs:
         run: GATE_IMAGE=ccs-gate tests/gate.sh
       - name: the web server compose's sshd, attacked from the backend's keys
         run: CCS_GATE_IMAGE=ccs-gate tests/web.sh
+      - name: the site as the web server compose's www (Caddy) serves it, nginx's answers kept
+        run: GATE_IMAGE=ccs-gate tests/www.sh
       - name: the image's size (git, sshd, GNU userland, ccs-check; no Python; about 110 MB)
         run: size=$(docker image inspect ccs-gate --format '{{.Size}}'); echo "$size bytes"; [ "$size" -lt 130000000 ]
       - id: id

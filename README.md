@@ -110,7 +110,7 @@ only replaced by one with every deposit it has. A wallet the CCS no longer uses 
 - [Handover](docs/handover.md): start here, from ccs-back and Jekyll to this, step by step; what you fill in; who can do what
 - [Preparing the machines](docs/setup.md): the hosts' accounts, folders, config and keys
 - [The backend in Docker](docs/docker.md): one container a stage, its own user, network, folders and secret; and [the web server's side](docs/docker.md#the-web-server-in-docker), the gate and the backup receiver
-- [Two machines](docs/two-machines.md): the backend pushes, the web server only receives; the gate, the alerts, nginx
+- [Two machines](docs/two-machines.md): the backend pushes, the web server only receives; the gate, the alerts, Caddy and Tor
 - [The signed list](docs/signed-list.md): the wallet's subaddresses and their QR codes: made, signed, checked, installed
 - [Admin access](docs/admin-access.md): your own ssh to the machines: a VPN or an allowlist, a way back in
 
