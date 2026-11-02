@@ -52,6 +52,8 @@ COPY lib/ /opt/ccs-bash/lib/
 COPY contrib/docker/backend/step /opt/ccs-bash/contrib/docker/backend/step
 COPY contrib/ccs-watch /opt/ccs-bash/contrib/ccs-watch
 COPY contrib/ccs-push /opt/ccs-bash/contrib/ccs-push
+# run by hand when the CCS moves to a new wallet (docs/handover.md, "Retiring a wallet")
+COPY contrib/retire-wallet /opt/ccs-bash/contrib/retire-wallet
 
 # Drop headers, static libraries and manuals, fix our files' modes (whatever the umask),
 # give every file the commit's time. And only the programs something here runs: of git, git
@@ -73,7 +75,7 @@ RUN cd /rootfs \
         usr/sbin/update-ca-certificates usr/bin/captoinfo usr/bin/clear usr/bin/infocmp \
         usr/bin/infotocap usr/bin/reset usr/bin/tabs usr/bin/tic usr/bin/toe usr/bin/tput usr/bin/tset \
     && chmod 755 opt/ccs-bash opt/ccs-bash/lib opt/ccs-bash/ccs-back.sh && chmod 644 opt/ccs-bash/lib/* \
-    && chmod 755 opt/ccs-bash/contrib opt/ccs-bash/contrib/docker opt/ccs-bash/contrib/docker/backend opt/ccs-bash/contrib/docker/backend/step opt/ccs-bash/contrib/ccs-watch opt/ccs-bash/contrib/ccs-push \
+    && chmod 755 opt/ccs-bash/contrib opt/ccs-bash/contrib/docker opt/ccs-bash/contrib/docker/backend opt/ccs-bash/contrib/docker/backend/step opt/ccs-bash/contrib/ccs-watch opt/ccs-bash/contrib/ccs-push opt/ccs-bash/contrib/retire-wallet \
     && find . -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
 
 FROM scratch AS image

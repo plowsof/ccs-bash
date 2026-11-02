@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # retire-wallet [--again] NAME CONFIG [RPC_URL]: record a wallet the CCS no longer uses, so its
-# donations keep counting (docs/handover.md, "Retiring a wallet"). Run as ccs, the state's owner,
+# donations keep counting (docs/handover.md, "Retiring a wallet"). Run as ccs, the state's owner (in the compose: ccs-bash's container),
 # with the update loop paused:
-#   runuser -u ccs -- /opt/ccs-bash/contrib/retire-wallet ccs2 /etc/ccs/ccs.conf
+#   docker compose run --rm --no-deps --entrypoint /opt/ccs-bash/contrib/retire-wallet ccs-bash ccs2 /etc/ccs/ccs.conf
 # The wallet is the one CONFIG's RPC_URL reaches (the live one, when it is the one being retired),
 # or RPC_URL: an old wallet's view-only copy, synced (RETIRE_RPC_USER, RETIRE_RPC_PASSWORD for its
 # login, if it has one). It asks that wallet which of the state's addresses are its own, then:

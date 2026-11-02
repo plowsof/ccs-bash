@@ -103,6 +103,30 @@ services:
       - ${WALLET_DIR:-/var/lib/ccs/wallet}:${WALLET_DIR:-/var/lib/ccs/wallet}
       - *run
 
+  # a retired wallet's view-only copy, synced, for retire-wallet --again only (docs/handover.md,
+  # "Retiring a wallet"): its own files and config, no tx-notify; started by hand, never by "up"
+  retired-wallet-rpc:
+    <<: *hardened
+    image: ${WALLET_IMAGE}
+    mem_limit: 4g
+    networks: [wallet, monerod]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    user: "${WALLET_UID}"
+    environment:
+      HOME: ${RETIRED_WALLET_DIR:-/var/lib/ccs/retired-wallet}
+    command: ["--config-file", "/etc/ccs-wallet/wallet-rpc.conf", "--non-interactive",
+              "--rpc-bind-ip", "0.0.0.0", "--confirm-external-bind"]
+    healthcheck:
+      test: ["CMD", "bash", "-c", ": > /dev/tcp/127.0.0.1/${RETIRED_WALLET_PORT:-18083}"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+    volumes:
+      - ${RETIRED_WALLET_CONF:-/etc/ccs-wallet/retired-wallet-rpc.conf}:/etc/ccs-wallet/wallet-rpc.conf:ro
+      - ${RETIRED_WALLET_DIR:-/var/lib/ccs/retired-wallet}:${RETIRED_WALLET_DIR:-/var/lib/ccs/retired-wallet}
+    profiles: [retired]
+
   pull:
     <<: *hardened
     image: ${CCS_BASH_IMAGE}

@@ -446,39 +446,47 @@ later (a deposit still too young, a saved address, a QR code shared before) is r
 
 - the new wallet, synced, and its **signed list**: made, signed, published and reproduced as in
   [step 4](#4-the-signed-subaddress-list), added as `subaddresses/<new wallet>/`;
-- a **view-only copy of the old wallet**, synced, with a wallet-rpc of its own (another port, its
-  own login): `retire-wallet --again` reads it afterwards, the live one being the new wallet;
+- a **view-only copy of the old wallet**, for `retire-wallet --again` afterwards (the live one
+  being the new wallet): its files in `/var/lib/ccs/retired-wallet/` (the wallet's user's, 700),
+  and `/etc/ccs-wallet/retired-wallet-rpc.conf` as `wallet-rpc.conf` (step 1) with its own
+  `wallet-file`, `rpc-bind-port=18083` and its own `rpc-login`; the compose's `retired-wallet-rpc`
+  runs it, on the wallet's network only, once started by hand:
+  `docker compose --profile retired up -d retired-wallet-rpc` (then synced: `docker compose logs`);
 - on the backup machine, as root, the old wallet's name and its follow-up records' in
   `/etc/ccs-backup/retired-names` (`ccs2`, `ccs2-2`, `ccs2-3`: it keeps no record of a name not
   listed there).
 
-**The switch**, as root on the backend:
+**The switch**, as root on the backend, in `/opt/ccs-bash/contrib/docker/backend`:
 
-1. `systemctl stop ccs-bash`.
-2. **Record it**, as ccs (the live wallet: the config's `RPC_URL`):
+1. **Paused:** `docker compose stop pull`, then `ccs status` until no run is going.
+2. **Record it**, in ccs-bash's container (its user, the wallet's network, the state; the live
+   wallet: the config's `RPC_URL`):
    ```
-   runuser -u ccs -- /opt/ccs-bash/contrib/retire-wallet ccs2 /etc/ccs/ccs.conf
+   docker compose run --rm --no-deps --entrypoint /opt/ccs-bash/contrib/retire-wallet ccs-bash ccs2 /etc/ccs/ccs.conf
    ```
    It writes `retired/ccs2.csv` (every deposit with `MIN_CONFIRMATIONS`; it names those in the
    pool or younger, for later), clears those proposals' index and address in `proposals.csv`
    (the old file kept as `proposals.csv.before-retire-ccs2`: the old addresses, for later) and
    moves `deposits.csv` and `assigned.tsv` aside.
-3. **The new wallet:** its files and `wallet-rpc.conf` (step 1; `systemctl restart
-   ccs-wallet-rpc`), `WALLET_ADDRESS` (step 2), and its list on both machines in place of the old
+3. **The new wallet:** its files and `wallet-rpc.conf` (step 1; `docker compose restart
+   wallet-rpc`), `WALLET_ADDRESS` (step 2), and its list on both machines in place of the old
    one's: `subaddresses.txt`, `.asc`, `.key.asc`, `.pin`, `.qr.sha256` and `.viewkey` (the Verify
    page's), in `/etc/ccs-front/` and `/etc/ccs-gate/` (and `.qr/` in `/etc/ccs-front/`), checked as in step 4 (`list-signers` too, if the signer
    changes). Every address shown from then on is the new wallet's. On the backup machine, as
    root, move the old `deposits.csv` aside (it only takes one with every deposit it has).
-4. **One run by hand**, then `systemctl start ccs-bash`: the same totals, new addresses.
+4. `docker compose start pull`, and a run at once: `ccs proposal:process`: the same totals, new
+   addresses.
 
-**After:** a day later, and again now and then (until it says nothing new), with the loop paused,
-the old wallet's view-only copy's wallet-rpc as `RPC_URL` (`RETIRE_RPC_USER`/`RETIRE_RPC_PASSWORD`
-for its login):
+**After:** a day later, and again now and then (until it says nothing new), paused as in step 1,
+the old wallet's view-only copy as `RPC_URL` (`RETIRE_RPC_USER`/`RETIRE_RPC_PASSWORD` its
+`rpc-login`, from the environment: not on the command line):
 
 ```
-systemctl stop ccs-bash
-runuser -u ccs -- /opt/ccs-bash/contrib/retire-wallet --again ccs2 /etc/ccs/ccs.conf http://127.0.0.1:<its port>/json_rpc
-/usr/local/bin/ccs-bash-update; systemctl start ccs-bash
+docker compose stop pull                                 # then ccs status: no run going
+read -r RETIRE_RPC_USER; read -rs RETIRE_RPC_PASSWORD; export RETIRE_RPC_USER RETIRE_RPC_PASSWORD
+docker compose run --rm --no-deps -e RETIRE_RPC_USER -e RETIRE_RPC_PASSWORD \
+    --entrypoint /opt/ccs-bash/contrib/retire-wallet ccs-bash --again ccs2 /etc/ccs/ccs.conf http://retired-wallet-rpc:18083/json_rpc
+docker compose start pull; ccs proposal:process
 ```
 
 Each time something came, it writes the next record (`retired/ccs2-2.csv`, then `-3`): only

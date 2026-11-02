@@ -49,6 +49,12 @@ if ((r1 == 0 && r2 == 0 && n1 == 1)) && [[ $empty == yes ]] && cmp -s "$t/site/p
     ok "ccs-push: the first push every file, the next an empty tar, pushed/ the site"
 else cat "$t/p1" "$t/p2"; fail "ccs-push with busybox (exits $r1 $r2)"; fi
 if [[ $(printf '' | openssl dgst -keccak-256 -r) == c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470* ]]; then ok "openssl's Keccak-256"; else fail "openssl's Keccak-256"; fi
+# retire-wallet, run by hand in the compose (docs/handover.md, "Retiring a wallet"): the
+# checkout's, and it starts (tests/run.sh tests what it does, in this image too)
+r=$(/opt/ccs-bash/contrib/retire-wallet 2>&1) && r="exit 0: $r"
+if cmp -s /opt/ccs-bash/contrib/retire-wallet "$here/../contrib/retire-wallet" && [[ $r == *"NAME (a-z, 0-9, -)"* ]]; then
+    ok "retire-wallet: the checkout's, in the image"
+else fail "retire-wallet in the image: $r"; fi
 missing=''
 for c in basename cmp comm find head paste shuf sort stat curl jq flock timeout; do command -v "$c" > /dev/null || missing+=" $c"; done
 if [[ -z $missing ]]; then ok "ccs-watch's and the stages' commands"; else fail "missing:$missing"; fi
