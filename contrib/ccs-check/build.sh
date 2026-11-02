@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # build.sh OUT: build ccs-check into OUT with StageX's Go (container/images' pin, signatures
 # checked), as gate.Dockerfile builds it: Go's standard library alone (no module), no network in
-# the build, so the same bytes as the gate image's /usr/local/bin/ccs-check (a host setup checks
-# its sha256 against the release's). build.sh test: gofmt, go vet and the Go tests, the same
+# the build, so the same bytes as the gate image's /usr/local/bin/ccs-check. build.sh test: gofmt, go vet and the Go tests, the same
 # way. build.sh fuzz [SECONDS]: each fuzz test (*/*fuzz_test.go) for SECONDS (30), no network; an
 # input that fails it is kept in its package's testdata/fuzz/ (commit it: go test runs it
 # after). build.sh vulncheck: govulncheck (pinned below, checked against Go's checksum database)

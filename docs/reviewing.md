@@ -26,17 +26,10 @@ no Docker socket: `pull` as `ccs-git`, `ccs-bash` as `ccs`, `backup` as `ccs-sen
 - [`contrib/ccs`](../contrib/ccs), root's: `ccs status`, `ccs log`, `ccs config:check`, and
   ccs-back's artisan names.
 
-The host setup instead: root's `ccs-bash-update` ([setup](setup.md#the-update-script-the-host-setup))
-runs one update, starting each step as its own user: `git pull` as `ccs-git`, ccs-bash as `ccs`,
-ccs-front-bash as `ccs-front`, the push and the watcher as `ccs`; and
-[`notify-loop.sh`](../notify-loop.sh), root (systemd), runs it every 120 s, or sooner once
-wallet-rpc's `tx-notify` has touched a flag file (never read, only checked for), at most once per
-30 s.
-
 ### ccs-bash: proposals, GitLab and the wallet to JSON
 
-Pinned container, read-only, no capabilities; in Docker on the internal `wallet` network, which
-only wallet-rpc shares (the host setup: `--network host`, only to reach wallet-rpc on 127.0.0.1).
+Pinned container, read-only, no capabilities; on the internal `wallet` network, which only
+wallet-rpc shares.
 
 - [`ccs-back.sh`](../ccs-back.sh): `main` is the run: config, `flock`, a watchdog (`RUN_SECONDS`,
   900: a run that hangs is stopped, its lock with it), proposals, state, wallet checks, totals,
@@ -137,17 +130,16 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
 
 ### Push, watcher, backup
 
-- [`contrib/ccs-push`](../contrib/ccs-push), the push (`push`, as `ccs-push`; the host setup:
-  `ccs`): the site's sums against `accepted`, what the gate last took (every file once a day,
+- [`contrib/ccs-push`](../contrib/ccs-push), the push (`push`, as `ccs-push`): the site's sums against `accepted`, what the gate last took (every file once a day,
   `full`); the files that differ as a tar (busybox's; a name with a backslash or a control
   character not sent) on ssh's stdin to the web server's key, which runs only the gate; the
   gate's answer read (`held` lines: left out of `accepted`, so sent again); then `pushed/`, the
   copy of what went, under the lock the watch shares.
-- [`contrib/ccs-watch`](../contrib/ccs-watch) (`watch`, as `ccs-watch`; the host setup: `ccs`): the live pages against `pushed/`, byte for
+- [`contrib/ccs-watch`](../contrib/ccs-watch) (`watch`, as `ccs-watch`): the live pages against `pushed/`, byte for
   byte, as one of three browsers through a random proxy (what it fetches, and why:
   [two machines](two-machines.md#watching-the-web-server-the-backend-raises-the-alarm)); `differs`
   refetches before it counts, `sighted` keeps the day's sightings. After each
-  push and between pushes at random times (the `watch` stage; the host setup: `ccs-watch.timer`). A difference (three fetches over 40 s, or a
+  push and between pushes at random times (the `watch` stage). A difference (three fetches over 40 s, or a
   recheck not answered) alerts the second time it is seen within a day; so does a page answering
   anything but 200 three checks in a row; `--run`, three failed runs. Its config is read key by
   key, never sourced.
@@ -201,8 +193,7 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
     `projects.json`, the list's files as installed, or a donation QR code `qr/<address>.png`
     exactly the list's (its line in `.qr.sha256`: never made or decoded here);
   - a failing file is removed from staging (its last good copy stays), the rest goes live, the
-    push fails and IRC is told. `--heartbeat` (the `heartbeat` service's loop; the host setup: a
-    timer): no push for 15 minutes.
+    push fails and IRC is told. `--heartbeat` (the `heartbeat` service's loop): no push for 15 minutes.
 - In Docker ([the web server in Docker](docker.md#the-web-server-in-docker)): the gate's image runs
   its own sshd on 2223 ([`contrib/docker/web/sshd_config`](../contrib/docker/web/sshd_config): one
   user, `ForceCommand ccs-receive`, keys only, no shell, forwarding or subsystem), as root with

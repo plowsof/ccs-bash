@@ -2,8 +2,8 @@
 # a stage (contrib/docker/backend/step), each with only its own user, network and folders, and
 # monero-wallet-rpc. No service has the Docker socket: they take turns through the run folder.
 # The images by ID, never pulled: ccs-bash's and ccs-front-bash's as their releases and ccs-sigs
-# attest them, the wallet's as built here (wallet-rpc/Dockerfile). The host's folders are the
-# same as the host setup's (docs/setup.md), so either one can run them, never both at once.
+# attest them, the wallet's as built here (wallet-rpc/Dockerfile). The host's accounts,
+# folders, config and keys: docs/setup.md.
 # Its settings: .env beside this file (env.example). A host whose monerod listens on its
 # 127.0.0.1 only: compose.host.yml as well.
 #

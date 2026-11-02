@@ -11,7 +11,7 @@ reads the rest; only `proposal:process` changes anything:
 
 | ccs-back | Here | Says |
 |---|---|---|
-| `php artisan proposal:process` | `ccs proposal:process` | one run by hand: this run's lines (the host setup: the loop paused for it, started again after; in Docker: the next run starts at once) |
+| `php artisan proposal:process` | `ccs proposal:process` | one run by hand: the next run starts at once, its lines |
 | `php artisan proposal:update` | `ccs proposal:update` | the Ideas shown, and each open MR looked at: an idea, merged already, no proposal, or why its file doesn't read |
 | `php artisan generate:addresses` | `ccs generate:addresses [file.md]` | which proposal has which subaddress and address, funding since when |
 | `php artisan wallet:notify` | `ccs wallet:notify [N]` | the funding-required proposals' raised and donations, and the last N donations |
@@ -20,15 +20,15 @@ reads the rest; only `proposal:process` changes anything:
 | | `ccs status` | the loop (in Docker: each service and its health), the last run (ok, or the steps that failed), the forge, the backup, the web server, the wallet, the releases |
 | | `ccs config:check` | every file the setup needs: there, owned as setup makes it, filled in, agreeing, answering ([the examples](../contrib/examples/backend/README.md)); changes nothing |
 
-It is `/opt/ccs-bash/contrib/ccs` ([setup](setup.md) step 3 links it as `/usr/local/bin/ccs`): it
+It is `/opt/ccs-bash/contrib/ccs` ([setup](setup.md), the backend, step 2 links it as `/usr/local/bin/ccs`): it
 reads this page from the same checkout, so its hints are the release's.
 
 ## Where everything is
 
 | Machine | What to look at | Command |
 |---|---|---|
-| **backend** | every run, every step: errors, warnings, proposals skipped and why | `ccs status`, `ccs log` ([looking](#looking)); the whole log: `journalctl -t ccs -n 100` (the host setup: `tail -n 100 /var/log/ccs-bash.log`) |
-| | the update loop and the wallet | `docker compose ps` in `/opt/ccs-bash/contrib/docker/backend` (the host setup: `systemctl status ccs-bash ccs-wallet-rpc`, `journalctl -u ccs-bash -u ccs-wallet-rpc -n 50`) |
+| **backend** | every run, every step: errors, warnings, proposals skipped and why | `ccs status`, `ccs log` ([looking](#looking)); the whole log: `journalctl -t ccs -n 100` |
+| | the update loop and the wallet | `docker compose ps` in `/opt/ccs-bash/contrib/docker/backend`; one service's lines: `docker compose logs -n 50 <service>` |
 | | what the site was made from | `/var/lib/ccs/out/*.json` (ccs-bash's JSON), `/var/lib/ccs/www/site/` (the pages pushed) |
 | | the state: which proposal has which subaddress | `/var/lib/ccs/state/proposals.csv` (the one file nothing can make again); `deposits.csv` and `ideas.cache` beside it are caches |
 | **web server** | the gate: each push, what it held back and why | `journalctl -t ccs-gate -n 50` (and `/var/log/ccs-gate.log` if created); in Docker `/var/log/ccs-web/ccs-gate.log` |
@@ -98,7 +98,7 @@ rpc get_height; head -n 1 /var/lib/ccs/state/deposits.csv     # the wallet's hei
 
 | In the log | Meaning | What to do |
 |---|---|---|
-| `curl: (7)` / `(22) … 401`, `could not …` around the wallet | wallet-rpc is down, or the login is wrong | `systemctl status ccs-wallet-rpc`; the login is `rpc-login` in `/etc/ccs-wallet/wallet-rpc.conf`, the same as `RPC_USER`/`RPC_PASSWORD` in `/etc/ccs/ccs.conf`. The site keeps its last totals meanwhile |
+| `curl: (7)` / `(22) … 401`, `could not …` around the wallet | wallet-rpc is down, or the login is wrong | `docker compose ps wallet-rpc`, `docker compose logs -n 50 wallet-rpc`; the login is `rpc-login` in `/etc/ccs-wallet/wallet-rpc.conf`, the same as `RPC_USER`/`RPC_PASSWORD` in `/etc/ccs/ccs.conf`. The site keeps its last totals meanwhile |
 | `the wallet is at height N, below the H its kept deposits go to: rescanning or restored?` | the wallet knows less than before: it is rescanning (a lost cache, a restore) or its node is behind | wait: the site keeps its last totals, and runs go on by themselves once the wallet is past H. Its node: `daemon-address` in `wallet-rpc.conf` |
 | `the wallet lacks N of the deposits kept in deposits.csv` | the daily full check: deposits the file has and the wallet doesn't | a wallet still rescanning (wait, it clears), or a reorg deeper than 30 blocks (rare: check a block explorer). Then: [make deposits.csv again](#make-depositscsv-again) |
 | `warning: the wallet knows N deposit(s) below height H that deposits.csv lacked: added` | the daily check found deposits the file missed (a lookahead gap fixed, a rescan) | nothing: they now count |
@@ -131,17 +131,17 @@ A title with a long run of address characters is shortened (`9ZqZqZ…ZqZq`).
 ## The whole site isn't updating
 
 `ccs status` names the steps the last run failed in; `ccs log` shows the lines that say why
-(`grep 'ccs-watch: this run failed' /var/log/ccs-bash.log | tail -n 3`, and the lines above it).
+(`journalctl -t ccs | grep 'ccs-watch: this run failed' | tail -n 3`, and the lines above it).
 
 | Step | Common causes |
 |---|---|
 | `ccs-bash` | the wallet (above); `cannot read config`, `config … is writable by ccs` (it must be root's, 640, group ccs) |
-| `ccs-front-bash` | `<file>: no donation address` (a funding-required proposal without one: see the GitLab lookup above); `warning: left off the site: <page>: its donation address … is not one of the wallet's` (that proposal is left off, the rest of the site goes out; an index past the signed list's end: make a longer list, ccs-front-bash's docs/setup.md step 5; else **stop and look**); `no proposal file`, marker errors (`no <!-- /ccs:… -->`, `nothing to fill`): the design and ccs-front-bash aren't releases that go together ([the releases](handover.md#the-releases)) |
+| `ccs-front-bash` | `<file>: no donation address` (a funding-required proposal without one: see the GitLab lookup above); `warning: left off the site: <page>: its donation address … is not one of the wallet's` (that proposal is left off, the rest of the site goes out; an index past the signed list's end: make a longer list ([the signed list](signed-list.md#a-new-list)); else **stop and look**); `no proposal file`, marker errors (`no <!-- /ccs:… -->`, `nothing to fill`): the design and ccs-front-bash aren't releases that go together ([the releases](handover.md#the-releases)) |
 | `the push` | the lines above it in the log say which: `ssh: connect … timed out` or `refused` (the web server or its firewall), `Permission denied (publickey)` (the push key, or the web server's `from=`), `Host key verification failed` (the web server's host key changed: check why before trusting it); or the gate refused: on the web server, `journalctl -t ccs-gate -n 20` (`refused the push: …` names what it lacks) |
 | `the backup (proposals.csv)` / `the backup (deposits.csv)` | the line above it says why: `ssh: connect … timed out`, `Permission denied` (the backup machine, its key or `from=`); `ccs-backup: … 256 MB already` (its folder is full: look at what is in it, a taken-over backend can fill it); `the new deposits.csv lacks N deposit(s)` (a reorg deeper than 30 blocks, or the wallet rescanning: [make deposits.csv again](#make-depositscsv-again)) |
 | `the push (the web server held a file back)` | see [a page isn't updating](#a-proposals-page-isnt-updating-old-text-old-totals); the push's log names each (`ccs-push: held back by the web server: <file>: <why>`), and sends it again next run |
 | `ccs-push: not sent (a backslash or control character in its name): <file>` | a file the site has whose name the gate refuses: the rest goes. A proposal's file name: rename it in the proposals repository |
-| `Unable to find image` / `pull access denied` | the run script starts an image that is gone: it must name an image ID, `--pull never`, with a stopped container on it ([setup](setup.md) step 3) |
+| `Unable to find image` / `pull access denied` | an image `.env` names is gone (a Docker cleanup): build or load that attested ID again ([deploying a set](handover.md#deploying-a-set-the-docker-setup), 2); a stopped container on each image keeps it |
 
 ## What IRC says
 
@@ -168,16 +168,14 @@ A title with a long run of address characters is shortened (`9ZqZqZ…ZqZq`).
 ## Doing things by hand
 
 On the backend, as root. **Pause the loop** before changing anything it reads; check one run
-before resuming. The commands below are the host setup's; in Docker ([docker](docker.md),
-running it): pause with `docker compose stop pull` (then `ccs status` until no run is going),
-resume with `docker compose start pull`, and `ccs proposal:process` starts one run whether
-paused or not.
+before resuming. The compose's commands run in `/opt/ccs-bash/contrib/docker/backend`
+([docker](docker.md#running-it)).
 
 | Job | How |
 |---|---|
-| **Run now** (not waiting 2 minutes) | `ccs proposal:process` (waits for a run going, pauses the loop, one run, its lines, the loop started again); or `touch /var/lib/ccs-notify/new-tx` (the loop runs within 30 s) |
-| **Pause / resume** | `systemctl stop ccs-bash` / `systemctl start ccs-bash` (the site stays as it is; after 15 minutes without a push the web server tells IRC, and again when pushes return: expected) |
-| **One run by hand**, while paused | `ccs proposal:process` (paused, it stays paused); or `/usr/local/bin/ccs-bash-update; tail -n 30 /var/log/ccs-bash.log` |
+| **Run now** (not waiting 2 minutes) | `ccs proposal:process`: one run at once, its lines |
+| **Pause / resume** | `docker compose stop pull`, then `ccs status` until no run is going / `docker compose start pull` (the site stays as it is; after 15 minutes without a push the web server tells IRC, and again when pushes return: expected) |
+| **One run by hand**, while paused | `ccs proposal:process` (paused, it stays paused) |
 | **What happened** | `ccs status`, `ccs log` ([looking](#looking)) |
 | **Change a proposal's text, title, milestones, status** | in the proposals repository, never on a machine: the next run shows it (and the gate checks it against the repository) |
 | **Remove a proposal from the site** | revert or remove its file in the proposals repository; its subaddress stays in the state, never handed out again. The push can't delete: the gate takes the page (and `images/<name>/`) off the live site itself, at the first push after it fetched the repository without the file (`removed proposals/<name>.html … from the site` in its log). A tag only it had keeps its tag page until it's deleted on the web server (`/var/lib/ccs-data/explore/tag/<tag>/`) |
@@ -188,11 +186,11 @@ paused or not.
 a shown proposal's index or address: donors pay that address.
 
 ```
-systemctl stop ccs-bash
+docker compose stop pull                                  # then ccs status: no run going
 cp -a /var/lib/ccs/state/proposals.csv /root/proposals.csv.$(date -u +%Y%m%dT%H%M%SZ)
 runuser -u ccs -- nano /var/lib/ccs/state/proposals.csv   # as ccs: the file is ccs's
 ccs proposal:process                                      # one run (the loop stays paused): check it
-systemctl start ccs-bash
+docker compose start pull
 ```
 
 Don't restore `deposits.csv`: [make it again](#make-depositscsv-again) from the wallet (the backup's
@@ -219,7 +217,7 @@ A cache: deleted, the next run makes it again from the wallet (which must be cau
 
 ```
 runuser -u ccs -- mv /var/lib/ccs/state/deposits.csv /var/lib/ccs/state/deposits.csv.old
-touch /var/lib/ccs-notify/new-tx; tail -f /var/log/ccs-bash.log
+ccs proposal:process
 ```
 
 After a real shrink (a reorg deeper than 30 blocks), replace the backup machine's copy by hand, as
@@ -235,13 +233,63 @@ copied to the backend. On a rebuilt backend, put the live `/projects` in
 than the site did. Then:
 
 ```
-systemctl stop ccs-bash
+docker compose stop pull                                  # then ccs status: no run going
 cp -a /var/lib/ccs/state/proposals.csv /root/proposals.csv.$(date -u +%Y%m%dT%H%M%SZ)   # the one it replaces
 install -o ccs -g ccs -m 644 proposals-<time>.csv /var/lib/ccs/state/proposals.csv
 install -o ccs -g ccs -m 644 retired-<name>-<time>.csv /var/lib/ccs/state/retired/<name>.csv   # each, if lost
 ccs proposal:process                                      # one run (the loop stays paused): check it
-systemctl start ccs-bash
+docker compose start pull
 ```
+
+### Move the proposals to another forge
+
+GitLab (gitlab.com, or another GitLab) or Forgejo/Gitea (disroot, Codeberg): a public repository,
+read without a token. The testnet moved from disroot's Forgejo to gitlab.com this way
+([the testnet](testnet.md)). Paused (`docker compose stop pull`, then `ccs status`: no run going), copies kept, as root on
+the backend:
+
+1. **The API**, in the backend's `/etc/ccs/ccs.conf`:
+
+   ```
+   REPOSITORY_URL=https://gitlab.com/api/v4/projects/<id>              # GitLab: the project's number
+   REPOSITORY_URL=https://git.disroot.org/api/v1/repos/<owner>/<repo>  # Forgejo or Gitea
+   ```
+
+   (`/api/v4/projects/` or `/api/v1/repos/` is what tells them apart.)
+
+2. **The checkout**, so the compose's `pull` pulls from there: the same history, `remote set-url`;
+   else a fresh clone in its place, of the branch the site runs:
+
+   ```
+   runuser -u ccs-git -- env HOME=/ git -C /var/lib/ccs/proposals \
+       remote set-url origin https://git.disroot.org/<owner>/<repo>.git
+   # or, the old one kept beside it:
+   install -d -o ccs-git -g ccs-git -m 755 /var/lib/ccs/proposals.new
+   runuser -u ccs-git -- env HOME=/ git clone -q --branch <branch> https://gitlab.com/<owner>/<repo>.git /var/lib/ccs/proposals.new
+   mv /var/lib/ccs/proposals /var/lib/ccs/proposals.old && mv /var/lib/ccs/proposals.new /var/lib/ccs/proposals
+   ```
+
+3. **The merge request caches**, emptied: `rm -f /var/lib/ccs/state/ideas.cache
+   /var/lib/ccs/state/merged-files.cache`. They are by merge request number, and the new forge's
+   numbers start again: kept, its !1 would be the old forge's !1.
+
+4. **The web server's gate**, `/etc/ccs-gate/proposals.conf`: `PROPOSALS_GIT` the new repository's
+   git URL, `PROPOSALS_BRANCH` its branch (default `master`), and `LINK_HOSTS` the old forge's
+   repository (host/path), so the proposals already linked to its merge requests keep their links.
+   Without it, every page would be checked against the old repository.
+
+5. **The containers** that mount the checkout, made again (a mount keeps the folder it was given):
+   `docker compose up -d --force-recreate pull ccs-bash front`.
+
+Then `docker compose start pull` and a run at once, `ccs proposal:process`. Ideas become the new forge's open merge or
+pull requests, and newly merged proposals link to theirs; known ones keep their link in
+`proposals.csv` (to rewrite them too:
+`sed -i 's#https://repo.getmonero.org/monero-project/ccs-proposals/-/merge_requests/#https://git.disroot.org/<owner>/<repo>/pulls/#'`,
+the loop paused, a copy kept, and the old host out of `LINK_HOSTS`). A proposal the new repository
+doesn't have leaves the site: the gate takes its page off at the next push
+([remove a proposal](#doing-things-by-hand)). The site's words ("GitLab", Submit Idea) are
+ccs-front-hugo's. Going back: the old `REPOSITORY_URL`, checkout and `proposals.conf`, and the
+caches emptied again.
 
 ### Go back to the previous release
 
@@ -269,5 +317,5 @@ both designs while both are in `/etc/ccs-gate/design/` and `design.sha256`.
 | `error: <name>: 1 of 2 maintainer signatures` (build) | a StageX pin lacks two trusted signatures. Don't work around it: refresh the [keys](image.md#signatures) if StageX added a maintainer, else wait |
 
 The image has bash and `container/busybox-applets` only; look around with
-`docker run --rm -it --entrypoint bash <image ID>` (and `ccs-bash-run`'s `-v`s). Another image ID
+`docker run --rm -it --entrypoint bash <image ID>` (and the compose's volumes). Another image ID
 than CI's: rebuild with `NO_CACHE=1 container/build.sh`.

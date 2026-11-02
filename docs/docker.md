@@ -2,11 +2,10 @@
 
 <p align="center"><img src="docker-design.svg" width="900" alt="The backend in Docker: pull, ccs-bash, front and backup, push and watch take turns through the run folder, each in its own container as its own user with its own folders and secret; ccs-bash and the wallet alone share an internal network; front has none"></p>
 
-[`contrib/docker/backend/compose.yml`](../contrib/docker/backend/compose.yml) runs the backend's
-update ([the host setup's script](setup.md#the-update-script-the-host-setup)), and ccs-watch, as one service a stage,
-and monero-wallet-rpc, instead of the host's loop ([setup](setup.md) steps 1 and 4-5). The host
-keeps its folders and config (setup steps 2-3), so either one can run them, never both. The
-testnet runs it ([the testnet](testnet.md)).
+[`contrib/docker/backend/compose.yml`](../contrib/docker/backend/compose.yml) runs the backend:
+the update (the proposals pulled, ccs-bash, the backup, ccs-front-bash, the push) and ccs-watch,
+one service a stage, and monero-wallet-rpc. The host keeps only the folders, config and keys
+([setup](setup.md#the-backend)).
 
 ## The design
 
@@ -48,7 +47,7 @@ secret.
   so any stage may write one. The two that mean something are their writer's alone: each run's
   result (`push/watch`) only the push writes and the watch reads; a line on `pull/now` starts a run
   at once, and only the wallet (a new transaction) and root (`ccs proposal:process`) may write it.
-  **The pace**, as the host setup's `notify-loop.sh` has it: a run every 2 minutes; sooner on a
+  **The pace:** a run every 2 minutes; sooner on a
   new transaction (lines that come during a run: one run after it, however many); 30 seconds
   after a run that left a donation pending, so its confirmation shows a run later; and never two
   starts closer than 30 seconds (`CCS_MIN_GAP`), so a stream of transactions can't make the runs
@@ -65,7 +64,7 @@ secret.
   repository), the signature against binaryFate's key by fingerprint.
 - **Building** is on the backend (`container/build.sh`), or anywhere, then copied: `docker save
   <ID> | ssh <backend> docker load` keeps the ID, which is what's checked
-  ([setup](setup.md), step 3).
+  ([deploying a set](handover.md#deploying-a-set-the-docker-setup), 2).
 - **The log:** every container's output to journald under one name, `ccs`: a run's lines in
   order, whichever stage said them, rotated by journald (`journalctl -t ccs`). `ccs log` and
   `ccs status` read it.
@@ -94,11 +93,11 @@ handover](handover.md#1-monerod-and-monero-wallet-rpc-the-backend), which is the
 up). A monerod
 (or alert.conf's proxy and bot) listening on the host's 127.0.0.1 only, as on the testnet, isn't
 one of those: [`compose.host.yml`](../contrib/docker/backend/compose.host.yml) puts the wallet,
-ccs-bash and the watch on the host's network instead, the wallet's RPC on 127.0.0.1, as the host
-setup has them; the other stages keep theirs. In `.env`: `COMPOSE_FILE=compose.yml:compose.host.yml`;
+ccs-bash and the watch on the host's network instead, the wallet's RPC on 127.0.0.1; the other
+stages keep theirs. In `.env`: `COMPOSE_FILE=compose.yml:compose.host.yml`;
 in `ccs.conf`, `RPC_URL=http://127.0.0.1:18082/json_rpc` (without it, `http://wallet-rpc:18082/json_rpc`).
 Its price, two ways. Any process on the host can reach the wallet's RPC on 127.0.0.1 (its login
-still needed), as in the host setup. And ccs-bash and the watch, the two stages that read what
+still needed). And ccs-bash and the watch, the two stages that read what
 others send (the forge's API, a mirror's feed; the web server's answers), reach everything else
 that listens on the host's 127.0.0.1 too: a monerod's unrestricted RPC, databases, consoles. A
 flaw in either then goes further than its container. Better, on a host you set up for it: monerod,
@@ -107,13 +106,12 @@ letting only that network in), and no `compose.host.yml`.
 
 ## Setting it up
 
-On the backend, as root, after [setup](setup.md) steps 1-2's users, folders and config (step 1's
-wallet files and `wallet-rpc.conf`, not its service). The config files, filled in as far as
+On the backend, as root, after [setup](setup.md#the-backend)'s accounts, folders, config and design. The config files, filled in as far as
 they are public: [contrib/examples/backend](../contrib/examples/backend/README.md), which also
 says how to install them; `ccs config:check` then says what is missing or wrong.
 
 1. **The images.** ccs-bash's and ccs-front-bash's: their attested IDs, built here
-   (`container/build.sh`, as for the host setup) or loaded. The wallet's:
+   (`container/build.sh`) or loaded. The wallet's:
    `docker build -q contrib/docker/backend/wallet-rpc` (its ID: the output).
 2. **The compose's own users, and their folders:**
    ```
@@ -140,22 +138,6 @@ says how to install them; `ccs config:check` then says what is missing or wrong.
    through ccs-bash's container, so after the start); `ccs status` names the services, their
    health and each stage's last run.
 
-**From the host setup:** between runs, `systemctl disable --now ccs-bash ccs-wallet-rpc
-ccs-watch.timer`; step 2 (move the push key from `/var/lib/ccs/.ssh`, and `/var/lib/ccs/state/watch`
-to `/var/lib/ccs/watch`); copy the backup's sums (`/var/lib/ccs/backup-sent*` to
-`/var/lib/ccs/run/backup/sent-<file>`, `ccs-send`'s, so nothing is sent again); then step 6.
-**Back:** `docker compose down`, `systemctl enable --now ccs-wallet-rpc ccs-bash ccs-watch.timer`
-(the push key and the watch's state back where the host setup has them).
-
-**From a compose before its own users** (v0.2.30's, or a build before them: push, backup and
-watch as `ccs`): between runs, step 2 (moving the push key from `/var/lib/ccs/.ssh`, the
-watch's state from `/var/lib/ccs/state/watch`, `chown -R ccs-send /etc/ccs/backup
-/var/lib/ccs/run/backup` and `chown -R ccs-push /var/lib/ccs/run/push`); `.env`'s new
-`PUSH_UID`, `SEND_UID`, `WATCH_UID` (and from v0.2.30's: `CCS_SITE_URL`, `COMPOSE_FILE`, `LOG_GID`
-out, `systemctl disable --now ccs-watch-after-push ccs-watch.timer`); step 5's `init` again (the
-users' folders, the pipes' groups); `docker compose up -d`. A wallet RPC port of 18182 (the
-testnet's): `WALLET_PORT=18182`, the default is 18082 now.
-
 ## Running it
 
 `ccs` works as before ([looking](troubleshooting.md#looking)): `ccs proposal:process` starts a
@@ -177,7 +159,7 @@ follows every stage; `docker compose logs -f <service>` one. A stage that fails 
 - **A design upgrade** needs nothing more: `front` mounts `/opt/ccs-front-hugo`, so a renamed
   `public` is seen. Likewise the site: `push` mounts `/var/lib/ccs/www`, not `www/site`, which
   ccs-front-bash replaces each run (a mount of a folder keeps the one it was given).
-- **The proposals checkout replaced** ([another forge](setup.md#proposals-on-another-forge)):
+- **The proposals checkout replaced** ([another forge](troubleshooting.md#move-the-proposals-to-another-forge)):
   `docker compose up -d --force-recreate pull ccs-bash front` after, for the same reason.
 
 ## The web server in Docker
@@ -187,10 +169,10 @@ follows every stage; `docker compose logs -f <service>` one. A stage that fails 
 [`contrib/docker/web/compose.yml`](../contrib/docker/web/compose.yml) runs the web server's side
 of [two machines](two-machines.md), the gate and its heartbeat, and the backup machine's, the
 backup receiver, from one image, the gate's ([`container/gate.Dockerfile`](../container/gate.Dockerfile)),
-instead of the host's sshd and `/usr/local/bin` scripts. **nginx stays on the host**, serving
+**nginx stays on the host**, serving
 `/var/lib/ccs-data` as before: the gate writes the same folder, so nginx's config doesn't
 change. The host keeps the accounts' ids, folders, key files and `/etc/ccs-gate`
-(two-machines' setup), so either one can run them, never both on the same port.
+([two machines](two-machines.md); the backup machine's: [setup](setup.md#the-backup-machine)).
 
 | Service | Its machine | Its user | Port | Its capabilities | What it may write |
 |---|---|---|---|---|---|
@@ -225,9 +207,9 @@ change. The host keeps the accounts' ids, folders, key files and `/etc/ccs-gate`
 
 ### Setting it up
 
-On the web server (and the backup machine, for `backup`), as root, after two-machines' setup of
-the accounts, folders, key files and `/etc/ccs-gate` (the host's sshd lines for them can stay
-until the switch):
+On the web server (and the backup machine, for `backup`), as root, after the accounts, folders,
+key files and `/etc/ccs-gate` ([two machines](two-machines.md); the backup machine's:
+[setup](setup.md#the-backup-machine)):
 
 1. **The image:** its attested ID (`contrib/release/verify ccs-gate-vX`), built here
    (`container/build.sh ccs-gate gate.Dockerfile`) or loaded (`docker save <ID> | ssh <web
@@ -246,13 +228,8 @@ until the switch):
 7. **The backend:** `[<web server>]:2223 <key>` in `/etc/ccs/push/known_hosts`, `[<backup
    machine>]:2224 <key>` in `/etc/ccs/backup/known_hosts` (the host names as `.env`'s `CCS_PUSH`
    and `CCS_BACKUP` have them), then in the backend compose's `.env` `CCS_PUSH_PORT=2223` and
-   `CCS_BACKUP_PORT=2224`, `docker compose up -d` between runs (the host loop: `-p 2223` in its
-   push's `ssh`, `-p 2224` in its backup's). The next run pushes through the container: its line
+   `CCS_BACKUP_PORT=2224`, `docker compose up -d` between runs. The next run pushes through the container: its line
    in `/var/log/ccs-web/ccs-gate.log`, ccs-watch's check after it.
-8. **Then** the host's: `systemctl disable --now ccs-heartbeat.timer`; the `Match User ccs-data`
-   (and `ccs-backup`) blocks out of `/etc/ssh/sshd_config` (`sshd -t`, `systemctl reload ssh`), so
-   port 22 no longer takes those keys. **Back:** the blocks and the timer again, the backend's
-   ports back to 22, `docker compose down`.
 
 **Upgrading:** the new attested ID in `.env`, `docker compose --profile init run --rm -T init`
 (passwd and group again; the host key stays), `docker compose up -d`; step by step, with a new
