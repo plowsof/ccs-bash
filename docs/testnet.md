@@ -28,9 +28,10 @@ before that.
   compose runs from `/opt/ccs-bash` at the release's commit, its images by their attested IDs
   (`ccs config:check`: none failing).
 - **An onion service** (since 2026-10-31): http://euofv4oczbu32vr4my73diw3dwelcnazsnx55wd7ouoimrvstk4wqyid.onion,
-  node2's `tor@default` (`/var/lib/tor/hidden_service/ccs`) to nginx on `127.0.0.1:8096`, the same
-  site body as the clearnet one (`snippets/ccs-site.conf`), and `Onion-Location` on the clearnet
-  site; in every page's footer since v0.2.37's set ([handover](handover.md#the-onion-address)).
+  the web server compose's `tor` (its keys moved from node2's `tor@default` when the compose took
+  the site over from nginx, so the same address) to `www`'s socket, the same site as the clearnet
+  one, and `Onion-Location` on the clearnet site; in every page's footer since v0.2.37's set
+  ([handover](handover.md#the-onion-address)). node2's own `tor@default` keeps its other onions.
 - **The RSS feed** (since v0.2.38's set): https://ccs.monerodevs.org/feed.xml, checked by the gate.
 - **The web server's side in Docker** ([the web server in Docker](docker.md#the-web-server-in-docker)):
   node2 is the web server and the backup machine both, so its compose (`/opt/ccs-bash-web`, at

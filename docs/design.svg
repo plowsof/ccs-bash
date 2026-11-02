@@ -140,7 +140,7 @@
     <text x="908" y="321" font-size="12" fill="#475569">texts, images vs the repo;</text>
     <text x="908" y="336" font-size="12" fill="#475569">addresses, QR codes vs</text>
     <text x="908" y="351" font-size="12" font-weight="600" fill="#b45309">the signed list</text>
-    <text x="908" y="422" font-size="15" font-weight="700" fill="#0f172a">nginx</text>
+    <text x="908" y="422" font-size="15" font-weight="700" fill="#0f172a">Caddy, Tor</text>
     <text x="908" y="442" font-size="12.5" fill="#475569">static files only</text>
     <text x="1120" y="422" font-size="15" font-weight="700" fill="#0f172a">Visitors</text>
     <text x="1120" y="442" font-size="12.5" fill="#475569">Tor welcome</text>

@@ -1,9 +1,9 @@
 # Two machines: the backend pushes, the web server only receives
 
 The backend takes no incoming connections; after each run it pushes the site to the web server,
-whose push key runs only the gate: it checks every file before it goes live, and nginx serves what
+whose push key runs only the gate: it checks every file before it goes live, and Caddy serves what
 passed. The gate and its heartbeat run from the gate's attested image, with their own sshd on
-port 2223 ([the web server in Docker](docker.md#the-web-server-in-docker)); nginx stays on the host.
+port 2223, and Caddy and Tor serve the site and its onion ([the web server in Docker](docker.md#the-web-server-in-docker)).
 
 **The push account:**
 
@@ -24,145 +24,95 @@ by rsync or any other C program, into its staging folder, so:
 |---|---|
 | `restrict` | shells, forwarding, a terminal |
 | `command=` the gate, which takes `receive` only | any other command (a shell, scp, rsync, reading back) |
-| `ccs-check receive`: plain files, at clean paths under the folder (folders only as a file needs them, and none left live by a held-back file) | an empty folder standing where a page comes later; writing outside it (`..`, an absolute path), links of either kind (a `projects.json` link to any file would get nginx to publish it), devices, a name twice, a file under a page: any of them refuses the whole push |
+| `ccs-check receive`: plain files, at clean paths under the folder (folders only as a file needs them, and none left live by a held-back file) | an empty folder standing where a page comes later; writing outside it (`..`, an absolute path), links of either kind (a `projects.json` link to any file would get the web server to publish it), devices, a name twice, a file under a page: any of them refuses the whole push |
 | no delete in the push at all | deleting |
 | its limits: 512 MB a push, 64 MB a file, 100,000 files, 5 minutes | filling the disk, holding the gate |
 | `from=` | use from another machine |
 | key file root-owned, outside its home | loosening the key line, adding a key |
 | own filesystem / quota | filling the disk |
 
-**nginx.** The security headers, in `/etc/nginx/snippets/ccs-headers.conf` (beta.getmonero.org's,
-with a stricter CSP; A+ on securityheaders.com):
+**The site: Caddy and Tor**, the web server compose's `www` and `tor`, from the gate's image
+(StageX's Caddy; Tor built from its signed source), each read-only, as its own user, without
+capabilities. Their config is in the image, the same on every machine:
+[`Caddyfile`](../contrib/docker/web/Caddyfile) and [`torrc`](../contrib/docker/web/torrc).
+Caddy serves `/var/lib/ccs-data` (read-only), the files the gate let through, over HTTPS at
+`CCS_SITE_HOST`; it gets and renews its certificate itself (Let's Encrypt, ACME, as
+`CCS_ACME_EMAIL`), so no certbot. It speaks HTTP/1.1 only, ignores `Range`, caps a request's
+headers at 16 KB and drops slow clients: a site of small static files loses nothing, and the
+parts of Go's HTTP server with the most known denial-of-service bugs are never reached. The
+`vulncheck` workflow checks the pinned Caddy's binary weekly against Go's vulnerability database:
+each one found is listed in [`container/caddy-vulns-accepted`](../container/caddy-vulns-accepted)
+with why it doesn't reach the site (turned off here, or code this config never runs), and any
+other fails it; the `upstream` workflow says when StageX has a newer Caddy (or Tor a newer
+release) to pin. The security headers, on every
+answer, the 404 page too (beta.getmonero.org's, with a stricter CSP; A+ on securityheaders.com),
+and no `Server` header:
 
 ```
-add_header Content-Security-Policy "default-src 'none'; style-src 'self'; img-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'none'" always;
-add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-add_header X-Content-Type-Options "nosniff" always;
-add_header X-Frame-Options "DENY" always;
-add_header Referrer-Policy "no-referrer" always;
-add_header Permissions-Policy "accelerometer=(), ambient-light-sensor=(), autoplay=(), battery=(), camera=(), clipboard-read=(), clipboard-write=(), display-capture=(), document-domain=(), encrypted-media=(), fullscreen=(), geolocation=(), gyroscope=(), hid=(), idle-detection=(), interest-cohort=(), magnetometer=(), microphone=(), midi=(), payment=(), picture-in-picture=(), publickey-credentials-get=(), screen-wake-lock=(), serial=(), sync-xhr=(), usb=(), xr-spatial-tracking=()" always;
-add_header X-XSS-Protection "0" always;
+Content-Security-Policy: default-src 'none'; style-src 'self'; img-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'none'
+Strict-Transport-Security: max-age=31536000; includeSubDomains          (HTTPS only)
+X-Content-Type-Options: nosniff
+X-Frame-Options: DENY
+Referrer-Policy: no-referrer
+Permissions-Policy: accelerometer=(), ambient-light-sensor=(), autoplay=(), battery=(), camera=(), clipboard-read=(), clipboard-write=(), display-capture=(), document-domain=(), encrypted-media=(), fullscreen=(), geolocation=(), gyroscope=(), hid=(), idle-detection=(), interest-cohort=(), magnetometer=(), microphone=(), midi=(), payment=(), picture-in-picture=(), publickey-credentials-get=(), screen-wake-lock=(), serial=(), sync-xhr=(), usb=(), xr-spatial-tracking=()
+X-XSS-Protection: 0
+Onion-Location: http://<the onion>/<the page>                          (HTTPS only)
 ```
-
-and the site, in `/etc/nginx/sites-available/ccs`, linked into `sites-enabled/` in place of
-Debian's `default` (also a `default_server`: `nginx -t` refuses both):
-
-```
-map $uri $ccs_cache {                               # in the http context, e.g. at the top of the file
-    "~\.[0-9a-f]{64}\.(css|png|avif|woff2)$" "public, max-age=31536000, immutable";
-    /assets/general-fund-qr.png        "public, max-age=86400";   # on every page; the same file for good
-    default                            "no-cache";
-}
-server {
-    listen 80 default_server;
-    root /var/lib/ccs-data;
-    index index.html;
-    disable_symlinks on;
-    server_tokens off;                              # no nginx version in headers and error pages
-    charset utf-8;                                  # pages are UTF-8, whatever a page says
-    include snippets/ccs-headers.conf;
-    add_header Cache-Control $ccs_cache always;
-    gzip on;                                        # text compressed (Debian's nginx: HTML only), not images
-    gzip_types text/css text/xml application/xml application/json;
-    gzip_vary on;
-    error_page 404 /404.html;                       # a missing page, or a folder without one: the site's own
-    error_page 403 =404 /404.html;
-    location / {
-        try_files $uri $uri/ =404;
-    }
-    location ~ \.avif$ {                            # nginx before 1.25 has no AVIF in mime.types
-        types { }
-        default_type image/avif;
-        include snippets/ccs-headers.conf;
-        add_header Cache-Control $ccs_cache always;
-        try_files $uri =404;
-    }
-    location = /projects {                          # the site carries projects.json
-        alias /var/lib/ccs-data/projects.json;
-        default_type application/json;
-        include snippets/ccs-headers.conf;
-        add_header Cache-Control "no-cache, must-revalidate";
-    }
-}
-```
-
-A `location` with its own `add_header` drops the server's, hence the `include` again. Files named
-by their hash (the stylesheet, icons, font, the home page's pictures) are kept by browsers for a
-year, the General Fund's QR code (on every page, never changing) a day, the pages not at all: a
-visitor on a slow Tor circuit fetches each file once. `charset
-utf-8` overrides any `<meta charset>`, so a page can't switch to an encoding where bytes the gate
-read as text show as something else. A missing page or folder answers the site's 404 (403 would
-say it exists); ccs-watch reads any answer but 200 as the page not served.
 
 | Header | Stops |
 |---|---|
 | `Content-Security-Policy` | anything loading from another site, any script, inline styles; `frame-ancestors 'none'`: another site showing a page in a frame with its own address drawn over the donation box (`default-src` doesn't cover it); `base-uri 'self'`: for the 404 page's `<base href="/">` |
 | `Strict-Transport-Security` | plain HTTP once a browser has seen HTTPS, so nobody on the way can strip it (ignored over HTTP, so harmless on port 80). No `preload`: that is for a whole domain |
-| `X-Content-Type-Options` | a file run as a script or stylesheet when nginx says it is something else (not images: a browser shows any image bytes, hence the gate's rule that pages start as text) |
+| `X-Content-Type-Options` | a file run as a script or stylesheet when the server says it is something else (not images: a browser shows any image bytes, hence the gate's rule that pages start as text) |
 | `X-Frame-Options` | framing, for browsers older than `frame-ancestors` |
 | `Referrer-Policy` | other sites learning which page a visitor came from |
 | `Permissions-Policy` | every browser feature the site doesn't use (camera, payment, clipboard…) |
 | `X-XSS-Protection: 0` | old browsers' XSS filters, which could be used to blank parts of a page; the CSP is the protection |
 
-**Caching:** stylesheets, icons and fonts are named by their hash (`style.<sha256>.css`), so
-browsers keep them for good (no layout shift, even on Tor); everything else is `no-cache`, checked
-before reuse. The regex is quoted (its `{64}` would open a block); a `map`, not a `location`,
-because `/dark/` and `/light/`'s `^~` would win.
+Pages go out as `text/html; charset=utf-8`, which overrides any `<meta charset>`, so a page can't
+switch to an encoding where bytes the gate read as text show as something else. A missing page or
+a folder without one answers the site's 404 page (a 403 would say it exists); ccs-watch reads any
+answer but 200 as the page not served. Text (HTML, CSS, XML, JSON) is gzipped, images not.
+
+**Caching:** stylesheets, icons, fonts and the home page's pictures are named by their hash
+(`style.<sha256>.css`), so browsers keep them for good (`immutable`, a year: no layout shift, even
+on Tor); the General Fund's QR code (on every page, never changing) a day; everything else,
+`no-cache`, checked before reuse; `/projects` (projects.json, as JSON) revalidated each time.
 
 **The theme** (Light, Dark, System), kept in the address, without cookies or JavaScript: `/dark/…`
-and `/light/…` are the same files with another `assets/theme.css`, and the button's
-`?theme=light|dark|system` redirects to the page under that prefix (links are relative, so it
-stays). In the `server` (the `map` in the `http` context):
+and `/light/…` are the same files with another `assets/theme.css` (`theme-dark.css`,
+`theme-light.css`), and the button's `?theme=light|dark|system` redirects (302) to the page under
+that prefix (links are relative, so it stays). These are the very files the gate checked and
+ccs-watch compares. The redirect never names an address starting `//` or `/\`, which a browser
+takes as another site's: such a path redirects to the home page.
 
-```
-map $request_uri $ccs_page {                       # the page, without a theme prefix or query
-    ~^/(?:dark|light)(/(?:[^/?\x5c][^?]*)?)(?:\?|$) $1;
-    ~^(/(?:[^/?\x5c][^?]*)?)(?:\?|$)               $1;
-    default                                      /;
-}
-
-    if ($arg_theme = light)  { return 302 /light$ccs_page; }
-    if ($arg_theme = dark)   { return 302 /dark$ccs_page; }
-    if ($arg_theme = system) { return 302 $ccs_page; }
-    location = /dark/assets/theme.css  { alias /var/lib/ccs-data/assets/theme-dark.css; }
-    location = /light/assets/theme.css { alias /var/lib/ccs-data/assets/theme-light.css; }
-    location ^~ /dark/  { alias /var/lib/ccs-data/; try_files $uri $uri/ =404; }
-    location ^~ /light/ { alias /var/lib/ccs-data/; try_files $uri $uri/ =404; }
-```
-
-These are the very files the gate checked and ccs-watch compares. The map never yields an address
-starting `//` or `/\` (`\x5c`: nginx reads `\\` itself), which a browser takes as another site's
-(`absolute_redirect on`, the default, stops that too; behind a proxy it may be off). Without these
-lines the button only reloads the page.
-
-**HTTPS:** a DNS A record, `server_name`, then `certbot --nginx -d <name> --redirect` (`apt install
-certbot python3-certbot-nginx`): the 443 server, a redirect from 80, renewed by `certbot.timer`.
-
-**An onion service** (optional): the same site for Tor Browser users, without an exit node. Tor
-publishes it, nginx serves the very files and headers the clearnet site does (the site's body in
-one snippet, `snippets/ccs-site.conf`, both servers including it), and the clearnet site says so
-(`Onion-Location`, which Tor Browser turns into ".onion available"):
-
-```
-# /etc/tor/torrc, then: systemctl reload tor; cat /var/lib/tor/hidden_service/ccs/hostname
-HiddenServiceDir /var/lib/tor/hidden_service/ccs
-HiddenServicePort 80 127.0.0.1:8096
-# sites-available/ccs: the server's body (root ... the /light/ location) moved to snippets/ccs-site.conf
-server {
-    listen 127.0.0.1:8096;
-    server_name <name>.onion;
-    port_in_redirect off;          # the theme button's redirect names the onion, not this port
-    include snippets/ccs-site.conf;
-}
-# snippets/ccs-headers.conf (Tor Browser ignores it on the onion itself)
-add_header Onion-Location "http://<name>.onion$request_uri" always;
-```
-
-The footer says so too: the address in `/etc/ccs-gate/onion` (root, 644), and the same in the
-backend compose's `.env` as `CCS_ONION`, which ccs-front-bash writes in every page's footer. The
-gate takes the footer's onion line only with the address in its own file: a backend can't point
-visitors at another onion. The onion's key, `/var/lib/tor/hidden_service/ccs/hs_ed25519_secret_key`,
+**The onion** (optional): the same site for Tor Browser users, without an exit node. The
+compose's `tor` publishes it; Caddy serves it the very files and headers the clearnet site has,
+through a socket in `/var/lib/ccs-www/onion`, which only the two mount: no port, so nothing else on
+the machine reaches the onion's side. A single-hop service: the site is public and its address
+known, so the server's own anonymity buys nothing, and fewer hops make it quicker. The clearnet
+site says so (`Onion-Location`, which Tor Browser turns into ".onion available"), and so does the
+footer: the address in `/etc/ccs-gate/onion` (root, 644), the same as the web server's `.env`
+`CCS_ONION` and the backend compose's `CCS_ONION`, which ccs-front-bash writes in every page's
+footer. The gate takes the footer's onion line only with the address in its own file: a backend
+can't point visitors at another onion. The onion's key, `/var/lib/ccs-tor/ccs/hs_ed25519_secret_key`,
 is the onion's identity, as the TLS key is the clearnet site's: back it up as root, show it no one.
+
+**Setting them up**, as root: their users and folders, then the compose ([the web server in
+Docker](docker.md#the-web-server-in-docker)):
+
+```
+for u in ccs-www ccs-tor; do useradd --system --no-create-home --shell /usr/sbin/nologin $u; done
+install -d -o ccs-www -m 755 /var/lib/ccs-www /var/lib/ccs-www/onion /var/lib/ccs-www/sites
+install -d -o ccs-www -m 700 /var/lib/ccs-www/data          # Caddy's certificates and ACME account
+install -d -o ccs-tor -m 700 /var/lib/ccs-tor               # Tor's state; ccs/: the onion's keys (made at its first start)
+```
+
+In `.env`: `CCS_WWW_UID` and `CCS_TOR_UID` (`id -u ccs-www`:`id -g ccs-www`...), `CCS_SITE_HOST`
+(the site's name, its DNS A and AAAA records this machine's), `CCS_ONION` (after the first start:
+`/var/lib/ccs-tor/ccs/hostname`) and `CCS_ACME_EMAIL`. Ports 80 and 443 open to everyone. A site
+of the machine's own beside the CCS (another host's ACME challenges, say): a file
+`/var/lib/ccs-www/sites/<name>.caddy`, which the Caddyfile imports.
 
 **The backend's key**, the push stage's, and the gate's own host key on its port, from the web
 server's `/etc/ccs-gate/ssh/ssh_host_ed25519_key.pub` (not accepted on first connect):
@@ -173,9 +123,8 @@ runuser -u ccs-push -- ssh-keygen -t ed25519 -N '' -f /etc/ccs/push/id_ed25519
 echo "[<web server>]:2223 ssh-ed25519 AAAA..." > /etc/ccs/push/known_hosts
 ```
 
-The push (`--checksum`: only the files whose contents changed, as each run makes every file anew;
-`--delay-updates`: swapped in once all have arrived) goes to `CCS_PUSH_PORT` (2223) of the
-compose's `.env`. The web server needs 2223 open to the backend only (the backup machine: 2224)
+The push (a tar of the files that changed since what the gate last took, `contrib/ccs-push`) goes
+to `CCS_PUSH_PORT` (2223) of the compose's `.env`. The web server needs 2223 open to the backend only (the backup machine: 2224)
 and 80/443 to everyone, in its firewall *and* a cloud provider's (an Oracle security list, an AWS
 security group). The admins' own ssh: [admin access](admin-access.md).
 

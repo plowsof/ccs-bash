@@ -27,6 +27,8 @@ cleanup
 # each service's settings, as compose.yml has them
 env=$(mktemp)
 printf 'CCS_GATE_IMAGE=%s\nCCS_DATA_UID=997:997\nCCS_BACKUP_UID=998:998\n' "$img" > "$env"
+# (www and tor: tests/www.sh; the compose needs their settings all the same)
+printf 'CCS_WWW_UID=995:995\nCCS_TOR_UID=994:994\nCCS_SITE_HOST=ccs.test\nCCS_ONION=x.onion\nCCS_ACME_EMAIL=x@ccs.test\n' >> "$env"
 conf=$(docker compose -f "$here/../contrib/docker/web/compose.yml" --env-file "$env" --profile backup config --format json) || { echo "FAIL compose config"; exit 1; }
 rm -f "$env"
 # flags SERVICE: its docker run options (those that harden it) and command

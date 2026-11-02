@@ -229,8 +229,8 @@ The compose's `front` ([docker](docker.md)), from ccs-front-bash's pinned image,
 
 ## 6. The web server
 
-[Two machines](two-machines.md): the write-only push account, nginx with HTTPS and its headers,
-and the gate's files (its design, `markdown.awk`, the list's files, `allowed`, `proposals.conf`);
+[Two machines](two-machines.md): the write-only push account, the site's Caddy and Tor (HTTPS and
+the onion, from the gate's image), and the gate's files (its design, `markdown.awk`, the list's files, `allowed`, `proposals.conf`);
 then the gate in Docker ([the web server in Docker](docker.md#the-web-server-in-docker)).
 Everything on it, by version, and what a reviewer reads to trust it without trusting the
 backend: [the web server](web-server.md). It takes the proposals repository as reviewed: a
@@ -318,7 +318,8 @@ sshd ([the web server in Docker](docker.md#the-web-server-in-docker)).
 | Account | Does | Can't |
 |---|---|---|
 | `ccs-data` | receives the push: its key (root's file, outside its home) works only from the backend's address and only runs the gate; runs the heartbeat check | delete, write outside the site, get a shell, change its key |
-| nginx | serves the files | run code: they are static |
+| `ccs-www` (Caddy) | serves the files, read-only; gets its certificate | run code (they are static), write the site |
+| `ccs-tor` (Tor) | publishes the onion: Caddy's socket | reach anything else of the machine's |
 
 **The backup machine:** 22 to you; to the backend, 2224, the backup receiver's own
 sshd.
@@ -391,15 +392,16 @@ agreeing, answering) and changes nothing.
 | | `allowed` | the General Fund, `888tNkZrPN6JsEgekjMnABU4TBzc2Dt29EPAvkRxbANsAnjyPbb3iQ1YBRk1UXcdRsiKc9dhwMVgN5S9cQUiyoogDavup3H`, and any address a proposal's text quotes (the gate's refusal names it) | 6 |
 | | `alert.conf` | `ALERT_URL` (the bot), `SITE_URL=https://ccs.getmonero.org` (the gate takes a feed only with links under it) | 8 |
 | | `onion` | optional: the site's onion address, one line (Tor's `/var/lib/tor/hidden_service/ccs/hostname`, [two machines](two-machines.md)); the only one the footer may show | 6 |
-| nginx | `server_name`, the certificate | `ccs.getmonero.org`, from certbot | 6 |
+| `/opt/ccs-bash/contrib/docker/web/.env` | `CCS_SITE_HOST`, `CCS_ACME_EMAIL`, `CCS_ONION` | `ccs.getmonero.org` (its DNS records the web server's), an address for Let's Encrypt, the onion | 6 |
 | | `snippets/ccs-headers.conf` | the security headers, as in two-machines (A+ on securityheaders.com) | 6 |
 
 ### The onion address
 
-Optional: with an onion service ([two machines](two-machines.md), "An onion service"), every
+Optional: with an onion service ([two machines](two-machines.md), "The onion"), every
 page's footer says "Also on Tor: <its address>". The address is in two places, which must agree:
-the web server's `/etc/ccs-gate/onion` (root, 644: the only onion the gate lets a footer show) and
-the backend compose's `.env`, `CCS_ONION` (what ccs-front-bash writes). Setting or changing it,
+the web server's `/etc/ccs-gate/onion` (root, 644: the only onion the gate lets a footer show, and
+the same in its compose's `.env` as `CCS_ONION`, for the `Onion-Location` header) and the backend
+compose's `.env`, `CCS_ONION` (what ccs-front-bash writes). Setting or changing it,
 between runs: the web server's file first, then the backend's `.env` and `docker compose up -d
 front` (a new variable needs a new container). Until the backend's next run, its pages still have
 the old line: the gate holds them back (their last good copies stay live) and that run fails, which
