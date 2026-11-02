@@ -51,8 +51,8 @@ ccs-check never sees a visitor. Its only input is a push from the backend:
   a crash, which is held back, not code run. No C library reads anything a push brings (the
   image's libpng is qrencode's, writing the reference QR codes).
 - **Limits:** a time limit on every run (`timeout`, 20 seconds to 5 minutes; `qr` has its own,
-  15 s); a file over 8 MB isn't read; `qr` decodes nothing over 40 million pixels and takes 1 GB
-  at most; the container has 2 GB and 256 processes.
+  15 s); a file over 8 MB isn't read, a page over 2 MB isn't matched; `qr` decodes nothing over
+  40 million pixels; `qr` and `pages` take 1 GB at most; the container has 2 GB and 256 processes.
 - **No root**: sshd hands the push to the `ccs-data` account; ccs-check runs as it. The
   container is read-only but for its own folders, with no capabilities beyond sshd's and
   `no-new-privileges`.
