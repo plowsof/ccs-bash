@@ -190,6 +190,36 @@ func (c *Checker) Grouped(t string, out map[string]bool) error {
 	return nil
 }
 
+// Checked: the addresses in t its checksum says are ones: any 95 or 106 characters of a run of
+// base58, and Grouped's. For text joined from pieces (a page's elements laid side by side), where
+// Runs' "any 95 letters and digits" could be words that only meet there; added to out only when
+// all of t is read, as Grouped's
+func (c *Checker) Checked(t string, out map[string]bool) error {
+	found := map[string]bool{}
+	for _, r := range long.FindAllString(t, -1) {
+		for _, n := range []int{95, 106} {
+			for i := 0; i+n <= len(r); i++ {
+				ok, err := c.Valid(r[i : i+n])
+				if err != nil {
+					return err
+				}
+				if ok {
+					found[r[i:i+n]] = true
+				}
+			}
+		}
+	}
+	if err := c.Grouped(t, found); err != nil {
+		return err
+	}
+	for a := range found {
+		out[a] = true
+	}
+	return nil
+}
+
+var long = regexp.MustCompile(`[1-9A-HJ-NP-Za-km-z]{95,}`)
+
 var token = regexp.MustCompile(`[0-9A-Za-z]+`)
 
 // Runs: every run of 95 or 106 letters and digits in t with no 0, O, I or l (an address as it

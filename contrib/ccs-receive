@@ -81,7 +81,8 @@ refuse() {
 # written in groups, split by up to three
 # characters that can't be in one (spaces, punctuation: "4A9b xZq3", "4A9b - xZq3", "4A9b/xZq3"),
 # is read joined, and kept only where its checksum says it is one (prose joined that way is never
-# one). Each file has a budget of checksums (CCS_GATE_KECCAK, 3000) and of time (CCS_GATE_SECS,
+# one). So is the text as a browser lays it out, its tags dropped: an address split between two
+# elements side by side (two tag labels, a tag and its count) is one run there. Each file has a budget of checksums (CCS_GATE_KECCAK, 3000) and of time (CCS_GATE_SECS,
 # 20 s): past either, it is held back alone ("too many..."), not every file with it (text made
 # to look like an address everywhere, an idea's title, costs a checksum a place).
 # qrscan KIND IMAGE [inverted]: ccs-check qr: each QR code's text in IMAGE on a line; exit 1 if
