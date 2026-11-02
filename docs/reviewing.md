@@ -137,9 +137,12 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
 
 ### Push, watcher, backup
 
-- The push (`push`, as `ccs-push`; the host setup: `ccs`): `rsync --checksum --delay-updates` to
-  the web server's key, which runs only the gate; then the copy of what went, `pushed/`, under the
-  lock the watch shares.
+- [`contrib/ccs-push`](../contrib/ccs-push), the push (`push`, as `ccs-push`; the host setup:
+  `ccs`): the site's sums against `accepted`, what the gate last took (every file once a day,
+  `full`); the files that differ as a tar (busybox's; a name with a backslash or a control
+  character not sent) on ssh's stdin to the web server's key, which runs only the gate; the
+  gate's answer read (`held` lines: left out of `accepted`, so sent again); then `pushed/`, the
+  copy of what went, under the lock the watch shares.
 - [`contrib/ccs-watch`](../contrib/ccs-watch) (`watch`, as `ccs-watch`; the host setup: `ccs`): the live pages against `pushed/`, byte for
   byte, as one of three browsers through a random proxy (what it fetches, and why:
   [two machines](two-machines.md#watching-the-web-server-the-backend-raises-the-alarm)); `differs`
@@ -162,8 +165,11 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
 ## Web server
 
 - [`contrib/ccs-receive`](../contrib/ccs-receive), the push key's forced command, as `ccs-data`,
-  one push at a time (`flock`), into staging, a copy of the live site (`ccs-check rrsync`: only the
-  backend's push, as rrsync `-wo -no-del -munge`; refused before it without `ccs-check`). Once
+  one push at a time (`flock`); only `receive` asked (anything else refused); staging made a copy
+  of the live site (`ccs-check copy --delete`), the push's tar read into it (`ccs-check receive`,
+  contrib/ccs-check/push: plain files and folders at clean paths, written beside and renamed,
+  644/755, within its limits, else the whole push refused and IRC told; refused before it without
+  `ccs-check`). Once
   received, before anything goes live, refuses the whole push without its pinned list and QR
   codes' sums (`.qr.sha256`, the `.pin`'s `qr` line), `git`, `design.sha256`, a design release, `markdown.awk` or `proposals.conf`, or for
   a control character in a file name. Then, for each page and JSON file

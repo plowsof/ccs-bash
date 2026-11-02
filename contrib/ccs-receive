@@ -1,7 +1,8 @@
 #!/bin/bash
 # ccs-receive: the web server's last check (docs/two-machines.md, "The gate"). The backend's push
-# key runs only this (command= in authorized_keys). It receives the push as rrsync always did, but
-# into a staging folder, one push at a time; then, for each page and JSON file the push changed
+# key runs only this (command= in authorized_keys). It receives the push, a tar of the files the
+# backend changed (contrib/ccs-push: plain files and folders only, ccs-check receive), into a
+# staging folder that starts as the live site, one push at a time; then, for each page and JSON file the push changed
 # (and those held back last time; all of them when the list, design, markdown.awk, proposals
 # commit, this script or ccs-check changed, and once a day),
 #   - every page must be one of the design's own (the release zips unpacked in design/, installed
@@ -25,19 +26,20 @@
 #   - feed.xml, the feed, exactly as ccs-front-bash writes it: its items plain text, each a link to
 #     one of this site's proposal pages (SITE_URL, alert.conf), nothing else (feed_awk).
 # The push goes live, except a file that fails: that one keeps its last good copy (a new one stays
-# out), IRC is told (alert.conf), and it exits 7 (the backend's rsync exits 7 too). A list or QR
+# out), IRC is told (alert.conf), the backend is told which on stdout ("held<TAB>file<TAB>why"
+# lines: it sends them again), and it exits 7. A list or QR
 # codes' sums that aren't the pinned ones, or no design.sha256, design or markdown.awk, refuses
 # the whole push. Needs
-# bash, awk, grep, rsync, coreutils, curl, git, and ccs-check (contrib/ccs-check: the
-# checks in Go, one static binary: the release's, its sha256 attested; it also receives the
-# push, as rrsync did). Root-owned, 755.
+# bash, awk, grep, coreutils, curl, git, and ccs-check (contrib/ccs-check: the checks in Go, one
+# static binary: the release's, its sha256 attested; it also receives the push, and copies
+# between staging and the live site). Root-owned, 755.
 set -euo pipefail
 # (no home of the account's: git, curl and bash read no config from there, whatever passwd says)
 export LC_ALL=C HOME=/nonexistent GIT_CONFIG_NOSYSTEM=1
 staging=/var/lib/ccs-staging live=/var/lib/ccs-data conf=/etc/ccs-gate state=/var/lib/ccs-gate
 
 # The reason goes to the web server's journal (and /var/log/ccs-gate.log, if ccs-data may write
-# it), and to the backend: that last one only if ssh relays it before the rsync client exits.
+# it), and to the backend (stderr, its ssh channel).
 # alert KEY MESSAGE: also to IRC (/etc/ccs-gate/alert.conf: ALERT_URL, SITE_URL), at most once an
 # hour per KEY: a taken-over backend retrying every two minutes mustn't flood the channel. Here
 # is where a bad push is seen even when the backend is the one lying. Sets sent=1 when it posts.
@@ -527,11 +529,24 @@ fi
 if ! check=$(command -v ccs-check) || ! ccs-check --check > /dev/null 2>&1; then
     refuse "it has no ccs-check (contrib/ccs-check: the release's, its sha256 attested) to check the push with" ccs-check
 fi
-# Staging starts as the live site each time: the push account can't delete, so whatever a
-# refused push left in it would otherwise stay there and refuse every push after it.
-rsync -a --delete "$live/" "$staging/"
-# (only the backend's push, nothing else: ccs-check rrsync, in place of rrsync -wo -no-del -munge)
-ccs-check rrsync "$staging"
+# only the backend's push (contrib/ccs-push asks for "receive"), nothing else: a shell, scp,
+# rsync or anything a stolen key asks for is refused before anything is read
+if [[ ${SSH_ORIGINAL_COMMAND:-receive} != receive ]]; then
+    say "refused: not a push (the key asked for something else)"
+    exit 1
+fi
+# Staging starts as the live site each time: the push can't delete, so whatever a refused push
+# left in it would otherwise stay there and refuse every push after it
+ccs-check copy --delete "$live" "$staging"
+# the push: a tar of plain files and folders, read by Go (ccs-check receive, contrib/ccs-check/push):
+# a link, a device, a path out of staging, a name twice, or past its limits (512 MB, 64 MB a file,
+# 100,000 files) refuses all of it, and so does one not received in 5 minutes
+if ! why=$(timeout 300 ccs-check receive "$staging" 2>&1); then
+    why=${why#ccs-check receive: refused: }
+    say "refused the push: ${why:-it was not received in time}"
+    alert receive "the web server refused a push it could not take: ${why:-not received in time} @ @SITE@"
+    exit 1
+fi
 touch "$state/last-push" 2> /dev/null || true   # the backend's heartbeat (--heartbeat)
 
 # the list and its pin, as ccs-front-bash has them (tools/sign-subaddresses.sh: "sha256 <hex>")
@@ -630,8 +645,7 @@ fi
 # out): one bad page doesn't stop the site updating, and nothing here rewrites a file. The push
 # still fails, so the backend's log shows it.
 if [[ $bad ]]; then
-    # out of staging, so the copy below leaves the live one as it is. Not rsync exclude patterns:
-    # a pattern without wildcards reads a backslash as itself, so an escaped name never matched
+    # out of staging, so the copy below leaves the live one as it is
     nheld=0
     while IFS= read -r file; do
         [[ $file == "$staging"/* ]] || continue
@@ -659,11 +673,16 @@ if [[ $bad ]]; then
         awk -F '\t' "$k" <<<"$bad"
     done)
 fi
-# (modes fixed: a page pushed 600 would be a 403 for visitors, with no alert)
-rsync -a --chmod=D755,F644 --delay-updates "$staging/" "$live/"
+# staging into the live site: each file that changed written beside its live copy and renamed over
+# it (644, folders 755: a page pushed 600 would be a 403 for visitors, with no alert)
+ccs-check copy "$staging" "$live"
 # what was held back, checked again next push; and, after checking all, what it was checked with
 awk -F '\t' -v s="$staging/" 'index($1, s) == 1 { print substr($1, length(s) + 1) }' <<<"$bad" | sort -u > "$state/held.new" && mv "$state/held.new" "$state/held"
 [[ ! $full ]] || printf '%s\n' "$inputs" > "$state/checked-with"
-# 7 (which rsync never uses, and passes on): it went live but for the files held back, so the
-# backend's ccs-watch still checks the live pages; a refused push is 1
-[[ ! $bad ]] || exit 7
+# the backend's answer: each file held back (it sends them again next push, as it doesn't count
+# them as live), then 7: it went live but for those, so the backend's ccs-watch still checks the
+# live pages; a refused push is 1
+if [[ $bad ]]; then
+    awk -F '\t' -v s="$staging/" 'index($1, s) == 1 && !seen[$1]++ { printf "held\t%s\t%s\n", substr($1, length(s) + 1), $2 }' <<<"$bad" || true
+    exit 7
+fi
