@@ -203,13 +203,10 @@ change. The host keeps the accounts' ids, folders, key files and `/etc/ccs-gate`
   `proposals.csv` if the backups were there ([the design](design.md)), so `backup` runs only with
   its profile, on the backup machine: there, `docker compose --profile backup up -d backup`. A
   test setup may put both on one machine (`COMPOSE_PROFILES=backup`), as the testnet does.
-- **The image:** StageX by digest (signatures checked), sources by sha256, built as ccs-bash's,
-  reproducible, attested in the same release (`contrib/release/build ccs-bash vX` builds both; its
-  second line is `ccs-gate-vX`; `contrib/release/verify ccs-gate-vX`). GNU userland, as the gate
-  was written and tested for; sshd (no ssh client, sftp or agent); git; rsync; `ccs-check`, the
-  checks in Go ([ccs-check.md](ccs-check.md)), built here. No qrencode (the donation QR codes
-  are the signed list's files, taken by their sums), no Python, and no C library that reads an
-  image a push brings.
+- **The image:** built as ccs-bash's, reproducible, attested in the same release
+  (`contrib/release/build ccs-bash vX` builds both; its second line is `ccs-gate-vX`;
+  `contrib/release/verify ccs-gate-vX`). What is in it, by version, and what to review:
+  [the web server](web-server.md).
 - **sshd** as root, read-only, every capability dropped but the three it can't log anyone in
   without (`compose.yml` says why each), `no-new-privileges`, memory- and process-limited. One
   sshd a service, one user each (`AllowUsers`), its forced command (`ForceCommand`, and the key
