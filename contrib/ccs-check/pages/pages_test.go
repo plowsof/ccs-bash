@@ -77,3 +77,38 @@ func TestReason(t *testing.T) {
 		t.Errorf("%q, want %q", got, want)
 	}
 }
+
+// no design: an error, not every page passed; a part that can be empty repeated (here a label,
+// the cards' tags): that page not checked, as re would order its tries otherwise (match.go, star)
+func TestRefusals(t *testing.T) {
+	c, err := New("", "", testList(t), "", "repo.example/ccs", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var b bytes.Buffer
+	if err := c.Run(t.TempDir(), strings.NewReader("index.html\x00"), bufio.NewWriter(&b)); err == nil {
+		t.Errorf("no design: %q", b.String())
+	}
+	d := t.TempDir()
+	if err := os.CopyFS(d, os.DirFS("testdata/design")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(d, "parts", "label.html"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	site := t.TempDir()
+	if err := os.WriteFile(filepath.Join(site, "index.html"), []byte(page("Ideas", "")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if c, err = New(d, "", testList(t), "", "repo.example/ccs", ""); err != nil {
+		t.Fatal(err)
+	}
+	b.Reset()
+	w := bufio.NewWriter(&b)
+	if err := c.Run(site, strings.NewReader("index.html\x00"), w); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(b.String(), "could not be checked (error)") {
+		t.Errorf("an empty label: %q", b.String())
+	}
+}

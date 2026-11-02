@@ -32,8 +32,9 @@ Anything that can be plain text matching stays awk (the feed check, `feed_awk`).
   ([image.md](image.md)); `CGO_ENABLED=0`, `-trimpath`, no network: `contrib/ccs-check/build.sh`
   and the gate's image make the same bytes (attesters sign the gate image; a host setup copies it
   out of that image, [two-machines](two-machines.md#without-docker)).
-- **Two modules**, from pinned archives (`container/sources.lock`, each archive's files the ones
-  Go's checksum database has for that version), unpacked by `contrib/ccs-check/deps.sh`:
+- **Two modules**, from pinned archives (`container/sources.lock`, by sha256), unpacked by
+  `contrib/ccs-check/deps.sh`, which first checks each archive's files are the ones Go's checksum
+  database has for that version (their `h1:`, as go.sum has it):
   gozxing, only its QR reader's files (`deps/gozxing.files`) with `deps/gozxing.patch` (a code's
   bytes read as ISO-8859-1, so no byte of a multi-byte character hides an address's; no
   golang.org/x/text); and golang.org/x/xerrors.

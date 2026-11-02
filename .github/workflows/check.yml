@@ -151,7 +151,7 @@ jobs:
           echo "the tested build: $a"; echo "a clean one: $b"
           [[ $a == sha256:* && $a == "$b" ]] || { echo "error: the gate image's builds differ, or one is missing" >&2; exit 1; }
   fuzz:
-    # ccs-check's fuzz tests (contrib/ccs-check/*/fuzz_test.go), a minute each, in StageX's Go: no
+    # ccs-check's fuzz tests (contrib/ccs-check/*/*fuzz_test.go), a minute each, in StageX's Go: no
     # panic or hang on any input, and what each must always say (rrsync: only the push's shape;
     # pages: one line a page...). A failing input is printed; commit it under testdata/fuzz/.
     runs-on: ubuntu-24.04
