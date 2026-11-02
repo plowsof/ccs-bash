@@ -13,10 +13,10 @@ import (
 
 func init() { commands["qr"] = qrCmd }
 
-// qr KIND IMAGE [inverted]: as qrscan_py, each QR code's text in IMAGE on a line, exit 1 if
-// there is none (or IMAGE isn't a KIND); and, which qrscan_py had not, exit 2 (the reason on
-// stderr) when it couldn't be checked: too large, out of time (15 s) or memory (1 GB), or a fault
-// in the decoders. Never "none" for an image it didn't read to the end. (A test's: with
+// qr KIND IMAGE [inverted]: each QR code's text in IMAGE on a line, as a browser shows it (qr.Read),
+// exit 1 if there is none (or IMAGE is no image); exit 2 (the reason on stderr) when it couldn't
+// be checked: too large, animated, out of time (15 s) or memory (1 GB), or a fault in the
+// decoders. Never "none" for an image it didn't read to the end. (A test's: with
 // CCS_GATE_SCANLOG, each image read is noted there: its kind and first bytes.)
 func qrCmd(args []string) int {
 	if len(args) < 2 || len(args) > 3 || (len(args) == 3 && args[2] != "inverted") {
