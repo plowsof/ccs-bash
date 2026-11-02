@@ -47,12 +47,12 @@ docker run --rm --network none -u 0:0 -e CCS_DATA_UID=997:997 -e CCS_BACKUP_UID=
 homes=$(docker run --rm --network none -v "$name-keys:/k:ro" --entrypoint bash "$img" -c \
     'grep -E "^ccs-(data|backup):" /k/passwd | cut -d: -f6 | sort -u; stat -c "%u %a" /var/empty; ls -A /var/empty | wc -l')
 if [[ $homes == $'/var/empty\n0 755\n0' || $homes == $'/var/empty\n0 711\n0' ]]; then ok "init: ccs-data's and ccs-backup's home /var/empty, root's and empty"; else fail "the accounts' homes: $homes"; fi
-# the backend and another machine: Debian, ssh and rsync
+# the backend and another machine: Debian and ssh
 for h in backend:$backend other:$other; do
     docker run -d --name "$name-${h%%:*}" --network "$name" --ip "${h#*:}" "$debian" sleep infinity > /dev/null
 done
 for h in backend other; do
-    docker exec "$name-$h" bash -c 'apt-get update -qq > /dev/null && apt-get install -qq -y --no-install-recommends openssh-client rsync > /dev/null 2>&1' \
+    docker exec "$name-$h" bash -c 'apt-get update -qq > /dev/null && apt-get install -qq -y --no-install-recommends openssh-client > /dev/null 2>&1' \
         || { echo "FAIL apt on $h"; exit 1; }
 done
 on() { local h=$1; shift; docker exec "$name-$h" bash -c "$@"; }

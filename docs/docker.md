@@ -55,8 +55,8 @@ secret.
   follow each other faster than that.
 - **The images** by ID, never pulled: ccs-bash's and ccs-front-bash's as
   [their releases](handover.md#the-releases) attest them (the same checks:
-  [upgrading](handover.md#upgrading)). ccs-bash's carries git and its https transport, ssh and
-  rsync (StageX, signatures checked as its other packages), and of those packages nothing else
+  [upgrading](handover.md#upgrading)). ccs-bash's carries git and its https transport, and ssh
+  (StageX, signatures checked as its other packages; the push's tar is busybox's), and of those packages nothing else
   ([`container/Dockerfile`](../container/Dockerfile), checked by `tests/image.sh`). Two things run
   that no attestation covers: the front's stage runner, `step`, mounted from ccs-bash's checkout
   (check it out at the attested commit: [upgrading](handover.md#upgrading)); and the wallet's

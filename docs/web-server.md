@@ -31,7 +31,7 @@ view-only copy of the wallet) are what's left.
 
 | Part | From | Reviewed as |
 |---|---|---|
-| **the gate** (sshd on 2223, the push key's forced command `ccs-receive`) and **the heartbeat** | the gate's image, `contrib/docker/web/compose.yml` | this page: its code, its image's parts |
+| **the gate** (sshd on 2223, the push key's forced command `ccs-receive`: the push is a tar of the files that changed, read in Go) and **the heartbeat** | the gate's image, `contrib/docker/web/compose.yml` | this page: its code, its image's parts |
 | nginx (serves `/var/lib/ccs-data`, the live site; the security headers) | the host's Debian package; its config, [two machines](two-machines.md) | the config only |
 | Tor (the onion), certbot, Docker, the OS | the host's Debian packages, `unattended-upgrades` | not reviewed here: the distribution's |
 | your own ssh | [admin access](admin-access.md) | yours |
@@ -51,19 +51,18 @@ builds.
 
 | Package | Version | Why it is there |
 |---|---|---|
-| openssh (`sshd`, `ssh-keygen` only) | 10.5p1 | receives the push, runs only the forced command |
-| rsync | 3.5.0 | the push's other end (`ccs-check rrsync` runs it, with only the backend's options) |
+| openssh (`sshd`, `ssh-keygen` only) | 10.5p1 | the push's channel: runs only the forced command, the tar on its stdin (no C program reads the tar: `ccs-check receive` does) |
 | git | 2.55.0 | fetches the proposals repository itself (https) |
 | curl, openssl, ca-certificates | 8.22.0, 3.6.4 | the gate's IRC alerts; git's https |
-| bash 5.3, coreutils 9.11, findutils 4.11.0, grep 3.12, sed 4.10, gawk 5.4.1, diffutils 3.12, tar 1.35, util-linux 2.42.3 (`flock` only), jq 1.8.2 | | `ccs-receive`, as written and tested |
-| musl 1.2.6, ncurses 6.6, zlib 1.3.2, libzstd 1.5.7, xxhash 0.8.3, acl 2.4.0, attr 2.6.0 | | their libraries |
+| bash 5.3, coreutils 9.11, findutils 4.11.0, grep 3.12, sed 4.10, gawk 5.4.1, diffutils 3.12 (`cmp`), tar 1.35 (unpacks `git archive`, the proposals' own), util-linux 2.42.3 (`flock` only) | | `ccs-receive`, as written and tested |
+| musl 1.2.6, ncurses 6.6 (bash's `libncursesw` only), zlib 1.3.2, libzstd 1.5.7 | | their libraries (each linked by one of the above: checked) |
 | **ccs-check** | this repository's `contrib/ccs-check` | the checks (below), built by StageX's Go 1.27.1, no cgo |
 
 The versions are those of the pinned digests (StageX release sx2026.10.0); `container/images`
 is the source of truth, and `container/update-images.sh` moves every pin to StageX's latest
 release, checking its signatures (review the diff, as any other). Not in it: Python, qrencode,
-libpng, zbar, libjpeg, giflib, an ssh client, sftp, git's servers (`tests/gate-image.sh` fails if
-any is). No image library reads a push: the only image decoder is Go's own, in ccs-check.
+libpng, zbar, libjpeg, giflib, rsync, xxhash, jq, acl, attr, an ssh client, sftp, git's servers
+(`tests/gate-image.sh` fails if any is). No image library reads a push: the only image decoder is Go's own, in ccs-check.
 
 `ccs-check`'s two modules come from archives pinned by sha256 (`container/sources.lock`), each
 checked against Go's checksum database before use (`contrib/ccs-check/deps.sh`):
@@ -73,14 +72,14 @@ keeping them patched (`govulncheck` in CI).
 
 ## The code to read
 
-About 3,700 lines of this repository's own, plus gozxing's QR reader:
+About 4,000 lines of this repository's own, plus gozxing's QR reader:
 
 | File | Lines | What it is |
 |---|---|---|
-| [`contrib/ccs-receive`](../contrib/ccs-receive) | 669 | the gate: receives into staging, runs the checks, copies only what passed live, alerts; the heartbeat |
-| [`contrib/ccs-check/`](../contrib/ccs-check) (Go, tests aside) | 2,338 | `pages` (`pages/pages.go`, `pages/match.go`: a page is the design's, filled), `scan` (`scan/scan.go`, `addr/addr.go`: every address, by Monero's checksum), `qr` (`qr/qr.go`: QR codes in the proposals' own images), `rrsync` |
+| [`contrib/ccs-receive`](../contrib/ccs-receive) | 688 | the gate: takes only `receive`, receives into staging, runs the checks, copies only what passed live, tells the backend what it held back, alerts; the heartbeat |
+| [`contrib/ccs-check/`](../contrib/ccs-check) (Go, tests aside) | 2,607 | `receive` and `copy` (`push/push.go`: the push's tar, plain files only, at clean paths, within limits), `pages` (`pages/pages.go`, `pages/match.go`: a page is the design's, filled), `scan` (`scan/scan.go`, `addr/addr.go`: every address, by Monero's checksum), `qr` (`qr/qr.go`: QR codes in the proposals' own images) |
 | `contrib/ccs-check/deps.sh`, `build.sh`, `deps/gozxing.patch` | 266 | how the modules are unpacked, checked and patched |
-| [`container/gate.Dockerfile`](../container/gate.Dockerfile) | 87 | what goes in the image |
+| [`container/gate.Dockerfile`](../container/gate.Dockerfile) | 83 | what goes in the image |
 | [`contrib/docker/web/`](../contrib/docker/web) (`compose.yml`, `sshd_config`, `init`, `env.example`) | 179 | how it runs: one user, the forced command, read-only, three capabilities, limits |
 | `container/build.sh`, `verify-images.sh`, `fetch.sh`, `verify.sh` | 206 | the build: the pins' signatures and sums checked |
 | gozxing's QR reader (pinned, not ours) | about 7,600 | reads QR codes; its patch is ours |
@@ -90,9 +89,10 @@ ccs-front-hugo's **design** (its release zip: the pages, the parts they are fill
 stylesheets and images; installed by its sha256) and ccs-front-bash's **`lib/markdown.awk`** (265 lines: the gate renders each proposal
 from the repository itself and requires the page's text to be exactly that).
 
-The tests show each way around it, by name: `tests/gate.sh` (130 cases: every check, with this
-image as the web server), `tests/gate-image.sh`, `tests/web.sh` (its sshd, attacked),
-`contrib/ccs-check/build.sh test` and `fuzz`. [Reviewing](reviewing.md) walks each function.
+The tests show each way around it, by name: `tests/gate.sh` (140 cases: every check, hostile
+tars, with this image as the web server), `tests/gate-image.sh`, `tests/web.sh` (its sshd,
+attacked), `contrib/ccs-check/build.sh test` and `fuzz` (the receiver: nothing written outside
+its folder, whatever the stream). [Reviewing](reviewing.md) walks each function.
 
 ## What is installed by hand
 
