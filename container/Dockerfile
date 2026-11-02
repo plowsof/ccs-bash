@@ -75,7 +75,7 @@ RUN cd /rootfs \
         usr/sbin/update-ca-certificates usr/bin/captoinfo usr/bin/clear usr/bin/infocmp \
         usr/bin/infotocap usr/bin/reset usr/bin/tabs usr/bin/tic usr/bin/toe usr/bin/tput usr/bin/tset \
     && chmod 755 opt/ccs-bash opt/ccs-bash/lib opt/ccs-bash/ccs-back.sh && chmod 644 opt/ccs-bash/lib/* \
-    && chmod 755 opt/ccs-bash/contrib opt/ccs-bash/contrib/docker opt/ccs-bash/contrib/docker/backend opt/ccs-bash/contrib/docker/backend/step opt/ccs-bash/contrib/ccs-watch opt/ccs-bash/contrib/ccs-push \
+    && chmod 755 opt/ccs-bash/contrib opt/ccs-bash/contrib/docker opt/ccs-bash/contrib/docker/backend opt/ccs-bash/contrib/docker/backend/step opt/ccs-bash/contrib/ccs-watch opt/ccs-bash/contrib/ccs-push opt/ccs-bash/contrib/retire-wallet \
     && find . -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
 
 FROM scratch AS image
