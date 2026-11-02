@@ -6,7 +6,7 @@ collected in [ccs-sigs](https://github.com/plowsof/ccs-sigs), one folder per set
 version of the CCS is the three together (`ccs-bash-v0.2.18+ccs-front-bash-v0.1.17+ccs-front-hugo-v0.1.17`),
 as feather-sigs has one folder per version of Feather.
 (The signed subaddress list isn't attested here: a Core Team member makes and signs it, and
-contributors can regenerate it and confirm its hash; see ccs-front-bash's docs/setup.md, step 5.)
+contributors can regenerate it and confirm its hash; see [the signed list](../../docs/signed-list.md).)
 A release is trustworthy when several people who don't share a machine have attested the same.
 
 This is [Feather Wallet](https://featherwallet.org)'s way of doing it, taken over as closely as

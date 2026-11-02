@@ -59,7 +59,7 @@ on() { local h=$1; shift; docker exec "$name-$h" bash -c "$@"; }
 on backend 'mkdir -p ~/.ssh && ssh-keygen -q -t ed25519 -N "" -f ~/.ssh/push && ssh-keygen -q -t ed25519 -N "" -f ~/.ssh/backup'
 docker exec "$name-backend" tar -C /root -c .ssh | docker exec -i "$name-other" tar -C /root -x
 push=$(on backend 'cat ~/.ssh/push.pub') backup=$(on backend 'cat ~/.ssh/backup.pub')
-# the key files as the host setup has them (root's), and a backup folder of ccs-backup's
+# the key files as the host has them (root's), and a backup folder of ccs-backup's
 docker run --rm --network none -u 0:0 -v "$name-ak:/ak" -v "$name-backups:/b" --entrypoint bash "$img" -c "
     echo 'from=\"$backend\",command=\"/usr/local/bin/ccs-receive\",restrict $push' > /ak/ccs-data
     echo 'from=\"$backend\",restrict,command=\"/usr/local/bin/ccs-backup-receive\" $backup' > /ak/ccs-backup

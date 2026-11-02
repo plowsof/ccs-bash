@@ -1,45 +1,29 @@
-# Setup
+# Preparing the machines
 
-## Dependencies
+What each machine's host needs before its compose runs ([docker](docker.md)): the accounts, the
+folders, the config and the key files. Everything else runs in the attested images. The order
+across the machines: [the handover](handover.md).
 
-**A) Packages on the host:**
+## The backend
+
+**Packages:** Docker with buildx (on Debian, Docker's own packages: bookworm's `docker.io` has no
+buildx) and docker compose, with Docker's own image store, not its containerd one (where an image
+ID isn't the attested one): `{"features": {"containerd-snapshotter": false}}` in
+`/etc/docker/daemon.json`, before building. And `git` (the proposals checkout, the releases),
+`jq` and `curl` (`ccs`, and the migration from ccs-back), `gpg` (checking the releases' and the
+list's signatures), `openssh-client` (the push and backup keys):
 
 ```
-apt install bash coreutils findutils grep sed diffutils mawk util-linux curl ca-certificates jq git logrotate
+apt install git jq curl gpg openssh-client
 ```
 
-| Package | Used for | Notes |
-|---|---|---|
-| `bash`, `coreutils`, `findutils`, `grep`, `sed`, `diffutils`, `util-linux` | the scripts, `xargs`, `diff` (images), `flock`, `runuser` | priority required |
-| `mawk` or `gawk` | `lib/frontmatter.awk` | either works |
-| `curl`, `ca-certificates` | wallet RPC, GitLab API | curl only recommends `ca-certificates` |
-| `jq` | all JSON | 1.6 or newer |
-| `git` | the proposals checkout | |
-| `logrotate` | the log | optional |
-| `tar`, `openssh-client` | pushing the site to the web server (`contrib/ccs-push`: a tar of the files that changed), and the state to the backup machine | `tar` is priority required |
-
-**B) The container:** Docker with buildx (on Debian, Docker's own packages: bookworm's `docker.io`
-has no buildx), `git`, optionally `logrotate`, and `openssh-client`. Docker's own image
-store, not its containerd one (a fresh Docker 29's default, where an image ID isn't the attested
-one): `{"features": {"containerd-snapshotter": false}}` in `/etc/docker/daemon.json`, before
-building. Where the image is built, also `gpg` and `jq`. Everything
-ccs-bash runs is inside the image ([The pinned image](image.md)).
-
-Either way: `monero-wallet-rpc` from [getmonero.org](https://www.getmonero.org/downloads/).
-
-## Steps
-
-(Or the backend in Docker, one container a stage: [docker](docker.md), after steps 2-3.)
-
-The same for A and B except where marked. The site itself (ccs-front-bash), the web server and the
-push: [the handover](handover.md), steps 3–9.
-
-1. **The wallet:** monero-wallet-rpc, view-only, as its own user, on localhost, with a login.
-   Options go in a file so the password isn't in `ps`:
+1. **The wallet's files:** its own user and folder, and its options in a file, so the password
+   isn't in `ps` (the compose's `wallet-rpc` reads it; the binary is the image's,
+   `contrib/docker/backend/wallet-rpc`):
 
    ```
    useradd --system --home-dir /var/lib/ccs/wallet --shell /usr/sbin/nologin ccs-wallet
-   install -d -o ccs-wallet -g ccs-wallet -m 700 /var/lib/ccs/wallet   # the wallet files
+   install -d -o ccs-wallet -g ccs-wallet -m 700 /var/lib/ccs/wallet   # the view-only wallet's files
    install -d -g ccs-wallet -m 750 /etc/ccs-wallet
    ```
 
@@ -47,46 +31,27 @@ push: [the handover](handover.md), steps 3–9.
    # /etc/ccs-wallet/wallet-rpc.conf (root:ccs-wallet, 640)
    wallet-file=/var/lib/ccs/wallet/ccs
    password=<wallet password>
-   daemon-address=127.0.0.1:18081
-   rpc-bind-ip=127.0.0.1
+   daemon-address=host.docker.internal:18089
    rpc-bind-port=18082
    rpc-login=ccs:<rpc password>
    log-file=/var/lib/ccs/wallet/monero-wallet-rpc.log
    ```
 
-   ```
-   # /etc/systemd/system/ccs-wallet-rpc.service, then: systemctl enable --now ccs-wallet-rpc
-   [Unit]
-   Description=monero-wallet-rpc (view-only) for ccs-bash
-   After=network-online.target
+   `daemon-address`: monerod's restricted RPC where the containers reach it ([the
+   handover, 1](handover.md#1-monerod-and-monero-wallet-rpc-the-backend)). `rpc-login` is
+   `RPC_USER`/`RPC_PASSWORD` in ccs-bash's config. The wallet's RPC is on the compose's internal
+   network only, reached by ccs-bash alone.
 
-   [Service]
-   User=ccs-wallet
-   Group=ccs-wallet
-   ExecStart=/usr/local/bin/monero-wallet-rpc --config-file /etc/ccs-wallet/wallet-rpc.conf --non-interactive
-   Restart=on-failure
-   NoNewPrivileges=yes
-   ProtectSystem=strict
-   ReadWritePaths=/var/lib/ccs/wallet
-   ProtectHome=yes
-   PrivateTmp=yes
-
-   [Install]
-   WantedBy=multi-user.target
-   ```
-
-   `rpc-login` is `RPC_USER`/`RPC_PASSWORD` in ccs-bash's config. Keep wallet-rpc on the same
-   machine (plain HTTP can be tampered with). Its `tx-notify` only touches a file: step 5.
-
-2. **User, folders, config:**
+2. **Accounts, folders, config, the proposals:**
 
    ```
    git clone https://github.com/plowsof/ccs-bash /opt/ccs-bash
-   git -C /opt/ccs-bash checkout <commit>    # the one contrib/release/verify prints for the release you run (handover: Upgrading, 1-2): not the tag, which can move; not master
+   git -C /opt/ccs-bash checkout <commit>    # the one contrib/release/verify prints for the release you run (the handover, "Deploying a set", 1-2): not the tag, which can move; not master
    useradd --system --home-dir /var/lib/ccs --shell /usr/sbin/nologin ccs
    useradd --system --no-create-home --shell /usr/sbin/nologin ccs-git   # owns the proposals checkout
+   useradd --system --no-create-home --shell /usr/sbin/nologin ccs-front # makes the site
    install -d -m 755 /var/lib/ccs
-   install -d -o ccs -g ccs -m 755 /var/lib/ccs/state /var/lib/ccs/out /var/lib/ccs/pushed   # pushed: what ccs-watch compares with
+   install -d -o ccs -g ccs -m 755 /var/lib/ccs/state /var/lib/ccs/out
    install -o ccs -g ccs -m 644 /dev/null /var/lib/ccs/state/proposals.csv   # fresh install only
    install -d -o ccs-git -g ccs-git -m 755 /var/lib/ccs/proposals
    runuser -u ccs-git -- env HOME=/ git clone -q -c core.symlinks=false \
@@ -104,198 +69,33 @@ push: [the handover](handover.md), steps 3–9.
    Take `WALLET_ADDRESS` from your own records (or `address` in `monero-wallet-cli`), not from
    the running wallet-rpc: it's what every run checks the wallet against.
 
-3. **`/usr/local/bin/ccs-bash-run`**, one run (`chmod 755`, then try it). Everything later calls it.
-
-   **A)**
-
-   ```
-   #!/bin/sh
-   exec runuser -u ccs -- /opt/ccs-bash/ccs-back.sh /etc/ccs/ccs.conf
-   ```
-
-   **B)** Get the image as `ccs-bash`:
-
-   ```
-   /opt/ccs-bash/container/build.sh                       # build it here
-   docker save ccs-bash | ssh <this host> docker load     # or build elsewhere and copy it
-   docker pull ghcr.io/plowsof/ccs-bash@sha256:<digest>   # or a release, by the digest in its notes
-   docker tag ghcr.io/plowsof/ccs-bash@sha256:<digest> ccs-bash
-   ```
-
-   **Before the first run**, compare `docker image inspect ccs-bash --format '{{.Id}}'` with the
-   attested one ([upgrading](handover.md#upgrading)): the same commit gives the same ID anywhere.
-   The run script names that ID, never a tag (a Docker cleanup can remove a tag, and `docker run`
-   would then try Docker Hub), and a stopped container keeps the image itself:
-   `docker create --name ccs-bash-keep --network none <ID>`.
-
-   ```
-   #!/bin/sh
-   # read-only, no capabilities, only the config's folders; host network to reach 127.0.0.1
-   exec docker run --rm --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges \
-       --network host --user "$(id -u ccs):$(id -g ccs)" \
-       -v /etc/ccs/ccs.conf:/etc/ccs/ccs.conf:ro \
-       -v /var/lib/ccs/proposals:/var/lib/ccs/proposals:ro \
-       -v /var/lib/ccs/state:/var/lib/ccs/state \
-       -v /var/lib/ccs/out:/var/lib/ccs/out \
-       --pull never sha256:<the image ID you checked>
-   ```
-
    And `ccs`, for looking at it all as ccs-back's artisan commands did
    ([troubleshooting](troubleshooting.md#looking)): `ln -s /opt/ccs-bash/contrib/ccs /usr/local/bin/ccs`
    (a link: it reads its docs from the checkout, which each upgrade moves to the new release).
 
-4. **One update** (pull, run, build the site, push it), from root's cron. Root only starts the
-   steps: git and the site builder read merged proposals, so they run as their own users. The
-   script: [the update script](#the-update-script-the-host-setup).
+3. **The design and the site builder's files:** the design's release, unpacked where the
+   compose's `front` reads it; its sha256 the attested one ([the releases](handover.md#the-releases)):
 
    ```
-   */2 * * * * /usr/local/bin/ccs-bash-update
+   v=<the design's release>
+   curl -fLO https://github.com/plowsof/ccs-front-hugo/releases/download/$v/ccs-front-hugo-$v.zip
+   sha256sum ccs-front-hugo-$v.zip           # the attested sha256
+   rm -rf /opt/ccs-front-hugo/public && install -d -m 755 /opt/ccs-front-hugo/public
+   unzip -q ccs-front-hugo-$v.zip -d /opt/ccs-front-hugo/public
+   echo "$v <its sha256>" > /opt/ccs-front-hugo/VERSION      # for ccs status
+   install -d -m 755 /etc/ccs-front                           # the signed list: signed-list.md
    ```
 
-   Overlapping runs are skipped. Rotate the log (`/etc/logrotate.d/ccs-bash`):
+   It stays root's: the site builder only reads it. A new design is a new release, unpacked the
+   same way.
 
-   ```
-   /var/log/ccs-bash.log {
-       weekly
-       rotate 4
-       compress
-       missingok
-       notifempty
-   }
-   ```
+Then the compose: [docker, setting it up](docker.md#setting-it-up).
 
-5. **Optional, instant updates.** wallet-rpc's hook only touches a file; `notify-loop.sh`
-   (root, instead of the cron line) runs `ccs-bash-update` every 2 minutes, or sooner when the
-   file appears, or 30 seconds after a run that left a donation pending, but at most once per
-   30 seconds however many notifications come (the compose's pull stage paces its runs the
-   same way).
-
-   ```
-   install -d -o ccs-wallet -g ccs-wallet -m 755 /var/lib/ccs-notify
-   # in /etc/ccs-wallet/wallet-rpc.conf:
-   tx-notify=/usr/bin/touch /var/lib/ccs-notify/new-tx
-   # in ccs-wallet-rpc.service:
-   ReadWritePaths=/var/lib/ccs/wallet /var/lib/ccs-notify
-   ```
-
-   ```
-   # /etc/systemd/system/ccs-bash.service, then: systemctl enable --now ccs-bash
-   [Unit]
-   Description=ccs-bash, every 2 minutes and after each new tx
-   After=network-online.target
-
-   [Service]
-   ExecStart=/opt/ccs-bash/notify-loop.sh /usr/local/bin/ccs-bash-update
-   Restart=always
-
-   [Install]
-   WantedBy=multi-user.target
-   ```
-
-   `Environment=GAP=30 EVERY=120` changes the timings; keep `GAP` well below `EVERY`.
-
-The first run looks up the merged MR of every proposal, which takes a few minutes.
-
-## The update script (the host setup)
-
-The host setup's `ccs-bash-update` (the Docker setup runs the same stages as its compose:
-[docker](docker.md)). One run of everything, every 2 minutes and on each new donation ([step 5](#steps), with its log rotation
-from step 4), as root (it only starts each step as that step's own user):
-
-```
-#!/bin/sh
-# /usr/local/bin/ccs-bash-update (chmod 755)
-L=/var/log/ccs-bash.log W=/opt/ccs-bash/contrib/ccs-watch failed=''
-# where each run starts (ccs log and ccs status read the runs by it)
-echo "== run $(date -u '+%F %T')" >> $L
-
-# the proposals; GitLab down: give up, not a failed run (the last checkout stays); pull-ok: when
-# one last went through (ccs-watch --run alerts when that's FORGE_HOURS ago)
-timeout -k 5 40 runuser -u ccs-git -- env HOME=/ git -C /var/lib/ccs/proposals pull -q --ff-only \
-    && touch /var/lib/ccs/pull-ok
-
-# ccs-bash: totals, addresses, the JSON
-ccs-bash-run >> $L 2>&1 || failed="ccs-bash"
-
-# the state, to the backup machine when it changed (it keeps every version), and deposits.csv
-# (it keeps one copy, which only grows); read as ccs, whose files they are: root never opens a
-# file another account controls (it could be a link to any file)
-# (and each retired wallet's file, state like proposals.csv: "Retiring a wallet")
-for S in /var/lib/ccs/state/proposals.csv /var/lib/ccs/state/deposits.csv /var/lib/ccs/state/retired/*.csv; do
-[ -f "$S" ] || continue
-sent=/var/lib/ccs/backup-sent-${S##*/}; [ "$S" = /var/lib/ccs/state/proposals.csv ] && sent=/var/lib/ccs/backup-sent
-case $S in */retired/*) sent=/var/lib/ccs/backup-sent-retired-${S##*/} ;; esac
-# (deposits.csv: its deposits, not its first line, whose height changes every run)
-sum=$(runuser -u ccs -- sed '/^# final /d' "$S" | sha256sum | cut -c1-64)
-if [ "$sum" != "$(cat "$sent" 2>/dev/null)" ]; then
-    # a backup that doesn't go through is a failed run: three in a row tell IRC (the backup
-    # machine down, its folder full, a deposits.csv it refuses)
-    if runuser -u ccs -- cat "$S" | timeout -k 5 30 ssh -T -i /root/.ssh/ccs-backup_ed25519 -o BatchMode=yes \
-        -o IdentitiesOnly=yes -o ConnectTimeout=15 ccs-backup@<backup machine> >> $L 2>&1; then
-        echo "$sum" > "$sent"
-    else
-        failed="${failed:+$failed, }the backup (${S##*/})"
-    fi
-fi
-done
-
-# ccs-front-bash makes the site; it goes to the web server, which must then serve exactly that.
-ccs-front-run >> $L 2>&1 || failed="${failed:+$failed, }ccs-front-bash"
-# Pushed every run, the last good site if none was made: the push is this machine's heartbeat,
-# so the web server's alarm only sounds when this machine can't reach it (its own alerts cover
-# a failed run). The push exits 7 when the gate held a file back but the rest went live: a failed
-# run, and the live pages are still checked (a web server that lies must not hide behind it).
-# The push (contrib/ccs-push: a tar of the files that changed since what the gate last took,
-# /var/lib/ccs/push its record) and pushed/, the copy of what went that ccs-watch compares with,
-# under one lock: a check on ccs-watch.timer (below) never sees one without the other
-exec 9> /run/ccs-watch.lock; flock -w 600 9
-rc=0
-timeout -k 5 600 runuser -u ccs -- /opt/ccs-bash/contrib/ccs-push /var/lib/ccs/www/site /var/lib/ccs/pushed /var/lib/ccs/push \
-    -T -p 22 -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15 ccs-data@<web server> >> $L 2>&1 || rc=$?
-[ "$rc" = 7 ] && failed="${failed:+$failed, }the push (the web server held a file back)"
-[ "$rc" = 0 ] || [ "$rc" = 7 ] || failed="${failed:+$failed, }the push"
-if [ "$rc" = 0 ] || [ "$rc" = 7 ]; then
-    runuser -u ccs -- $W https://ccs.getmonero.org /var/lib/ccs/pushed >> $L 2>&1
-fi
-exec 9>&-
-
-# how the run went: three failed runs in a row alert, so a stopped backend can't go unnoticed
-runuser -u ccs -- $W --run "${failed:-ok}" >> $L 2>&1
-```
-
-`-p 22` is the web server's ssh port, given in full in case the backend's `ssh_config` defaults to
-another.
-
-ccs-watch also runs between pushes, at random times, so a web server can't serve its own pages
-only once the check after a push is over (`ccs-watch` itself puts its asks in no fixed order):
-
-```
-# /etc/systemd/system/ccs-watch.service
-[Unit]
-Description=ccs-watch between pushes
-ConditionPathExists=/run/ccs-watch.lock
-ConditionPathExists=/var/lib/ccs/pushed/index.html
-[Service]
-Type=oneshot
-User=ccs
-ExecStart=/usr/bin/flock -s -w 600 /run/ccs-watch.lock /opt/ccs-bash/contrib/ccs-watch https://ccs.getmonero.org /var/lib/ccs/pushed
-
-# /etc/systemd/system/ccs-watch.timer
-[Timer]
-OnBootSec=10min
-OnUnitActiveSec=5min
-RandomizedDelaySec=8min
-[Install]
-WantedBy=timers.target
-```
-
-`systemctl enable --now ccs-watch.timer`; its log is `journalctl -u ccs-watch`.
-
-
-## Backing up the state
+## The backup machine
 
 The state (`proposals.csv`, and each retired wallet's file) can't be made again: each new version
-goes to another machine, to an account whose key runs only `contrib/ccs-backup-receive`. It keeps
+goes to another machine, to an account whose key runs only `contrib/ccs-backup-receive`, in the
+web server compose's `backup` service ([docker](docker.md#the-web-server-in-docker)). It keeps
 every version (`proposals-<UTC time>.csv`), never overwriting or deleting one, so a taken-over
 backend can't destroy them; `deposits.csv`, a cache, as one copy replaced only by one with every
 deposit it has.
@@ -308,7 +108,6 @@ install -d -m 755 /var/empty                                    # its home: root
 useradd --system --no-create-home --home-dir /var/empty --shell /bin/sh ccs-backup
 passwd -l ccs-backup
 install -d -o ccs-backup -g ccs-backup -m 700 /var/lib/ccs-backup
-install -m 755 ccs-backup-receive /usr/local/bin/              # from ccs-bash's contrib/
 # the retired wallets it keeps a record of, one name a line: you add each when you retire it
 # (handover, "Retiring a wallet"), so a taken-over backend can't add a wallet of its own
 install -d -m 755 /etc/ccs-backup && install -m 644 /dev/null /etc/ccs-backup/retired-names
@@ -319,61 +118,5 @@ echo 'from="<backend IP>",restrict,command="/usr/local/bin/ccs-backup-receive" s
     > /etc/ssh/authorized_keys/ccs-backup
 ```
 
-and in `/etc/ssh/sshd_config` (at the end), then `systemctl reload ssh`, so sshd reads no other key
-file for it:
-
-```
-Match User ccs-backup
-    AuthorizedKeysFile /etc/ssh/authorized_keys/%u
-```
-
-On the **backend**: a key (`ssh-keygen -t ed25519 -N '' -f /root/.ssh/ccs-backup_ed25519`, its
-`.pub` in the line above) and the backup machine's host key in `known_hosts`. [The update
-script](#the-update-script-the-host-setup) sends each new version (`ccs-backup: kept …` in the log).
-Restoring: [troubleshooting](troubleshooting.md#restore-the-state).
-
-## Proposals on another forge
-
-GitLab (gitlab.com, or another GitLab) or Forgejo/Gitea (disroot, Codeberg): a public repository,
-read without a token. The testnet moved from disroot's Forgejo to gitlab.com this way
-([the testnet](testnet.md)). With the loop paused (`systemctl stop ccs-bash`), copies kept:
-
-1. **The API**, in the backend's `/etc/ccs/ccs.conf`:
-
-   ```
-   REPOSITORY_URL=https://gitlab.com/api/v4/projects/<id>              # GitLab: the project's number
-   REPOSITORY_URL=https://git.disroot.org/api/v1/repos/<owner>/<repo>  # Forgejo or Gitea
-   ```
-
-   (`/api/v4/projects/` or `/api/v1/repos/` is what tells them apart.)
-
-2. **The checkout**, so `ccs-bash-update` pulls from there: the same history, `remote set-url`;
-   else a fresh clone in its place, of the branch the site runs:
-
-   ```
-   runuser -u ccs-git -- env HOME=/ git -C /var/lib/ccs/proposals \
-       remote set-url origin https://git.disroot.org/<owner>/<repo>.git
-   # or, the old one kept beside it:
-   install -d -o ccs-git -g ccs-git -m 755 /var/lib/ccs/proposals.new
-   runuser -u ccs-git -- env HOME=/ git clone -q --branch <branch> https://gitlab.com/<owner>/<repo>.git /var/lib/ccs/proposals.new
-   mv /var/lib/ccs/proposals /var/lib/ccs/proposals.old && mv /var/lib/ccs/proposals.new /var/lib/ccs/proposals
-   ```
-
-3. **The merge request caches**, emptied: `rm -f /var/lib/ccs/state/ideas.cache
-   /var/lib/ccs/state/merged-files.cache`. They are by merge request number, and the new forge's
-   numbers start again: kept, its !1 would be the old forge's !1.
-
-4. **The web server's gate**, `/etc/ccs-gate/proposals.conf`: `PROPOSALS_GIT` the new repository's
-   git URL, `PROPOSALS_BRANCH` its branch (default `master`), and `LINK_HOSTS` the old forge's
-   repository (host/path), so the proposals already linked to its merge requests keep their links.
-   Without it, every page would be checked against the old repository.
-
-Then one run by hand, and `systemctl start ccs-bash`. Ideas become the new forge's open merge or
-pull requests, and newly merged proposals link to theirs; known ones keep their link in
-`proposals.csv` (to rewrite them too:
-`sed -i 's#https://repo.getmonero.org/monero-project/ccs-proposals/-/merge_requests/#https://git.disroot.org/<owner>/<repo>/pulls/#'`,
-the loop paused, a copy kept, and the old host out of `LINK_HOSTS`). A proposal the new repository
-doesn't have leaves the site: the gate takes its page off at the next push
-([remove a proposal](troubleshooting.md#doing-things-by-hand)). The site's words ("GitLab", Submit Idea) are
-ccs-front-hugo's. Going back: the old `REPOSITORY_URL`, checkout and `proposals.conf`, and the
-caches emptied again.
+The backend's key: `/etc/ccs/backup/id_ed25519` ([docker](docker.md#setting-it-up), step 2), its
+`.pub` in the line above. Restoring: [troubleshooting](troubleshooting.md#restore-the-state).

@@ -31,8 +31,7 @@ Anything that can be plain text matching stays awk (the feed check, `feed_awk`).
 
 - **Go:** StageX's (`container/images`, `go`), by digest, its signatures checked
   ([image.md](image.md)); `CGO_ENABLED=0`, `-trimpath`, no network: `contrib/ccs-check/build.sh`
-  and the gate's image make the same bytes (attesters sign the gate image; a host setup copies it
-  out of that image, [two-machines](two-machines.md#without-docker)).
+  and the gate's image make the same bytes (attesters sign the gate image).
 - **No module**: Go's standard library and our own code only (`addr`: base58 and Keccak;
   `pages/match.go`: the page patterns' matcher; `push`: the push's tar, read with `archive/tar`).
   `go.mod` requires nothing, so there is nothing to fetch, pin or patch.

@@ -218,7 +218,7 @@ else
     cat "$tmp/bot.txt"; fail "unreachable"
 fi
 
-# The backend stopping: ccs-bash-update reports each run (--run). Nothing for one or two failed
+# The backend stopping: the push stage reports each run (--run). Nothing for one or two failed
 # runs; the third alerts, once; the first good run after it says so; a good run before that, nothing.
 run() { CCS_WATCH_STATE=$tmp/runstate CCS_WATCH_PULL=$tmp/pull-ok CCS_WATCH_FORGE=$tmp/forge-ok ccs_watch --run "$1" "$tmp/alert.conf" 2>> "$tmp/log"; }
 before=$(alerts)

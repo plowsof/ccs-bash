@@ -51,7 +51,7 @@ machine and the IRC bot; ccs-watch through Tor and a proxy; a mirror to the site
   proposals), every version (`assigned.tsv`, the heights below which a subaddress's deposits
   came before it was handed out, isn't: lost, those few count again); `deposits.csv`, a cache, as
   one copy that only grows, so a restored
-  wallet that knows less is caught ([setup](setup.md#backing-up-the-state)). Root on the backup
+  wallet that knows less is caught ([setup](setup.md#the-backup-machine)). Root on the backup
   machine can still rewrite them all: restore the first retired version, and check a restored
   `proposals.csv` against the live site.
 - **Pinned images:** ccs-bash and ccs-front-bash run in [StageX](https://stagex.tools) images
