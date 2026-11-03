@@ -115,11 +115,14 @@ only replaced by one with every deposit it has. A wallet the CCS no longer uses 
 - [Admin access](docs/admin-access.md): your own ssh to the machines: a VPN or an allowlist, a way back in
 
 **Day to day**
-- [When something is wrong](docs/troubleshooting.md): `ccs`, what each log and IRC line means, doing things by hand, restoring the state, moving the proposals to another forge
+- [When something is wrong](docs/troubleshooting.md): `ccs`, what each log and IRC line means, doing things by hand, restoring the state
+- [The proposals' forge](docs/forge.md): what keeps working while it's down, what only it has, moving to another
+- [Patching](docs/patching.md): a failing weekly workflow: Go, Caddy, Tor and the StageX images
 - [Retiring a wallet](docs/handover.md#retiring-a-wallet): moving the CCS to a new wallet, its donations kept
 
 **Upgrading**
-- [Deploying a set](docs/handover.md#deploying-a-set-the-docker-setup): checking a release's attestations, building it, switching
+- [Releasing](docs/releasing.md): tagging a release, attesting the set, recording it
+- [Deploying a release](docs/deploying.md): by what changed: checking its attestations on each machine, building it, switching, checking it worked, going back
 - [Upgrading](docs/upgrading.md): steps a release needs once
 - [Attesting a release](contrib/release/README.md): rebuild a release, sign what came out into ccs-sigs, as Feather Wallet does
 
