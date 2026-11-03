@@ -209,7 +209,8 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
     `projects.json`, the list's files as installed, or a donation QR code `qr/<address>.png`
     exactly the list's (its line in `.qr.sha256`: never made or decoded here);
   - a failing file is removed from staging (its last good copy stays), the rest goes live, the
-    push fails and IRC is told. `--heartbeat` (the `heartbeat` service's loop): no push for 15 minutes.
+    push fails and IRC is told; a live file the push didn't send that fails for an address is
+    moved to `quarantine/` instead (at most `CCS_GATE_TAKEDOWN`, 3, a push). `--heartbeat` (the `heartbeat` service's loop): no push for 15 minutes.
 - In Docker ([the web server in Docker](docker.md#the-web-server-in-docker)): the gate's image runs
   its own sshd on 2223 ([`contrib/docker/web/sshd_config`](../contrib/docker/web/sshd_config): one
   user, `ForceCommand ccs-receive`, keys only, no shell, forwarding or subsystem), as root with

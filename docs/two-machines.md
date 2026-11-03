@@ -142,7 +142,8 @@ what it is sent; it knows what a page may be. Each push, one at a time, it
 1. makes a staging folder a copy of the live site (`ccs-check copy`), and receives the push into
    it (`ccs-check receive`: a tar of plain files, as above). What it checks below are the
    files the push changed, and the ones it held back last time (their last good copy is live, so
-   the same file sent again fails again): the live site holds only what passed. Every page and JSON file is checked again
+   the same file sent again fails again): the live site holds only what passed, and a live one that no
+   longer passes for an address goes (step 5). Every page and JSON file is checked again
    when what they were checked against changes (the list or its pin, `allowed`, the design,
    `markdown.awk`, `proposals.conf`, the proposals commit fetched, `ccs-receive` itself or
    `ccs-check`), and once a day whatever happens. Its log says how many: `checking 3 of 1022 pages and JSON files`;
@@ -200,7 +201,12 @@ what it is sent; it knows what a page may be. Each push, one at a time, it
    repository (its `.md` in neither commit's tree). The push can't delete, so the gate takes it,
    and its `images/<name>/`, off the live site, and the push is good; but never more than 3 at
    once (`CCS_GATE_REMOVE`): more (a branch emptied or rewritten, a forge answering wrong) stay
-   held back, and IRC is told;
+   held back, and IRC is told. And a live file the push didn't send that no longer passes for an
+   address (the list, `allowed` or the gate changed under it: an address that isn't the wallet's
+   nor allowed, a donation box's not in the list) would stay live if held back: it goes off the
+   site, into the gate's `quarantine/` (its state folder), and IRC is told; the backend's next
+   good copy goes live. At most 3 a push (`CCS_GATE_TAKEDOWN`): more (a wrong list or `allowed`)
+   stay, and IRC is told;
 6. refuses the whole push without its pinned list and QR codes' sums, `design.sha256`, the design,
    `markdown.awk`, `proposals.conf`, `ccs-check` or `git`, a design release (`design/vX.Y.Z/`), or
    for a file name with a control character in it.

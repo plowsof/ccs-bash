@@ -286,6 +286,8 @@ good=$(addr 2) fake=$(addr 9 B)
 # Monero's Keccak and base58, as ccs-check's addr), in groups of four
 grouped='9yYh ogMJ DCQ8 VtXZ Z7Tt X89x m46z jqoe 4R27 W3LY D3rc Tpk8 anmd zMs6 b2TK Bkwj S8KP 4J1h DL1d ki5i M3Xu cwFm 3ffW piq'
 integrated=$(printf '4%0105d' 7 | tr 0 1)
+# the same address in two halves, a < between them as text (&lt;: review 11's M-1)
+lt=${grouped// /}; lt="${lt:0:47} &lt; ${lt:47}"
 held() {
     local rc=0
     push > /dev/null || rc=$?
@@ -340,6 +342,7 @@ for attack in \
     "bidi|$p|<h1>A proposal</h1>|<h1>Pay $bidi</h1>|an address in bidi embeddings, a space between its halves shown before them, in a name" \
     "math|$p|<h1>A proposal</h1>|<h1>Pay $math</h1>|an address in mathematical letters, in a name" \
     "grouped|$p|<h1>A proposal</h1>|<h1>Send to $grouped</h1>|an address in groups of four, in a name" \
+    "lt|$p|<h1>A proposal</h1>|<h1>Send to $lt</h1>|an address split by a < shown as text (&lt;), in a name (review 11's M-1)" \
     "groupedidea|ideas/index.html|An idea|Send to ${grouped// /-}|an address in groups split by -, in an idea's title" \
     "date|ideas/index.html|October 1, 2026|October 1, 2026 and see the new address on the forum|text in a date" \
     "allowedbox|$p|href=\"monero:$fund\"|href=\"monero:$fund\"|a donation box with an allowed address that isn't the wallet's (the General Fund)" \
@@ -600,7 +603,8 @@ v=$((v + 1)); site "$v" "$good"; push > /dev/null || true
 if [[ $(bot | grep -c 'the web server fetches the proposals repository again @ https://ccs.test' || true) == 1 ]]; then ok "the repository fetched again: says so, once"; else bot; fail "the repository back"; fi
 # what the pages were checked against changes (here allowed, the General Fund in every footer
 # taken out of it): every page is checked again, and held back; pushed again unchanged, they are
-# checked again (their last good copy is live, the same bytes), until they pass
+# checked again, until they pass (this site's three pages, as many as CCS_GATE_TAKEDOWN, go off
+# it meanwhile: review 11's M-2, below)
 v=$((v + 1)); site "$v" "$good"; push > /dev/null || true
 on web 'cp /etc/ccs-gate/allowed /tmp/allowed && : > /etc/ccs-gate/allowed'
 rc1=0; push > /dev/null || rc1=$?; c1=$(checking)
@@ -676,14 +680,15 @@ if ! out=$(push) && [[ $(live) == "$last" ]] && on web "grep -q 'refused the pus
     ok "QR codes' sums that aren't the pinned ones: every push refused"
 else echo "$out"; on web 'tail -n 3 /var/log/ccs-gate.log'; fail "QR codes' sums not pinned"; fi
 on web "cp /tmp/qr.keep /etc/ccs-gate/subaddresses.txt.qr.sha256 && echo '3 $(addr 3)' >> /etc/ccs-gate/subaddresses.txt"
+on web "printf 'sha256 %s\nkey %040d\nqr %s\n' \"\$(sha256sum < /etc/ccs-gate/subaddresses.txt | cut -d' ' -f1)\" 0 \"\$(sha256sum < /etc/ccs-gate/subaddresses.txt.qr.sha256 | cut -d' ' -f1)\" > /etc/ccs-gate/subaddresses.txt.pin"   # the list above, pinned again: the pushes below are taken, not refused for it
 
 # the push can't delete, nor write outside its folder, nor bring anything but plain files: a tar
 # no backend makes (a link, a device, a path out, a name twice, a file under a page) refuses all
 # of it, the live site as it was, and IRC told
-on web "echo keep > /var/lib/ccs-data/keep.txt"
+on web "echo keep > /var/lib/ccs-data/keep.txt && chown $data /var/lib/ccs-data/keep.txt"   # (ccs-data's, as the site's files: the push is taken)
 v=$((v + 1)); site "$v" "$(addr 2)"
 push > /dev/null 2>&1 || true
-if [[ $(on web 'cat /var/lib/ccs-data/keep.txt') == keep ]]; then ok "no deleting through the gate (a file the backend no longer has stays)"; else fail "a push deleted"; fi
+if [[ $(live) == "$v" && $(on web 'cat /var/lib/ccs-data/keep.txt') == keep ]]; then ok "no deleting through the gate (a file the backend no longer has stays)"; else echo "live $(live)"; fail "a push deleted (or wasn't taken)"; fi
 for k in symlink hardlink device dotdot absolute twice backslash clash; do
     before=$(on web 'find /var/lib/ccs-data -type f | sort | xargs sha256sum | sha256sum')
     rc=0; hostile "$k" || rc=$?
@@ -709,13 +714,37 @@ hostile address "$fake" || true
 if bot | grep -qF "${fake:0:6}…${fake: -4}" && ! bot | grep -qF "$fake"; then ok "review 10 (L-1): a refused push's reason in IRC with its address shortened"; else bot | tail -n 2; fail "review 10 (L-1): a whole address in an alert"; fi
 if [[ $(on backend "printf 'not a tar' | ssh -T -o BatchMode=yes ccs-data@$web receive > /dev/null 2>&1; echo \$?") == 1 ]]; then ok "refused: a push that isn't a tar"; else fail "a push that isn't a tar"; fi
 
+# ---- review 11 ----
+# M-2: a live file that no longer passes for an address (here the list changed under it: the
+# box's address taken out) goes off the site, to the gate's quarantine, and IRC is told; the list
+# as before, the backend's copy (it was told "held") goes live again
+v=$((v + 1)); site "$v" "$good"; push > /dev/null || true
+on web "cp /etc/ccs-gate/subaddresses.txt /etc/ccs-gate/subaddresses.txt.pin /tmp/ \
+    && sed -i '/ $good\$/d' /etc/ccs-gate/subaddresses.txt \
+    && sed -i \"s/^sha256 .*/sha256 \$(sha256sum < /etc/ccs-gate/subaddresses.txt | cut -d' ' -f1)/\" /etc/ccs-gate/subaddresses.txt.pin"
+rc=0; push > /dev/null || rc=$?
+if ((rc == 7)) && on web "! test -e /var/lib/ccs-data/$p && ! test -e /var/lib/ccs-data/projects.json \
+        && test -f /var/lib/ccs-gate/quarantine/$p && test -f /var/lib/ccs-gate/quarantine/projects.json" \
+    && bot | grep -qF "took a file off the site: it no longer passes for an address"; then
+    ok "review 11 (M-2): a live page and projects.json whose address left the list go off the site, IRC told"
+else echo "push exit $rc"; on web 'tail -n 4 /var/log/ccs-gate.log; ls -R /var/lib/ccs-gate/quarantine'; fail "review 11 (M-2): a live file failing for an address stayed live"; fi
+on web 'cp /tmp/subaddresses.txt /tmp/subaddresses.txt.pin /etc/ccs-gate/'
+if push > /dev/null && [[ $(livepage) == *"monero:$good"* ]] && on web 'test -f /var/lib/ccs-data/projects.json'; then
+    ok "review 11 (M-2): the list as before, the backend's copies go live again"
+else on web 'tail -n 3 /var/log/ccs-gate.log'; fail "review 11 (M-2): the pages taken down didn't come back"; fi
+# L-2: an empty folder live where a page goes (one an older gate let through) gives way to it
+v=$((v + 1)); site "$v" "$good" "$good" "An idea" "Another idea"
+on web 'rm /var/lib/ccs-data/ideas/index.html && mkdir /var/lib/ccs-data/ideas/index.html'
+if push > /dev/null && on web 'test -f /var/lib/ccs-data/ideas/index.html' && [[ $(livefile ideas/index.html) == *"Another idea"* ]]; then
+    ok "review 11 (L-2): an empty live folder gives way to the page pushed at its path"
+else on web 'ls -la /var/lib/ccs-data/ideas; tail -n 3 /var/log/ccs-gate.log'; fail "review 11 (L-2): an empty live folder kept a page out"; fi
+# ---- end review 11 ----
+
 # the key still runs nothing but the gate
 if ! grep -q root <<<"$(on backend "ssh -o BatchMode=yes ccs-data@$web 'cat /etc/passwd' 2>&1")"; then ok "the key runs nothing else"; else fail "the key ran a command"; fi
 # the heartbeat: pushes are the backend's; the web server's timer alerts when none arrive
 hb() { docker exec -u "$data" "$name-web" /usr/local/bin/ccs-receive --heartbeat; }
 late() { bot | grep -c 'no push from the backend' || true; }
-on web "printf 'sha256 %s\nkey %040d\nqr %s\n' \"\$(sha256sum < /etc/ccs-gate/subaddresses.txt | cut -d' ' -f1)\" 0 \"\$(sha256sum < /etc/ccs-gate/subaddresses.txt.qr.sha256 | cut -d' ' -f1)\" > /etc/ccs-gate/subaddresses.txt.pin"   # the list above, pinned again
-on web 'rm -f /var/lib/ccs-data/keep.txt'   # root's, from the test above: ccs-data can't copy it
 v=$((v + 1)); site "$v" "$(addr 2)"
 push > /dev/null
 hb

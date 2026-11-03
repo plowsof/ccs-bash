@@ -43,6 +43,18 @@ func TestPages(t *testing.T) {
 		"two labels": {`<p><span class="label tag-0">` + fund[:48] + `</span><span class="label tag-1">` + fund[48:] + `</span></p>`, fund + "\n"},
 		"tag, count": {`<a class="filter" href="x/">` + fund[:89] + `<span class="count">` + fund[89:] + `</span></a>`, fund + "\n"},
 		"not one":    {`<p><span>` + fund[:48] + `</span><span>` + fund[48:94] + `x</span></p>`, ""},
+		// split by a < or > a browser shows (an entity: text, not markup), as by a - (review 11's M-1)
+		"split by &lt;":        {"<h1>" + fund[:47] + "&lt;" + fund[47:] + "</h1>", fund + "\n"},
+		"split by &gt;":        {"<h1>" + fund[:47] + " &gt; " + fund[47:] + "</h1>", fund + "\n"},
+		"split by &#60;":       {"<h1>" + fund[:47] + "&#60;" + fund[47:] + "</h1>", fund + "\n"},
+		"&lt; then a label":    {`<p><span>` + fund[:48] + `</span><span>&lt;` + fund[48:] + `</span></p>`, fund + "\n"},
+		"&lt;b&gt; is text":    {"<h1>" + fund[:47] + "&lt;b&gt;" + fund[47:] + "</h1>", ""},
+		"&lt; four times, not": {"<h1>" + fund[:47] + "&lt;&lt;&lt;&lt;" + fund[47:] + "</h1>", ""},
+		// a named entity without its ";", as a browser reads it: &shy is an unseen soft hyphen (I-2)
+		"split by &shy":    {"<h1>" + fund[:47] + "&shy" + fund[47:] + "</h1>", fund + "\n"},
+		"split by &AMP":    {"<h1>" + fund[:47] + "&AMP" + fund[47:] + "</h1>", fund + "\n"},
+		"&notin is &not":   {"<h1>" + fund[:47] + "&notin" + fund[47:] + "</h1>", ""},
+		"&shyx not a name": {"<h1>" + fund[:47] + "&shyx;" + fund[47:] + "</h1>", fund + "\n"},
 	} {
 		if got := run(t, pages, c.in); got != c.want {
 			t.Errorf("%s: %q", name, got)
@@ -52,13 +64,15 @@ func TestPages(t *testing.T) {
 
 func TestJSON(t *testing.T) {
 	for name, c := range map[string]struct{ in, want string }{
-		"a key twice":  {`{"a": "x", "a": "` + fund + `"}`, fund + "\n"},
-		"escaped":      {`["` + strings.Join(strings.Split(fund, ""), `\u0000`) + `"]`, fund + "\n"},
-		"not JSON":     {`{"a": 1,}`, "!not JSON (UTF-8) that reads\n"},
-		"empty":        {``, "!not JSON (UTF-8) that reads\n"},
-		"two values":   {`{} {}`, "!not JSON (UTF-8) that reads\n"},
-		"not UTF-8":    {"[\"\xff\"]", "!not JSON (UTF-8) that reads\n"},
-		"large number": {`[1e400]`, ""},
+		"a key twice":      {`{"a": "x", "a": "` + fund + `"}`, fund + "\n"},
+		"split by <":       {`["` + fund[:47] + ` < ` + fund[47:] + `"]`, fund + "\n"},
+		"split by \\u003e": {`["` + fund[:47] + `\u003e` + fund[47:] + `"]`, fund + "\n"},
+		"escaped":          {`["` + strings.Join(strings.Split(fund, ""), `\u0000`) + `"]`, fund + "\n"},
+		"not JSON":         {`{"a": 1,}`, "!not JSON (UTF-8) that reads\n"},
+		"empty":            {``, "!not JSON (UTF-8) that reads\n"},
+		"two values":       {`{} {}`, "!not JSON (UTF-8) that reads\n"},
+		"not UTF-8":        {"[\"\xff\"]", "!not JSON (UTF-8) that reads\n"},
+		"large number":     {`[1e400]`, ""},
 	} {
 		if got := run(t, jsons, c.in); got != c.want {
 			t.Errorf("%s: %q", name, got)
