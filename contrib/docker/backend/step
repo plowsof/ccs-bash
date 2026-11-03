@@ -93,21 +93,27 @@ pull)
     # comes at any moment) waits in the pipe for the next run, instead of being lost with no one
     # holding it open
     exec 4<> "$R/pull/now" || exit 1
+    # drain: "now" emptied, the lines remembered (woke). A wallet rescanning notifies again for
+    # every transaction it has ever had: tens of thousands of lines while one run goes, more than
+    # the pipe holds (64 KB), and the wallet's ccs-notify would block. So it is read while the last
+    # run finishes too, not only between runs; one run for all of them, as before
+    woke=''
+    drain() { local i; for ((i = 0; i < 100000; i++)); do read -r -t 0.1 _ <&4 || return 0; woke=1; done; }
     while :; do
         n=$(($(num "$R/pull/done") + 1))
-        wait_for push $((n - 1))
+        while (($(num "$R/push/done") < n - 1)); do read -r -t 5 _ <> "$R/pull/wake" || true; drain; done
         # EVERY seconds after the last run started (GAP when that run left a donation pending: its
         # confirmation is shown a run after it), or at once when woken through "now"; never
         # sooner than GAP after the last start, so a stream of transactions can't make the runs
         # follow each other faster than that
         last=$(num "$R/pull/started") every=$EVERY
         [[ $(cat "$R/ccs-bash/pending" 2> /dev/null) == 1 ]] && every=$GAP
-        until (($(now) >= last + every)); do
+        until [[ $woke ]] || (($(now) >= last + every)); do
             read -r -t $((last + every - $(now))) _ <&4 && break
         done
         while (($(now) < last + GAP)); do sleep $((last + GAP - $(now))); done
         # the lines that came with it, or while it waited: one run for all of them
-        while read -r -t 0.1 _ <&4; do :; done
+        drain; woke=''
         put "$R/pull/started" "$(now)"
         say "== run $(date -u '+%F %T')"
         # the proposals; the forge down: give up, not a failed run (the last checkout stays);
