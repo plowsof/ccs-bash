@@ -64,7 +64,7 @@ secret.
   repository), the signature against binaryFate's key by fingerprint.
 - **Building** is on the backend (`container/build.sh`), or anywhere, then copied: `docker save
   <ID> | ssh <backend> docker load` keeps the ID, which is what's checked
-  ([deploying a set](handover.md#deploying-a-set-the-docker-setup), 2).
+  ([deploying a set](deploying.md), 2).
 - **The log:** every container's output to journald under one name, `ccs`: a run's lines in
   order, whichever stage said them, rotated by journald (`journalctl -t ccs`). `ccs log` and
   `ccs status` read it.
@@ -145,7 +145,7 @@ run at once and prints it; `ccs status`, `ccs log` read the journal. `journalctl
 follows every stage; `docker compose logs -f <service>` one. A stage that fails says so in its
 `status`, and the run's result goes to the watch (three failed runs alert).
 
-- **Upgrading:** step by step in [the handover](handover.md#deploying-a-set-the-docker-setup): the
+- **Upgrading:** step by step in [deploying a release](deploying.md): the
   new attested IDs in `.env`, between runs (`ccs status`: no run going), `docker compose up -d`. A new monero: its `hashes.txt` (signed) and the version and sum in
   `wallet-rpc/Dockerfile`, then build it.
 - **Pausing** (to edit the state by hand, [troubleshooting](troubleshooting.md#doing-things-by-hand)):
@@ -234,4 +234,4 @@ key files and `/etc/ccs-gate` ([two machines](two-machines.md); the backup machi
 
 **Upgrading:** the new attested ID in `.env`, `docker compose --profile init run --rm -T init`
 (passwd and group again; the host key stays), `docker compose up -d`; step by step, with a new
-design: [the handover](handover.md#deploying-a-set-the-docker-setup).
+design: [deploying a release](deploying.md).
