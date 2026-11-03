@@ -1,6 +1,6 @@
 # Upgrading
 
-Steps a release needs **once**, on top of [deploying a set](handover.md#deploying-a-set-the-docker-setup).
+Steps a release needs **once**, on top of [deploying a set](deploying.md).
 Newest first. Upgrading across several releases: do each step listed between the running release
 and the new one, oldest first. A release not listed needs none.
 
