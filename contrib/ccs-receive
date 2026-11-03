@@ -26,7 +26,7 @@
 #   - feed.xml, the feed, exactly as ccs-front-bash writes it: its items plain text, each a link to
 #     one of this site's proposal pages (SITE_URL, alert.conf), nothing else (feed_awk).
 # The push goes live, except a file that fails: that one keeps its last good copy (a new one stays
-# out), IRC is told (alert.conf), the backend is told which on stdout ("held<TAB>file<TAB>why"
+# out; a live one that no longer passes for an address is taken off the site, below), IRC is told (alert.conf), the backend is told which on stdout ("held<TAB>file<TAB>why"
 # lines: it sends them again), and it exits 7. A list or QR
 # codes' sums that aren't the pinned ones, or no design.sha256, design or markdown.awk, refuses
 # the whole push. Needs
@@ -289,14 +289,17 @@ pages() {
 
 # kinds: anything in the push that is neither a plain file nor a folder (a symlink: -munge makes
 # it point nowhere, but it still replaces the live file of its name), a folder where the site has
-# a file, or a file where it has a folder: each would take a live page away
+# a file, or a file where it has a folder with something in it: each would take a live page away
+# (an empty folder, one an older gate let go live, gives way to the file: ccs-check copy, review
+# 11's L-2)
 kinds() {
     local f rel
     while IFS= read -r -d '' f; do
         rel=${f#"$staging"/}
         if [[ -L $f || ( ! -f $f && ! -d $f ) ]]; then printf '%s\t%s\n' "$f" "!not a plain file or folder"
         elif [[ -d $f && -e $live/$rel && ! -d $live/$rel ]]; then printf '%s\t%s\n' "$f" "!a folder where the site has a file"
-        elif [[ -f $f && -d $live/$rel ]]; then printf '%s\t%s\n' "$f" "!a file where the site has a folder"
+        elif [[ -f $f && -d $live/$rel && -n $(find "$live/$rel" -mindepth 1 -print -quit) ]]; then
+            printf '%s\t%s\n' "$f" "!a file where the site has a folder"
         fi
     done < <(find "$staging" -mindepth 1 -print0)
 }
@@ -604,6 +607,33 @@ if [[ $bad && $fresh ]]; then
         gone+=$file$'\n'
     done
     [[ ! $gone ]] || bad=$(awk -F '\t' 'NR == FNR { g[$0] = 1; next } !($1 in g)' <(printf '%s' "$gone") - <<<"$bad")
+fi
+# A live file that no longer passes for an address (review 11's M-2): one that isn't the wallet's
+# nor allowed, a donation box's not in the list, one in the feed. It passed before, against
+# another list, allowed file or gate, and the push didn't replace it (staging has the live copy):
+# holding it back would keep it live. It goes from the site to $state/quarantine/, and IRC is
+# told; the backend's next good copy goes live as any new file. A push can't make a live file
+# fail (only what the gate checks against can change under it), so the backend can't take a good
+# page down this way. At most CCS_GATE_TAKEDOWN (3) a push: more at once (a wrong list or allowed
+# file) stay, and IRC is told: a person decides.
+if [[ $bad ]]; then
+    down=()
+    while IFS= read -r file; do
+        rp=${file#"$staging"/}
+        # (an if: a loop whose last line fails would stop the gate, set -e)
+        if [[ $file == "$staging"/* && -f $live/$rp ]] && cmp -s -- "$file" "$live/$rp"; then down+=("$file"); fi
+    done < <(awk -F '\t' '$2 !~ /^!/ || $2 ~ /^!(a donation box with an address that is not in the signed list|an address in the feed)/ { print $1 }' <<<"$bad" | sort -u)
+    if ((${#down[@]} > ${CCS_GATE_TAKEDOWN:-3})); then
+        say "${#down[@]} live files no longer pass for an address: more than ${CCS_GATE_TAKEDOWN:-3} at once, so none taken off the site (held back; their last copies stay live)"
+        alert takedown-many "${#down[@]} live files no longer pass for an address (the list, allowed or the gate changed?): more than ${CCS_GATE_TAKEDOWN:-3} at once, so none taken off the site; look at the list and allowed @ @SITE@"
+        down=()
+    fi
+    for file in "${down[@]}"; do
+        rp=${file#"$staging"/}
+        if ! { mkdir -p -- "$state/quarantine/$(dirname -- "$rp")" && mv -f -- "$live/$rp" "$state/quarantine/$rp"; }; then continue; fi
+        say "took $rp off the site: it no longer passes for an address (kept in $state/quarantine/)"
+        alert "down-$rp" "the web server took a file off the site: it no longer passes for an address (kept in its quarantine folder) @ @SITE@/$rp"
+    done
 fi
 # The rest of the push goes live; a file that fails keeps its last good copy (a new one stays
 # out): one bad page doesn't stop the site updating, and nothing here rewrites a file. The push
