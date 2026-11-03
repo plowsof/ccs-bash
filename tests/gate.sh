@@ -82,11 +82,13 @@ printf '<p>{{address}} {{viewkey}}{{network}} {{fingerprint}} {{wallet_source}}<
 printf '\n<p class="verify"><a href="../verify/">Check this address</a></p>\n' > "$d/parts/verify-link.html"
 printf '<p class="footer-onion">Also on Tor: <a href="http://{{onion}}/">{{onion}}</a></p>\n' > "$d/parts/onion.html"
 printf 'body {}\n' > "$d/assets/style.css"
-# markdown.awk, as ccs-front-bash's makes a proposal's text (a stand-in: one paragraph, escaped)
+# markdown.awk, as ccs-front-bash's makes a proposal's text (a stand-in: one paragraph, escaped;
+# its front matter, between --- lines, left out)
 cat > "$files/markdown.awk" <<'AWK'
 function out(    b) { b = body; gsub(/&/, "\\&amp;", b); gsub(/</, "\\&lt;", b); gsub(/>/, "\\&gt;", b)
     printf "{\"file\":\"%s\",\"body\":\"<p>%s</p>\",\"milestones\":[],\"payouts\":[]}\n", name, b }
-FNR == 1 { if (started) out(); started = 1; name = FILENAME; sub(/.*\//, "", name); sub(/\.md$/, "", name); body = "" }
+FNR == 1 { if (started) out(); started = 1; name = FILENAME; sub(/.*\//, "", name); sub(/\.md$/, "", name); body = ""; fm = ($0 == "---"); if (fm) next }
+fm { if ($0 == "---") fm = 0; next }
 { body = body (body == "" ? "" : " ") $0 }
 END { if (started) out() }
 AWK
@@ -130,6 +132,8 @@ docker cp "$name-backend:/qr.sha256" "$files/qr.sha256" && docker cp "$name-back
 docker cp "$files/qr.sha256" "$name-web:/tmp/qr.sha256" && docker cp "$files/repo-images" "$name-web:/tmp/repo-images"
 key=$(on backend 'cat ~/.ssh/id_ed25519.pub')
 [[ $img ]] || docker cp "$here/../contrib/ccs-receive" "$name-web:/usr/local/bin/ccs-receive"
+# ccs-bash's reader of the proposals' front matter, where the gate's image has it
+[[ $img ]] || { on web 'mkdir -p /usr/local/lib/ccs-gate' && docker cp "$here/../lib/frontmatter.awk" "$name-web:/usr/local/lib/ccs-gate/frontmatter.awk"; }
 if [[ ! $img ]]; then
     check=${CCS_CHECK:-$files/ccs-check}
     [[ -n ${CCS_CHECK:-} ]] || "$here/../contrib/ccs-check/build.sh" "$check" > /dev/null
@@ -179,7 +183,9 @@ on web "
     # the proposals repository, with a proposal and the images that may go live (made on the
     # backend, whose qrencode makes them byte for byte again)
     git init -q -b master /srv/proposals && mkdir -p /srv/proposals/images/p && cd /srv/proposals
-    echo 'Monero: a guide, in 2 parts.' > p.md
+    # (its front matter what the backend's site shows of it: gen.py)
+    printf '%s\n' --- 'layout: fr' 'title: A proposal' 'author: someone' 'date: October 22, 2026' 'amount: 10' \
+        'milestones:' '  - name: One' '    funds: 10 XMR' --- 'Monero: a guide, in 2 parts.' > p.md
     cp /tmp/repo-images/*.png images/p/
     git add -A && git -c user.name=t -c user.email=t@t commit -q -m proposal && cd /
     chown -R ccs-data /srv/proposals   # git reads a local repository only as its owner
@@ -342,6 +348,8 @@ for attack in \
     "bidi|$p|<h1>A proposal</h1>|<h1>Pay $bidi</h1>|an address in bidi embeddings, a space between its halves shown before them, in a name" \
     "math|$p|<h1>A proposal</h1>|<h1>Pay $math</h1>|an address in mathematical letters, in a name" \
     "grouped|$p|<h1>A proposal</h1>|<h1>Send to $grouped</h1>|an address in groups of four, in a name" \
+    "renamed|$p|<h1>A proposal</h1>|<h1>A renamed proposal</h1>|a proposal renamed: not its front matter's title" \
+    "author|$p|<p class=\"by\">someone |<p class=\"by\">someone else |a proposal's author changed: not its front matter's" \
     "lt|$p|<h1>A proposal</h1>|<h1>Send to $lt</h1>|an address split by a < shown as text (&lt;), in a name (review 11's M-1)" \
     "groupedidea|ideas/index.html|An idea|Send to ${grouped// /-}|an address in groups split by -, in an idea's title" \
     "date|ideas/index.html|October 1, 2026|October 1, 2026 and see the new address on the forum|text in a date" \
@@ -365,6 +373,9 @@ for attack in \
         *) [[ $old == "$new" ]] || change "$file" "$old" "$new"; held "$v" "$file" "$why" "$new" ;;
     esac
 done
+# a tag page for a tag no proposal in the repository has
+v=$((v + 1)); site "$v" "$good"; put explore/tag/made-up/index.html <<<'<p>Made up</p>'
+held "$v" explore/tag/made-up/index.html "a tag page for a tag no proposal has" "Made up"
 # the QR code files: only the list's own, byte for byte (its .qr.sha256), whatever page shows them
 qrlive() { on web "sha256sum < /var/lib/ccs-data/qr/$1.png 2> /dev/null | cut -d' ' -f1"; }
 qrsum() { awk -v f="$1.png" '$2 == f { print $1 }' "$files/qr.sha256"; }

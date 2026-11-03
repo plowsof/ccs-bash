@@ -301,18 +301,23 @@ type Checker struct {
 	l       *list
 	md      map[string][]body
 	link    node
-	onion   string
-	viewkey string
-	cache   map[string]*compiled
-	diag    int
-	max     int64
+	// the proposals' front matter (front.go), by proposal; every tag's spellings and slugs
+	fronts    map[string][]*front
+	spellings []string
+	slugs     map[string]bool
+	onion     string
+	viewkey   string
+	cache     map[string]*compiled
+	diag      int
+	max       int64
 }
 
 // MaxPage: a larger page is not read (held back)
 const MaxPage = 2 << 20
 
-// New: as pages_py's first lines (site, designs, bodies, list, viewkey, hosts, onion)
-func New(designs, bodies, lst, viewkey, hosts, onion string) (*Checker, error) {
+// New: as pages_py's first lines (site, designs, bodies, list, viewkey, hosts, onion), and the
+// proposals' front matter (frontmatter.awk's lines, ":"-separated: front.go)
+func New(designs, bodies, lst, viewkey, hosts, onion, fronts string) (*Checker, error) {
 	// (2 MB at most, CCS_GATE_MAX if less: the largest page is under 200 kB, and matching one
 	// takes memory as it goes, about 130 MB a MB)
 	c := &Checker{onion: onion, viewkey: viewkey, cache: map[string]*compiled{}, diag: 10, max: MaxPage}
@@ -326,6 +331,24 @@ func New(designs, bodies, lst, viewkey, hosts, onion string) (*Checker, error) {
 	if c.md, err = readBodies(bodies); err != nil {
 		return nil, err
 	}
+	if c.fronts, err = readFronts(fronts); err != nil {
+		return nil, err
+	}
+	c.slugs = map[string]bool{}
+	seen := map[string]bool{}
+	for _, fs := range c.fronts {
+		for _, f := range fs {
+			for _, g := range f.tags {
+				c.slugs[g.slug] = true
+				if !seen[g.tag] {
+					seen[g.tag] = true
+					c.spellings = append(c.spellings, g.tag)
+				}
+			}
+		}
+	}
+	// (the longest first: a spelling that begins another mustn't end its match early)
+	sort.SliceStable(c.spellings, func(i, j int) bool { return len(c.spellings[i]) > len(c.spellings[j]) })
 	hs := strings.Fields(hosts)
 	if len(hs) == 0 {
 		c.link = never
@@ -484,15 +507,23 @@ func (d *design) card(stage string, depth int, tagpage bool) (node, error) {
 	if err != nil {
 		return nil, err
 	}
-	n, _, err := d.fill(c, pats{"url": url, "name": TEXT, "author": TEXT, "date": DATE,
+	s := pats{"url": url, "name": TEXT, "author": TEXT, "date": DATE,
 		"funding_note": funding(), "funding_date": DATE, "contributors": NUM, "amount": XMR, "raised": XMR,
 		"percentage": NUM, "done": NUM, "milestones": NUM, "pending_note": pending(),
-		"upvotes": alt(NUM, lit("\u2013")), "downvotes": alt(NUM, lit("\u2013")), "segments": seg, "tags": star(label)})
+		"upvotes": alt(NUM, lit("\u2013")), "downvotes": alt(NUM, lit("\u2013")), "segments": seg, "tags": star(label)}
+	// a proposal's card (not an idea's: a merge request, no file yet): its link to its page, and
+	// what its front matter says
+	if stage != "idea" {
+		s["url"] = d.cardURL(depth, stage)
+		d.fromFront(s, true, depth)
+	}
+	n, _, err := d.fill(c, s)
 	return n, err
 }
 
 func (d *design) nav(depth int) (node, error) {
-	f, err := d.label("filter", pats{"href": href(depth), "count": NUM, "active": opt(lit(" active"))})
+	// (a tag some proposal has, and a link to a tag page some proposal's tag has)
+	f, err := d.label("filter", pats{"tag": d.anyTag(), "href": d.anySlug(depth), "count": NUM, "active": opt(lit(" active"))})
 	if err != nil {
 		return nil, err
 	}
@@ -645,6 +676,8 @@ func (d *design) slots(depth int, body bool) (pats, error) {
 		"verify_link": lit(strip(vl)), "milestones_list": empty, "payouts_list": empty, "tag_links": star(ll)}
 	if body {
 		s["body"] = group("body", lazy)
+		// a proposal's page: what its front matter says
+		d.fromFront(s, false, depth)
 	}
 	return s, nil
 }
@@ -657,6 +690,10 @@ func (d *design) region(b *built, name string, depth int, tagpage, body bool) (n
 	case "count", "number":
 		return NUM, nil
 	case "title":
+		// a tag page's: a tag some proposal has
+		if tagpage {
+			return d.anyTag(), nil
+		}
 		return TEXT, nil
 	case "filters":
 		return d.nav(depth)
@@ -687,7 +724,7 @@ func (d *design) region(b *built, name string, depth int, tagpage, body bool) (n
 		if err != nil {
 			return nil, err
 		}
-		s, err := d.slots(depth, false)
+		s, err := d.slots(depth, body)
 		if err != nil {
 			return nil, err
 		}
@@ -857,6 +894,7 @@ func (d *design) check(rp, got string) (string, error) {
 	depth := strings.Count(rp, "/")
 	var want []body
 	var tries []*compiled
+	var fronts [][]*front // (a proposal page's: its front matter, a try each)
 	switch {
 	case strings.HasPrefix(rp, "proposals/"):
 		name := rp[len("proposals/"):]
@@ -869,7 +907,20 @@ func (d *design) check(rp, got string) (string, error) {
 			return "a proposal page with no proposal (" + name + ".md) in the proposals repository", nil
 		}
 		want = w
+		if len(d.c.fronts[name]) == 0 {
+			return "a proposal page whose front matter the proposals repository doesn't give (" + name + ".md)", nil
+		}
+		// the stage its front matter's layout says: that template, that front matter
 		for _, s := range []string{"fr", "wip", "cp"} {
+			var fs []*front
+			for _, f := range d.c.fronts[name] {
+				if f.layout == s {
+					fs = append(fs, f)
+				}
+			}
+			if len(fs) == 0 {
+				continue
+			}
 			t, err := d.part("proposal-" + s)
 			if err != nil {
 				return "", err
@@ -879,8 +930,12 @@ func (d *design) check(rp, got string) (string, error) {
 				return "", err
 			}
 			tries = append(tries, c)
+			fronts = append(fronts, fs)
 		}
 	case tagPage.MatchString(rp):
+		if !d.c.slugs[strings.TrimSuffix(strings.TrimPrefix(rp, "explore/tag/"), "/index.html")] {
+			return "a tag page for a tag no proposal in the proposals repository has", nil
+		}
 		t, err := read(filepath.Join(d.d, "explore/tag/example/index.html"))
 		if err != nil {
 			return "", err
@@ -905,8 +960,11 @@ func (d *design) check(rp, got string) (string, error) {
 	}
 	s := []rune(got)
 	best, why := 0, "not a page of the design as ccs-front-bash fills it"
-	for _, t := range tries {
+	for i, t := range tries {
 		cx := newCtx(s)
+		if fronts != nil {
+			cx.page = fronts[i]
+		}
 		m := fullmatch(cx, t.n)
 		if m && want != nil {
 			bg := cx.g["body"]
@@ -967,7 +1025,11 @@ func (d *design) check(rp, got string) (string, error) {
 		}
 		// how far it is the design, for the reason (10 pages)
 		for k := len(t.segs); k > 0; k-- {
-			if e := prefix(newCtx(s), seq(t.segs[:k]...)); e >= 0 {
+			px := newCtx(s)
+			if fronts != nil {
+				px.page = fronts[i]
+			}
+			if e := prefix(px, seq(t.segs[:k]...)); e >= 0 {
 				best = max(best, e)
 				break
 			}

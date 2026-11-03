@@ -4,7 +4,7 @@
 believe the backend: every push is checked there, against copies the backend never sends. So the
 backend, its code and its machine can stay untrusted; a taken-over backend can stop the site
 updating, not put a foreign address on it. What runs on the web server, by version, the code to
-read (about 3,600 lines, its build files included) and what is installed there by hand: [the web server](web-server.md).
+read (about 4,300 lines, its build files included) and what is installed there by hand: [the web server](web-server.md).
 
 **Why the web server fetches the proposals repository itself.** A proposal's page is mostly its
 own text, which the design leaves free. To know that text is genuine, the gate needs its own copy

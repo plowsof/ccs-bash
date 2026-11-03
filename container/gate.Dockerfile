@@ -62,6 +62,7 @@ COPY --from=caddy /usr/bin/caddy /usr/bin/caddy
 COPY --from=libevent / /
 COPY --from=tor /rootfs/ /
 COPY contrib/ccs-receive contrib/ccs-backup-receive /usr/local/bin/
+COPY lib/frontmatter.awk /usr/local/lib/ccs-gate/frontmatter.awk
 COPY --from=ccs-check --chown=0:0 /tmp/ccs-check /usr/local/bin/ccs-check
 COPY contrib/docker/web/sshd_config /etc/ssh/sshd_config
 COPY contrib/docker/web/init /usr/local/bin/ccs-web-init
@@ -91,7 +92,7 @@ RUN cd /rootfs \
         usr/bin/tput usr/bin/tset usr/bin/event_rpcgen.py \
     && rm -f usr/lib/libform*.so* usr/lib/libmenu*.so* usr/lib/libpanel*.so* usr/lib/libncurses++*.so* \
     && mkdir -p var/log && ln -s bash usr/bin/sh && ln -sf /etc/ccs-ssh/keys/passwd etc/passwd && ln -sf /etc/ccs-ssh/keys/group etc/group \
-    && chmod 755 usr/local/bin/ccs-receive usr/local/bin/ccs-backup-receive usr/local/bin/ccs-check usr/local/bin/ccs-web-init && chmod 644 etc/ssh/sshd_config etc/caddy/Caddyfile etc/tor/torrc \
+    && chmod 755 usr/local/bin/ccs-receive usr/local/bin/ccs-backup-receive usr/local/bin/ccs-check usr/local/bin/ccs-web-init && chmod 644 etc/ssh/sshd_config etc/caddy/Caddyfile etc/tor/torrc usr/local/lib/ccs-gate/frontmatter.awk \
     && find . -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
 
 FROM scratch AS image
