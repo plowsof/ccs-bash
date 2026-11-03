@@ -78,6 +78,6 @@ Push a tag `vX.Y.Z` on `master` (or make the release on GitHub, which makes the 
 and the gate's image beside it, adds each one's pull-by-digest line and image ID to the release
 notes. If it fails the release has
 no notes: rerun it, or delete tag and release and redo them. A release proves nothing by
-itself; anyone can rebuild the tag and compare IDs ([deploying a set](handover.md#deploying-a-set-the-docker-setup), 2), and sign what they
+itself; anyone can rebuild the tag and compare IDs ([deploying a set](deploying.md), 2), and sign what they
 got into [ccs-sigs](https://github.com/plowsof/ccs-sigs) with `contrib/release/build` and
 `attest`, as Feather Wallet's releases are attested ([contrib/release](../contrib/release/README.md)).

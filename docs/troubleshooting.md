@@ -142,7 +142,7 @@ A title with a long run of address characters is shortened (`9ZqZqZ…ZqZq`).
 | `the backup (proposals.csv)` / `the backup (deposits.csv)` | the line above it says why: `ssh: connect … timed out`, `Permission denied` (the backup machine, its key or `from=`); `ccs-backup: … 256 MB already` (its folder is full: look at what is in it, a taken-over backend can fill it); `the new deposits.csv lacks N deposit(s)` (a reorg deeper than 30 blocks, or the wallet rescanning: [make deposits.csv again](#make-depositscsv-again)) |
 | `the push (the web server held a file back)` | see [a page isn't updating](#a-proposals-page-isnt-updating-old-text-old-totals); the push's log names each (`ccs-push: held back by the web server: <file>: <why>`), and sends it again next run |
 | `ccs-push: not sent (a backslash or control character in its name): <file>` | a file the site has whose name the gate refuses: the rest goes. A proposal's file name: rename it in the proposals repository |
-| `Unable to find image` / `pull access denied` | an image `.env` names is gone (a Docker cleanup): build or load that attested ID again ([deploying a set](handover.md#deploying-a-set-the-docker-setup), 2); a stopped container on each image keeps it |
+| `Unable to find image` / `pull access denied` | an image `.env` names is gone (a Docker cleanup): build or load that attested ID again ([deploying a set](deploying.md), 2); a stopped container on each image keeps it |
 
 ## What IRC says
 
@@ -246,57 +246,11 @@ docker compose start pull
 
 ### Move the proposals to another forge
 
-GitLab (gitlab.com, or another GitLab) or Forgejo/Gitea (disroot, Codeberg): a public repository,
-read without a token. The testnet moved from disroot's Forgejo to gitlab.com this way
-([the testnet](testnet.md)). Paused (`docker compose stop pull`, then `ccs status`: no run going), copies kept, as root on
-the backend:
-
-1. **The API**, in the backend's `/etc/ccs/ccs.conf`:
-
-   ```
-   REPOSITORY_URL=https://gitlab.com/api/v4/projects/<id>              # GitLab: the project's number
-   REPOSITORY_URL=https://git.disroot.org/api/v1/repos/<owner>/<repo>  # Forgejo or Gitea
-   ```
-
-   (`/api/v4/projects/` or `/api/v1/repos/` is what tells them apart.)
-
-2. **The checkout**, so the compose's `pull` pulls from there: the same history, `remote set-url`;
-   else a fresh clone in its place, of the branch the site runs:
-
-   ```
-   runuser -u ccs-git -- env HOME=/ git -C /var/lib/ccs/proposals \
-       remote set-url origin https://git.disroot.org/<owner>/<repo>.git
-   # or, the old one kept beside it:
-   install -d -o ccs-git -g ccs-git -m 755 /var/lib/ccs/proposals.new
-   runuser -u ccs-git -- env HOME=/ git clone -q --branch <branch> https://gitlab.com/<owner>/<repo>.git /var/lib/ccs/proposals.new
-   mv /var/lib/ccs/proposals /var/lib/ccs/proposals.old && mv /var/lib/ccs/proposals.new /var/lib/ccs/proposals
-   ```
-
-3. **The merge request caches**, emptied: `rm -f /var/lib/ccs/state/ideas.cache
-   /var/lib/ccs/state/merged-files.cache`. They are by merge request number, and the new forge's
-   numbers start again: kept, its !1 would be the old forge's !1.
-
-4. **The web server's gate**, `/etc/ccs-gate/proposals.conf`: `PROPOSALS_GIT` the new repository's
-   git URL, `PROPOSALS_BRANCH` its branch (default `master`), and `LINK_HOSTS` the old forge's
-   repository (host/path), so the proposals already linked to its merge requests keep their links.
-   Without it, every page would be checked against the old repository.
-
-5. **The containers** that mount the checkout, made again (a mount keeps the folder it was given):
-   `docker compose up -d --force-recreate pull ccs-bash front`.
-
-Then `docker compose start pull` and a run at once, `ccs proposal:process`. Ideas become the new forge's open merge or
-pull requests, and newly merged proposals link to theirs; known ones keep their link in
-`proposals.csv` (to rewrite them too:
-`sed -i 's#https://repo.getmonero.org/monero-project/ccs-proposals/-/merge_requests/#https://git.disroot.org/<owner>/<repo>/pulls/#'`,
-the loop paused, a copy kept, and the old host out of `LINK_HOSTS`). A proposal the new repository
-doesn't have leaves the site: the gate takes its page off at the next push
-([remove a proposal](#doing-things-by-hand)). The site's words ("GitLab", Submit Idea) are
-ccs-front-hugo's. Going back: the old `REPOSITORY_URL`, checkout and `proposals.conf`, and the
-caches emptied again.
+[The proposals' forge](forge.md#moving-to-another-forge).
 
 ### Go back to the previous release
 
-[The handover, deploying a set](handover.md#deploying-a-set-the-docker-setup), step 7: the
+[Deploying a release, going back](deploying.md#going-back): the
 previous `.env`, checkout and design from the backup folder made before the deploy; the old
 images are still there (their keep containers, `docker ps -a --filter name=keep`). The gate allows
 both designs while both are in `/etc/ccs-gate/design/` and `design.sha256`.

@@ -126,7 +126,7 @@ A list, QR codes' sums or design that isn't the pinned one refuses every push.
 1. **The image:** its ID in `contrib/docker/web/.env` (`CCS_GATE_IMAGE`) is the one two or more
    signers attested for that release: `contrib/release/verify ccs-gate-vX.Y.Z` with your own
    `trusted-signers`; and the image you built from that commit has that ID
-   ([deploying a set](handover.md#deploying-a-set-the-docker-setup), steps 1 and 2).
+   ([deploying a set](deploying.md), steps 1 and 2).
 2. **What is running:** `docker compose ps` (the gate and the heartbeat, healthy) and
    `docker inspect --format '{{.Image}}' web-gate-1`: the attested ID.
 3. **Its files:** the table above, each against its source.
