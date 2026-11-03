@@ -27,18 +27,38 @@ func Max() int64 {
 	return 8 << 20
 }
 
+// legacy: the named entities a browser reads without their ";" (HTML's table: "&shy" is a soft
+// hyphen, which isn't shown, whatever follows it), longest first, as a browser matches them
+// (review 11's I-2)
+var legacy = func() string {
+	ns := strings.Fields(`AElig AMP Aacute Acirc Agrave Aring Atilde Auml COPY Ccedil ETH Eacute Ecirc
+		Egrave Euml GT Iacute Icirc Igrave Iuml LT Ntilde Oacute Ocirc Ograve Oslash Otilde Ouml QUOT
+		REG THORN Uacute Ucirc Ugrave Uuml Yacute aacute acirc acute aelig agrave amp aring atilde auml
+		brvbar ccedil cedil cent copy curren deg divide eacute ecirc egrave eth euml frac12 frac14
+		frac34 gt iacute icirc iexcl igrave iquest iuml laquo lt macr micro middot nbsp not ntilde
+		oacute ocirc ograve ordf ordm oslash otilde ouml para plusmn pound quot raquo reg sect shy sup1
+		sup2 sup3 szlig thorn times uacute ucirc ugrave uml uuml yacute yen yuml`)
+	sort.SliceStable(ns, func(i, j int) bool { return len(ns[i]) > len(ns[j]) })
+	return strings.Join(ns, "|")
+}()
+
 var (
 	starts   = regexp.MustCompile(`^[ \t\n\r]*[<\[{]`)
 	controls = regexp.MustCompile(`[\x00-\x08\x0b\x0e-\x1f\x7f]`)
-	entities = regexp.MustCompile(`&#[0-9]+;?|&#[xX][0-9A-Fa-f]+;?|&[A-Za-z][A-Za-z0-9]*;`)
+	entities = regexp.MustCompile(`&#[0-9]+;?|&#[xX][0-9A-Fa-f]+;?|&[A-Za-z][A-Za-z0-9]*;|&(?:` + legacy + `)`)
 	// a data: image of any type, as a browser reads the scheme (any case: review 10's L-2)
 	qrs   = regexp.MustCompile(`(?i)data:image/[A-Za-z0-9.+-]*[;,][A-Za-z0-9+/=;,.:%_-]*`)
 	tags  = regexp.MustCompile(`<[^>]*>`)
-	named = map[string]int{"amp": 38, "lt": 60, "gt": 62, "quot": 34, "apos": 39}
+	named = map[string]int{"amp": 38, "lt": 60, "gt": 62, "quot": 34, "apos": 39, "AMP": 38, "LT": 60, "GT": 62, "QUOT": 34}
 )
 
-// char: printable ASCII as itself, a space as one, anything else \x01 (read both ways)
+// char: an entity's character: printable ASCII as itself, a space as one, anything else \x01
+// (read both ways). A < or > written as an entity is text a browser shows, never markup: read as
+// punctuation, an address's groups either side of it are one (review 11's M-1)
 func char(n int) string {
+	if n == '<' || n == '>' {
+		return "-"
+	}
 	if n > 32 && n < 127 {
 		return string(rune(n))
 	}
@@ -169,6 +189,8 @@ func JSON(files []string, w io.Writer) error {
 				switch {
 				case r == '\t' || r == '\n' || r == '\f' || r == '\r':
 					return ' '
+				case r == '<' || r == '>':
+					return '-' // punctuation to its reader, as a page's &lt; (review 11's M-1)
 				case r < 0x20 || r == 0x7f:
 					return -1
 				}
