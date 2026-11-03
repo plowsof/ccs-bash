@@ -118,6 +118,19 @@ if until_pushed $((n + 2)) && sleep 3 && (($(cat "$t/run/push/done") == n + 2));
     ok "a line on now during a run: the next run right after it (two lines: one run)"
 else fail "now during a run: pushed $(cat "$t/run/push/done"), wanted $((n + 2))"; fi
 
+# a wallet rescanning notifies again for every transaction it has had: 30,000 lines during one
+# run, more than the pipe holds (64 KB). Taken while the run goes (the wallet's notify never
+# blocks), and one run after it for all of them
+touch "$t/slow"
+n=$(cat "$t/run/push/done") s=$(cat "$t/run/pull/started")
+printf 'tx\n' 1<> "$t/run/pull/now"
+for ((i = 0; i < 30; i++)); do [[ $(cat "$t/run/pull/started") != "$s" ]] && break; sleep 1; done
+rc=0; timeout 30 bash -c 'for ((i = 0; i < 30000; i++)); do printf "tx\n"; done 1<> "$1"' _ "$t/run/pull/now" || rc=$?
+rm -f "$t/slow"
+if ((rc == 0)) && until_pushed $((n + 2)) && sleep 3 && (($(cat "$t/run/push/done") == n + 2)); then
+    ok "a rescan's flood on now during a run (30,000 lines): taken without blocking, one run after it"
+else fail "a flood on now: writer exit $rc, pushed $(cat "$t/run/push/done"), wanted $((n + 2))"; fi
+
 # the pace: a stream of notifications, runs at least CCS_MIN_GAP apart (3 s here); a donation
 # left pending, the next run CCS_MIN_GAP after (no notification), until nothing is pending
 stop
