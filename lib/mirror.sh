@@ -33,7 +33,8 @@ mirror_load() {
         | (group_by(.key + \"\\u001f\" + .date) | map({key: (.[0].key + \"\\u001f\" + .[0].date), value: (if length == 1 then .[0] | del(.key, .date) else {dup: length, cands: map(del(.key, .date))} end)}) | from_entries) as \$dated
         | \$one + \$dated" \
         "$WORK/mirror.raw" > "$WORK/mirror.json" 2> "$WORK/mirror.err" \
-        || { log "error: MIRROR_URL's answer isn't a list of projects: $(head -c 200 "$WORK/mirror.err")"; return 1; }
+        || { local why=''; IFS= read -r -N 200 why < "$WORK/mirror.err" || true   # (its first 200 characters: busybox's head has no -c)
+             log "error: MIRROR_URL's answer isn't a list of projects: $why"; return 1; }
 }
 
 # mirror_assign: in place of assign_addresses. Each proposal the state has no address for gets
