@@ -277,9 +277,12 @@ each way around it, each case named in its output:
 
 **What it can't see:** what only the backend knows: a total, count or percentage that is wrong but
 a number; an idea that is no merge request (still escaped text linking to the repository); one of
-the wallet's subaddresses on another proposal's page (the money stays in the CCS wallet); a
-proposal's name, author, dates, goal or stage as ccs-bash read its front matter (a renamed
-proposal, a completed one with a donation box, a listed address still). Nor anything once the web
+the wallet's subaddresses on another proposal's page (the money stays in the CCS wallet); the
+dates only the backend keeps (when a proposal went to Funding Required, was funded). A
+proposal's name, author, date, goal, stage, milestone counts, link and tags are its front
+matter's, as the gate reads it itself from the repository (ccs-bash's own `lib/frontmatter.awk`,
+in the gate's image; `fronts`, `ccs-check pages`' front.go), on its page and on its cards; a
+sidebar's tag and a tag page are a tag some proposal has. Nor anything once the web
 server itself is taken over: then ccs-watch and visitors are the defence. The checks are
 `ccs-check` ([ccs-check.md](ccs-check.md): Go, memory-safe, one static binary). The donation
 boxes' QR codes are never made or decoded here: each is the signed list's file of its address,

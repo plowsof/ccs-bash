@@ -16,6 +16,9 @@ type ctx struct {
 	s   []rune
 	run []int             // run[i]: how many base58 or non-ASCII characters from i on
 	g   map[string][2]int // the named groups matched, start and end
+	// the proposal's front matter (front.go): the page's (a proposal page), and the card's
+	// whose link was matched last (a list)
+	page, card []*front
 }
 
 func newCtx(s []rune) *ctx {

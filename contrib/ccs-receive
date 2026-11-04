@@ -10,7 +10,9 @@
 #     its kind (a number, escaped text that can't hold an address, a link into the proposals
 #     repository...), a proposal's text, milestones and payouts exactly what markdown.awk
 #     (ccs-front-bash's, installed here) makes of its file in the proposals repository
-#     (proposals.conf), fetched here, and a donation box one address of the signed list, in its
+#     (proposals.conf), fetched here; its name, author, date, goal, stage, milestone counts, link
+#     and tags, on its page and its cards, what its front matter says (ccs-bash's frontmatter.awk,
+#     in this image: fronts); a tag shown, one some proposal has; and a donation box one address of the signed list, in its
 #     text and link, its QR code that address's file (qr/<address>.png): nothing else can be on a
 #     page, whatever a browser would make of it.
 #     A page it couldn't check (in time, or at all) is held back like one that failed;
@@ -37,6 +39,8 @@ set -euo pipefail
 # (no home of the account's: git, curl and bash read no config from there, whatever passwd says)
 export LC_ALL=C HOME=/nonexistent GIT_CONFIG_NOSYSTEM=1
 staging=/var/lib/ccs-staging live=/var/lib/ccs-data conf=/etc/ccs-gate state=/var/lib/ccs-gate
+# ccs-bash's own reader of a proposal's front matter (lib/frontmatter.awk), in the gate's image
+frontmatter=/usr/local/lib/ccs-gate/frontmatter.awk
 
 # The reason goes to the web server's journal (and /var/log/ccs-gate.log, if ccs-data may write
 # it), and to the backend (stderr, its ssh channel).
@@ -249,6 +253,33 @@ bodies() {
     printf '%s' "$list"
 }
 
+# fronts: one file of frontmatter.awk's lines (each proposal's front matter: its name, author,
+# date, goal, stage, milestone counts, link and tags, as ccs-bash reads them) per commit fetched,
+# ":"-separated; kept by commit, as bodies'. What a page says of a proposal must be these
+# (ccs-check pages: front.go)
+fronts() {
+    local rev c sum out d list=''
+    sum=$(sha256sum < "$frontmatter" | cut -c1-16)
+    for rev in refs/heads/ccs refs/heads/ccs~1; do
+        c=$(git -C "$git" rev-parse -q --verify "$rev^{commit}" 2> /dev/null) || continue
+        out=$state/fronts-$c-$sum.tsv
+        if [[ ! -s $out ]]; then
+            d=$(mktemp -d)
+            if { git -C "$git" archive "$c" | tar -x -C "$d"; } 2> /dev/null; then
+                # (the plain .md files at the top, as ccs-bash reads them; its complaints aside)
+                find "$d" -maxdepth 1 -type f -name '*.md' -print0 \
+                    | xargs -0 -r timeout 120 awk -f "$frontmatter" > "$out.tmp" 2> /dev/null && mv "$out.tmp" "$out"
+            else
+                say "could not unpack the proposals repository's commit $c: no front matter from it"
+            fi
+            rm -rf "$d" "$out.tmp"
+        fi
+        [[ -s $out ]] && touch "$out" && list+=${list:+:}$out
+    done
+    find "$state" -maxdepth 1 -name 'fronts-*.tsv' -mmin +60 -delete 2> /dev/null || true
+    printf '%s' "$list"
+}
+
 # pages FILE...: the pages among FILEs (in staging) as ccs-check pages checks them ("page<TAB>!reason").
 # Only a page it passed goes live: one it didn't get to (out of time, or stopped) is held back
 # too. (A donation box's QR code is qr/<address>.png of the address it shows: ccs-check checks
@@ -265,7 +296,7 @@ pages() {
         printf "%s\t!no design release (design/vX.Y.Z/) to check it against\n" "${html[@]/#/$staging/}"
         return 0
     fi
-    b=$(bodies)
+    b=$(bodies) f=$(fronts)
     [[ -f $list.viewkey ]] && vk=$list.viewkey
     # this site's onion address, for the footer's onion line (none: no line)
     local onion=''
@@ -273,7 +304,7 @@ pages() {
     [[ $onion =~ ^[a-z2-7]{56}\.onion$ ]] || onion=
     out=$(mktemp)
     printf '%s\0' "${html[@]}" \
-        | timeout 300 ccs-check pages "$staging" "$designs" "$b" "$list" "$vk" "$hosts" "$onion" > "$out" 2> /dev/null || true
+        | timeout 300 ccs-check pages "$staging" "$designs" "$b" "$list" "$vk" "$hosts" "$onion" "$f" > "$out" 2> /dev/null || true
     while IFS=$'\t' read -r file tag; do
         case $tag in
             =ok) [[ ${ok[$file]:-} == no ]] || ok[$file]=1 ;;
@@ -534,6 +565,7 @@ for d in "$conf"/design/v*/parts/proposal-fr.html; do [[ ${d%/parts/proposal-fr.
 [[ ${d:-} ]] || refuse "it has no $conf/design/<release>/ (the design's release zip, unpacked: v0.1.25, say)" designs
 [[ -r $conf/proposals.conf ]] || refuse "it has no $conf/proposals.conf (the proposals repository, for their text and images)" proposals
 compgen -G "$conf/markdown*.awk" > /dev/null || refuse "it has no $conf/markdown.awk (ccs-front-bash's lib/markdown.awk)" markdown
+[[ -r $frontmatter ]] || refuse "it has no $frontmatter (ccs-bash's lib/frontmatter.awk, in the gate's image)" frontmatter
 design=$(mktemp)
 trap 'rm -f "$design"' EXIT
 sed -nE 's#^([0-9a-f]{64}) [ *](\./)?(.+)$#\1 \3#p' "$conf/design.sha256" > "$design"
@@ -550,7 +582,7 @@ fetch && fetched=1
 # happens, all are checked again.
 mapfile -d '' all < <(find "$staging" -type f \( -name '*.html' -o -name '*.json' -o -path "$staging/feed.xml" \) -print0)
 inputs=$( {
-    cat -- "${BASH_SOURCE[0]}" "$list" "$list.pin" "$list.qr.sha256" "$design" "$conf"/markdown*.awk "$conf/proposals.conf"
+    cat -- "${BASH_SOURCE[0]}" "$list" "$list.pin" "$list.qr.sha256" "$design" "$conf"/markdown*.awk "$frontmatter" "$conf/proposals.conf"
     cat -- "$conf/allowed" "$list.viewkey" "$conf/onion" 2> /dev/null || true
     grep '^SITE_URL=' "$conf/alert.conf" 2> /dev/null || true   # (the feed's links)
     (cd "$conf/design" && find . -type f -print0 | sort -z | xargs -0 -r sha256sum)
