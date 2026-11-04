@@ -1,0 +1,136 @@
+{
+    "state": {
+        "a-fund.md": {
+            "gitlab_url": "https://example.org/mr/1",
+            "subaddr_index": 1,
+            "funding_required_date": "2021-06-30T10:00:00Z",
+            "funded_date": null
+        },
+        "b-wip.md": {
+            "gitlab_url": null,
+            "subaddr_index": 2,
+            "funding_required_date": null,
+            "funded_date": null
+        },
+        "c done, (old).md": {
+            "gitlab_url": "https://example.org/mr/3",
+            "subaddr_index": null,
+            "funding_required_date": null,
+            "funded_date": null
+        },
+        "near-funded.md": {
+            "gitlab_url": "https://example.org/mr/5",
+            "subaddr_index": 3,
+            "funding_required_date": null,
+            "funded_date": null
+        },
+        " leading-space.md": {
+            "gitlab_url": null,
+            "subaddr_index": 4,
+            "funding_required_date": "2026-10-22T08:00:00Z",
+            "funded_date": null
+        },
+        "dots-end.md": {
+            "gitlab_url": null,
+            "subaddr_index": null,
+            "funding_required_date": null,
+            "funded_date": null
+        },
+        "new-fund.md": {
+            "gitlab_url": "https://example.org/mr/8",
+            "subaddr_index": 5,
+            "funding_required_date": "2026-10-22T08:00:00Z",
+            "funded_date": null
+        },
+        "o'quote.md": {
+            "gitlab_url": null,
+            "subaddr_index": null,
+            "funding_required_date": null,
+            "funded_date": null
+        }
+    },
+    "funds": {
+        " leading-space.md": {
+            "amount": "20.0000",
+            "raised": "0.0000",
+            "pending": 0,
+            "count": 0,
+            "percentage": 0,
+            "needed": "20.0000"
+        },
+        "a-fund.md": {
+            "amount": "1500.0000",
+            "raised": "8.8500",
+            "pending": 14,
+            "count": 6,
+            "percentage": 0,
+            "needed": "1477.1500"
+        },
+        "b-wip.md": {
+            "amount": "85.0000",
+            "raised": "0.6234",
+            "pending": 0,
+            "count": 2,
+            "percentage": 0,
+            "needed": "84.3766"
+        },
+        "c done, (old).md": {
+            "amount": "240.1202",
+            "raised": "0.0000",
+            "pending": 0,
+            "count": 0,
+            "percentage": 0,
+            "needed": "240.1203"
+        },
+        "dots-end.md": {
+            "amount": "3.0000",
+            "raised": "0.0000",
+            "pending": 0,
+            "count": 0,
+            "percentage": 0,
+            "needed": "3.0000"
+        },
+        "near-funded.md": {
+            "amount": "100.0000",
+            "raised": "99.9999",
+            "pending": 0,
+            "count": 1,
+            "percentage": 99,
+            "needed": "0.0001"
+        },
+        "new-fund.md": {
+            "amount": "100.0000",
+            "raised": "0.0000",
+            "pending": 0,
+            "count": 0,
+            "percentage": 0,
+            "needed": "100.0000"
+        },
+        "o'quote.md": {
+            "amount": "5.0000",
+            "raised": "0.0000",
+            "pending": 0,
+            "count": 0,
+            "percentage": 0,
+            "needed": "5.0000"
+        }
+    },
+    "ideas": [
+        {
+            "name": "Another idea, to 9ZqZqZ…ZqZq",
+            "gitlab-url": "https://example.org/mr/13",
+            "author": "grace",
+            "date": "October 3, 2026",
+            "upvotes": 1,
+            "downvotes": 0
+        },
+        {
+            "name": "New &lt;idea&gt;",
+            "gitlab-url": "https://example.org/mr/11",
+            "author": "erin",
+            "date": "October 1, 2026",
+            "upvotes": 5,
+            "downvotes": 2
+        }
+    ]
+}

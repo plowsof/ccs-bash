@@ -70,6 +70,18 @@ build_site() {
             --slurpfile funds "$WORK/funds.json" \
             --slurpfile ideas "$WORK/ideas.json" -f "$CCS_LIB/site.jq"
     done
+    # site-data.json: what only this run knows, site.jq's inputs but the front matter (which the
+    # web server reads from the repository itself): each proposal's subaddress index (not its
+    # address: the signed list's line), merge request and dates, its funds, the ideas. The web
+    # server checks it (ccs-check pages) and builds the site from it (design: step 6)
+    atomic_write "$OUTPUT_DIR/site-data.json" jq -n --indent 4 \
+        --slurpfile props "$WORK/props.json" --slurpfile state "$WORK/state.json" \
+        --slurpfile funds "$WORK/funds.json" --slurpfile ideas "$WORK/ideas.json" '
+        ($props[0] | map(.file)) as $files
+        | {state: ($state[0] | with_entries(select(.key as $k | $files | index($k)))
+                   | map_values({gitlab_url, subaddr_index, funding_required_date, funded_date: (.funded_date // null)})),
+           funds: ($funds[0] | with_entries(select(.key as $k | $files | index($k)))),
+           ideas: $ideas[0]}'
 }
 
 # A proposal's raised total never goes down from what the last run published (OUTPUT_DIR/projects.json):

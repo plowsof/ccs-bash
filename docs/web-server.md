@@ -89,7 +89,7 @@ About 5,000 lines, all of this repository's own:
 | File | Lines | What it is |
 |---|---|---|
 | [`contrib/ccs-receive`](../contrib/ccs-receive) | 478 | the gate: takes only `receive`, receives into staging, fetches the proposals repository, runs `ccs-check gate`, copies only what passed live, tells the backend what it held back, alerts; the heartbeat |
-| [`contrib/ccs-check/`](../contrib/ccs-check) (Go, tests aside) | 3,492 | `gate` (`gate/gate.go`: which files go live: each only if every check it needs passed it), `receive` and `copy` (`push/push.go`: the push's tar, plain files only, at clean paths, within limits), `pages` (`pages/pages.go`, `pages/match.go`: a page is the design's, filled; `pages/projects.go`: projects.json, each proposal's address its own), `scan` (`scan/scan.go`, `addr/addr.go`: every address, by Monero's checksum) |
+| [`contrib/ccs-check/`](../contrib/ccs-check) (Go, tests aside) | 3,513 | `gate` (`gate/gate.go`: which files go live: each only if every check it needs passed it), `receive` and `copy` (`push/push.go`: the push's tar, plain files only, at clean paths, within limits), `pages` (`pages/pages.go`, `pages/match.go`: a page is the design's, filled; `pages/projects.go`: projects.json, each proposal's address its own), `scan` (`scan/scan.go`, `addr/addr.go`: every address, by Monero's checksum) |
 | `contrib/ccs-check/build.sh` | 71 | how it is built and tested (StageX's Go, no network) |
 | [`container/gate.Dockerfile`](../container/gate.Dockerfile) | 101 | what goes in the image, Tor built from its source among it |
 | [`contrib/docker/web/`](../contrib/docker/web) (`compose.yml`, `sshd_config`, `init`, `env.example`, `Caddyfile`, `torrc`) | 352 | how it runs: one user each, the forced command, read-only, sshd's three capabilities, limits; what Caddy serves and how, the onion |
@@ -102,7 +102,7 @@ ccs-front-hugo's **design** (its release zip: the pages, the parts they are fill
 stylesheets and images; installed by its sha256) and ccs-front-bash's **`lib/markdown.awk`** (265 lines: the gate renders each proposal
 from the repository itself and requires the page's text to be exactly that).
 
-The tests show each way around it, by name: `tests/gate.sh` (146 cases: every check, hostile
+The tests show each way around it, by name: `tests/gate.sh` (148 cases: every check, hostile
 tars, with this image as the web server), `tests/gate-image.sh`, `tests/web.sh` (its sshd,
 attacked), `contrib/ccs-check/build.sh test` and `fuzz` (the receiver: nothing written outside
 its folder, whatever the stream). [Reviewing](reviewing.md) walks each function.
