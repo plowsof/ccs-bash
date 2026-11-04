@@ -1,0 +1,39 @@
+#!/bin/bash
+# compare-site [OUT [PROPOSALS [LIST]]]: step 6's check, before the web server builds the site
+# itself. The site's JSON as the web server is to make it (lib/site-data.sh: from OUT's
+# site-data.json, the proposals in PROPOSALS and the signed list LIST) must be the backend's own
+# in OUT, byte for byte: then ccs-front-bash builds the same pages from it. Prints "same" or the
+# difference for each file; exits 1 on any difference. Read-only: it writes only to a temporary
+# folder. On the backend, in its image, from the attested checkout:
+#   docker run --rm --network none --read-only --tmpfs /tmp -v /var/lib/ccs/out:/var/lib/ccs/out:ro \
+#     -v /var/lib/ccs/proposals:/var/lib/ccs/proposals:ro -v /etc/ccs-front:/etc/ccs-front:ro \
+#     --entrypoint /opt/ccs-bash/contrib/compare-site "$CCS_BASH_IMAGE"
+set -uo pipefail
+here=$(dirname "$(readlink -f "$0")")
+# shellcheck source=ccs-back.sh
+source "$here/../ccs-back.sh"
+set +e
+out=${1:-/var/lib/ccs/out} PROPOSALS_DIR=${2:-/var/lib/ccs/proposals} list=${3:-/etc/ccs-front/subaddresses.txt}
+t=$(mktemp -d)
+trap 'rm -rf "$t"' EXIT
+mkdir -p "$t/in" "$t/out" "$t/work"
+# (the backend's files copied first: a run ending meanwhile can't mix two runs' files)
+files=(proposals.json completed-proposals.json projects.json images.json)
+for f in "${files[@]}" site-data.json; do cp "$out/$f" "$t/in/" || exit 1; done
+OUTPUT_DIR=$t/out WORK=$t/work
+if ! site_from_data "$t/in/site-data.json" "$list" 2> "$t/log"; then
+    grep -v 'skipping ' "$t/log"
+    echo "site_from_data failed"
+    exit 1
+fi
+rc=0
+for f in "${files[@]}"; do
+    if cmp -s "$t/in/$f" "$t/out/$f"; then
+        echo "same: $f ($(wc -c < "$t/in/$f") bytes)"
+    else
+        echo "DIFFERS: $f"
+        diff "$t/in/$f" "$t/out/$f"
+        rc=1
+    fi
+done
+exit "$rc"
