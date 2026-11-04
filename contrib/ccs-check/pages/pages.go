@@ -307,17 +307,22 @@ type Checker struct {
 	slugs     map[string]bool
 	onion     string
 	viewkey   string
-	cache     map[string]*compiled
-	diag      int
-	max       int64
+	// the proposals in the newest commit fetched; the live site's addresses that bind (pinned),
+	// and the push's projects.json's (projects.go)
+	current     map[string]bool
+	pins, stage map[string]string
+	cache       map[string]*compiled
+	diag        int
+	max         int64
 }
 
 // MaxPage: a larger page is not read (held back)
 const MaxPage = 2 << 20
 
-// New: as pages_py's first lines (site, designs, bodies, list, viewkey, hosts, onion), and the
-// proposals' front matter (frontmatter.awk's lines, ":"-separated: front.go)
-func New(designs, bodies, lst, viewkey, hosts, onion, fronts string) (*Checker, error) {
+// New: as pages_py's first lines (site, designs, bodies, list, viewkey, hosts, onion), the
+// proposals' front matter (frontmatter.awk's lines, ":"-separated: front.go), and the live site
+// (its projects.json: the addresses its proposals have; "": none)
+func New(designs, bodies, lst, viewkey, hosts, onion, fronts, live string) (*Checker, error) {
 	// (2 MB at most, CCS_GATE_MAX if less: the largest page is under 200 kB, and matching one
 	// takes memory as it goes, about 130 MB a MB)
 	c := &Checker{onion: onion, viewkey: viewkey, cache: map[string]*compiled{}, diag: 10, max: MaxPage}
@@ -333,6 +338,11 @@ func New(designs, bodies, lst, viewkey, hosts, onion, fronts string) (*Checker, 
 	}
 	if c.fronts, err = readFronts(fronts); err != nil {
 		return nil, err
+	}
+	c.current = newest(fronts)
+	c.pins = map[string]string{}
+	if live != "" {
+		c.pins = c.pinned(addresses(live))
 	}
 	c.slugs = map[string]bool{}
 	seen := map[string]bool{}
@@ -1012,6 +1022,12 @@ func (d *design) check(rp, got string) (string, error) {
 			if !d.c.l.listed[addr] {
 				return "a donation box with an address that is not in the signed list (" + addr + ")", nil
 			}
+			// its proposal's own (projects.go)
+			if strings.HasPrefix(rp, "proposals/") {
+				if why := d.c.owner(strings.TrimSuffix(rp[len("proposals/"):], ".html")+".md", addr); why != "" {
+					return "a donation box with an address that is " + why, nil
+				}
+			}
 			// its QR code: the list's own file of that address (qr/<address>.png: the gate takes
 			// it only as its sum in the list's .qr.sha256), not another address's
 			if q, ok := cx.g["qr"]; ok && string(s[q[0]:q[1]]) != prefixOf(depth)+"qr/"+addr+".png" {
@@ -1092,6 +1108,7 @@ func (c *Checker) Run(site string, in io.Reader, w *bufio.Writer) error {
 	if err != nil {
 		return err
 	}
+	c.stage = addresses(site)
 	for _, rp := range strings.Split(string(all), "\x00") {
 		if rp == "" {
 			continue
@@ -1100,6 +1117,19 @@ func (c *Checker) Run(site string, in io.Reader, w *bufio.Writer) error {
 		st, err := os.Stat(p)
 		if err == nil && st.Size() > c.max {
 			fmt.Fprintf(w, "%s\t!a page over %d MB\n", p, c.max>>20)
+			w.Flush()
+			continue
+		}
+		if rp == "projects.json" {
+			why := "a projects.json that could not be read"
+			if b, err := os.ReadFile(p); err == nil {
+				why = c.projects(b)
+			}
+			if why != "" {
+				fmt.Fprintf(w, "%s\t!%s\n", p, why)
+			} else {
+				fmt.Fprintf(w, "%s\t=ok\n", p)
+			}
 			w.Flush()
 			continue
 		}

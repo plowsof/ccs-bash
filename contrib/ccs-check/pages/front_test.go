@@ -112,7 +112,7 @@ func TestFrontPage(t *testing.T) {
 	bodies, fronts := filepath.Join(tmp, "b.jsonl"), filepath.Join(tmp, "f.tsv")
 	os.WriteFile(bodies, []byte(`{"file":"p","body":"<p>Text</p>","milestones":[],"payouts":[]}`+"\n"), 0o644)
 	os.WriteFile(fronts, []byte("p.md\tfr\tA proposal\tsomeone\t2026 10 22\t10\t\t1\t0\tRust\x1fC++\n"), 0o644)
-	c, err := New(d, bodies, testList(t), "", "repo.example/ccs", "", fronts)
+	c, err := New(d, bodies, testList(t), "", "repo.example/ccs", "", fronts, "")
 	if err != nil {
 		t.Fatal(err)
 	}

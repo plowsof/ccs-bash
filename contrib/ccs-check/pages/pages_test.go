@@ -28,7 +28,7 @@ func check(t *testing.T, page string) string {
 	if err := os.WriteFile(filepath.Join(site, "index.html"), []byte(page), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	c, err := New("testdata/design", "", testList(t), "", "repo.example/ccs", "", "")
+	c, err := New("testdata/design", "", testList(t), "", "repo.example/ccs", "", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func TestReason(t *testing.T) {
 // no design: an error, not every page passed; a part that can be empty repeated (here a label,
 // the cards' tags): that page not checked, as re would order its tries otherwise (match.go, star)
 func TestRefusals(t *testing.T) {
-	c, err := New("", "", testList(t), "", "repo.example/ccs", "", "")
+	c, err := New("", "", testList(t), "", "repo.example/ccs", "", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestRefusals(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(site, "index.html"), []byte(page("Ideas", "")), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if c, err = New(d, "", testList(t), "", "repo.example/ccs", "", ""); err != nil {
+	if c, err = New(d, "", testList(t), "", "repo.example/ccs", "", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	b.Reset()
