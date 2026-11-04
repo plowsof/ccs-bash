@@ -106,23 +106,14 @@ func goal(a string) string {
 // day: "year month day" as site.jq's date shows it (mktime, then strftime "%B %-d, %Y"); "" for
 // none, or one not after 1970
 func day(ymd string) string {
-	f := strings.Fields(ymd)
-	if len(f) != 3 {
+	var y, m, d int
+	if n, _ := fmt.Sscanf(ymd, "%d %d %d", &y, &m, &d); n != 3 {
 		return ""
 	}
-	var n [3]int
-	for i, s := range f {
-		v, err := strconv.Atoi(s)
-		if err != nil {
-			return ""
-		}
-		n[i] = v
+	if t := time.Date(y, time.Month(m), d, 0, 0, 0, 0, time.UTC); t.Unix() > 0 {
+		return t.Format("January 2, 2006")
 	}
-	t := time.Date(n[0], time.Month(n[1]), n[2], 0, 0, 0, 0, time.UTC)
-	if t.Unix() <= 0 {
-		return ""
-	}
-	return t.Format("January 2, 2006")
+	return ""
 }
 
 // readFronts: frontmatter.awk's lines from each file (":"-separated, one a commit), by proposal
@@ -147,30 +138,23 @@ func readFronts(files string) (map[string][]*front, error) {
 				continue
 			}
 			x := strings.Split(line, "\t")
+			bad := errors.New("a line of frontmatter.awk's that can't be read")
 			if len(x) != 10 || !strings.HasSuffix(x[0], ".md") {
-				return nil, errors.New("a line of frontmatter.awk's that can't be read")
+				return nil, bad
 			}
 			m, err1 := strconv.Atoi(x[7])
 			d, err2 := strconv.Atoi(x[8])
 			if err1 != nil || err2 != nil {
-				return nil, errors.New("a line of frontmatter.awk's that can't be read")
+				return nil, bad
 			}
 			p := &front{layout: x[1], name: esc(nobidi(x[2])), author: esc(nobidi(x[3])), date: day(x[4]),
-				amount: goal(x[5]), milestones: m, done: d, jname: esc(x[2]), jauthor: esc(x[3])}
-			if x[6] != "" {
-				p.gitlab = esc(x[6])
-			}
+				amount: goal(x[5]), gitlab: esc(x[6]), milestones: m, done: d, jname: esc(x[2]), jauthor: esc(x[3])}
 			// tag_list: escaped, by slug (none without one), the first spelling of each
-			seen := map[string]bool{}
-			if x[9] != "" {
-				for _, g := range strings.Split(x[9], "\x1f") {
-					tag := esc(nobidi(g))
-					s := slug(tag)
-					if s == "" || seen[s] {
-						continue
-					}
-					seen[s] = true
-					p.tags = append(p.tags, ftag{tag, s, color(s)})
+			seen := map[string]bool{"": true}
+			for _, g := range strings.Split(x[9], "\x1f") {
+				if tag := esc(nobidi(g)); !seen[slug(tag)] {
+					seen[slug(tag)] = true
+					p.tags = append(p.tags, ftag{tag, slug(tag), color(slug(tag))})
 				}
 			}
 			name := strings.TrimSuffix(x[0], ".md")
@@ -222,15 +206,20 @@ func litq(c *ctx, i int, t string) int {
 }
 
 // value: a slot whose value is the proposal's own (the page's, or its card's: card), one of
-// its fronts' (a commit each); nothing matches when none is known
-func (d *design) value(card bool, depth int, of func(*front, int) string) node {
+// its fronts' (a commit each), of(f) as the page shows it; "" from of: else, if not nil (an
+// amount too large to check: any; no link in the front matter: the backend's). None known: no match
+func (d *design) value(card bool, of func(*front) string, otherwise node) node {
 	return func(c *ctx, i int, k func(int) bool) bool {
 		fs := c.page
 		if card {
 			fs = c.card
 		}
 		for _, f := range fs {
-			if e := litq(c, i, of(f, depth)); e >= 0 && k(e) {
+			if w := of(f); w == "" && otherwise != nil {
+				if otherwise(c, i, k) {
+					return true
+				}
+			} else if e := litq(c, i, w); e >= 0 && k(e) {
 				return true
 			}
 		}
@@ -238,93 +227,46 @@ func (d *design) value(card bool, depth int, of func(*front, int) string) node {
 	}
 }
 
-// labels: common.jq's labels (a card's) and tag_links (a page's, its links made relative)
-func (d *design) labels(f *front, depth int, links bool) string {
-	name := "label"
-	if links {
-		name = "label-link"
-	}
-	t, err := d.part(name)
-	if err != nil {
-		return "\x00" // (matches nothing)
-	}
+// fill: the design's part NAME filled once per item (common.jq's labels, tag_links, segments);
+// a part the design lacks matches nothing
+func (d *design) parts(n int, name func(int) string, v func(int) map[string]string) string {
 	var b strings.Builder
-	for _, g := range f.tags {
-		r, err := put(part(t), map[string]string{"tag": g.tag, "color": g.color, "href": "/explore/tag/" + uri(g.slug) + "/"})
-		if err != nil {
+	for i := 0; i < n; i++ {
+		t, err := d.part(name(i))
+		r, err2 := put(part(t), v(i))
+		if err != nil || err2 != nil {
 			return "\x00"
 		}
 		b.WriteString(r)
-	}
-	if links {
-		return rel(b.String(), depth)
-	}
-	return b.String()
-}
-
-// segs: common.jq's segments: a done part for each milestone done, the rest to do
-func (d *design) segsOf(f *front) string {
-	done, err1 := d.part("segment-done")
-	todo, err2 := d.part("segment-todo")
-	if err1 != nil || err2 != nil {
-		return "\x00"
-	}
-	var b strings.Builder
-	for i := 0; i < f.milestones; i++ {
-		if i < f.done {
-			b.WriteString(part(done))
-		} else {
-			b.WriteString(part(todo))
-		}
 	}
 	return b.String()
 }
 
 // fromFront: the slots a proposal's front matter gives, on its page (card false) or its card
 func (d *design) fromFront(s pats, card bool, depth int) {
-	v := func(of func(*front, int) string) node { return d.value(card, depth, of) }
-	s["name"] = v(func(f *front, _ int) string { return f.name })
-	s["author"] = v(func(f *front, _ int) string { return f.author })
-	s["date"] = v(func(f *front, _ int) string { return f.date })
-	// the goal; one too large for bash's arithmetic (over 9,223,372 XMR) any amount
-	s["amount"] = func(c *ctx, i int, k func(int) bool) bool {
-		fs := c.page
-		if card {
-			fs = c.card
-		}
-		for _, f := range fs {
-			if f.amount == "" {
-				if XMR(c, i, k) {
-					return true
-				}
-			} else if e := litq(c, i, f.amount); e >= 0 && k(e) {
-				return true
-			}
-		}
-		return false
+	v := func(of func(*front) string) node { return d.value(card, of, nil) }
+	s["name"] = v(func(f *front) string { return f.name })
+	s["author"] = v(func(f *front) string { return f.author })
+	s["date"] = v(func(f *front) string { return f.date })
+	s["amount"] = d.value(card, func(f *front) string { return f.amount }, XMR)
+	s["milestones"] = v(func(f *front) string { return strconv.Itoa(f.milestones) })
+	s["done"] = v(func(f *front) string { return strconv.Itoa(f.done) })
+	s["segments"] = v(func(f *front) string {
+		return d.parts(f.milestones, func(i int) string { return map[bool]string{true: "segment-done", false: "segment-todo"}[i < f.done] },
+			func(int) map[string]string { return nil })
+	})
+	tags := func(f *front, name string) string {
+		return d.parts(len(f.tags), func(int) string { return name }, func(i int) map[string]string {
+			g := f.tags[i]
+			return map[string]string{"tag": g.tag, "color": g.color, "href": "/explore/tag/" + uri(g.slug) + "/"}
+		})
 	}
-	s["milestones"] = v(func(f *front, _ int) string { return strconv.Itoa(f.milestones) })
-	s["done"] = v(func(f *front, _ int) string { return strconv.Itoa(f.done) })
-	s["segments"] = v(func(f *front, _ int) string { return d.segsOf(f) })
 	if card {
-		s["tags"] = v(func(f *front, _ int) string { return d.labels(f, depth, false) })
-	} else {
-		s["tag_links"] = v(func(f *front, depth int) string { return d.labels(f, depth, true) })
-		// its own link when its front matter has one; else the backend's (proposals.csv)
-		link := s["gitlab_url"]
-		s["gitlab_url"] = func(c *ctx, i int, k func(int) bool) bool {
-			for _, f := range c.page {
-				if f.gitlab != "" {
-					if e := litq(c, i, f.gitlab); e >= 0 && k(e) {
-						return true
-					}
-				} else if link(c, i, k) {
-					return true
-				}
-			}
-			return false
-		}
+		s["tags"] = v(func(f *front) string { return tags(f, "label") })
+		return
 	}
+	s["tag_links"] = v(func(f *front) string { return rel(tags(f, "label-link"), depth) })
+	s["gitlab_url"] = d.value(false, func(f *front) string { return f.gitlab }, s["gitlab_url"])
 }
 
 // cardURL: a card's link to its proposal's page, that proposal's fronts (of this stage) then
