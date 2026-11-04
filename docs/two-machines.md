@@ -178,7 +178,12 @@ what it is sent; it knows what a page may be. Each push, one at a time, it
      the address) is checked here too: each entry exactly site.jq's of its proposal's front matter
      (its name, author, date, stage, goal and link; any number only for contributions, raised and
      percentage), every key once and no other, an address of the signed list on one proposal only,
-     and the one the live site has for it.
+     and the one the live site has for it;
+   - `site-data.json` (what the web server is to build the site from itself, the design's
+     step 6; for now only checked): what only the backend knows, each proposal's subaddress
+     *index* (the signed list's line, never 0, one proposal's only, the live site's address for
+     it), merge request, dates and funds as ccs-bash writes them, and the ideas, their names and
+     authors plain text, their links the repository's merge requests; every key once, no other.
 
    A page not checked in time (5 minutes) or over 2 MB is held back: what isn't known good
    doesn't go live;
