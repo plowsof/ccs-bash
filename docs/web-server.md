@@ -100,7 +100,7 @@ ccs-front-hugo's **design** (its release zip: the pages, the parts they are fill
 stylesheets and images; installed by its sha256) and ccs-front-bash's **`lib/markdown.awk`** (265 lines: the gate renders each proposal
 from the repository itself and requires the page's text to be exactly that).
 
-The tests show each way around it, by name: `tests/gate.sh` (143 cases: every check, hostile
+The tests show each way around it, by name: `tests/gate.sh` (144 cases: every check, hostile
 tars, with this image as the web server), `tests/gate-image.sh`, `tests/web.sh` (its sshd,
 attacked), `contrib/ccs-check/build.sh test` and `fuzz` (the receiver: nothing written outside
 its folder, whatever the stream). [Reviewing](reviewing.md) walks each function.

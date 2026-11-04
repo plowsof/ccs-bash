@@ -692,6 +692,14 @@ if ! out=$(push) && [[ $(live) == "$last" ]] && on web "grep -q 'refused the pus
 else echo "$out"; on web 'tail -n 3 /var/log/ccs-gate.log'; fail "QR codes' sums not pinned"; fi
 on web "cp /tmp/qr.keep /etc/ccs-gate/subaddresses.txt.qr.sha256 && echo '3 $(addr 3)' >> /etc/ccs-gate/subaddresses.txt"
 on web "printf 'sha256 %s\nkey %040d\nqr %s\n' \"\$(sha256sum < /etc/ccs-gate/subaddresses.txt | cut -d' ' -f1)\" 0 \"\$(sha256sum < /etc/ccs-gate/subaddresses.txt.qr.sha256 | cut -d' ' -f1)\" > /etc/ccs-gate/subaddresses.txt.pin"   # the list above, pinned again: the pushes below are taken, not refused for it
+# review 11's I-1: an empty list, pinned, refuses every push (it would have let every reason through)
+on web "cp /etc/ccs-gate/subaddresses.txt /etc/ccs-gate/subaddresses.txt.pin /tmp/ && : > /etc/ccs-gate/subaddresses.txt \
+    && sed -i \"s/^sha256 .*/sha256 \$(sha256sum < /etc/ccs-gate/subaddresses.txt | cut -d' ' -f1)/\" /etc/ccs-gate/subaddresses.txt.pin && : > /var/log/ccs-gate.log"
+v=$((v + 1)); site "$v" "$(addr 2)"
+if ! out=$(push) && [[ $(live) == "$last" ]] && on web "grep -q 'refused the push: .*subaddresses.txt has no addresses' /var/log/ccs-gate.log"; then
+    ok "review 11 (I-1): an empty list, pinned: every push refused"
+else echo "$out"; on web 'tail -n 3 /var/log/ccs-gate.log'; fail "review 11 (I-1): an empty list"; fi
+on web 'cp /tmp/subaddresses.txt /tmp/subaddresses.txt.pin /etc/ccs-gate/'
 
 # the push can't delete, nor write outside its folder, nor bring anything but plain files: a tar
 # no backend makes (a link, a device, a path out, a name twice, a file under a page) refuses all
