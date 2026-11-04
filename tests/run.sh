@@ -1222,4 +1222,20 @@ done
 if jq -e 'length > 0 and all(.[]; (.raised_amount | type) == "number" and (.target_amount | type) == "number")' "$TEST_TMP/out/projects.json" > /dev/null; then
     echo "ok   /projects: raised_amount and target_amount are numbers, as ccs-back's"
 else echo "FAIL /projects: an amount that isn't a number"; status=1; fi
+# step 6: the site's JSON from site-data.json (lib/site-data.sh, as the web server is to build it)
+# is the run's own, byte for byte; the list here the run's own addresses by index
+sd=$TEST_TMP/from-data
+rm -rf "$sd" && mkdir -p "$sd/out" "$sd/work"
+jq -rn --slurpfile d "$TEST_TMP/out/site-data.json" --slurpfile p "$TEST_TMP/out/projects.json" '
+    ($p[0] | map({key: .filename, value: .address}) | from_entries) as $a
+    | $d[0].state | to_entries[] | select(.value.subaddr_index != null and $a[.key] != null) | "\(.value.subaddr_index) \($a[.key])"' > "$sd/list"
+if bash -c 'source "$1/../ccs-back.sh" && PROPOSALS_DIR=$2 OUTPUT_DIR=$3/out WORK=$3/work && site_from_data "$4" "$3/list"' \
+    _ "$here" "$FIXTURES/proposals" "$sd" "$TEST_TMP/out/site-data.json" 2> "$sd/log"; then
+    same=1
+    for f in proposals.json completed-proposals.json projects.json images.json; do
+        diff -u "$TEST_TMP/out/$f" "$sd/out/$f" || same=0
+    done
+    if ((same)); then echo "ok   step 6: the site's JSON from site-data.json is the run's own (proposals, completed, projects, images)"
+    else echo "FAIL step 6: the site's JSON from site-data.json differs from the run's"; status=1; fi
+else echo "FAIL step 6: site_from_data failed"; cat "$sd/log"; status=1; fi
 exit "$status"
