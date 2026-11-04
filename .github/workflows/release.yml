@@ -29,7 +29,7 @@ jobs:
       - name: the gate's image hash (a clean build, the same)
         run: |
           b=$(CHECK_DOCKERFILE=gate.Dockerfile container/check-pinned.sh clean 077 | sed -n 's/^id: //p')
-          [[ $(docker image inspect ccs-gate --format '{{.Id}}') == "$b" ]]
+          [[ $b == sha256:* && $(docker image inspect ccs-gate --format '{{.Id}}') == "$b" ]]
       - name: push to ghcr.io and make the release
         env:
           GH_TOKEN: ${{ github.token }}
