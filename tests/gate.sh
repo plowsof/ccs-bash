@@ -215,9 +215,14 @@ ok() { echo "ok   $1"; }
 fail() { echo "FAIL $1"; status=1; }
 # site N ADDRESS [QR [IDEA TITLE...]]: the backend's site, version N (the home page's count), a
 # proposal with ADDRESS in its donation box and the QR code qr/QR.png (default ADDRESS: the
-# list's file; none for an address not on it, as ccs-front-bash has none), the ideas, projects.json, the design's
+# list's file; none for an address not on it, as ccs-front-bash has none), the ideas, projects.json (the
+# proposal's entry as site.jq writes it: its front matter, ADDRESS), the design's
 # stylesheet and the signed list's files. Each version gets its own
 # file times (ccs-push sends by content: the times are only for the gate's own copy).
+# projects ADDRESS [TITLE]: projects.json, p.md's entry (its front matter: tests/gate.sh's repository)
+projects() {
+    printf '[{"address":"%s","author":"someone","contributions":0,"date":"October 22, 2026","percentage_funded":0,"raised_amount":0,"state":"FUNDING-REQUIRED","target_amount":10,"title":"%s","filename":"p.md","gitlab_url":null}]\n' "$1" "${2:-A proposal}"
+}
 qr64() { on backend "qrencode -s ${2:-10} -o - 'monero:$1' | base64 -w0"; }
 site() {
     local v=$1 a=$2 qr=${3:-$2}
@@ -225,7 +230,7 @@ site() {
     on backend "rm -rf /out && mkdir -p /out/assets /out/qr && cp /design/assets/style.css /out/assets/"
     on backend "cp /qr/$qr.png /out/qr/ 2> /dev/null || true"
     docker exec -e PENDING_NOTE="${PENDING_NOTE:-}" -e ONION="${ONION:-}" -e FUNDED="${FUNDED:-}" "$name-backend" python3 /gen.py /design /out "$v" "$a" "$qr" "$@"
-    on backend "echo '[{\"address\": \"$a\"}]' > /out/projects.json"
+    projects "$a" | put projects.json
     put subaddresses.txt < <(on web 'cat /etc/ccs-gate/subaddresses.txt')
     put subaddresses.txt.asc <<<sig
     put subaddresses.txt.key.asc <<<key
@@ -248,7 +253,7 @@ live() { on web "sed -n '/<!-- ccs:count fr -->/{n;p}' /var/lib/ccs-data/index.h
 livefile() { on web "cat '/var/lib/ccs-data/$1' 2> /dev/null || true"; }
 livepage() { livefile proposals/p.html; }
 
-site 1 "$(addr 1)"
+site 1 "$(addr 2)"   # (p's address from its first push on: the gate holds back another)
 if out=$(push) && [[ $(live) == 1 ]]; then ok "a push with the wallet's addresses, the design's pages filled, goes live"; else echo "$out"; on web 'tail -n 5 /var/log/ccs-gate.log'; fail "a good push"; fi
 # file modes don't go live: a page pushed 600 (a 403 for visitors, and no alert) is 644 there
 change index.html $'fr -->\n1\n' $'fr -->\n12\n'
@@ -270,7 +275,7 @@ site 2 "$(addr 9 B)"
 # The push fails (7), the web server's log says which and where, and so does its answer (held:
 # ccs-push says it, and sends that file again next time)
 rc=0; out=$(push) || rc=$?
-if ((rc)) && [[ $(live) == 2 && $(livepage) == *"$(addr 1)"* && $(livepage) != *"$(addr 9 B)"* ]] \
+if ((rc)) && [[ $(live) == 2 && $(livepage) == *"$(addr 2)"* && $(livepage) != *"$(addr 9 B)"* ]] \
     && on web "grep -q 'proposals/p.html: $(addr 9 B)' /var/log/ccs-gate.log"; then
     ok "an address that isn't the wallet's: the rest of the push live, that page keeps its last good copy, the push fails, which and where in the log"
     fake=$(addr 9 B)
@@ -466,8 +471,19 @@ v=$((v + 1)); site "$v" "$good"
 if push > /dev/null && [[ $(live) == "$v" ]]; then ok "review 5: the next good push after a folder pushed 300 goes live"; else on web 'tail -n 3 /var/log/ccs-gate.log'; fail "review 5: after a folder pushed 300, the next good push does not go live"; fi
 # ---- end review 5, low ----
 v=$((v + 1)); site "$v" "$good"
-put projects.json <<<"[{\"address\": \"$good\", \"title\": \"R&D notes\", \"url\": \"data:text/plain,x\"}]"
-passes "$v" projects.json "JSON with & and data: in its text" 'R&D'
+# projects.json: each entry its proposal's front matter, its address the one the live site has for it
+v=$((v + 1)); site "$v" "$good"; projects "$good" "R&amp;D notes" | put projects.json
+held "$v" projects.json "projects.json, a title that isn't its proposal's front matter" 'R&amp;D'
+v=$((v + 1)); site "$v" "$good"; on backend "sed -i 's/\"gitlab_url\":null/\"gitlab_url\":null,\"url\":\"https:\/\/evil.test\"/' /out/projects.json"
+held "$v" projects.json "projects.json, a key ccs-bash doesn't write" 'evil.test'
+v=$((v + 1)); site "$v" "$(addr 1)"
+rc=0; push > /dev/null || rc=$?
+if ((rc == 7)) && [[ $(live) == "$v" && $(livepage) == *"$good"* && $(livefile projects.json) == *"$good"* ]] \
+    && on web "grep -q 'proposals/p.html: !a donation box with an address that is its proposal.s address on the live site is another' /var/log/ccs-gate.log" \
+    && on web "grep -q 'projects.json: !projects.json, p.md: another address than the live site has for it' /var/log/ccs-gate.log"; then
+    ok "another of the list's addresses for a proposal (a page and projects.json): held back, its own stays"
+else echo "push exit $rc, live $(live)"; on web 'tail -n 4 /var/log/ccs-gate.log'; fail "another of the list's addresses for a proposal"; fi
+v=$((v + 1)); site "$v" "$good"
 # /projects, as JSON: its readers decode \u escapes, and read a key twice as its last
 v=$((v + 1)); site "$v" "$good"
 put projects.json <<<"[{\"address\": \"${fake:0:1}\\u00$(printf '%x' "'${fake:1:1}")${fake:2}\"}]"
