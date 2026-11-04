@@ -31,8 +31,9 @@ address and QR code are the wallet's and the list's) or put an address on a page
 money stays in the CCS wallet.
 
 Not: what only the backend knows, a total or percentage that is wrong but a number, one of the
-wallet's subaddresses on another proposal's page (the money stays in the wallet), a proposal's
-stage or dates as the backend read them ([in full](two-machines.md#the-gate-the-web-server-checks-every-page),
+wallet's subaddresses on another proposal's page (the money stays in the wallet), the dates only
+the backend keeps; a proposal's name, author, goal, stage and tags are its front matter's, read
+from the repository by the gate itself ([in full](two-machines.md#the-gate-the-web-server-checks-every-page),
 "What it can't see"). Nor anything once this machine itself is taken over: then ccs-watch (the
 backend fetching the site as a visitor) and the Verify page (visitors checking an address in a
 view-only copy of the wallet) are what's left.
@@ -82,23 +83,24 @@ patched (`govulncheck` in CI, for Go itself).
 
 ## The code to read
 
-About 3,600 lines, all of this repository's own:
+About 4,300 lines, all of this repository's own:
 
 | File | Lines | What it is |
 |---|---|---|
-| [`contrib/ccs-receive`](../contrib/ccs-receive) | 692 | the gate: takes only `receive`, receives into staging, runs the checks, copies only what passed live, tells the backend what it held back, alerts; the heartbeat |
-| [`contrib/ccs-check/`](../contrib/ccs-check) (Go, tests aside) | 2,275 | `receive` and `copy` (`push/push.go`: the push's tar, plain files only, at clean paths, within limits), `pages` (`pages/pages.go`, `pages/match.go`: a page is the design's, filled), `scan` (`scan/scan.go`, `addr/addr.go`: every address, by Monero's checksum) |
+| [`contrib/ccs-receive`](../contrib/ccs-receive) | 725 | the gate: takes only `receive`, receives into staging, runs the checks, copies only what passed live, tells the backend what it held back, alerts; the heartbeat |
+| [`contrib/ccs-check/`](../contrib/ccs-check) (Go, tests aside) | 2,706 | `receive` and `copy` (`push/push.go`: the push's tar, plain files only, at clean paths, within limits), `pages` (`pages/pages.go`, `pages/match.go`: a page is the design's, filled), `scan` (`scan/scan.go`, `addr/addr.go`: every address, by Monero's checksum) |
 | `contrib/ccs-check/build.sh` | 71 | how it is built and tested (StageX's Go, no network) |
 | [`container/gate.Dockerfile`](../container/gate.Dockerfile) | 100 | what goes in the image, Tor built from its source among it |
 | [`contrib/docker/web/`](../contrib/docker/web) (`compose.yml`, `sshd_config`, `init`, `env.example`, `Caddyfile`, `torrc`) | 352 | how it runs: one user each, the forced command, read-only, sshd's three capabilities, limits; what Caddy serves and how, the onion |
 | `container/build.sh`, `verify-images.sh`, `fetch.sh`, `verify.sh` | 206 | the build: the pins' signatures and sums checked |
+| [`lib/frontmatter.awk`](../lib/frontmatter.awk) | 177 | ccs-bash's reader of a proposal's front matter, in the gate's image: the gate runs it on the repository it fetched, and a page's name, author, date, goal, stage, counts, link and tags must be what it reads |
 
 And what the gate checks pages against, from the other two repositories:
 ccs-front-hugo's **design** (its release zip: the pages, the parts they are filled with, the
 stylesheets and images; installed by its sha256) and ccs-front-bash's **`lib/markdown.awk`** (265 lines: the gate renders each proposal
 from the repository itself and requires the page's text to be exactly that).
 
-The tests show each way around it, by name: `tests/gate.sh` (140 cases: every check, hostile
+The tests show each way around it, by name: `tests/gate.sh` (143 cases: every check, hostile
 tars, with this image as the web server), `tests/gate-image.sh`, `tests/web.sh` (its sshd,
 attacked), `contrib/ccs-check/build.sh test` and `fuzz` (the receiver: nothing written outside
 its folder, whatever the stream). [Reviewing](reviewing.md) walks each function.
