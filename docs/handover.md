@@ -38,7 +38,7 @@ new set replaces the row (earlier sets: this file's history, and ccs-sigs).
 
 | Set | ccs-bash | ccs-front-bash | ccs-front-hugo | Running on |
 |---|---|---|---|---|
-| 2026-11-04 | v0.2.49 | v0.1.27 | v0.1.29 | [ccs.monerodevs.org](https://ccs.monerodevs.org), in mirror mode, with its onion and its feed: the backend compose and the web server compose, the site now served by its `www` (Caddy) and `tor`, each machine verifying with its own `trusted-signers` (throwaway-49, ccs-sigs #52) |
+| 2026-11-04 | v0.2.50 | v0.1.27 | v0.1.29 | [ccs.monerodevs.org](https://ccs.monerodevs.org), in mirror mode, with its onion and its feed: the backend compose and the web server compose (its gate default-deny in Go, its image busybox's), the site served by its `www` (Caddy) and `tor`, each machine verifying with its own `trusted-signers` (throwaway-50, ccs-sigs #53) |
 
 Each is reproducible, and attested in [ccs-sigs](https://github.com/plowsof/ccs-sigs) by those who
 rebuilt it: on the testnet so far by one throwaway key a set (one person; the CCS's should be two
