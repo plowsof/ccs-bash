@@ -1,7 +1,6 @@
-// ccs-check: the gate's checks (contrib/ccs-receive) in Go, one static binary in place of its
-// Python blocks (docs/python.md). Each subcommand takes the command line of the block it
-// replaces and prints the same lines ("file<TAB>ok", "file<TAB>!reason", "file<TAB>address"),
-// so ccs-receive changes one line per check. Built by StageX's Go (build.sh, gate.Dockerfile)
+// ccs-check: the gate's checks (contrib/ccs-receive) in Go, one static binary. Each subcommand
+// prints its verdicts as lines ("file<TAB>=ok", "file<TAB>!reason", "file<TAB>address"); gate
+// combines them (gate/gate.go). Built by StageX's Go (build.sh, gate.Dockerfile)
 // from Go's standard library alone (no module): no network, no cgo.
 package main
 
@@ -10,8 +9,8 @@ import (
 	"os"
 )
 
-// the subcommands, each ported from its Python block (ccs-receive) in turn; one not yet ported
-// exits 2, which ccs-receive treats as a check that couldn't run (held back)
+// the subcommands; an unknown one exits 2, which the gate treats as a check that couldn't run
+// (held back)
 var commands = map[string]func(args []string) int{}
 
 func main() {

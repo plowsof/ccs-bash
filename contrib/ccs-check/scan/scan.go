@@ -1,5 +1,4 @@
-// Package scan: the addresses in the pages, the feed and the JSON, as ccs-receive's scan_py and
-// json_py read them: each file's lines "file<TAB>address", "file<TAB>!reason", and for a page's
+// Package scan: the addresses in the pages, the feed and the JSON: each file's lines "file<TAB>address", "file<TAB>!reason", and for a page's
 // data: images "file<TAB>?qr<TAB>base64" (held back: the site's QR codes are files, qr/).
 package scan
 
@@ -95,7 +94,7 @@ func entity(e string) string {
 	return "\x01"
 }
 
-// Pages: scan_py. A page, feed or JSON as text, read as bytes: it must start as a page or JSON
+// Pages: a page, feed or JSON as text, read as bytes: it must start as a page or JSON
 // does (<, [ or {), or a browser shows it as an image; a byte that isn't ASCII, or a control
 // character, read twice (dropped, and as a space); entities as a browser reads them (&#56; is 8)
 func Pages(files []string, w io.Writer) error {
@@ -170,9 +169,9 @@ func emit(w io.Writer, f string, out map[string]bool) {
 	}
 }
 
-// JSON: json_py. Each JSON file's strings as a reader of it gets them (\u escapes read, every key
+// JSON: each JSON file's strings as a reader of it gets them (\u escapes read, every key
 // and value, a key twice both), their addresses read as the pages' text is: a character that
-// isn't ASCII dropped, and again as a space. Its first 16 MB, as json_py.
+// isn't ASCII dropped, and again as a space. Its first 16 MB.
 func JSON(files []string, w io.Writer) error {
 	c := addr.New()
 	for _, f := range files {

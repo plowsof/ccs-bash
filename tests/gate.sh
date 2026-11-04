@@ -434,20 +434,20 @@ rc=0; push > /dev/null || rc=$?
 if ((rc == 7)) && [[ $(live) == "$v" && $(livefile ideas/index.html) != *"${taddr:48}"* ]] && on web "grep -q 'ideas/index.html: $taddr' /var/log/ccs-gate.log"; then
     ok "held back: review 9: an address split between two tag labels, found"
 else echo "push exit $rc, live $(live)"; on web 'tail -n 3 /var/log/ccs-gate.log'; fail "review 9: an address split between two tag labels"; fi
-# ... and in projects.json, its groups split by a JSON escaped space (json_py reads no groups; scan_py reads the raw text)
+# ... and in projects.json, its groups split by a JSON escaped space (ccs-check json reads no groups; ccs-check scan reads the raw text)
 v=$((v + 1)); site "$v" "$good"
 put projects.json <<<"[{\"address\": \"$good\", \"title\": \"Send to $(tgroups "$(printf '\x5cu0020')")\"}]"
 held "$v" projects.json "review 5: an address in groups split by \\u0020 in a projects.json string" 'Send to'
 on web "grep projects.json /var/log/ccs-gate.log | tail -n 1"
 # cost: 100 ideas titled "AAAA AAAA ..." (255 characters, anyone's): every window of the joined
-# run passes valid()'s network-byte check, so each costs a Keccak in Python; scan_py has 120 s for
-# every page of the site together, and past that holds back every page
+# run passes valid()'s network-byte check, so each costs a Keccak; each file has its own budget
+# (20 s, 3000 checksums: past it that file alone is held), and the gate 900 s for the push
 v=$((v + 1)); mapfile -t many < <(for i in $(seq 100); do printf 'AAAA %.0s' {1..51}; echo; done)
 site "$v" "$good" "$good" "${many[@]}"
 start=$SECONDS; rc=0; push > /dev/null || rc=$?
-if ((SECONDS - start < 30)) && ((rc == 0)); then ok "review 5: 100 ideas titled AAAA AAAA...: checked in $((SECONDS - start))s"; else fail "review 5: 100 ideas titled AAAA AAAA... (anyone's): the push took $((SECONDS - start))s (exit $rc); scan_py's 120 s is for every page together"; fi
-# ... the same on a web server with a third of a CPU (node2 also runs monerod and more): past
-# scan_py's 120 s every page of the push is held back, the home page too
+if ((SECONDS - start < 30)) && ((rc == 0)); then ok "review 5: 100 ideas titled AAAA AAAA...: checked in $((SECONDS - start))s"; else fail "review 5: 100 ideas titled AAAA AAAA... (anyone's): the push took $((SECONDS - start))s (exit $rc); the gate's 900 s is for the whole push"; fi
+# ... the same on a web server with a third of a CPU (node2 also runs monerod and more): the
+# home page still goes live (only the ideas page can run out of its budget)
 docker update --cpus 0.33 "$name-web" > /dev/null
 v=$((v + 1)); site "$v" "$good" "$good" "${many[@]}"
 start=$SECONDS; rc=0; push > /dev/null || rc=$?

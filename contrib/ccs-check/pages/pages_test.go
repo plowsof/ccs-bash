@@ -79,7 +79,7 @@ func TestReason(t *testing.T) {
 }
 
 // no design: an error, not every page passed; a part that can be empty repeated (here a label,
-// the cards' tags): that page not checked, as re would order its tries otherwise (match.go, star)
+// the cards' tags): that page not checked (match.go, star)
 func TestRefusals(t *testing.T) {
 	c, err := New("", "", testList(t), "", "repo.example/ccs", "", "", "")
 	if err != nil {
@@ -108,7 +108,22 @@ func TestRefusals(t *testing.T) {
 	if err := c.Run(site, strings.NewReader("index.html\x00"), w); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(b.String(), "could not be checked (error)") {
+	if !strings.Contains(b.String(), "could not be checked (a pattern that can't be matched)") {
 		t.Errorf("an empty label: %q", b.String())
+	}
+}
+
+// markdown.awk's lines end at \n alone: a milestone's name with a line or paragraph separator
+// (U+2028, U+2029) or a NEL in it, raw in its JSON, is read, not one line cut in two that
+// stopped every page's check
+func TestBodiesSeparators(t *testing.T) {
+	f := filepath.Join(t.TempDir(), "b.jsonl")
+	line := `{"file":"p","body":"<p>x</p>\n","milestones":[["One` + "  \u0085" + `x","1",""]],"payouts":[]}` + "\n"
+	if err := os.WriteFile(f, []byte(line), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	md, err := readBodies(f)
+	if err != nil || len(md["p"]) != 1 || !strings.Contains(md["p"][0].milestones, "One  \u0085x") {
+		t.Errorf("%v %q", err, md)
 	}
 }

@@ -1,4 +1,4 @@
-// Package addr: Monero addresses as ccs-receive's check_py read them: base58 in Monero's blocks,
+// Package addr: Monero addresses: base58 in Monero's blocks,
 // the network's prefix, the Keccak-256 checksum; and addresses written in groups ("4A9b xZq3"),
 // kept only where the checksum says they are one, within a budget of checksums and of time.
 package addr
@@ -25,7 +25,7 @@ var rc = [24]uint64{1, 0x8082, 0x800000000000808a, 0x8000000080008000, 0x808b, 0
 	0x800000008000000a, 0x8000000080008081, 0x8000000000008080, 0x80000001, 0x8000000080008008}
 var rot = [5][5]int{{0, 36, 3, 41, 18}, {1, 44, 10, 45, 2}, {62, 6, 43, 15, 61}, {28, 55, 25, 21, 56}, {27, 20, 39, 8, 14}}
 
-// Keccak256: Keccak-256 as Monero has it (the original padding, not SHA-3's), as check_py's
+// Keccak256: Keccak-256 as Monero has it (the original padding, not SHA-3's)
 func Keccak256(b []byte) [32]byte {
 	p := append(append([]byte{}, b...), 1)
 	for len(p)%136 != 0 {
@@ -76,7 +76,7 @@ func Keccak256(b []byte) [32]byte {
 var size = [12]int{0, -1, 1, 2, -1, 3, 4, 5, -1, 6, 7, 8}
 
 // B58: base58 as Monero has it, blocks of 11 characters for 8 bytes; ok false for a block of a
-// length none has, or a value over its bytes (s: base58 characters only, as check_py's callers)
+// length none has, or a value over its bytes (s: base58 characters only)
 func B58(s string) ([]byte, bool) {
 	var out []byte
 	for i := 0; i < len(s); i += 11 {
@@ -108,8 +108,8 @@ func B58(s string) ([]byte, bool) {
 // addresses of mainnet, testnet and stagenet
 var nets = map[byte]bool{18: true, 19: true, 24: true, 25: true, 36: true, 42: true, 53: true, 54: true, 63: true}
 
-// Checker: a budget of checksums and of time (check_py's spent), reset per file by Start, and
-// the checksums already made (kept across files, as check_py's seen_valid: one seen again is free)
+// Checker: a budget of checksums and of time reset per file by Start, and
+// the checksums already made (kept across files: one seen again is free)
 type Checker struct {
 	Budget int
 	Secs   time.Duration
@@ -118,7 +118,7 @@ type Checker struct {
 	seen   map[string]bool
 }
 
-// New: the budget from CCS_GATE_KECCAK (3000) and CCS_GATE_SECS (20), as check_py
+// New: the budget from CCS_GATE_KECCAK (3000) and CCS_GATE_SECS (20)
 func New() *Checker {
 	c := &Checker{Budget: 3000, Secs: 20 * time.Second, seen: map[string]bool{}}
 	if v, err := strconv.Atoi(os.Getenv("CCS_GATE_KECCAK")); err == nil {
@@ -166,7 +166,7 @@ var spaces = regexp.MustCompile(`\s+`)
 var notB58 = regexp.MustCompile(`[^1-9A-HJ-NP-Za-km-z]`)
 
 // Grouped: the addresses written in groups in t (ASCII), joined, each 95 or 106 characters
-// anywhere in a group's run that its checksum says is one, as check_py's grouped: added to out
+// anywhere in a group's run that its checksum says is one: added to out
 // only when all of t is read (past the budget, none of t's)
 func (c *Checker) Grouped(t string, out map[string]bool) error {
 	found := map[string]bool{}
