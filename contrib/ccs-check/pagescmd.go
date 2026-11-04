@@ -14,9 +14,9 @@ func init() { commands["pages"] = pagesCmd }
 // pages SITE DESIGNS BODIES LIST VIEWKEY HOSTS ONION FRONTS LIVE < pages (NUL-separated, relative
 // to SITE, projects.json too; FRONTS: frontmatter.awk's lines, a file a commit, ":"-separated;
 // LIVE: the live site, its projects.json the addresses its proposals have):
-// as pages_py, "page<TAB>=ok" for each page that passes (a donation box's QR code
-// qr/<its address>.png); else "page<TAB>!reason". Exit 2, nothing printed, if the
-// list, the proposals' renderings or a design can't be read (pages_py stopped there too).
+// "page<TAB>=ok" for each page that passes (a donation box's QR code qr/<its address>.png);
+// else "page<TAB>!reason". Exit 2, nothing printed, if the list, the proposals' renderings or a
+// design can't be read.
 func pagesCmd(args []string) int {
 	if len(args) != 9 {
 		fmt.Fprintln(os.Stderr, "usage: ccs-check pages SITE DESIGNS BODIES LIST VIEWKEY HOSTS ONION FRONTS LIVE < pages")
