@@ -104,11 +104,13 @@ refuse() {
 # and value, a key twice both), their addresses as "file<TAB>address" lines, read as the pages'
 # text is: a character that isn't ASCII dropped (it mustn't split an address), and again as a
 # space (it mustn't join one to its neighbour); "file<TAB>!reason" if it isn't JSON.
-# ccs-check pages SITE DESIGNS BODIES LIST VIEWKEY HOSTS ONION < pages (NUL-separated, relative to SITE): each must
+# ccs-check pages SITE DESIGNS BODIES LIST VIEWKEY HOSTS ONION FRONTS LIVE < pages (NUL-separated, relative to SITE): each must
 # be one of the design's own, every region filled with the design's parts and every {{slot}} with a
 # value of its kind, as ccs-front-bash fills them; a proposal's text, milestones and payouts exactly
 # what markdown.awk makes of its file; a donation box one address of the signed list, its QR code
-# that address's qr/<address>.png. DESIGNS:
+# that address's qr/<address>.png, and its proposal's (the one LIVE's projects.json has for it; for a
+# proposal new to the site, SITE's, no other proposal's); projects.json, each entry its
+# proposal's front matter, its address its own (pages/projects.go). DESIGNS:
 # unpacked release zips, ":"-separated (any one will do); BODIES: markdown.awk's lines,
 # ":"-separated (one file per commit of the proposals, and markdown.awk); LIST: the signed list (its
 # .pin beside it); VIEWKEY: its .viewkey or ""; HOSTS: where a link to a proposal may go (a host, or
@@ -287,7 +289,7 @@ fronts() {
 pages() {
     local designs='' d b vk='' out file tag html=()
     local -A ok=()
-    for file in "$@"; do [[ $file == *.html ]] && html+=("${file#"$staging"/}"); done
+    for file in "$@"; do [[ $file == *.html || $file == "$staging/projects.json" ]] && html+=("${file#"$staging"/}"); done
     ((${#html[@]})) || return 0
     # (releases only, design/vX.Y.Z: a build of the design's of no release, left there, isn't one)
     for d in "$conf"/design/v*/; do [[ ${d%/} =~ /v[0-9]+\.[0-9]+\.[0-9]+$ && -d $d/parts ]] && designs+=${designs:+:}${d%/}; done
@@ -304,7 +306,7 @@ pages() {
     [[ $onion =~ ^[a-z2-7]{56}\.onion$ ]] || onion=
     out=$(mktemp)
     printf '%s\0' "${html[@]}" \
-        | timeout 300 ccs-check pages "$staging" "$designs" "$b" "$list" "$vk" "$hosts" "$onion" "$f" > "$out" 2> /dev/null || true
+        | timeout 300 ccs-check pages "$staging" "$designs" "$b" "$list" "$vk" "$hosts" "$onion" "$f" "$live" > "$out" 2> /dev/null || true
     while IFS=$'\t' read -r file tag; do
         case $tag in
             =ok) [[ ${ok[$file]:-} == no ]] || ok[$file]=1 ;;
