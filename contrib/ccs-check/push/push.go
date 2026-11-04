@@ -233,7 +233,7 @@ func Copy(src, dst string, del bool) error {
 			if err != nil {
 				return err
 			}
-			if terr == nil && st.Mode().IsRegular() && st.Size() == si.Size() && (st.ModTime().Equal(si.ModTime()) || same(p, t)) {
+			if terr == nil && st.Mode().IsRegular() && st.Size() == si.Size() && (st.ModTime().Equal(si.ModTime()) || Same(p, t)) {
 				// (the same bytes, sent again: its time made src's, nothing rewritten)
 				if err := os.Chtimes(t, si.ModTime(), si.ModTime()); err != nil {
 					return err
@@ -294,8 +294,8 @@ func Copy(src, dst string, del bool) error {
 	})
 }
 
-// same: a and b hold the same bytes
-func same(a, b string) bool {
+// Same: a and b hold the same bytes
+func Same(a, b string) bool {
 	fa, err := os.Open(a)
 	if err != nil {
 		return false
