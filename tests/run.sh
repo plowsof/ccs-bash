@@ -731,6 +731,17 @@ if mirror7 $((had + 5)) && grep -q "^\"new-fund.md\",[^,]*,$((had + 5))," "$m7/s
 else
     echo "FAIL mirror: an address not created yet"; tail -n 3 "$m7/log"; cat "$m7/state/proposals.csv"; status=1
 fi
+# a feed that isn't a list of projects: no new addresses this run, its log quoting jq (busybox's
+# head has no -c)
+mirror7 1 > /dev/null || true
+printf '{"data": 5}\n' > "$m7/feed.json"
+bash -c 'source "$1/../ccs-back.sh" && source "$1/stubs.sh" && main "$2"' _ "$here" "$m7/ccs.conf" 2> "$m7/log" || true
+if grep -q "MIRROR_URL's answer isn't a list of projects: .*not a list of projects" "$m7/log" \
+    && grep -q "MIRROR_URL not answering: no new addresses this run" "$m7/log"; then
+    echo "ok   mirror: a feed that isn't a list of projects: no new addresses, the log quoting jq"
+else
+    echo "FAIL mirror: a feed that isn't a list of projects"; tail -n 3 "$m7/log"; status=1
+fi
 # The feed writes "&" as "&amp;" (ccs.getmonero.org's does), the front matter as "&": the same
 # proposal. Two in the feed of one title, author and day: each given the one whose subaddress the
 # wallet labels with its file (an earlier mirror's labels), not neither.
