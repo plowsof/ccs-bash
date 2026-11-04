@@ -117,13 +117,13 @@ func Run(c Config, w io.Writer) (int, int, error) {
 			if c.Full || changed || held[rel] {
 				texts = append(texts, p)
 				r.needs(p, "scan")
-				if strings.HasSuffix(rel, ".html") || rel == "projects.json" {
+				if strings.HasSuffix(rel, ".html") || rel == "projects.json" || rel == "site-data.json" {
 					r.needs(p, "pages")
 				}
 			}
 		}
 		switch {
-		case !changed, strings.HasSuffix(rel, ".html"), rel == "projects.json":
+		case !changed, strings.HasSuffix(rel, ".html"), rel == "projects.json", rel == "site-data.json":
 			// (live already, or its checks above)
 		case rel == "feed.xml":
 			r.needs(p, "feed")

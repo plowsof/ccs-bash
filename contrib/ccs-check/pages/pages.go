@@ -129,6 +129,7 @@ func put(t string, v map[string]string) (string, error) {
 // fingerprint, as check_addresses shows them on Verify
 type list struct {
 	listed    map[string]bool
+	index     map[string]string // an address by its index
 	main, fpr string
 	net       string
 }
@@ -138,12 +139,13 @@ func readList(lst string) (*list, error) {
 	if err != nil {
 		return nil, err
 	}
-	l := &list{listed: map[string]bool{}}
+	l := &list{listed: map[string]bool{}, index: map[string]string{}}
 	found := false
 	for _, line := range strings.Split(t, "\n") {
 		r := strings.Fields(line)
 		if len(r) >= 2 {
 			l.listed[r[1]] = true
+			l.index[r[0]] = r[1]
 		}
 		if len(r) >= 2 && r[0] == "0" && !found {
 			l.main, found = r[1], true
@@ -1051,10 +1053,12 @@ func (c *Checker) Run(site string, in io.Reader, w *bufio.Writer) error {
 			w.Flush()
 			continue
 		}
-		if rp == "projects.json" {
-			why := "a projects.json that could not be read"
-			if b, err := os.ReadFile(p); err == nil {
+		if rp == "projects.json" || rp == "site-data.json" {
+			why := "a " + rp + " that could not be read"
+			if b, err := os.ReadFile(p); err == nil && rp == "projects.json" {
 				why = c.projects(b)
+			} else if err == nil {
+				why = c.siteData(b)
 			}
 			if why != "" {
 				fmt.Fprintf(w, "%s\t!%s\n", p, why)
