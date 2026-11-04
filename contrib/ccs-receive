@@ -551,6 +551,10 @@ touch "$state/last-push" 2> /dev/null || true   # the backend's heartbeat (--hea
 list=$conf/subaddresses.txt
 [[ -f $list && $(sha256sum < "$list" | cut -d' ' -f1) == "$(sed -n 's/^sha256 *//p' "$list.pin" 2> /dev/null)" ]] \
     || refuse "$list is not the list $list.pin names" list "its signed list isn't the one its .pin names"
+# and it has addresses (each line's second word): a pinned empty list would leave the gate
+# nothing to hold an address against (review 11's I-1)
+awk '$2 ~ /^[1-9A-HJ-NP-Za-km-z]+$/ && length($2) == 95 { n++ } END { exit !n }' "$list" \
+    || refuse "$list has no addresses" list "its signed list has no addresses"
 # its QR codes' sums (tools/make-qr.sh), the .pin's qr line: what a qr/<address>.png must be
 [[ -f $list.qr.sha256 && $(sha256sum < "$list.qr.sha256" | cut -d' ' -f1) == "$(sed -n 's/^qr *//p' "$list.pin" 2> /dev/null)" ]] \
     || refuse "$list.qr.sha256 is not the QR codes' sums $list.pin names (its qr line)" qrsums "its signed list's QR codes' sums aren't the ones its .pin names"
@@ -604,9 +608,13 @@ else
 fi
 say "checking ${#files[@]} of ${#all[@]} pages and JSON files${full:+ (all of them: the list, design, markdown.awk, proposals, gate or day changed)}"
 
-# the list's addresses, then the allowed file's (first word of each line; # comments)
-bad=$( { kinds; scan "${files[@]}"; pages "${files[@]}"; changes; } | awk -F '\t' 'NR == FNR { if ($1 !~ /^#/ && NF) ok[$1] = 1; next } !($2 in ok)' \
-    <(cut -d' ' -f2 "$list"; awk '{ print $1 }' "$conf/allowed" 2> /dev/null) - | sort -u)
+# the list's addresses, then the allowed file's (first word of each line; # comments), read
+# before the checks' lines and apart from them: none read, and every line is held, not passed
+# (NR == FNR took the checks' lines for addresses when there were none: review 11's I-1)
+bad=$( { kinds; scan "${files[@]}"; pages "${files[@]}"; changes; } \
+    | awk -F '\t' -v okf=<(cut -d' ' -f2 "$list"; awk '{ print $1 }' "$conf/allowed" 2> /dev/null) \
+        'BEGIN { while ((getline l < okf) > 0) if (l !~ /^#/ && l != "") ok[l] = 1; close(okf) } !($2 in ok)' \
+    | sort -u)
 # A proposal taken out of the repository (troubleshooting.md, "Remove a proposal"): its page is
 # still live, and the push account can't delete it, so every push after would hold it back and
 # fail. It goes from the live site, with its images/<name>/, when the repository was fetched just
