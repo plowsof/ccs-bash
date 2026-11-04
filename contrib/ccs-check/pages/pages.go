@@ -1,8 +1,7 @@
 // Package pages: each page must be one of the design's own, every region filled with the
 // design's parts and every {{slot}} with a value of its kind, as ccs-front-bash fills them; a
 // proposal's text, milestones and payouts exactly what markdown.awk makes of its file; a
-// donation box one address of the signed list. ccs-receive's pages_py, in the same order, its
-// regexes as match.go's nodes.
+// donation box one address of the signed list. Its patterns are match.go's nodes.
 package pages
 
 import (
@@ -22,45 +21,34 @@ import (
 	"unicode/utf8"
 )
 
-// pyError: an exception of pages_py's, by the name its reason shows ("... (FileNotFoundError)")
-type pyError struct{ name string }
+// failed: why a page couldn't be checked, as its reason shows it ("... (not UTF-8)")
+type failed string
 
-func (e pyError) Error() string { return e.name }
+func (e failed) Error() string { return string(e) }
 
-// keyError: a part or slot the design has none of (pages_py's KeyError: str() quotes it)
+// keyError: a part or slot the design has none of, quoted
 type keyError struct{ key string }
 
 func (e keyError) Error() string { return "'" + e.key + "'" }
 
-// read: the file as UTF-8, or the exception pages_py's read would have raised
+// read: the file as UTF-8, or why not
 func read(p string) (string, error) {
 	b, err := os.ReadFile(p)
 	if err != nil {
 		switch {
 		case errors.Is(err, fs.ErrNotExist):
-			return "", pyError{"FileNotFoundError"}
+			return "", failed("no such file")
 		case errors.Is(err, syscall.EISDIR):
-			return "", pyError{"IsADirectoryError"}
+			return "", failed("a folder")
 		case errors.Is(err, fs.ErrPermission):
-			return "", pyError{"PermissionError"}
+			return "", failed("not readable")
 		}
-		return "", pyError{"OSError"}
+		return "", failed("not readable")
 	}
 	if !utf8.Valid(b) {
-		return "", pyError{"UnicodeDecodeError"}
+		return "", failed("not UTF-8")
 	}
 	return string(b), nil
-}
-
-// pyJoin: os.path.join(a, b): b itself if it is absolute
-func pyJoin(a, b string) string {
-	if strings.HasPrefix(b, "/") {
-		return b
-	}
-	if a == "" || strings.HasSuffix(a, "/") {
-		return a + b
-	}
-	return a + "/" + b
 }
 
 var (
@@ -210,7 +198,7 @@ func readBodies(files string) (map[string][]body, error) {
 		if err != nil {
 			return nil, err
 		}
-		for _, line := range splitlines(t) {
+		for _, line := range strings.Split(t, "\n") {
 			if line == "" {
 				continue
 			}
@@ -221,10 +209,10 @@ func readBodies(files string) (map[string][]body, error) {
 				Payouts    json.RawMessage `json:"payouts"`
 			}
 			if err := json.Unmarshal([]byte(line), &j); err != nil || j.File == nil || j.Body == nil {
-				return nil, errors.New("a line of markdown.awk's that pages_py could not read")
+				return nil, errors.New("a line of markdown.awk's that can't be read")
 			}
 			b := body{strings.ReplaceAll(*j.Body, "\x01", ""), orEmpty(j.Milestones), orEmpty(j.Payouts)}
-			// (a set in pages_py: the same rendering from two commits once)
+			// (the same rendering from two commits once)
 			dup := false
 			for _, o := range md[*j.File] {
 				dup = dup || o == b
@@ -244,27 +232,28 @@ func orEmpty(m json.RawMessage) string {
 	return string(m)
 }
 
-// rows: markdown.awk's milestones or payouts, each a list of strings (another shape: the
-// exception pages_py would have met)
+// rows: markdown.awk's milestones or payouts, each a list of at least n strings, or an error
+var badRows = failed("markdown.awk's milestones or payouts, not as it writes them")
+
 func rows(m string, n int) ([][]string, error) {
 	var xs []any
 	if err := json.Unmarshal([]byte(m), &xs); err != nil {
-		return nil, pyError{"TypeError"}
+		return nil, badRows
 	}
 	var out [][]string
 	for _, x := range xs {
 		l, ok := x.([]any)
 		if !ok {
-			return nil, pyError{"TypeError"}
+			return nil, badRows
 		}
 		if len(l) < n {
-			return nil, pyError{"IndexError"}
+			return nil, badRows
 		}
 		var r []string
 		for _, v := range l[:n] {
 			s, ok := v.(string)
 			if !ok {
-				return nil, pyError{"AttributeError"}
+				return nil, badRows
 			}
 			r = append(r, s)
 		}
@@ -273,28 +262,7 @@ func rows(m string, n int) ([][]string, error) {
 	return out, nil
 }
 
-// splitlines: str.splitlines (lines end at \n, \r, \r\n and the others Python knows)
-func splitlines(t string) []string {
-	var out []string
-	start := 0
-	rs := []rune(t)
-	for i := 0; i < len(rs); i++ {
-		switch rs[i] {
-		case '\n', '\r', '\v', '\f', 0x1c, 0x1d, 0x1e, 0x85, 0x2028, 0x2029:
-			out = append(out, string(rs[start:i]))
-			if rs[i] == '\r' && i+1 < len(rs) && rs[i+1] == '\n' {
-				i++
-			}
-			start = i + 1
-		}
-	}
-	if start < len(rs) {
-		out = append(out, string(rs[start:]))
-	}
-	return out
-}
-
-// Checker: pages_py's state: the designs, the list, the proposals' renderings, where a link to a
+// Checker: what pages are checked against: the designs, the list, the proposals' renderings, where a link to a
 // proposal may go, the onion
 type Checker struct {
 	designs []*design
@@ -307,17 +275,22 @@ type Checker struct {
 	slugs     map[string]bool
 	onion     string
 	viewkey   string
-	cache     map[string]*compiled
-	diag      int
-	max       int64
+	// the proposals in the newest commit fetched; the live site's addresses that bind (pinned),
+	// and the push's projects.json's (projects.go)
+	current     map[string]bool
+	pins, stage map[string]string
+	cache       map[string]*compiled
+	diag        int
+	max         int64
 }
 
 // MaxPage: a larger page is not read (held back)
 const MaxPage = 2 << 20
 
-// New: as pages_py's first lines (site, designs, bodies, list, viewkey, hosts, onion), and the
-// proposals' front matter (frontmatter.awk's lines, ":"-separated: front.go)
-func New(designs, bodies, lst, viewkey, hosts, onion, fronts string) (*Checker, error) {
+// New: from ccs-check pages' arguments (site, designs, bodies, list, viewkey, hosts, onion), the
+// proposals' front matter (frontmatter.awk's lines, ":"-separated: front.go), and the live site
+// (its projects.json: the addresses its proposals have; "": none)
+func New(designs, bodies, lst, viewkey, hosts, onion, fronts, live string) (*Checker, error) {
 	// (2 MB at most, CCS_GATE_MAX if less: the largest page is under 200 kB, and matching one
 	// takes memory as it goes, about 130 MB a MB)
 	c := &Checker{onion: onion, viewkey: viewkey, cache: map[string]*compiled{}, diag: 10, max: MaxPage}
@@ -333,6 +306,11 @@ func New(designs, bodies, lst, viewkey, hosts, onion, fronts string) (*Checker, 
 	}
 	if c.fronts, err = readFronts(fronts); err != nil {
 		return nil, err
+	}
+	c.current = newest(fronts)
+	c.pins = map[string]string{}
+	if live != "" {
+		c.pins = c.pinned(addresses(live))
 	}
 	c.slugs = map[string]bool{}
 	seen := map[string]bool{}
@@ -441,7 +419,7 @@ func (d *design) fill(text string, slots pats, sameNames ...string) (node, []str
 	return seq(ns...), groups, nil
 }
 
-// the pattern of a page, and the named groups it has (a name twice: re's error)
+// the pattern of a page, and the named groups it has (a name twice: an error)
 type built struct {
 	n      node
 	groups []string
@@ -550,10 +528,7 @@ func (d *design) verify() (node, error) {
 		if err != nil {
 			return nil, err
 		}
-		v := splitlines(vt)
-		if len(v) == 0 {
-			return nil, pyError{"IndexError"}
-		}
+		v := strings.Split(strings.ReplaceAll(vt, "\r\n", "\n"), "\n")
 		src, txt := "", ""
 		for _, line := range v {
 			if strings.HasPrefix(line, "source ") {
@@ -586,11 +561,11 @@ func (d *design) verify() (node, error) {
 	return n, err
 }
 
-// secondField: l.split(None, 1)[1].strip(); an IndexError for a line of one word
+// secondField: the line after its first word, trimmed; an error for a line of one word
 func secondField(l string) (string, error) {
 	f := strings.Fields(l)
 	if len(f) < 2 {
-		return "", pyError{"IndexError"}
+		return "", failed("a line of the view key file without its value")
 	}
 	i := strings.Index(l, f[0]) + len(f[0])
 	return strings.TrimSpace(l[i:]), nil
@@ -811,7 +786,7 @@ func (d *design) page(text string, depth int, tagpage, body bool) ([]node, []str
 			return nil, err
 		}
 		n, _, err := d.fill(rel(t, depth), s)
-		// (each {{body}} a group named body: twice on a page is re's error)
+		// (each {{body}} a group named body: twice on a page is an error)
 		for range strings.Count(rel(t, depth), "{{body}}") {
 			b.add(nil, []string{"body"})
 		}
@@ -823,7 +798,7 @@ func (d *design) page(text string, depth int, tagpage, body bool) ([]node, []str
 		end := "<!-- /ccs:" + name + " -->"
 		j := strings.Index(text[m[1]:], end)
 		if j < 0 {
-			return nil, nil, pyError{"ValueError"}
+			return nil, nil, failed("a region the design doesn't close (" + name + ")")
 		}
 		j += m[1]
 		seg := ""
@@ -865,21 +840,21 @@ func (d *design) compiled(key, text string, depth int, tagpage, body bool) (c *c
 	if c, ok := d.c.cache[k]; ok {
 		return c, nil
 	}
-	// a pattern match.go can't match as re would (star's): this page can't be checked
+	// a pattern match.go can't match (star's): this page can't be checked
 	defer func() {
 		if p := recover(); p != nil {
-			c, err = nil, pyError{"error"}
+			c, err = nil, failed("a pattern that can't be matched")
 		}
 	}()
 	segs, groups, err := d.page(text, depth, tagpage, body)
 	if err != nil {
 		return nil, err
 	}
-	// a group name twice: re.compile's error ("redefinition of group name")
+	// a slot that must be one value twice in one pattern
 	sort.Strings(groups)
 	for i := 1; i < len(groups); i++ {
 		if groups[i] == groups[i-1] {
-			return nil, pyError{"error"}
+			return nil, failed("a slot twice in one pattern")
 		}
 	}
 	c = &compiled{seq(segs...), segs}
@@ -945,8 +920,8 @@ func (d *design) check(rp, got string) (string, error) {
 			return "", err
 		}
 		tries = append(tries, c)
-	case !strings.HasPrefix(rp, "parts/") && !strings.HasPrefix(rp, "explore/tag/") && isFile(pyJoin(d.d, rp)):
-		t, err := read(pyJoin(d.d, rp))
+	case !strings.HasPrefix(rp, "parts/") && !strings.HasPrefix(rp, "explore/tag/") && isFile(filepath.Join(d.d, rp)):
+		t, err := read(filepath.Join(d.d, rp))
 		if err != nil {
 			return "", err
 		}
@@ -1012,6 +987,12 @@ func (d *design) check(rp, got string) (string, error) {
 			if !d.c.l.listed[addr] {
 				return "a donation box with an address that is not in the signed list (" + addr + ")", nil
 			}
+			// its proposal's own (projects.go)
+			if strings.HasPrefix(rp, "proposals/") {
+				if why := d.c.owner(strings.TrimSuffix(rp[len("proposals/"):], ".html")+".md", addr); why != "" {
+					return "a donation box with an address that is " + why, nil
+				}
+			}
 			// its QR code: the list's own file of that address (qr/<address>.png: the gate takes
 			// it only as its sum in the list's .qr.sha256), not another address's
 			if q, ok := cx.g["qr"]; ok && string(s[q[0]:q[1]]) != prefixOf(depth)+"qr/"+addr+".png" {
@@ -1037,7 +1018,7 @@ func (d *design) check(rp, got string) (string, error) {
 	}
 	d.c.diag--
 	if d.c.diag >= 0 {
-		why += fmt.Sprintf(" (it differs at character %d: %s)", best, pyJSON(s[best:min(len(s), best+60)]))
+		why += fmt.Sprintf(" (it differs at character %d: %s)", best, strconv.QuoteToASCII(string(s[best:min(len(s), best+60)])))
 	}
 	return why, nil
 }
@@ -1047,42 +1028,8 @@ func isFile(p string) bool {
 	return err == nil && st.Mode().IsRegular()
 }
 
-// pyJSON: json.dumps of a string (ensure_ascii: every character not printable ASCII escaped,
-// those past U+FFFF as their two surrogates)
-func pyJSON(rs []rune) string {
-	var b strings.Builder
-	b.WriteByte('"')
-	for _, r := range rs {
-		switch {
-		case r == '"':
-			b.WriteString(`\"`)
-		case r == '\\':
-			b.WriteString(`\\`)
-		case r == '\n':
-			b.WriteString(`\n`)
-		case r == '\r':
-			b.WriteString(`\r`)
-		case r == '\t':
-			b.WriteString(`\t`)
-		case r == '\b':
-			b.WriteString(`\b`)
-		case r == '\f':
-			b.WriteString(`\f`)
-		case r >= 0x20 && r <= 0x7e:
-			b.WriteRune(r)
-		case r > 0xffff:
-			r -= 0x10000
-			fmt.Fprintf(&b, `\u%04x\u%04x`, 0xd800+(r>>10), 0xdc00+(r&0x3ff))
-		default:
-			fmt.Fprintf(&b, `\u%04x`, r)
-		}
-	}
-	b.WriteByte('"')
-	return b.String()
-}
-
-// Run: pages_py: SITE, then the pages (NUL-separated, relative to SITE) from in; a line per
-// page as pages_py's, each written as soon as it is known
+// Run: SITE, then the pages (NUL-separated, relative to SITE) from in; a line per page, each
+// written as soon as it is known
 func (c *Checker) Run(site string, in io.Reader, w *bufio.Writer) error {
 	// (no design: no page could fail, so none is checked; ccs-receive gives at least one)
 	if len(c.designs) == 0 {
@@ -1092,14 +1039,28 @@ func (c *Checker) Run(site string, in io.Reader, w *bufio.Writer) error {
 	if err != nil {
 		return err
 	}
+	c.stage = addresses(site)
 	for _, rp := range strings.Split(string(all), "\x00") {
 		if rp == "" {
 			continue
 		}
-		p := pyJoin(site, rp)
+		p := filepath.Join(site, rp)
 		st, err := os.Stat(p)
 		if err == nil && st.Size() > c.max {
 			fmt.Fprintf(w, "%s\t!a page over %d MB\n", p, c.max>>20)
+			w.Flush()
+			continue
+		}
+		if rp == "projects.json" {
+			why := "a projects.json that could not be read"
+			if b, err := os.ReadFile(p); err == nil {
+				why = c.projects(b)
+			}
+			if why != "" {
+				fmt.Fprintf(w, "%s\t!%s\n", p, why)
+			} else {
+				fmt.Fprintf(w, "%s\t=ok\n", p)
+			}
 			w.Flush()
 			continue
 		}
@@ -1114,14 +1075,11 @@ func (c *Checker) Run(site string, in io.Reader, w *bufio.Writer) error {
 			var err error
 			why, err = d.check(rp, got)
 			var ke keyError
-			var pe pyError
 			switch {
 			case errors.As(err, &ke):
 				why = "the design has no part or slot " + ke.Error()
-			case errors.As(err, &pe):
-				why = "a page that could not be checked (" + pe.name + ")"
 			case err != nil:
-				why = "a page that could not be checked (Exception)"
+				why = "a page that could not be checked (" + err.Error() + ")"
 			}
 			if why == "" {
 				break

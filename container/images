@@ -14,16 +14,6 @@ jq                         stagex/user-jq@sha256:4148299a2beb46fa5f0494ea456f196
 # backups
 git                        stagex/core-git@sha256:b416d4b29eb7c3b5ebcb4906ebce509abee7a9442abb769d95e3fae08de3142e
 openssh                    stagex/user-openssh@sha256:0881c9ba25e4f5d7efabbb639a6a2e4ad25847d6de42738f56e44cfa60081f38
-# the gate's image (gate.Dockerfile, the web server compose: contrib/docker/web): GNU userland as
-# the gate was written for
-coreutils                  stagex/core-coreutils@sha256:4941d68c446516fbe639dc711d6aad2c662f3899abf56aa5a936764f79da4d1f
-findutils                  stagex/core-findutils@sha256:d13601b0ff403c44bc5a6504ebe1215302de88de95ba1a7a4fdaf3b4991c5350
-grep                       stagex/core-grep@sha256:9622f4f6cb5e4a897782573e7a7287ed2cc2e8e36ea4140cc2731530aec9f391
-sed                        stagex/core-sed@sha256:fa6fcaa2f37d66045b3677d56695b5ca5fa33748d5f816716b02af5caed72c7a
-gawk                       stagex/core-gawk@sha256:0e66dcf083a4de152d7b710bdd0624887959d5fe0fb74949b5d76b59a09bf52e
-diffutils                  stagex/core-diffutils@sha256:41cd16b99eac8acae840912cefa728210bef1a759b7e2696c284382e75183e38
-tar                        stagex/core-tar@sha256:2f799a1b404cbaf831e2bf26f3a0af06b94100dbf75b0f39522fd30f6f715ddd
-util-linux                 stagex/core-util-linux@sha256:3fb52dc65ef1c441de100512bc980bdcb5127cbd3f41e37dbff39d5743d9ab65
 # the web server's front (gate.Dockerfile, the web server compose's www and tor): Caddy serves
 # the site over HTTPS, its certificates its own (ACME); Tor, built here from its signed source
 # (sources.lock), serves it as an onion, with libevent

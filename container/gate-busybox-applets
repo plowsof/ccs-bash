@@ -1,0 +1,47 @@
+# The busybox applets in the gate's image (gate.Dockerfile), in place of GNU's coreutils,
+# findutils, grep, sed, gawk, diffutils, tar and util-linux's flock: what contrib/ccs-receive,
+# contrib/ccs-backup-receive, contrib/docker/web/init and the web compose's healthchecks run
+# (awk: markdown.awk, frontmatter.awk and feed.awk on the same awk the backend runs them on), plus
+# chown, cp, install and ls for tests/gate.sh, so it runs against exactly what ships. Nothing else
+# is compiled into busybox.
+awk
+basename
+cat
+chmod
+chown
+cmp
+comm
+cp
+cut
+date
+dirname
+du
+find
+flock
+grep
+head
+install
+ls
+mkdir
+mktemp
+mv
+rm
+rmdir
+sed
+sha256sum
+sleep
+sort
+stat
+tail
+tar
+test
+timeout
+touch
+tr
+wc
+xargs
+# and the options of theirs named otherwise than CONFIG_FEATURE_<APPLET>_* (which each applet's
+# line turns on): head -c (the alerts, the backup receiver), tail -c, du -m (the backup receiver)
+CONFIG_FEATURE_FANCY_HEAD
+CONFIG_FEATURE_FANCY_TAIL
+CONFIG_FEATURE_HUMAN_READABLE

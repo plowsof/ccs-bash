@@ -169,7 +169,16 @@ what it is sent; it knows what a page may be. Each push, one at a time, it
      can't change what a reviewed proposal says, or what it is paid for;
    - the donation box: **one address of the signed list** (not `allowed`'s: those are no
      proposal's), the same in its text and `monero:` link, its QR code that address's file,
-     `qr/<address>.png` (step 4).
+     `qr/<address>.png` (step 4); and **its proposal's**: the one the live site's `projects.json`
+     has for it (a push can't give a proposal another address, nor one another proposal has, while
+     the proposal is in the repository's newest commit: a renamed one's goes with it); for a
+     proposal new to the site, the one the push's `projects.json` gives it, which no other
+     proposal has;
+   - `projects.json` (the `/projects` API: Feather's CCS tab shows it, its Donate button fills in
+     the address) is checked here too: each entry exactly site.jq's of its proposal's front matter
+     (its name, author, date, stage, goal and link; any number only for contributions, raised and
+     percentage), every key once and no other, an address of the signed list on one proposal only,
+     and the one the live site has for it.
 
    A page not checked in time (5 minutes) or over 2 MB is held back: what isn't known good
    doesn't go live;
@@ -207,7 +216,7 @@ what it is sent; it knows what a page may be. Each push, one at a time, it
    site, into the gate's `quarantine/` (its state folder), and IRC is told; the backend's next
    good copy goes live. At most 3 a push (`CCS_GATE_TAKEDOWN`): more (a wrong list or `allowed`)
    stay, and IRC is told;
-6. refuses the whole push without its pinned list and QR codes' sums, `design.sha256`, the design,
+6. refuses the whole push without its pinned list (or with one of no addresses) and QR codes' sums, `design.sha256`, the design,
    `markdown.awk`, `proposals.conf`, `ccs-check` or `git`, a design release (`design/vX.Y.Z/`), or
    for a file name with a control character in it.
 
@@ -277,8 +286,8 @@ each way around it, each case named in its output:
 
 **What it can't see:** what only the backend knows: a total, count or percentage that is wrong but
 a number; an idea that is no merge request (still escaped text linking to the repository); one of
-the wallet's subaddresses on another proposal's page (the money stays in the CCS wallet); the
-dates only the backend keeps (when a proposal went to Funding Required, was funded). A
+the address a proposal new to the site is first given (one of the list's that no other proposal
+has: from then on it is that proposal's); the dates only the backend keeps (when a proposal went to Funding Required, was funded). A
 proposal's name, author, date, goal, stage, milestone counts, link and tags are its front
 matter's, as the gate reads it itself from the repository (ccs-bash's own `lib/frontmatter.awk`,
 in the gate's image; `fronts`, `ccs-check pages`' front.go), on its page and on its cards; a

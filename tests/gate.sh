@@ -133,7 +133,7 @@ docker cp "$files/qr.sha256" "$name-web:/tmp/qr.sha256" && docker cp "$files/rep
 key=$(on backend 'cat ~/.ssh/id_ed25519.pub')
 [[ $img ]] || docker cp "$here/../contrib/ccs-receive" "$name-web:/usr/local/bin/ccs-receive"
 # ccs-bash's reader of the proposals' front matter, where the gate's image has it
-[[ $img ]] || { on web 'mkdir -p /usr/local/lib/ccs-gate' && docker cp "$here/../lib/frontmatter.awk" "$name-web:/usr/local/lib/ccs-gate/frontmatter.awk"; }
+[[ $img ]] || { on web 'mkdir -p /usr/local/lib/ccs-gate' && docker cp "$here/../lib/frontmatter.awk" "$name-web:/usr/local/lib/ccs-gate/frontmatter.awk" && docker cp "$here/../lib/feed.awk" "$name-web:/usr/local/lib/ccs-gate/feed.awk"; }
 if [[ ! $img ]]; then
     check=${CCS_CHECK:-$files/ccs-check}
     [[ -n ${CCS_CHECK:-} ]] || "$here/../contrib/ccs-check/build.sh" "$check" > /dev/null
@@ -215,9 +215,14 @@ ok() { echo "ok   $1"; }
 fail() { echo "FAIL $1"; status=1; }
 # site N ADDRESS [QR [IDEA TITLE...]]: the backend's site, version N (the home page's count), a
 # proposal with ADDRESS in its donation box and the QR code qr/QR.png (default ADDRESS: the
-# list's file; none for an address not on it, as ccs-front-bash has none), the ideas, projects.json, the design's
+# list's file; none for an address not on it, as ccs-front-bash has none), the ideas, projects.json (the
+# proposal's entry as site.jq writes it: its front matter, ADDRESS), the design's
 # stylesheet and the signed list's files. Each version gets its own
 # file times (ccs-push sends by content: the times are only for the gate's own copy).
+# projects ADDRESS [TITLE]: projects.json, p.md's entry (its front matter: tests/gate.sh's repository)
+projects() {
+    printf '[{"address":"%s","author":"someone","contributions":0,"date":"October 22, 2026","percentage_funded":0,"raised_amount":0,"state":"FUNDING-REQUIRED","target_amount":10,"title":"%s","filename":"p.md","gitlab_url":null}]\n' "$1" "${2:-A proposal}"
+}
 qr64() { on backend "qrencode -s ${2:-10} -o - 'monero:$1' | base64 -w0"; }
 site() {
     local v=$1 a=$2 qr=${3:-$2}
@@ -225,7 +230,7 @@ site() {
     on backend "rm -rf /out && mkdir -p /out/assets /out/qr && cp /design/assets/style.css /out/assets/"
     on backend "cp /qr/$qr.png /out/qr/ 2> /dev/null || true"
     docker exec -e PENDING_NOTE="${PENDING_NOTE:-}" -e ONION="${ONION:-}" -e FUNDED="${FUNDED:-}" "$name-backend" python3 /gen.py /design /out "$v" "$a" "$qr" "$@"
-    on backend "echo '[{\"address\": \"$a\"}]' > /out/projects.json"
+    projects "$a" | put projects.json
     put subaddresses.txt < <(on web 'cat /etc/ccs-gate/subaddresses.txt')
     put subaddresses.txt.asc <<<sig
     put subaddresses.txt.key.asc <<<key
@@ -248,7 +253,7 @@ live() { on web "sed -n '/<!-- ccs:count fr -->/{n;p}' /var/lib/ccs-data/index.h
 livefile() { on web "cat '/var/lib/ccs-data/$1' 2> /dev/null || true"; }
 livepage() { livefile proposals/p.html; }
 
-site 1 "$(addr 1)"
+site 1 "$(addr 2)"   # (p's address from its first push on: the gate holds back another)
 if out=$(push) && [[ $(live) == 1 ]]; then ok "a push with the wallet's addresses, the design's pages filled, goes live"; else echo "$out"; on web 'tail -n 5 /var/log/ccs-gate.log'; fail "a good push"; fi
 # file modes don't go live: a page pushed 600 (a 403 for visitors, and no alert) is 644 there
 change index.html $'fr -->\n1\n' $'fr -->\n12\n'
@@ -270,7 +275,7 @@ site 2 "$(addr 9 B)"
 # The push fails (7), the web server's log says which and where, and so does its answer (held:
 # ccs-push says it, and sends that file again next time)
 rc=0; out=$(push) || rc=$?
-if ((rc)) && [[ $(live) == 2 && $(livepage) == *"$(addr 1)"* && $(livepage) != *"$(addr 9 B)"* ]] \
+if ((rc)) && [[ $(live) == 2 && $(livepage) == *"$(addr 2)"* && $(livepage) != *"$(addr 9 B)"* ]] \
     && on web "grep -q 'proposals/p.html: $(addr 9 B)' /var/log/ccs-gate.log"; then
     ok "an address that isn't the wallet's: the rest of the push live, that page keeps its last good copy, the push fails, which and where in the log"
     fake=$(addr 9 B)
@@ -429,20 +434,20 @@ rc=0; push > /dev/null || rc=$?
 if ((rc == 7)) && [[ $(live) == "$v" && $(livefile ideas/index.html) != *"${taddr:48}"* ]] && on web "grep -q 'ideas/index.html: $taddr' /var/log/ccs-gate.log"; then
     ok "held back: review 9: an address split between two tag labels, found"
 else echo "push exit $rc, live $(live)"; on web 'tail -n 3 /var/log/ccs-gate.log'; fail "review 9: an address split between two tag labels"; fi
-# ... and in projects.json, its groups split by a JSON escaped space (json_py reads no groups; scan_py reads the raw text)
+# ... and in projects.json, its groups split by a JSON escaped space (ccs-check json reads no groups; ccs-check scan reads the raw text)
 v=$((v + 1)); site "$v" "$good"
 put projects.json <<<"[{\"address\": \"$good\", \"title\": \"Send to $(tgroups "$(printf '\x5cu0020')")\"}]"
 held "$v" projects.json "review 5: an address in groups split by \\u0020 in a projects.json string" 'Send to'
 on web "grep projects.json /var/log/ccs-gate.log | tail -n 1"
 # cost: 100 ideas titled "AAAA AAAA ..." (255 characters, anyone's): every window of the joined
-# run passes valid()'s network-byte check, so each costs a Keccak in Python; scan_py has 120 s for
-# every page of the site together, and past that holds back every page
+# run passes valid()'s network-byte check, so each costs a Keccak; each file has its own budget
+# (20 s, 3000 checksums: past it that file alone is held), and the gate 900 s for the push
 v=$((v + 1)); mapfile -t many < <(for i in $(seq 100); do printf 'AAAA %.0s' {1..51}; echo; done)
 site "$v" "$good" "$good" "${many[@]}"
 start=$SECONDS; rc=0; push > /dev/null || rc=$?
-if ((SECONDS - start < 30)) && ((rc == 0)); then ok "review 5: 100 ideas titled AAAA AAAA...: checked in $((SECONDS - start))s"; else fail "review 5: 100 ideas titled AAAA AAAA... (anyone's): the push took $((SECONDS - start))s (exit $rc); scan_py's 120 s is for every page together"; fi
-# ... the same on a web server with a third of a CPU (node2 also runs monerod and more): past
-# scan_py's 120 s every page of the push is held back, the home page too
+if ((SECONDS - start < 30)) && ((rc == 0)); then ok "review 5: 100 ideas titled AAAA AAAA...: checked in $((SECONDS - start))s"; else fail "review 5: 100 ideas titled AAAA AAAA... (anyone's): the push took $((SECONDS - start))s (exit $rc); the gate's 900 s is for the whole push"; fi
+# ... the same on a web server with a third of a CPU (node2 also runs monerod and more): the
+# home page still goes live (only the ideas page can run out of its budget)
 docker update --cpus 0.33 "$name-web" > /dev/null
 v=$((v + 1)); site "$v" "$good" "$good" "${many[@]}"
 start=$SECONDS; rc=0; push > /dev/null || rc=$?
@@ -466,8 +471,19 @@ v=$((v + 1)); site "$v" "$good"
 if push > /dev/null && [[ $(live) == "$v" ]]; then ok "review 5: the next good push after a folder pushed 300 goes live"; else on web 'tail -n 3 /var/log/ccs-gate.log'; fail "review 5: after a folder pushed 300, the next good push does not go live"; fi
 # ---- end review 5, low ----
 v=$((v + 1)); site "$v" "$good"
-put projects.json <<<"[{\"address\": \"$good\", \"title\": \"R&D notes\", \"url\": \"data:text/plain,x\"}]"
-passes "$v" projects.json "JSON with & and data: in its text" 'R&D'
+# projects.json: each entry its proposal's front matter, its address the one the live site has for it
+v=$((v + 1)); site "$v" "$good"; projects "$good" "R&amp;D notes" | put projects.json
+held "$v" projects.json "projects.json, a title that isn't its proposal's front matter" 'R&amp;D'
+v=$((v + 1)); site "$v" "$good"; on backend "sed -i 's/\"gitlab_url\":null/\"gitlab_url\":null,\"url\":\"https:\/\/evil.test\"/' /out/projects.json"
+held "$v" projects.json "projects.json, a key ccs-bash doesn't write" 'evil.test'
+v=$((v + 1)); site "$v" "$(addr 1)"
+rc=0; push > /dev/null || rc=$?
+if ((rc == 7)) && [[ $(live) == "$v" && $(livepage) == *"$good"* && $(livefile projects.json) == *"$good"* ]] \
+    && on web "grep -q 'proposals/p.html: !a donation box with an address that is its proposal.s address on the live site is another' /var/log/ccs-gate.log" \
+    && on web "grep -q 'projects.json: !projects.json, p.md: another address than the live site has for it' /var/log/ccs-gate.log"; then
+    ok "another of the list's addresses for a proposal (a page and projects.json): held back, its own stays"
+else echo "push exit $rc, live $(live)"; on web 'tail -n 4 /var/log/ccs-gate.log'; fail "another of the list's addresses for a proposal"; fi
+v=$((v + 1)); site "$v" "$good"
 # /projects, as JSON: its readers decode \u escapes, and read a key twice as its last
 v=$((v + 1)); site "$v" "$good"
 put projects.json <<<"[{\"address\": \"${fake:0:1}\\u00$(printf '%x' "'${fake:1:1}")${fake:2}\"}]"
@@ -599,7 +615,7 @@ v=$((v + 1)); site "$v" "$good"
 if push > /dev/null && [[ $(live) == "$v" ]] && on web "grep -q 'checking against the last fetch' /var/log/ccs-gate.log" \
     && ! bot | grep -q 'fetch the proposals repository'; then ok "the proposals repository can't be fetched: checked against the last fetch, the site goes on (no alert yet)"; else fail "the repository down"; fi
 # and for FORGE_HOURS (default 6) since the last good fetch: one alert an hour; fetched again, says so
-on web 'touch -d "-7 hours" /var/lib/ccs-gate/fetch-ok'
+on web 'touch -d "@$(($(date +%s) - 7 * 3600))" /var/lib/ccs-gate/fetch-ok'   # (seconds: busybox's touch reads no "-7 hours")
 v=$((v + 1)); site "$v" "$good"; push > /dev/null || true
 v=$((v + 1)); site "$v" "$good"; push > /dev/null || true
 if [[ $(bot | grep -c "the web server can't fetch the proposals repository since" || true) == 1 ]] \
@@ -627,7 +643,7 @@ on web 'cp /tmp/allowed /etc/ccs-gate/allowed'
 rc=0; push > /dev/null || rc=$?
 if ((rc == 0)) && [[ $(checking) == *"(all of them"* ]]; then ok "allowed as before: every page checked again, the push good"; else checking; fail "allowed restored"; fi
 # and once a day whatever happens
-on web 'touch -d "-25 hours" /var/lib/ccs-gate/checked-with'
+on web 'touch -d "@$(($(date +%s) - 25 * 3600))" /var/lib/ccs-gate/checked-with'
 if push > /dev/null && [[ $(checking) == *"(all of them"* ]]; then ok "a day after the last full check: every page checked again"; else checking; fail "the daily full check"; fi
 # a new ccs-check (here the same with a byte more: an ELF ignores what follows it) is a new gate:
 # every page checked again
@@ -692,6 +708,14 @@ if ! out=$(push) && [[ $(live) == "$last" ]] && on web "grep -q 'refused the pus
 else echo "$out"; on web 'tail -n 3 /var/log/ccs-gate.log'; fail "QR codes' sums not pinned"; fi
 on web "cp /tmp/qr.keep /etc/ccs-gate/subaddresses.txt.qr.sha256 && echo '3 $(addr 3)' >> /etc/ccs-gate/subaddresses.txt"
 on web "printf 'sha256 %s\nkey %040d\nqr %s\n' \"\$(sha256sum < /etc/ccs-gate/subaddresses.txt | cut -d' ' -f1)\" 0 \"\$(sha256sum < /etc/ccs-gate/subaddresses.txt.qr.sha256 | cut -d' ' -f1)\" > /etc/ccs-gate/subaddresses.txt.pin"   # the list above, pinned again: the pushes below are taken, not refused for it
+# review 11's I-1: an empty list, pinned, refuses every push (it would have let every reason through)
+on web "cp /etc/ccs-gate/subaddresses.txt /etc/ccs-gate/subaddresses.txt.pin /tmp/ && : > /etc/ccs-gate/subaddresses.txt \
+    && sed -i \"s/^sha256 .*/sha256 \$(sha256sum < /etc/ccs-gate/subaddresses.txt | cut -d' ' -f1)/\" /etc/ccs-gate/subaddresses.txt.pin && : > /var/log/ccs-gate.log"
+v=$((v + 1)); site "$v" "$(addr 2)"
+if ! out=$(push) && [[ $(live) == "$last" ]] && on web "grep -q 'refused the push: .*subaddresses.txt has no addresses' /var/log/ccs-gate.log"; then
+    ok "review 11 (I-1): an empty list, pinned: every push refused"
+else echo "$out"; on web 'tail -n 3 /var/log/ccs-gate.log'; fail "review 11 (I-1): an empty list"; fi
+on web 'cp /tmp/subaddresses.txt /tmp/subaddresses.txt.pin /etc/ccs-gate/'
 
 # the push can't delete, nor write outside its folder, nor bring anything but plain files: a tar
 # no backend makes (a link, a device, a path out, a name twice, a file under a page) refuses all
@@ -762,7 +786,7 @@ hb
 if [[ $(late) == 0 ]]; then ok "heartbeat: a recent push, no alert"; else bot; fail "heartbeat after a push"; fi
 # 1 minute, not 15: a CI machine may have been up less than 15 (then the heartbeat waits), and
 # not before it has been up that long either
-on web "echo HEARTBEAT_MINUTES=1 >> /etc/ccs-gate/alert.conf && touch -d '-5 min' /var/lib/ccs-gate/last-push"
+on web "echo HEARTBEAT_MINUTES=1 >> /etc/ccs-gate/alert.conf && touch -d @\$((\$(date +%s) - 300)) /var/lib/ccs-gate/last-push"
 on web 'until (($(cut -d. -f1 /proc/uptime) >= 70)); do sleep 5; done'
 hb
 if [[ $(late) == 0 ]]; then ok "heartbeat: the first late check waits for a second"; else fail "heartbeat alerted on one check"; fi

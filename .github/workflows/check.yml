@@ -78,6 +78,7 @@ jobs:
         run: |
           id=$(umask 077 && container/check-pinned.sh warm | sed -n 's/^id: //p')
           echo "warm: $id"
+          [[ $id == sha256:* ]] || { echo "error: the warm build gave no image" >&2; exit 1; }
           echo "id=$id" >> "$GITHUB_OUTPUT"
   pinned:
     needs: [image, pinned-warm]
@@ -122,7 +123,7 @@ jobs:
         run: CCS_GATE_IMAGE=ccs-gate tests/web.sh
       - name: the site as the web server compose's www (Caddy) serves it, nginx's answers kept
         run: GATE_IMAGE=ccs-gate tests/www.sh
-      - name: the image's size (git, sshd, GNU userland, ccs-check, Caddy, Tor; no Python; about 170 MB)
+      - name: the image's size (git, sshd, busybox, ccs-check, Caddy, Tor; no Python; about 150 MB)
         run: size=$(docker image inspect ccs-gate --format '{{.Size}}'); echo "$size bytes"; [ "$size" -lt 190000000 ]
       - id: id
         run: echo "id=$(docker image inspect ccs-gate --format '{{.Id}}')" >> "$GITHUB_OUTPUT"
@@ -142,6 +143,7 @@ jobs:
         run: |
           id=$(umask 077 && CHECK_DOCKERFILE=gate.Dockerfile container/check-pinned.sh clean 077 | sed -n 's/^id: //p')
           echo "clean: $id"
+          [[ $id == sha256:* ]] || { echo "error: the clean build gave no image" >&2; exit 1; }
           echo "id=$id" >> "$GITHUB_OUTPUT"
   gate-pinned:
     needs: [gate-image, gate-clean]

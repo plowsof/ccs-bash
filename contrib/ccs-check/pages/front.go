@@ -17,9 +17,11 @@ import (
 	"unicode"
 )
 
-// front: one proposal's values, as a page shows them (escaped)
+// front: one proposal's values, as a page shows them (escaped); jname and jauthor as
+// projects.json has them (site.jq's project: its bidi controls kept)
 type front struct {
 	layout, name, author, date, amount, gitlab string
+	jname, jauthor                             string
 	milestones, done                           int
 	tags                                       []ftag
 }
@@ -146,7 +148,7 @@ func readFronts(files string) (map[string][]*front, error) {
 				return nil, bad
 			}
 			p := &front{layout: x[1], name: esc(nobidi(x[2])), author: esc(nobidi(x[3])), date: day(x[4]),
-				amount: goal(x[5]), gitlab: esc(x[6]), milestones: m, done: d}
+				amount: goal(x[5]), gitlab: esc(x[6]), milestones: m, done: d, jname: esc(x[2]), jauthor: esc(x[3])}
 			// tag_list: escaped, by slug (none without one), the first spelling of each
 			seen := map[string]bool{"": true}
 			for _, g := range strings.Split(x[9], "\x1f") {
@@ -166,6 +168,24 @@ func readFronts(files string) (map[string][]*front, error) {
 		}
 	}
 	return fs, nil
+}
+
+// newest: the proposals in the first of frontmatter.awk's files (the newest commit fetched)
+func newest(files string) map[string]bool {
+	m := map[string]bool{}
+	for _, f := range strings.Split(files, ":") {
+		raw, err := os.ReadFile(f)
+		if f == "" || err != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(raw), "\n") {
+			if n, _, ok := strings.Cut(line, "\t"); ok && strings.HasSuffix(n, ".md") {
+				m[strings.TrimSuffix(n, ".md")] = true
+			}
+		}
+		break
+	}
+	return m
 }
 
 // litq: t at i, an apostrophe as either escape (jq @html writes &#39; or &apos;)

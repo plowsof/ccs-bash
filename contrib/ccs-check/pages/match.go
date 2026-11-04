@@ -1,9 +1,8 @@
 package pages
 
-// The patterns pages_py built as Python regexes, as a tree of nodes matched by backtracking in
-// Python's re's order (the first alternative first, a greedy repeat its longest first, a lazy
-// one its shortest), so the same match, the same groups, and the same "differs at character N".
-// Only what pages_py's patterns use: literals, runs of one kind of unit counted (a character of a
+// A page's pattern, as a tree of nodes matched by backtracking (the first alternative first, a
+// greedy repeat its longest first, a lazy one its shortest), which decides the match, its groups
+// and "differs at character N". Only what the patterns use: literals, runs of one kind of unit counted (a character of a
 // class, or an entity), alternatives, a greedy *, a lazy .*?, named groups, a backreference, and
 // TEXT's lookahead (no run of 90 base58 or non-ASCII characters from any of its positions) as a
 // rule of the run itself. Go's regexp (RE2) has no lookahead or backreference, and expands a

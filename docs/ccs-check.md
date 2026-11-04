@@ -11,7 +11,8 @@ machine.
 
 | Subcommand | What it checks |
 |---|---|
-| `pages` | every page is the design's, its regions filled only with the design's parts, a proposal's text as the proposals repository has it, a donation box one address of the signed list, its QR code `qr/<that address>.png` (the file itself: the list's, by its sum, `ccs-receive`; never decoded) |
+| `gate` | which of a push's files go live (`gate/gate.go`): each file the push changed, and each page and JSON file to check again, needs the checks its name calls for (the ones below; the design's, the list's QR codes' and files' and the repository's images' bytes; the feed, `lib/feed.awk`), and goes live only if each passed it: one that didn't finish or didn't get to it holds it back |
+| `pages` | every page is the design's, its regions filled only with the design's parts, a proposal's text as the proposals repository has it, a donation box one address of the signed list and its proposal's (the live site's `projects.json`'s), its QR code `qr/<that address>.png` (the file itself: the list's, by its sum, `ccs-receive`; never decoded); `projects.json` each entry its proposal's front matter, its address its own (`pages/projects.go`) |
 | `scan`, `json`, `nul` | every address in the pages, JSON and feed, also spaced out, split (between elements too) or drawn with look-alikes (Monero's base58 and Keccak checksum), is the wallet's or allowed; `projects.json` reads as JSON; no NUL byte |
 | `receive` | receives the push, a tar of the files that changed (`contrib/ccs-push`): plain files only (a folder only as a file needs it: a folder entry makes nothing), at clean paths under staging, each written beside and renamed into place, within its limits; anything else refuses the whole push (in place of rsync, which the gate no longer has) |
 | `copy` | the live site into staging before a push, staging into the live site after (rsync -a's quick check, each file renamed into place, 644/755) |
@@ -25,7 +26,7 @@ sums), and `qr`, which read QR codes in the proposals' images with gozxing (a pr
 taken as the proposals repository has it, byte for byte: that repository's review vouches for
 what it shows; [the web server](web-server.md#what-it-guarantees-and-what-not)). Its own tests:
 `contrib/ccs-check/build.sh test` (Go tests) and `fuzz` (CI).
-Anything that can be plain text matching stays awk (the feed check, `feed_awk`).
+Anything that can be plain text matching stays awk (the feed check, `lib/feed.awk`, which `gate` runs).
 
 ## Built from
 
