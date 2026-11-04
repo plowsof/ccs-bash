@@ -30,10 +30,11 @@ the site from one, or show an address in an image; it could not change a donatio
 address and QR code are the wallet's and the list's) or put an address on a page as text, and the
 money stays in the CCS wallet.
 
-Not: what only the backend knows, a total or percentage that is wrong but a number, one of the
-wallet's subaddresses on another proposal's page (the money stays in the wallet), the dates only
-the backend keeps; a proposal's name, author, goal, stage and tags are its front matter's, read
-from the repository by the gate itself ([in full](two-machines.md#the-gate-the-web-server-checks-every-page),
+Not: what only the backend knows, a total or percentage that is wrong but a number, the address a
+proposal new to the site is first given (one no other proposal has; from then on it is that
+proposal's), the dates only the backend keeps; a proposal's name, author, goal, stage and tags are
+its front matter's, read from the repository by the gate itself, on its pages and in
+`projects.json` ([in full](two-machines.md#the-gate-the-web-server-checks-every-page),
 "What it can't see"). Nor anything once this machine itself is taken over: then ccs-watch (the
 backend fetching the site as a visitor) and the Verify page (visitors checking an address in a
 view-only copy of the wallet) are what's left.
@@ -100,7 +101,7 @@ ccs-front-hugo's **design** (its release zip: the pages, the parts they are fill
 stylesheets and images; installed by its sha256) and ccs-front-bash's **`lib/markdown.awk`** (265 lines: the gate renders each proposal
 from the repository itself and requires the page's text to be exactly that).
 
-The tests show each way around it, by name: `tests/gate.sh` (144 cases: every check, hostile
+The tests show each way around it, by name: `tests/gate.sh` (146 cases: every check, hostile
 tars, with this image as the web server), `tests/gate-image.sh`, `tests/web.sh` (its sshd,
 attacked), `contrib/ccs-check/build.sh test` and `fuzz` (the receiver: nothing written outside
 its folder, whatever the stream). [Reviewing](reviewing.md) walks each function.

@@ -15,7 +15,7 @@ func FuzzRun(f *testing.F) {
 	f.Add(page(strings.Repeat("A", 89), "<p>None yet</p>"))
 	f.Add(page("Ideas", "") + "<x>")
 	lst := testList(f)
-	c, err := New("testdata/design", "", lst, "", "repo.example/ccs", "", "")
+	c, err := New("testdata/design", "", lst, "", "repo.example/ccs", "", "", "")
 	if err != nil {
 		f.Fatal(err)
 	}

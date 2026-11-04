@@ -206,7 +206,8 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
     has at that path, byte for byte (`repo_images`: `git hash-object` against `ls-tree`; never
     read: the repository's review vouches for it), `feed.xml` (`feed`,
     `feed_awk`: line for line as ccs-front-bash writes it, its links this site's proposal pages),
-    `projects.json`, the list's files as installed, or a donation QR code `qr/<address>.png`
+    `projects.json` (checked by `ccs-check pages`: its entries the proposals' front matter, each
+    address its proposal's), the list's files as installed, or a donation QR code `qr/<address>.png`
     exactly the list's (its line in `.qr.sha256`: never made or decoded here);
   - a failing file is removed from staging (its last good copy stays), the rest goes live, the
     push fails and IRC is told; a live file the push didn't send that fails for an address is
