@@ -207,7 +207,7 @@ what it is sent; it knows what a page may be. Each push, one at a time, it
    site, into the gate's `quarantine/` (its state folder), and IRC is told; the backend's next
    good copy goes live. At most 3 a push (`CCS_GATE_TAKEDOWN`): more (a wrong list or `allowed`)
    stay, and IRC is told;
-6. refuses the whole push without its pinned list and QR codes' sums, `design.sha256`, the design,
+6. refuses the whole push without its pinned list (or with one of no addresses) and QR codes' sums, `design.sha256`, the design,
    `markdown.awk`, `proposals.conf`, `ccs-check` or `git`, a design release (`design/vX.Y.Z/`), or
    for a file name with a control character in it.
 
