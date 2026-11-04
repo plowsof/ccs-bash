@@ -84,17 +84,18 @@ patched (`govulncheck` in CI, for Go itself).
 
 ## The code to read
 
-About 4,300 lines, all of this repository's own:
+About 5,000 lines, all of this repository's own:
 
 | File | Lines | What it is |
 |---|---|---|
-| [`contrib/ccs-receive`](../contrib/ccs-receive) | 725 | the gate: takes only `receive`, receives into staging, runs the checks, copies only what passed live, tells the backend what it held back, alerts; the heartbeat |
-| [`contrib/ccs-check/`](../contrib/ccs-check) (Go, tests aside) | 2,706 | `receive` and `copy` (`push/push.go`: the push's tar, plain files only, at clean paths, within limits), `pages` (`pages/pages.go`, `pages/match.go`: a page is the design's, filled), `scan` (`scan/scan.go`, `addr/addr.go`: every address, by Monero's checksum) |
+| [`contrib/ccs-receive`](../contrib/ccs-receive) | 478 | the gate: takes only `receive`, receives into staging, fetches the proposals repository, runs `ccs-check gate`, copies only what passed live, tells the backend what it held back, alerts; the heartbeat |
+| [`contrib/ccs-check/`](../contrib/ccs-check) (Go, tests aside) | 3,492 | `gate` (`gate/gate.go`: which files go live: each only if every check it needs passed it), `receive` and `copy` (`push/push.go`: the push's tar, plain files only, at clean paths, within limits), `pages` (`pages/pages.go`, `pages/match.go`: a page is the design's, filled; `pages/projects.go`: projects.json, each proposal's address its own), `scan` (`scan/scan.go`, `addr/addr.go`: every address, by Monero's checksum) |
 | `contrib/ccs-check/build.sh` | 71 | how it is built and tested (StageX's Go, no network) |
-| [`container/gate.Dockerfile`](../container/gate.Dockerfile) | 100 | what goes in the image, Tor built from its source among it |
+| [`container/gate.Dockerfile`](../container/gate.Dockerfile) | 101 | what goes in the image, Tor built from its source among it |
 | [`contrib/docker/web/`](../contrib/docker/web) (`compose.yml`, `sshd_config`, `init`, `env.example`, `Caddyfile`, `torrc`) | 352 | how it runs: one user each, the forced command, read-only, sshd's three capabilities, limits; what Caddy serves and how, the onion |
 | `container/build.sh`, `verify-images.sh`, `fetch.sh`, `verify.sh` | 206 | the build: the pins' signatures and sums checked |
 | [`lib/frontmatter.awk`](../lib/frontmatter.awk) | 177 | ccs-bash's reader of a proposal's front matter, in the gate's image: the gate runs it on the repository it fetched, and a page's name, author, date, goal, stage, counts, link and tags must be what it reads |
+| [`lib/feed.awk`](../lib/feed.awk) | 84 | the feed's check: `feed.xml` line for line as ccs-front-bash writes it, its links this site's proposal pages (`ccs-check gate` runs it) |
 
 And what the gate checks pages against, from the other two repositories:
 ccs-front-hugo's **design** (its release zip: the pages, the parts they are filled with, the
