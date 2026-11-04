@@ -178,7 +178,7 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
   contrib/ccs-check/push: plain files at clean paths (folders only as files need them; a held-back file's left none live), written beside and renamed,
   644/755, within its limits, else the whole push refused and IRC told; refused before it without
   `ccs-check`). Once
-  received, before anything goes live, refuses the whole push without its pinned list and QR
+  received, before anything goes live, refuses the whole push without its pinned list (or with one of no addresses) and QR
   codes' sums (`.qr.sha256`, the `.pin`'s `qr` line), `git`, `design.sha256`, a design release, `markdown.awk` or `proposals.conf`, or for
   a control character in a file name. Then, for each page and JSON file
   the push changed and each it held back last time (`held` in its state folder; every one when the
