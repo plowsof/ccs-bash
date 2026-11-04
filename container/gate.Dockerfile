@@ -3,8 +3,8 @@
 # certificates its own) and Tor (the onion), each its own service. Built as the ccs-bash image is
 # (container/build.sh ccs-gate gate.Dockerfile): StageX images by digest (container/images,
 # signatures checked), sources by sha256 (sources.lock), no network in the steps, every file the
-# commit's time, one layer in an empty image. GNU userland, as the gate was written and tested
-# for (Debian's); its checks ccs-check's (contrib/ccs-check: Go, built here), which also
+# commit's time, one layer in an empty image. Its userland busybox, built here with only the
+# applets in gate-busybox-applets (as the ccs-bash image's); its checks ccs-check's (contrib/ccs-check: Go, built here), which also
 # receives the push (a tar, read in Go: no rsync). No Python, and nothing here reads an image: a
 # proposal's is taken byte for byte as the proposals repository's, a donation box's QR code as
 # the signed list's file, by its sum.
@@ -38,9 +38,40 @@ RUN --mount=type=bind,source=container,target=/pin \
     && make -j"$(nproc)" > /dev/null \
     && install -D -m 755 src/app/tor /rootfs/usr/bin/tor
 
+# busybox with only the applets in gate-busybox-applets (and their options), as the ccs-bash
+# image builds its own (Dockerfile)
+FROM toolchain AS busybox
+COPY --from=bash / /
+COPY --from=ncurses / /
+ENV KCONFIG_NOTIMESTAMP=1
+RUN --mount=type=bind,source=container,target=/pin \
+    bash /pin/verify.sh /pin/sources.lock /pin/sources \
+    && tar -xjf /pin/sources/busybox-1.38.0.tar.bz2 -C / \
+    && cd /busybox-1.38.0 \
+    && make HOSTCC=cc CC=cc allnoconfig > /dev/null \
+    && for applet in $(grep -v -e '^#' -e '^CONFIG_' /pin/gate-busybox-applets); do \
+        config=CONFIG_$(echo "$applet" | tr 'a-z-' 'A-Z_'); \
+        grep -q "^# $config is not set$" .config || { echo "no applet $applet" >&2; exit 1; }; \
+        sed -i "s/^# $config is not set$/$config=y/" .config; \
+        sed -i "s/^# \(CONFIG_FEATURE_${config#CONFIG_}_[A-Z0-9_]*\) is not set$/\1=y/" .config; \
+    done \
+    && for config in CONFIG_LONG_OPTS $(grep '^CONFIG_' /pin/gate-busybox-applets); do \
+        grep -q "^# $config is not set$" .config || { echo "no option $config" >&2; exit 1; }; \
+        sed -i "s/^# $config is not set$/$config=y/" .config; \
+    done \
+    && yes "" | make HOSTCC=cc CC=cc oldconfig > /dev/null \
+    && for config in $(grep '^CONFIG_' /pin/gate-busybox-applets); do grep -qx "$config=y" .config || { echo "$config off" >&2; exit 1; }; done \
+    && make HOSTCC=cc CC=cc > /dev/null \
+    && install -D -m 755 busybox /rootfs/usr/bin/busybox \
+    && for applet in $(grep -v -e '^#' -e '^CONFIG_' /pin/gate-busybox-applets); do \
+        ln -s busybox "/rootfs/usr/bin/$applet"; \
+        ! "/rootfs/usr/bin/$applet" --help 2>&1 | grep -q "applet not found" || { echo "$applet not built" >&2; exit 1; }; \
+    done
+
 FROM scratch AS tree
 COPY --from=filesystem / /
 COPY --from=musl / /
+COPY --from=busybox /rootfs/ /
 COPY --from=bash / /
 COPY --from=ncurses / /
 COPY --from=ca-certificates / /
@@ -50,14 +81,6 @@ COPY --from=libzstd / /
 COPY --from=zlib / /
 COPY --from=git / /
 COPY --from=openssh / /
-COPY --from=coreutils / /
-COPY --from=findutils / /
-COPY --from=grep / /
-COPY --from=sed / /
-COPY --from=gawk / /
-COPY --from=diffutils / /
-COPY --from=tar / /
-COPY --from=util-linux /usr/bin/flock /usr/bin/flock
 COPY --from=caddy /usr/bin/caddy /usr/bin/caddy
 COPY --from=libevent / /
 COPY --from=tor /rootfs/ /
@@ -71,7 +94,7 @@ COPY contrib/docker/web/torrc /etc/tor/torrc
 
 # Only what the gate, the backup receiver and sshd run: of openssh, sshd (and ssh-keygen, for the
 # host key the first time); of git, git, its https transport and upload-pack (a file:// fetch);
-# of util-linux, flock; of ncurses, the library bash needs. /bin/sh is bash
+# of ncurses, the library bash needs. /bin/sh is bash
 # (git runs a file:// fetch's upload-pack through it); /var/log, where compose.yml mounts the gate's log. /etc/passwd and group: links to the ones
 # init writes in the mounted key folder (a mounted file replaced would stay the old one). Headers, static libraries and manuals
 # dropped; every file the commit's time.

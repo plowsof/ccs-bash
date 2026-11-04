@@ -615,7 +615,7 @@ v=$((v + 1)); site "$v" "$good"
 if push > /dev/null && [[ $(live) == "$v" ]] && on web "grep -q 'checking against the last fetch' /var/log/ccs-gate.log" \
     && ! bot | grep -q 'fetch the proposals repository'; then ok "the proposals repository can't be fetched: checked against the last fetch, the site goes on (no alert yet)"; else fail "the repository down"; fi
 # and for FORGE_HOURS (default 6) since the last good fetch: one alert an hour; fetched again, says so
-on web 'touch -d "-7 hours" /var/lib/ccs-gate/fetch-ok'
+on web 'touch -d "@$(($(date +%s) - 7 * 3600))" /var/lib/ccs-gate/fetch-ok'   # (seconds: busybox's touch reads no "-7 hours")
 v=$((v + 1)); site "$v" "$good"; push > /dev/null || true
 v=$((v + 1)); site "$v" "$good"; push > /dev/null || true
 if [[ $(bot | grep -c "the web server can't fetch the proposals repository since" || true) == 1 ]] \
@@ -643,7 +643,7 @@ on web 'cp /tmp/allowed /etc/ccs-gate/allowed'
 rc=0; push > /dev/null || rc=$?
 if ((rc == 0)) && [[ $(checking) == *"(all of them"* ]]; then ok "allowed as before: every page checked again, the push good"; else checking; fail "allowed restored"; fi
 # and once a day whatever happens
-on web 'touch -d "-25 hours" /var/lib/ccs-gate/checked-with'
+on web 'touch -d "@$(($(date +%s) - 25 * 3600))" /var/lib/ccs-gate/checked-with'
 if push > /dev/null && [[ $(checking) == *"(all of them"* ]]; then ok "a day after the last full check: every page checked again"; else checking; fail "the daily full check"; fi
 # a new ccs-check (here the same with a byte more: an ELF ignores what follows it) is a new gate:
 # every page checked again
@@ -786,7 +786,7 @@ hb
 if [[ $(late) == 0 ]]; then ok "heartbeat: a recent push, no alert"; else bot; fail "heartbeat after a push"; fi
 # 1 minute, not 15: a CI machine may have been up less than 15 (then the heartbeat waits), and
 # not before it has been up that long either
-on web "echo HEARTBEAT_MINUTES=1 >> /etc/ccs-gate/alert.conf && touch -d '-5 min' /var/lib/ccs-gate/last-push"
+on web "echo HEARTBEAT_MINUTES=1 >> /etc/ccs-gate/alert.conf && touch -d @\$((\$(date +%s) - 300)) /var/lib/ccs-gate/last-push"
 on web 'until (($(cut -d. -f1 /proc/uptime) >= 70)); do sleep 5; done'
 hb
 if [[ $(late) == 0 ]]; then ok "heartbeat: the first late check waits for a second"; else fail "heartbeat alerted on one check"; fi

@@ -66,7 +66,7 @@ builds.
 | openssh (`sshd`, `ssh-keygen` only) | 10.5p1 | the push's channel: runs only the forced command, the tar on its stdin (no C program reads the tar: `ccs-check receive` does) |
 | git | 2.55.0 | fetches the proposals repository itself (https) |
 | curl, openssl, ca-certificates | 8.22.0, 3.6.4 | the gate's IRC alerts; git's https |
-| bash 5.3, coreutils 9.11, findutils 4.11.0, grep 3.12, sed 4.10, gawk 5.4.1, diffutils 3.12 (`cmp`), tar 1.35 (unpacks `git archive`, the proposals' own), util-linux 2.42.3 (`flock` only) | | `ccs-receive`, as written and tested |
+| bash 5.3; **busybox** 1.38.0, built here from its source (`sources.lock`: StageX's sum for it) with only the 36 applets (and 3 of their options) in [`container/gate-busybox-applets`](../container/gate-busybox-applets) (`awk`, `find`, `grep`, `sed`, `sha256sum`, `tar` for `git archive`, `flock`…), as the ccs-bash image's | | `ccs-receive`, `ccs-backup-receive`, `init`, the healthchecks, as written and tested; the same awk the backend renders proposals with |
 | musl 1.2.6, ncurses 6.6 (bash's `libncursesw` only), zlib 1.3.2, libzstd 1.5.7 | | their libraries (each linked by one of the above: checked) |
 | **ccs-check** | this repository's `contrib/ccs-check` | the checks (below), built by StageX's Go 1.27.1, no cgo, no module |
 | caddy | 2.11.4 | the site over HTTPS (`www`), its certificates from Let's Encrypt; HTTP/1.1 only, `Range` ignored, headers capped: [two machines](two-machines.md) |

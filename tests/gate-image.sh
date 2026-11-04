@@ -35,5 +35,10 @@ for l in /usr/lib/libzbar.so* /usr/lib/libjpeg.so* /usr/lib/libturbojpeg.so* /us
     [[ -e $l ]] && present+=" ${l##*/}"
 done
 if [[ -z $present ]]; then ok "no Python, libffi, zbar, libjpeg, giflib, qrencode, libpng, rsync, xxhash, jq, acl, attr or unused ncurses; no ssh client, sftp or git server"; else fail "in the image:$present"; fi
+# its userland busybox's, only the applets in gate-busybox-applets (no GNU coreutils, gawk...)
+gnu=''
+for c in awk find grep sed tar flock cmp sort sha256sum ls; do [[ $(command -v "$c") -ef /usr/bin/busybox ]] || gnu+=" $c"; done
+for c in gawk gsed gtar od dd env; do command -v "$c" > /dev/null && gnu+=" $c"; done
+if [[ -z $gnu ]]; then ok "its tools busybox's, only the applets it needs"; else fail "not busybox's, or not needed:$gnu"; fi
 rm -rf "$t"
 exit "$status"

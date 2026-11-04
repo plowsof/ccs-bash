@@ -123,7 +123,7 @@ jobs:
         run: CCS_GATE_IMAGE=ccs-gate tests/web.sh
       - name: the site as the web server compose's www (Caddy) serves it, nginx's answers kept
         run: GATE_IMAGE=ccs-gate tests/www.sh
-      - name: the image's size (git, sshd, GNU userland, ccs-check, Caddy, Tor; no Python; about 170 MB)
+      - name: the image's size (git, sshd, busybox, ccs-check, Caddy, Tor; no Python; about 150 MB)
         run: size=$(docker image inspect ccs-gate --format '{{.Size}}'); echo "$size bytes"; [ "$size" -lt 190000000 ]
       - id: id
         run: echo "id=$(docker image inspect ccs-gate --format '{{.Id}}')" >> "$GITHUB_OUTPUT"
