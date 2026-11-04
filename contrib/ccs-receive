@@ -34,7 +34,7 @@
 # lines: it sends them again), and it exits 7. A list or QR
 # codes' sums that aren't the pinned ones, or no design.sha256, design or markdown.awk, refuses
 # the whole push. Needs
-# bash, awk, grep, coreutils, curl, git, and ccs-check (contrib/ccs-check: the checks in Go, one
+# bash, busybox's applets (container/gate-busybox-applets), curl, git, and ccs-check (contrib/ccs-check: the checks in Go, one
 # static binary: the release's, its sha256 attested; it also receives the push, and copies
 # between staging and the live site). Root-owned, 755.
 set -euo pipefail
@@ -162,8 +162,11 @@ repo_images() {
 # while it switches), ":"-separated; kept by commit, so a push made again needs no rendering. The
 # images it shows, as ccs-bash copies them: images/<proposal>/<file>, a plain file, 2 MB at most,
 # a PNG, JPEG or GIF by its first bytes.
+# magic FILE BYTES: FILE starts with BYTES
+magic() { cmp -s -n "${#2}" "$1" <(printf '%s' "$2"); }
+
 bodies() {
-    local rev c awkf sum out d list='' a f m
+    local rev c awkf sum out d list='' a f
     for rev in refs/heads/ccs refs/heads/ccs~1; do
         c=$(git -C "$git" rev-parse -q --verify "$rev^{commit}" 2> /dev/null) || continue
         for awkf in "$conf"/markdown*.awk; do
@@ -183,8 +186,7 @@ bodies() {
                     [[ $a =~ ^images/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+\.(png|jpg|jpeg|gif)$ ]] || continue
                     f=$d/$a
                     (($(wc -c < "$f") <= 2097152)) || continue
-                    m=$(head -c 8 "$f" | od -An -tx1 | tr -d ' \n')
-                    [[ $m == 89504e470d0a1a0a || $m == ffd8ff* || $m == 4749463837* || $m == 4749463839* ]] || continue
+                    magic "$f" $'\x89PNG\r\n\x1a\n' || magic "$f" $'\xff\xd8\xff' || magic "$f" GIF87a || magic "$f" GIF89a || continue
                     printf '%s\t%s\n' "$a" "${a#images/}"
                 done > "$d/.images"
                 find "$d" -maxdepth 1 -type f -name '*.md' -print0 \
@@ -262,7 +264,8 @@ if [[ ${1:-} == --heartbeat ]]; then heartbeat; exit 0; fi
 # One push at a time: two at once would share the staging folder, and one could change it after
 # the other's checks, before its copy into the live site.
 exec 8> "$state/lock"
-if ! flock -w 600 8; then
+# (flock on the open file: the lock outlives flock, as long as fd 8 is open; busybox's has no -w)
+if ! timeout 600 flock 8; then
     say "refused the push: another one is still going after 10 minutes"
     alert lock "a push has been checked for over 10 minutes: the pushes after it are refused (the heartbeat would only say none arrived); look at what the gate is doing"
     exit 1
@@ -346,7 +349,7 @@ designs='' vk='' onion='' images='' site=''
 for d in "$conf"/design/v*/; do [[ ${d%/} =~ /v[0-9]+\.[0-9]+\.[0-9]+$ && -d $d/parts ]] && designs+=${designs:+:}${d%/}; done
 bodies=$(bodies) fronts=$(fronts)
 [[ -f $list.viewkey ]] && vk=$list.viewkey
-onion=$(tr -d ' \n' < "$conf/onion" 2> /dev/null) || onion=''
+onion=$(tr -d ' \n' 2> /dev/null < "$conf/onion") || onion=''
 [[ $onion =~ ^[a-z2-7]{56}\.onion$ ]] || onion=
 if [[ $fetched ]]; then images=$(mktemp) && repo_images > "$images"; fi
 site=$(sed -n 's/^SITE_URL=//p' "$conf/alert.conf" 2> /dev/null | tail -n 1)

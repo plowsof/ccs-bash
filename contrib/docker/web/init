@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # init (the web server compose's init service, as root, once and after an upgrade): in
 # CCS_SSH_DIR (/etc/ccs-ssh/keys, the host's /etc/ccs-gate/ssh), sshd's host key, made the first
 # time only (the backend's known_hosts has it), and the passwd and group the two sshd read: the
