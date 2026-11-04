@@ -19,6 +19,8 @@ source "$CCS_LIB/wallet.sh"
 source "$CCS_LIB/mirror.sh"
 # shellcheck source=lib/images.sh
 source "$CCS_LIB/images.sh"
+# shellcheck source=lib/site-data.sh
+source "$CCS_LIB/site-data.sh"
 
 # New proposals: remember their merged MR, and when funding started if already fr.
 # GitLab down: tried again next run, and only once this run (a fresh install has hundreds of new
@@ -63,13 +65,7 @@ previous_ideas() {
 }
 
 build_site() {
-    local out
-    for out in proposals completed-proposals projects; do
-        atomic_write "$OUTPUT_DIR/$out.json" jq -n --indent 4 --arg out "$out" \
-            --slurpfile props "$WORK/props.json" --slurpfile state "$WORK/state.json" \
-            --slurpfile funds "$WORK/funds.json" \
-            --slurpfile ideas "$WORK/ideas.json" -f "$CCS_LIB/site.jq"
-    done
+    site_json
     # site-data.json: what only this run knows, site.jq's inputs but the front matter (which the
     # web server reads from the repository itself): each proposal's subaddress index (not its
     # address: the signed list's line), merge request and dates, its funds, the ideas. The web
