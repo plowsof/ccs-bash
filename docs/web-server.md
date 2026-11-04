@@ -66,7 +66,8 @@ builds.
 | openssh (`sshd`, `ssh-keygen` only) | 10.5p1 | the push's channel: runs only the forced command, the tar on its stdin (no C program reads the tar: `ccs-check receive` does) |
 | git | 2.55.0 | fetches the proposals repository itself (https) |
 | curl, openssl, ca-certificates | 8.22.0, 3.6.4 | the gate's IRC alerts; git's https |
-| bash 5.3; **busybox** 1.38.0, built here from its source (`sources.lock`: StageX's sum for it) with only the 36 applets (and 3 of their options) in [`container/gate-busybox-applets`](../container/gate-busybox-applets) (`awk`, `find`, `grep`, `sed`, `sha256sum`, `tar` for `git archive`, `flock`…), as the ccs-bash image's | | `ccs-receive`, `ccs-backup-receive`, `init`, the healthchecks, as written and tested; the same awk the backend renders proposals with |
+| jq | 1.8.2 | the site built here (`site.jq` and ccs-front-bash), reading only JSON `ccs-check pages` passed and the gate's own |
+| bash 5.3; **busybox** 1.38.0, built here from its source (`sources.lock`: StageX's sum for it) with only the 40 applets (and 3 of their options) in [`container/gate-busybox-applets`](../container/gate-busybox-applets) (`awk`, `find`, `grep`, `sed`, `sha256sum`, `tar` for `git archive`, `flock`…), as the ccs-bash image's | | `ccs-receive`, `ccs-backup-receive`, `init`, the healthchecks, as written and tested; the same awk the backend renders proposals with |
 | musl 1.2.6, ncurses 6.6 (bash's `libncursesw` only), zlib 1.3.2, libzstd 1.5.7 | | their libraries (each linked by one of the above: checked) |
 | **ccs-check** | this repository's `contrib/ccs-check` | the checks (below), built by StageX's Go 1.27.1, no cgo, no module |
 | caddy | 2.11.4 | the site over HTTPS (`www`), its certificates from Let's Encrypt; HTTP/1.1 only, `Range` ignored, headers capped: [two machines](two-machines.md) |
@@ -84,17 +85,19 @@ patched (`govulncheck` in CI, for Go itself).
 
 ## The code to read
 
-About 5,000 lines, all of this repository's own:
+About 5,800 lines, this repository's own and the ccs-front-bash release it vendors:
 
 | File | Lines | What it is |
 |---|---|---|
-| [`contrib/ccs-receive`](../contrib/ccs-receive) | 478 | the gate: takes only `receive`, receives into staging, fetches the proposals repository, runs `ccs-check gate`, copies only what passed live, tells the backend what it held back, alerts; the heartbeat |
+| [`contrib/ccs-receive`](../contrib/ccs-receive) | 515 | the gate: takes only `receive`, receives into staging, fetches the proposals repository, builds the site from `site-data.json` (`ccs-gate-build`), runs `ccs-check gate`, copies only what passed live, tells the backend what it held back, alerts; the heartbeat |
 | [`contrib/ccs-check/`](../contrib/ccs-check) (Go, tests aside) | 3,513 | `gate` (`gate/gate.go`: which files go live: each only if every check it needs passed it), `receive` and `copy` (`push/push.go`: the push's tar, plain files only, at clean paths, within limits), `pages` (`pages/pages.go`, `pages/match.go`: a page is the design's, filled; `pages/projects.go`: projects.json, each proposal's address its own), `scan` (`scan/scan.go`, `addr/addr.go`: every address, by Monero's checksum) |
 | `contrib/ccs-check/build.sh` | 71 | how it is built and tested (StageX's Go, no network) |
 | [`container/gate.Dockerfile`](../container/gate.Dockerfile) | 101 | what goes in the image, Tor built from its source among it |
 | [`contrib/docker/web/`](../contrib/docker/web) (`compose.yml`, `sshd_config`, `init`, `env.example`, `Caddyfile`, `torrc`) | 352 | how it runs: one user each, the forced command, read-only, sshd's three capabilities, limits; what Caddy serves and how, the onion |
 | `container/build.sh`, `verify-images.sh`, `fetch.sh`, `verify.sh` | 206 | the build: the pins' signatures and sums checked |
 | [`lib/frontmatter.awk`](../lib/frontmatter.awk) | 177 | ccs-bash's reader of a proposal's front matter, in the gate's image: the gate runs it on the repository it fetched, and a page's name, author, date, goal, stage, counts, link and tags must be what it reads |
+| [`contrib/gate-build`](../contrib/gate-build), with ccs-bash's [`lib/site-data.sh`](../lib/site-data.sh), [`site.jq`](../lib/site.jq), [`proposals.sh`](../lib/proposals.sh), [`images.sh`](../lib/images.sh), [`common.sh`](../lib/common.sh) | 359 | the site built here: from the push's `site-data.json` once `ccs-check pages` passes it, the repository fetched here and the signed list, with the backend's own steps; the built site takes the pushed pages' place, and every check runs on it |
+| [`vendor/ccs-front-bash/`](../vendor/ccs-front-bash) | 817 | the ccs-front-bash release that fills the design with it (`RELEASE`: its tag and commit; CI checks the copy is that commit's, `contrib/vendor-front-bash --check`) |
 | [`lib/feed.awk`](../lib/feed.awk) | 84 | the feed's check: `feed.xml` line for line as ccs-front-bash writes it, its links this site's proposal pages (`ccs-check gate` runs it) |
 
 And what the gate checks pages against, from the other two repositories:
@@ -102,7 +105,7 @@ ccs-front-hugo's **design** (its release zip: the pages, the parts they are fill
 stylesheets and images; installed by its sha256) and ccs-front-bash's **`lib/markdown.awk`** (265 lines: the gate renders each proposal
 from the repository itself and requires the page's text to be exactly that).
 
-The tests show each way around it, by name: `tests/gate.sh` (148 cases: every check, hostile
+The tests show each way around it, by name: `tests/gate.sh` (148 cases, 149 with the gate's image: every check, hostile
 tars, with this image as the web server), `tests/gate-image.sh`, `tests/web.sh` (its sshd,
 attacked), `contrib/ccs-check/build.sh test` and `fuzz` (the receiver: nothing written outside
 its folder, whatever the stream). [Reviewing](reviewing.md) walks each function.

@@ -1,0 +1,37 @@
+#!/bin/bash
+# gate-build OUT: the site built on the web server itself, into OUT, as the backend builds it:
+# lib/site-data.sh's site_from_data (the backend's own read_proposals, proposal_images and
+# site.jq) from DATA (the push's site-data.json, which ccs-check pages passed), the newest commit
+# of the proposals repository the gate fetched (GIT, a bare repository, refs/heads/ccs) and the
+# signed list (LIST, its .asc, .key.asc, .pin, .qr.sha256, .viewkey beside it); then the vendored
+# ccs-front-bash (vendor/ccs-front-bash) with DESIGN (a design release, unpacked), the list, and
+# QR (a folder of the push's QR codes, qr/<address>.png: ccs-front-bash takes each only as its sum
+# in the list's .qr.sha256), ONION and SITE (the footer's onion, the feed's links). Exits non-zero,
+# OUT not made, if any step fails. In the gate's image: /usr/local/bin/ccs-gate-build.
+set -euo pipefail
+out=${1:?OUT}
+: "${DATA:?DATA}" "${GIT:?GIT}" "${DESIGN:?DESIGN}" "${LIST:?LIST}" "${QR:?QR}"
+here=$(dirname "$(readlink -f "$0")")
+CCS_LIB=${CCS_GATE_LIB:-$here/../lib}
+front=${CCS_FRONT_BASH:-$here/../vendor/ccs-front-bash}
+# shellcheck source=lib/common.sh
+source "$CCS_LIB/common.sh"
+# shellcheck source=lib/proposals.sh
+source "$CCS_LIB/proposals.sh"
+# shellcheck source=lib/images.sh
+source "$CCS_LIB/images.sh"
+# shellcheck source=lib/site-data.sh
+source "$CCS_LIB/site-data.sh"
+t=$(mktemp -d)
+trap 'rm -rf "$t"' EXIT
+mkdir -p "$t/proposals" "$t/data" "$t/work" "$t/list"
+git -C "$GIT" archive refs/heads/ccs | tar -x -C "$t/proposals"
+PROPOSALS_DIR=$t/proposals OUTPUT_DIR=$t/data WORK=$t/work
+site_from_data "$DATA" "$LIST"
+cp "$DATA" "$t/data/site-data.json"
+name=$(basename "$LIST")
+for f in "$LIST" "$LIST.asc" "$LIST.key.asc" "$LIST.pin" "$LIST.qr.sha256" "$LIST.viewkey"; do
+    if [[ -f $f ]]; then cp "$f" "$t/list/"; fi
+done
+ln -s "$(readlink -f "$QR")" "$t/list/$name.qr"
+CCS_ONION=${ONION:-} CCS_SITE_URL=${SITE:-} bash "$front/ccs-front-bash.sh" "$DESIGN" "$t/data" "$t/proposals" "$out" "$t/list/$name"

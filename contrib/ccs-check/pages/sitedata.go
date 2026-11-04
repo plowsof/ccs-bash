@@ -3,7 +3,7 @@ package pages
 // site-data.json: what only the backend knows, the inputs of ccs-bash's lib/site.jq but the front
 // matter (which the gate reads from the repository itself): each proposal's subaddress index,
 // merge request and dates, its funds, the ideas. Checked here so the web server can build the site
-// from it (step 6: shadow mode first); every key once as Go reads it, no other key, each value of
+// from it; every key once as Go reads it, no other key, each value of
 // its kind: an index the signed list has, never 0 (the wallet's main address) nor two proposals'
 // one, and the address the live site has for the proposal (projects.go's pins); amounts as
 // ccs-bash's xmr4 writes them; an idea's name and author TEXT, its link a merge request of the
