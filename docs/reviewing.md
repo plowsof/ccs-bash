@@ -179,33 +179,34 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
   644/755, within its limits, else the whole push refused and IRC told; refused before it without
   `ccs-check`). Once
   received, before anything goes live, refuses the whole push without its pinned list (or with one of no addresses) and QR
-  codes' sums (`.qr.sha256`, the `.pin`'s `qr` line), `git`, `design.sha256`, a design release, `markdown.awk` or `proposals.conf`, or for
-  a control character in a file name. Then, for each page and JSON file
+  codes' sums (`.qr.sha256`, the `.pin`'s `qr` line), `git`, `design.sha256`, a design release, `markdown.awk`, `proposals.conf` or `feed.awk`
+  (a control character in a file name: `ccs-check receive`). Then `ccs-check gate`
+  (contrib/ccs-check/gate) decides, for each page and JSON file
   the push changed and each it held back last time (`held` in its state folder; every one when the
   list, its pin or QR codes' sums, `allowed`, the design, `markdown.awk`, `proposals.conf`, the
   proposals commit, `ccs-receive` or `ccs-check` changed, and once a day: `checked-with`; the live site
   holds only what passed), and every
-  other file the push changed:
-  - `fetch`: the proposals repository's last two commits (the last fetch if it can't);
+  other file the push changed, the checks its name calls for; a file goes live only if each of
+  them passed it (one that didn't finish or didn't get to it holds it back, and a gate that can't
+  say refuses the whole push):
+  - `fetch` (bash): the proposals repository's last two commits (the last fetch if it can't);
   - `pages` (`ccs-check pages`, contrib/ccs-check/pages): a page is one of the design's
     (`design/<release>/`), byte for byte outside its regions, each region the design's parts and
     each `{{slot}}` a value of its kind, one pattern per page (`fill`, `region`, `slots`; matched by
     `match.go`); a
     proposal's text what `markdown.awk` makes of its file at one of those commits (`bodies`); a
-    donation box one listed address, its QR code `qr/<that address>.png`. Anything not passed (`=ok`), a timeout too,
+    donation box one listed address, its proposal's (`projects.go`), its QR code `qr/<that address>.png`. Anything not passed (`=ok`), a timeout too,
     is held back;
-  - `kinds`: no symlink, no folder in a file's place or file in a folder's;
-  - `scan` (`ccs-check scan`, one pass): every address in pages, JSON and the feed (which may have
+  - `ccs-check scan` (one pass): every address in pages, JSON and the feed (which may have
     none) as written (entities
     decoded, a non-ASCII or control character read both as nothing and as a space; in groups split
     by up to three spaces or punctuation, or between elements side by side (the text with its tags
     dropped), by its checksum: `addr`, a budget of checksums and time a
     file), the JSON as JSON too (`ccs-check json`, its strings read the same way); a `data:` image is
     held back (the site has none); pages and JSON start with `<`, `[` or `{`;
-  - `changes`: any other file is the design's (`design.sha256`), a proposal image the repository
-    has at that path, byte for byte (`repo_images`: `git hash-object` against `ls-tree`; never
-    read: the repository's review vouches for it), `feed.xml` (`feed`,
-    `feed_awk`: line for line as ccs-front-bash writes it, its links this site's proposal pages),
+  - by its bytes (`gate.go`'s `files`): any other file is the design's (`design.sha256`), a proposal image the repository
+    has at that path, byte for byte (`repo_images`'s `ls-tree` against its git blob id, made in Go; never
+    read: the repository's review vouches for it), `feed.xml` (`lib/feed.awk`: line for line as ccs-front-bash writes it, its links this site's proposal pages),
     `projects.json` (checked by `ccs-check pages`: its entries the proposals' front matter, each
     address its proposal's), the list's files as installed, or a donation QR code `qr/<address>.png`
     exactly the list's (its line in `.qr.sha256`: never made or decoded here);
@@ -234,9 +235,9 @@ key; its `.pin` (sha256 and key) is what each machine trusts, installed by hand 
 | 4. Its QR code is the list's | ccs-front-bash `tools/make-qr.sh`, `verify-subaddresses.sh`; `ccs-front-bash.sh` `qr_codes` | made with the list (`qrencode -s 10 "monero:<address>"`), their sums pinned in its `.pin` (`qr`), each remade when the list is checked; the run copies the address's file, its sum the pinned one; ccs-bash's own QR codes are never used | the run stops |
 | 5. The page holds them | ccs-front-bash `lib/pages.jq`, the donation box | the donation box gets that address and that QR code, else the run stops | the run stops |
 | 6. The web server's list is the pinned one | `contrib/ccs-receive`, once the push is received, before anything goes live | the gate's own copy (installed by hand) is the one its `.pin` names, and so are its QR codes' sums | every push refused, IRC told |
-| 7. Every address on every page is on the list | `contrib/ccs-receive` `scan` (`ccs-check scan`, `json`) | every 95- or 106-character address in a page or JSON, as written (entities read, a non-ASCII character as nothing and as a space, in groups or across elements by its checksum), is a line of the list or in `allowed`; the feed has none | that file held back, its last good copy stays, IRC told |
-| 8. Every QR code is of a listed address | `contrib/ccs-receive` `changes`, `scan`; `ccs-check pages` | a donation box's image is `qr/<its own address>.png`, that file the list's, byte for byte (its sum in `.qr.sha256`); no `data:` image; never made or decoded | held back |
-| 9. Addresses only where the design puts them | `contrib/ccs-receive` `pages` (`ccs-check pages`, the `address` and `qr` slots) | a page is the design's, filled: a whole address can only be in the donation box's slots, each one address; one in groups is found by `scan` (any slot), by its checksum | held back |
+| 7. Every address on every page is on the list | `ccs-check gate`'s `scans` (`ccs-check scan`, `json`) | every 95- or 106-character address in a page or JSON, as written (entities read, a non-ASCII character as nothing and as a space, in groups or across elements by its checksum), is a line of the list or in `allowed`; the feed has none | that file held back, its last good copy stays, IRC told |
+| 8. Every QR code is of a listed address | `ccs-check gate` (`files`, `scans`); `ccs-check pages` | a donation box's image is `qr/<its own address>.png`, that file the list's, byte for byte (its sum in `.qr.sha256`); no `data:` image; never made or decoded | held back |
+| 9. Addresses only where the design puts them | `ccs-check pages` (the `address` and `qr` slots) | a page is the design's, filled: a whole address can only be in the donation box's slots, each one address; one in groups is found by `scan` (any slot), by its checksum | held back |
 | 10. What is live is what was pushed | `contrib/ccs-watch`, the page comparison (`differs`) | the live donation pages (and others at random) byte for byte; a live address not on the list is named in the alert | IRC told |
 | 11. The visitor | the Verify page (`parts/verify.html`, filled by `check_addresses`) | the wallet's address and view key, and where they were published: a view-only copy of the wallet says whether an address is its own (`get_address_index`) | the visitor doesn't pay |
 
