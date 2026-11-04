@@ -476,6 +476,15 @@ v=$((v + 1)); site "$v" "$good"; projects "$good" "R&amp;D notes" | put projects
 held "$v" projects.json "projects.json, a title that isn't its proposal's front matter" 'R&amp;D'
 v=$((v + 1)); site "$v" "$good"; on backend "sed -i 's/\"gitlab_url\":null/\"gitlab_url\":null,\"url\":\"https:\/\/evil.test\"/' /out/projects.json"
 held "$v" projects.json "projects.json, a key ccs-bash doesn't write" 'evil.test'
+# site-data.json (what the web server is to build the site from: step 6): p's index the list's line
+# of its live address (2), its funds as ccs-bash writes them; another index, held back
+sitedata() {
+    printf '{"state": {"p.md": {"gitlab_url": null, "subaddr_index": %s, "funding_required_date": null, "funded_date": null}},\n "funds": {"p.md": {"amount": "10.0000", "raised": "0.0000", "pending": 0, "count": 0, "percentage": 0, "needed": "10.0000"}},\n "ideas": []}\n' "$1"
+}
+v=$((v + 1)); site "$v" "$good"; sitedata 2 | put site-data.json
+passes "$v" site-data.json "site-data.json as ccs-bash writes it" '"subaddr_index": 2'
+v=$((v + 1)); site "$v" "$good"; sitedata 1 | put site-data.json
+held "$v" site-data.json "site-data.json, another subaddress than the live site has for the proposal" '"subaddr_index": 1'
 v=$((v + 1)); site "$v" "$(addr 1)"
 rc=0; push > /dev/null || rc=$?
 if ((rc == 7)) && [[ $(live) == "$v" && $(livepage) == *"$good"* && $(livefile projects.json) == *"$good"* ]] \

@@ -1215,7 +1215,7 @@ fi
 # shellcheck source=tests/review5.sh
 source "$here/review5.sh"
 
-for f in proposals.json completed-proposals.json projects.json proposals.csv log; do
+for f in proposals.json completed-proposals.json projects.json site-data.json proposals.csv log; do
     if diff -u "$here/expected/$f" "$TEST_TMP/out/$f"; then echo "ok   $f"; else echo "FAIL $f"; status=1; fi
 done
 # /projects: the amounts numbers, as ccs-back's are (its readers add them up)
