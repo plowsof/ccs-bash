@@ -133,7 +133,7 @@ docker cp "$files/qr.sha256" "$name-web:/tmp/qr.sha256" && docker cp "$files/rep
 key=$(on backend 'cat ~/.ssh/id_ed25519.pub')
 [[ $img ]] || docker cp "$here/../contrib/ccs-receive" "$name-web:/usr/local/bin/ccs-receive"
 # ccs-bash's reader of the proposals' front matter, where the gate's image has it
-[[ $img ]] || { on web 'mkdir -p /usr/local/lib/ccs-gate' && docker cp "$here/../lib/frontmatter.awk" "$name-web:/usr/local/lib/ccs-gate/frontmatter.awk"; }
+[[ $img ]] || { on web 'mkdir -p /usr/local/lib/ccs-gate' && docker cp "$here/../lib/frontmatter.awk" "$name-web:/usr/local/lib/ccs-gate/frontmatter.awk" && docker cp "$here/../lib/feed.awk" "$name-web:/usr/local/lib/ccs-gate/feed.awk"; }
 if [[ ! $img ]]; then
     check=${CCS_CHECK:-$files/ccs-check}
     [[ -n ${CCS_CHECK:-} ]] || "$here/../contrib/ccs-check/build.sh" "$check" > /dev/null
