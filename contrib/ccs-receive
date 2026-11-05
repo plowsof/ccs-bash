@@ -353,6 +353,43 @@ onion=$(tr -d ' \n' 2> /dev/null < "$conf/onion") || onion=''
 [[ $onion =~ ^[a-z2-7]{56}\.onion$ ]] || onion=
 if [[ $fetched ]]; then images=$(mktemp) && repo_images > "$images"; fi
 site=$(sed -n 's/^SITE_URL=//p' "$conf/alert.conf" 2> /dev/null | tail -n 1)
+# The site built here (ccs-gate-build: the backend's own steps and the vendored
+# ccs-front-bash), from the push's site-data.json once ccs-check pages passes it, with the newest
+# design release, the repository fetched here and the signed list, in place of the pushed pages:
+# staging becomes that site, and every check below runs on it as on a push (the page check too).
+# No site-data.json, or one that fails, or a build that fails: the pushed pages are checked as
+# before (a failed build told to IRC). Only when there is something new to build from (a
+# site-data.json the live site hasn't, or all checked again: the proposals commit, design, list
+# or gate changed, or a day passed): a build takes the web server half a minute.
+if [[ -f $staging/site-data.json && $fetched && $designs ]] && command -v ccs-gate-build > /dev/null \
+    && { [[ $full ]] || ! cmp -s "$staging/site-data.json" "$live/site-data.json"; }; then
+    newest=$(tr ':' '\n' <<<"$designs" | awk -F/v '{ split($NF, n, "."); k = (n[1] * 1000 + n[2]) * 1000 + n[3]; if (k >= m) { m = k; d = $0 } } END { print d }')
+    why=$(printf 'site-data.json\0' | timeout 60 ccs-check pages "$staging" "$designs" "$bodies" "$list" "$vk" "$hosts" "$onion" "$fronts" "$live" 2> /dev/null | cut -f2-) || why=''
+    if [[ $why == =ok ]]; then
+        b=$(mktemp -d)
+        if DATA=$staging/site-data.json GIT=$git DESIGN=$newest LIST=$list QR=$staging/qr ONION=$onion SITE=${site%/} \
+            timeout 600 ccs-gate-build "$b/site" > "$b/log" 2>&1; then
+            # (until the backend stops sending pages: how many of the built files differ from the
+            # pushed ones, which should be none; the log's record that the two builds agree)
+            nb=0 nd=0
+            while IFS= read -r -d '' f; do
+                nb=$((nb + 1))
+                cmp -s -- "$f" "$staging/${f#"$b/site/"}" || nd=$((nd + 1))
+            done < <(find "$b/site" -type f -print0)
+            # (staging half the built site and half the push would be neither: refused whole)
+            ccs-check copy --delete "$b/site" "$staging" \
+                || refuse "the site built here could not be put in staging" build-copy "it could not put the site it built in staging"
+            say "built the site here from site-data.json (the design ${newest##*/}): $nd of its $nb files differ from the pushed ones"
+        else
+            say "could not build the site here (ccs-gate-build): the pushed pages are checked instead"
+            while IFS= read -r l; do say "  $l"; done < <(grep -v 'skipping ' "$b/log" | tail -n 3)
+            alert build "the web server could not build the site from site-data.json: the pushed pages are checked instead @ @SITE@"
+        fi
+        rm -rf "$b"
+    else
+        say "site-data.json held back (${why:-not checked}): the pushed pages are checked instead"
+    fi
+fi
 glog=$(mktemp)
 # every file that may not go live, "file<TAB>!reason" or "file<TAB>address" (one neither the
 # list's nor allowed); it can't say (stopped, out of time): none of the push goes live

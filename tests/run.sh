@@ -1222,7 +1222,7 @@ done
 if jq -e 'length > 0 and all(.[]; (.raised_amount | type) == "number" and (.target_amount | type) == "number")' "$TEST_TMP/out/projects.json" > /dev/null; then
     echo "ok   /projects: raised_amount and target_amount are numbers, as ccs-back's"
 else echo "FAIL /projects: an amount that isn't a number"; status=1; fi
-# step 6: the site's JSON from site-data.json (lib/site-data.sh, as the web server is to build it)
+# the site's JSON from site-data.json (lib/site-data.sh, as the web server is to build it)
 # is the run's own, byte for byte; the list here the run's own addresses by index
 sd=$TEST_TMP/from-data
 rm -rf "$sd" && mkdir -p "$sd/out" "$sd/work"
@@ -1235,7 +1235,7 @@ if bash -c 'source "$1/../ccs-back.sh" && PROPOSALS_DIR=$2 OUTPUT_DIR=$3/out WOR
     for f in proposals.json completed-proposals.json projects.json images.json; do
         diff -u "$TEST_TMP/out/$f" "$sd/out/$f" || same=0
     done
-    if ((same)); then echo "ok   step 6: the site's JSON from site-data.json is the run's own (proposals, completed, projects, images)"
-    else echo "FAIL step 6: the site's JSON from site-data.json differs from the run's"; status=1; fi
-else echo "FAIL step 6: site_from_data failed"; cat "$sd/log"; status=1; fi
+    if ((same)); then echo "ok   the site's JSON from site-data.json is the run's own (proposals, completed, projects, images)"
+    else echo "FAIL the site's JSON from site-data.json differs from the run's"; status=1; fi
+else echo "FAIL site_from_data failed"; cat "$sd/log"; status=1; fi
 exit "$status"

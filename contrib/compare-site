@@ -1,6 +1,6 @@
 #!/bin/bash
-# compare-site [OUT [PROPOSALS [LIST]]]: step 6's check, before the web server builds the site
-# itself. The site's JSON as the web server is to make it (lib/site-data.sh: from OUT's
+# compare-site [OUT [PROPOSALS [LIST]]]: that the web server's build of the site is the backend's.
+# The site's JSON as the web server makes it (lib/site-data.sh: from OUT's
 # site-data.json, the proposals in PROPOSALS and the signed list LIST) must be the backend's own
 # in OUT, byte for byte: then ccs-front-bash builds the same pages from it. Prints "same" or the
 # difference for each file; exits 1 on any difference. Read-only: it writes only to a temporary
