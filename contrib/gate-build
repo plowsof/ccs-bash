@@ -3,7 +3,8 @@
 # lib/site-data.sh's site_from_data (the backend's own read_proposals, proposal_images and
 # site.jq) from DATA (the push's site-data.json, which ccs-check data passed), the newest commit
 # of the proposals repository the gate fetched (GIT, a bare repository, refs/heads/ccs: each
-# proposal's merge request read from its history, under MRS, https://host, if set) and the
+# proposal's merge request read from its history, under MRS, https://host, if set, for the
+# repositories MR_REPOS names, host/path, space-separated) and the
 # signed list (LIST, its .asc, .key.asc, .pin, .qr.sha256, .viewkey beside it); then the vendored
 # ccs-front-bash (vendor/ccs-front-bash) with DESIGN (a design release, unpacked), the list, and
 # QR (the list's QR codes, <address>.png, installed beside it: ccs-front-bash takes each only as
@@ -29,7 +30,7 @@ mkdir -p "$t/proposals" "$t/data" "$t/work" "$t/list"
 git -C "$GIT" archive refs/heads/ccs | tar -x -C "$t/proposals"
 PROPOSALS_DIR=$t/proposals OUTPUT_DIR=$t/data WORK=$t/work
 links=''
-if [[ ${MRS:-} ]]; then links=$t/links.json && merge_requests "$GIT" "$MRS" > "$links"; fi
+if [[ ${MRS:-} ]]; then links=$t/links.json && merge_requests "$GIT" "$MRS" "${MR_REPOS:-}" > "$links"; fi
 site_from_data "$DATA" "$LIST" "$links"
 cp "$DATA" "$t/data/site-data.json"
 name=$(basename "$LIST")

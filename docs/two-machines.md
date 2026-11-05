@@ -151,7 +151,8 @@ repository it fetches, the design and the signed list installed here. Each push,
    fetch if it can't): each proposal's text, front matter and images come from here, reviewed
    and merged, never from the backend; and its **merge request**, read from GitLab's merge commits
    ("See merge request monero-project/ccs-proposals!522": the one that added the proposal's
-   file), linked under `MERGE_REQUESTS`;
+   file), linked under `MERGE_REQUESTS`, and only to the repository itself (its own address or
+   `LINK_HOSTS`': a message naming another project on the forge, anyone's, gives no link);
 3. checks **`site-data.json`** (`ccs-check data`): every key once and no other, each value of its
    kind; each index one the signed list has, never 0 (the wallet's main address), one
    proposal's only, and the one the live site has for the proposal (a push can't give a proposal

@@ -17,20 +17,25 @@ site_json() {
     done
 }
 
-# merge_requests GIT BASE: {"file.md": link} for each proposal the proposals repository GIT (its
-# refs/heads/ccs) merged: the merge request of the merge commit that added the file (GitLab ends
-# its message "See merge request <project>!N"), as BASE/<project>/-/merge_requests/N. The oldest
+# merge_requests GIT BASE REPOS: {"file.md": link} for each proposal the proposals repository GIT
+# (its refs/heads/ccs) merged: the merge request of the merge commit that added the file (GitLab
+# ends its message "See merge request <project>!N"), as BASE/<project>/-/merge_requests/N, only
+# for a project REPOS names (host/path, space-separated: the proposals repository's own addresses;
+# a commit message naming another project, anyone's on that forge, links nowhere). The oldest
 # one: a later merge request that adds a file of the same name isn't this proposal's. A proposal
 # added by a commit that isn't a merge (moved, renamed) has none.
 merge_requests() {
     git -C "$1" -c core.quotePath=false log --first-parent --merges --diff-merges=first-parent --diff-filter=A \
         --name-only --format='%x01%n%B%x02' refs/heads/ccs \
-        | awk -v base="${2%/}" '
+        | awk -v base="${2%/}" -v repos=" ${3:-} " '
             /^\001$/ { mr = ""; files = 0; next }
             !files {
                 if (match($0, /See merge request [A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)+![0-9]+/)) {
-                    s = substr($0, RSTART + 18, RLENGTH - 18); i = index(s, "!")
-                    mr = base "/" substr(s, 1, i - 1) "/-/merge_requests/" substr(s, i + 1)
+                    s = substr($0, RSTART + 18, RLENGTH - 18); i = index(s, "!"); p = substr(s, 1, i - 1)
+                    h = base; sub(/^https:\/\//, "", h)
+                    # (no step out of the path, and one of the repositories named)
+                    if (p !~ /(^|\/)\.\.?(\/|$)/ && index(repos, " " h "/" p " "))
+                        mr = base "/" p "/-/merge_requests/" substr(s, i + 1)
                 }
                 if (/\002$/) files = 1
                 next

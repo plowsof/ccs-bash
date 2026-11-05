@@ -1240,7 +1240,8 @@ if bash -c 'source "$1/../ccs-back.sh" && PROPOSALS_DIR=$2 OUTPUT_DIR=$3/out WOR
 else echo "FAIL site_from_data failed"; cat "$sd/log"; status=1; fi
 # each proposal's merge request, from the repository's merge commits (lib/site-data.sh's
 # merge_requests): the one that added the file, not a later one that changed it; none for a file a
-# plain commit added; a name with a space, as the repository has one
+# plain commit added, nor for one whose merge commit names another project or a path with ..; a
+# name with a space, as the repository has one
 mr=$TEST_TMP/mr
 g() { git -C "$mr" -c user.name=t -c user.email=t@t "$@"; }
 merge() {   # merge BRANCH N FILE TEXT: FILE written on BRANCH, merged as GitLab merges !N
@@ -1249,10 +1250,14 @@ merge() {   # merge BRANCH N FILE TEXT: FILE written on BRANCH, merged as GitLab
 }
 git init -q -b master "$mr" && g commit -q --allow-empty -m start
 merge a 5 p.md one && merge b 9 p.md two && merge c 7 ' spaced.md' three
+g checkout -q -b d master && printf 'x\n' > "$mr/elsewhere.md" && g add -A && g commit -q -m d
+g checkout -q master && g merge -q --no-ff d -m "Merge branch 'd' into 'master'" -m "See merge request someone/else!3"
+g checkout -q -b e master && printf 'x\n' > "$mr/dots.md" && g add -A && g commit -q -m e
+g checkout -q master && g merge -q --no-ff e -m "Merge branch 'e' into 'master'" -m "See merge request monero-project/ccs-proposals/../../someone/else!4"
 printf 'x\n' > "$mr/q.md" && g add -A && g commit -q -m 'a plain commit'
 g update-ref refs/heads/ccs master
 want='{"p.md":"https://repo.test/monero-project/ccs-proposals/-/merge_requests/5"," spaced.md":"https://repo.test/monero-project/ccs-proposals/-/merge_requests/7"}'
-if got=$(bash -c 'source "$1/../ccs-back.sh" && merge_requests "$2" https://repo.test/' _ "$here" "$mr" | jq -cS .) \
+if got=$(bash -c 'source "$1/../ccs-back.sh" && merge_requests "$2" https://repo.test/ "gitlab.test/mirror repo.test/monero-project/ccs-proposals"' _ "$here" "$mr" | jq -cS .) \
     && [[ $got == "$(jq -cS . <<<"$want")" ]]; then
     echo "ok   each proposal's merge request read from the merge commit that added it"
 else echo "FAIL merge_requests: $got"; status=1; fi

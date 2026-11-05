@@ -80,7 +80,7 @@ refuse() {
 # forge's other users' pages are anyone's), and proposals.conf's LINK_HOSTS (the old forge's
 # repository, host/path); and mrs, where each proposal's merge request is (MERGE_REQUESTS:
 # https://host, the forge whose "See merge request <project>!N" its merge commits end with;
-# none: no links).
+# none: no links), linked only for a project hosts names (MERGE_REQUESTS' host and that path).
 git=$state/proposals.git hosts='' mrs=''
 fetch() {
     local url='' branch=master k v h deepen=()
@@ -257,7 +257,7 @@ fi
 
 # the site, built here (ccs-gate-build: lib/site-data.sh's site_from_data and the vendored
 # ccs-front-bash)
-if ! DATA=$data GIT=$git DESIGN=$design LIST=$list QR=$list.qr MRS=$mrs ONION=$onion SITE=${site%/} \
+if ! DATA=$data GIT=$git DESIGN=$design LIST=$list QR=$list.qr MRS=$mrs MR_REPOS=$hosts ONION=$onion SITE=${site%/} \
     timeout 600 ccs-gate-build "$staging/site" > "$staging/build.log" 2>&1; then
     say "could not build the site (ccs-gate-build): the live site stays as it is"
     while IFS= read -r l; do say "  $l"; done < <(grep -v 'skipping ' "$staging/build.log" | tail -n 3)
