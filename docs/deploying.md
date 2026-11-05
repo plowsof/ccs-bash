@@ -62,6 +62,12 @@ Too few: wait, or attest it yourself ([contrib/release](../contrib/release/READM
 `--min-signers 1` is for the testnet only: with one signer, the person who wrote a release is
 also the only one vouching for it.
 
+**A testnet may skip this step** and deploy its own releases unsigned: each machine still builds
+the release from its commit and switches only to the ID the release notes publish (step 2), so a
+release is what its tag holds; nothing says anyone else agrees. Set `CCS_UNATTESTED=1` in the
+backend's `.env`, so `ccs config:check` warns of the unattested images instead of failing. Never
+on mainnet: there, two people attest every set.
+
 ## 2. Build the images from those commits and compare
 
 The loop keeps running meanwhile. Build from the attested commit, not the tag: a tag can move,
