@@ -85,6 +85,7 @@ if k == "absolute": add("/tmp/escaped")
 if k == "twice": add("site-data.json", b"{}"); add("./site-data.json", b"{}")
 if k == "address": add("pay/" + sys.argv[2] + "/../x.json")
 if k == "page": add("site-data.json", b"{}"); add("index.html", b"<p>Donate here</p>")
+if k == "many": [add("f%05d.txt" % i) for i in range(20000)]
 out.close()
 PY
 docker cp "$files/hostile.py" "$name-backend:/hostile.py"
@@ -113,6 +114,14 @@ edit() {
     b=$(g branch --show-current); g checkout -q master && g merge -q --no-ff "$b" -m "Merge branch '$b' into 'master'" -m "See merge request monero-project/ccs-proposals!99"
 }
 gone() { cd /srv/proposals && for n in "$@"; do g rm -q "$n.md"; done && g commit -q -m "taken out: $*"; }
+# front NAME [LINE]: a merge that adds LINE to NAME's front matter (none: takes its gitlab_url out)
+front() {
+    cd /srv/proposals
+    g checkout -q -b "front-$1-$RANDOM" master
+    if [[ ${2:-} ]]; then sed -i "1a $2" "$1.md"; else sed -i '/^gitlab_url:/d' "$1.md"; fi
+    g commit -q -am "front $1"
+    b=$(g branch --show-current); g checkout -q master && g merge -q --no-ff "$b" -m "Merge branch '$b' into 'master'" -m "See merge request monero-project/ccs-proposals!98"
+}
 "$@"
 chown -R ccs-data /srv/proposals 2> /dev/null || chown -R 997:997 /srv/proposals
 SH
@@ -196,6 +205,9 @@ if [[ $(livepage) == *'href="https://repo.test/monero-project/ccs-proposals/-/me
     && $(livefile proposals/w.html) == *'merge_requests/6"'* ]]; then
     ok "each proposal links to the merge request that added it, read from the repository's merge commits"
 else livepage | grep -o 'href="[^"]*merge[^"]*"' || true; fail "the merge request links"; fi
+if on web "grep -qx 'p.md $(addr 1)' /var/lib/ccs-gate/pins && grep -qx 'w.md $(addr 2)' /var/lib/ccs-gate/pins"; then
+    ok "review 12 (M-2): each proposal's address pinned by the gate itself (/var/lib/ccs-gate/pins), from when it went live"
+else on web 'cat /var/lib/ccs-gate/pins' || true; fail "the pins"; fi
 if [[ $(on web "stat -c %a /var/lib/ccs-data/index.html /var/lib/ccs-data/proposals" | tr '\n' ' ') == "644 755 " ]]; then
     ok "the site's files 644, its folders 755"
 else on web "ls -la /var/lib/ccs-data"; fail "file modes"; fi
@@ -209,6 +221,13 @@ repo edit p 'A plain proposal, in 3 parts.'
 if push > /dev/null && [[ $(livepage) == *"in 3 parts."* && $(livepage) == *'merge_requests/5"'* ]]; then
     ok "a proposal edited (a new commit: built again), its link still its own merge request"
 else logtail; fail "an edited proposal"; fi
+# review 12's L-3: a proposal's own gitlab_url (front matter) doesn't override its merge request,
+# and links nowhere but the repository's merge requests
+repo front p 'gitlab_url: https://evil.test/donate'
+if push > /dev/null && [[ $(livepage) == *'merge_requests/5"'* && $(livepage) != *evil.test* && $(livefile projects.json) != *evil.test* ]]; then
+    ok "review 12 (L-3): a gitlab_url in a proposal's front matter: its link is still its merge request"
+else livepage | grep -o 'href="[^"]*"' | grep -v '\.\./' || true; fail "a front matter gitlab_url"; fi
+repo front p
 
 # the push is site-data.json alone: a page, or anything else, refuses all of it
 rc=0; hostile page || rc=$?
@@ -234,15 +253,29 @@ data 3.0000 | sed 's#"name": "An idea"#"name": "<b>An</b> idea"#' | held_data "m
 data 3.0000 | sed "s#\"name\": \"An idea\"#\"name\": \"Send to $fake\"#" | held_data "an address-long run in an idea's name" "plain text"
 data 3.0000 | sed 's#repo.test/monero-project/ccs-proposals/-/merge_requests/9#evil.test/x/-/merge_requests/9#' | held_data "an idea's link to another forge" "isn.t a merge request"
 data 3.0000 | sed 's/"d.md"/"x.md"/' | held_data "a proposal the repository hasn't" "no proposal in the proposals repository"
+# review 12's H-1: a key Go's decoder takes for another, or one twice (jq, which builds the site,
+# reads only the exact key): one site-data.json for the check, another for the build
+data 3.0000 0 | sed 's/"subaddr_index": 0,/"subaddr_index": 0, "Subaddr_Index": 1,/' | held_data "review 12 (H-1): Subaddr_Index beside subaddr_index" "the key .Subaddr_Index"
+data 3.0000 | sed 's/^{"state": {/{"STATE": {}, "state": {/' | held_data "review 12 (H-1): STATE beside state" "the key .STATE"
+data 3.0000 | sed 's/"name": "An idea"/"name": "An idea", "name": "x"/' | held_data "review 12 (H-1): a key twice" "twice"
+# review 12's M-1: an address in an idea's name in groups, one letter Cyrillic: as the gate's scan
+# reads it, an address
+grouped=$(for ((i = 0; i < 95; i += 4)); do printf '%s ' "${fake:i:4}"; done)
+data 3.0000 | sed "s#\"name\": \"An idea\"#\"name\": \"Send to ${grouped/a/а}\"#" | held_data "review 12 (M-1): an address in groups in an idea's name, a letter Cyrillic" "an address in its name"
+# review 12's M-2: a proposal the live site has given an address (the pins) keeps it: no index
+# (which would hide it for a push, then let any other be given) is held back too
+data 3.0000 null | held_data "review 12 (M-2): p's index null, where the live site gave it one" "no subaddress, where the live site has given it one"
 if bot | grep -qF "the web server held back the backend's site-data.json"; then ok "... and IRC is told"; else bot | tail -n 2; fail "no alert for site-data.json"; fi
 data 3.0000 | put site-data.json
 if push > /dev/null && [[ $(raised) == 3 ]]; then ok "the next good site-data.json goes live"; else logtail; fail "after a held site-data.json"; fi
 
-# a Funding Required proposal without an index: kept off the site (no box without an address)
-data 3.0000 null | put site-data.json
-if push > /dev/null && on web '! test -e /var/lib/ccs-data/proposals/p.html'; then ok "a Funding Required proposal without an index: kept off the site"; else logtail; fail "a proposal without an index"; fi
-data 3.0000 | put site-data.json
-if push > /dev/null && [[ $(livepage) == *"$(addr 1)"* ]]; then ok "... back with its index"; else logtail; fail "a proposal back with its index"; fi
+# a new Funding Required proposal without an index yet: kept off the site (no box without an
+# address)
+repo propose n fr 'A new one' 8
+if push > /dev/null && on web '! test -e /var/lib/ccs-data/proposals/n.html' && [[ $(livepage) == *"$(addr 1)"* ]]; then
+    ok "a new Funding Required proposal without an index: kept off the site"
+else logtail; fail "a proposal without an index"; fi
+repo gone n
 
 # an address in a proposal's own text (merged into the repository): that page off the site, IRC
 # told, the rest live; the General Fund's (allowed) goes live
@@ -256,11 +289,20 @@ else logtail 5; bot | tail -n 2; fail "an address in a proposal's text"; fi
 repo edit w "Or give to the General Fund, $fund."
 if push > /dev/null && [[ $(livefile proposals/w.html) == *"$fund"* ]]; then ok "an allowed address (the General Fund) in a proposal's text goes live"; else logtail; fail "an allowed address"; fi
 # split, in groups, by markup the proposal's markdown makes: found all the same
-grouped=$(for ((i = 0; i < 95; i += 4)); do printf '%s ' "${fake:i:4}"; done)
 repo edit w "Send to $grouped"
 if push > /dev/null && on web '! test -e /var/lib/ccs-data/proposals/w.html'; then ok "an address in groups of four in a proposal's text: found, the page off the site"; else logtail; fail "an address in groups"; fi
 repo edit w "Send to ${fake:0:40}**${fake:40:10}**${fake:50}"
 if push > /dev/null && on web '! test -e /var/lib/ccs-data/proposals/w.html'; then ok "an address split by markup (bold) in a proposal's text: found"; else logtail; fail "an address split by markup"; fi
+# review 12's M-1: written backwards after a bidi override (shown the right way round), or with a
+# letter drawn as an address's (a Cyrillic а): found, the page off the site
+backwards=$(rev <<<"$grouped")
+for c in "written backwards after U+202E (as an entity)|&#x202E;$backwards&#x202C;|!a bidi control" "raw U+202E|$(printf '\xe2\x80\xae')$backwards|!a bidi control" "in groups, a letter Cyrillic|${grouped/a/а}|$fake"; do
+    IFS='|' read -r what text why <<<"$c"
+    repo edit w "Send to $text"
+    if push > /dev/null && on web '! test -e /var/lib/ccs-data/proposals/w.html' && on web "grep -qF 'proposals/w.html: ${why}' /var/log/ccs-gate.log"; then
+        ok "review 12 (M-1): an address $what in a proposal's text: the page off the site"
+    else logtail; fail "an address $what"; fi
+done
 repo edit w 'Back to work.'
 if push > /dev/null && [[ $(livefile proposals/w.html) == *"Back to work."* ]]; then ok "the text mended: the page back"; else logtail; fail "a mended page"; fi
 
@@ -268,7 +310,10 @@ if push > /dev/null && [[ $(livefile proposals/w.html) == *"Back to work."* ]]; 
 # new site goes live, IRC told
 repo gone d
 other=''
-if push > /dev/null && on web '! test -e /var/lib/ccs-data/proposals/d.html'; then ok "a proposal taken out of the repository: its page goes"; else logtail; fail "a removed proposal"; fi
+if push > /dev/null && on web '! test -e /var/lib/ccs-data/proposals/d.html' \
+    && bot | grep -qF 'the web server took a page off the site: its proposal is no longer in the repository, or the backend hides it @ https://ccs.test/proposals/d.html'; then
+    ok "a proposal taken out of the repository: its page goes, IRC told (review 12's M-2)"
+else logtail; bot | tail -n 2; fail "a removed proposal"; fi
 for n in 1 2 3 4; do repo propose "x$n" wip "Extra $n" $((20 + n)); done
 other='x1 x2 x3 x4'
 data 4.0000 | put site-data.json
@@ -279,7 +324,7 @@ other=''
 data 5.0000 | put site-data.json
 rc=0; push > /dev/null || rc=$?
 if ((rc == 1)) && on web 'test -e /var/lib/ccs-data/proposals/x1.html && test -e /var/lib/ccs-data/proposals/x4.html' && [[ $(raised) == 4 ]] \
-    && bot | grep -qF 'the web server would take 4 pages off the site at once'; then
+    && bot | grep -qE 'the web server would take [0-9]+ pages off the site within a day'; then
     ok "four proposal pages leaving at once: none of the new site live, IRC told"
 else echo "exit $rc"; logtail 4; fail "many removed at once"; fi
 # a person lets them go: allow-remove, for one build
@@ -287,6 +332,17 @@ on web "touch /var/lib/ccs-gate/allow-remove && chown $data /var/lib/ccs-gate/al
 if push > /dev/null && on web '! test -e /var/lib/ccs-data/proposals/x1.html && ! test -e /var/lib/ccs-gate/allow-remove' && [[ $(raised) == 5 ]]; then
     ok "allow-remove: the four go, the new site live, the file used up"
 else logtail 3; fail "allow-remove"; fi
+# review 12's M-2: one at a time, a push each, counts as at once: the fourth within a day held
+for n in 1 2 3 4; do repo propose "y$n" wip "Extra $n" $((30 + n)); done
+push > /dev/null || true
+for n in 1 2 3; do repo gone "y$n"; push > /dev/null || true; done
+repo gone y4
+rc=0; push > /dev/null || rc=$?
+if ((rc == 1)) && on web '! test -e /var/lib/ccs-data/proposals/y3.html && test -e /var/lib/ccs-data/proposals/y4.html'; then
+    ok "review 12 (M-2): pages leaving one a push: the fourth within a day held, as four at once"
+else echo "exit $rc"; logtail 4; fail "pages leaving one at a time"; fi
+on web "touch /var/lib/ccs-gate/allow-remove && chown $data /var/lib/ccs-gate/allow-remove"
+push > /dev/null || true
 
 # the QR codes: only the list's own files, by their sums (ccs-front-bash checks them as it
 # builds; ccs-check gate again after)
@@ -393,6 +449,17 @@ on backend 'pkill -x ssh || true'
 for _ in $(seq 300); do on web 'for p in /proc/[0-9]*/cmdline; do { tr "\0" " " < $p; } 2> /dev/null; echo; done | grep -q "[c]cs-receive"' || break; sleep 0.2; done
 if (($(bot | grep -c . || true) > alerts)) && [[ $(raised) == 41 ]]; then ok "a backend that hangs up mid-build: the gate still builds, and alerts"; else logtail 3; fail "a backend that hangs up mid-build"; fi
 repo edit w 'Back to work.'
+
+# review 12's L-1: no alert.conf (optional): the gate still builds; thousands of files: refused,
+# with its reason (not a silent SIGPIPE)
+on web 'mv /etc/ccs-gate/alert.conf /tmp/alert.conf'
+data 42.0000 | put site-data.json
+if push > /dev/null && [[ $(raised) == 42 ]]; then ok "review 12 (L-1): no alert.conf: built, live"; else logtail; fail "no alert.conf"; fi
+on web 'mv /tmp/alert.conf /etc/ccs-gate/alert.conf'
+rc=0; hostile many || rc=$?
+if ((rc == 1)) && on web "tail -n 1 /var/log/ccs-gate.log | grep -q 'other files than site-data.json (./f'"; then
+    ok "review 12 (L-1): a push of 20,000 files: refused, saying why"
+else echo "exit $rc"; logtail 2; fail "a push of many files"; fi
 
 # the heartbeat: pushes are the backend's; the web server's timer alerts when none arrive
 hb() { docker exec -u "$data" "$name-web" /usr/local/bin/ccs-receive --heartbeat; }

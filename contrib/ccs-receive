@@ -13,12 +13,16 @@
 #     nor NUL byte at all: the backstop for an address in a proposal's own text;
 #   - every QR code, qr/<address>.png, exactly the list's file of that address (its sum in the
 #     list's .qr.sha256, pinned in its .pin).
-# The site goes live (ccs-check copy --delete: what the build no longer has goes too), but a file
-# that fails: that one is taken off the site, and IRC is told (alert.conf). More than
-# CCS_GATE_REMOVE (3) pages leaving the site at once (failed, or proposals gone from the
-# repository: a branch emptied, a forge answering wrong, a backend hiding them): none of it goes
-# live, and IRC is told: a person decides (troubleshooting.md: the file /var/lib/ccs-gate/allow-remove
-# lets them go, for one build). A site-data.json that fails, a
+# The site is built from site-data.json as ccs-check data read it, written again by it (never the
+# bytes pushed: what another reader would read of them differently can't reach the site), and
+# each proposal keeps the address the live site first gave it (/var/lib/ccs-gate/pins: a push
+# can't let one go; a person can, troubleshooting.md). The site goes live (ccs-check copy
+# --delete: what the build no longer has goes too), but a file that fails: that one is taken off
+# the site, and IRC is told (alert.conf), as it is of any page leaving the site. More than
+# CCS_GATE_REMOVE (3) pages leaving the site within a day (failed, or proposals gone from the
+# repository: a branch emptied, a forge answering wrong, a backend hiding them): none of the
+# build that would add to them goes live, and IRC is told: a person decides (troubleshooting.md:
+# the file /var/lib/ccs-gate/allow-remove lets them go, for one build). A site-data.json that fails, a
 # build that fails, or a list, QR codes' sums, design or repository missing: nothing goes live,
 # the live site stays. The backend is told on stderr; exit 0, or 1. Needs bash, busybox's applets
 # (container/gate-busybox-applets), curl, git, jq, ccs-gate-build and ccs-check (contrib/ccs-check:
@@ -113,7 +117,8 @@ fetch() {
 # fetch-ok yet: nothing known.
 forge_down() {
     local hours t
-    hours=$(sed -n 's/^FORGE_HOURS=\([1-9][0-9]*\)$/\1/p' "$conf/alert.conf" 2> /dev/null | tail -n 1)
+    # (|| true: no alert.conf, which is optional, mustn't end the gate: set -e and pipefail)
+    hours=$(sed -n 's/^FORGE_HOURS=\([1-9][0-9]*\)$/\1/p' "$conf/alert.conf" 2> /dev/null | tail -n 1 || true)
     hours=${hours:-6}
     t=$(stat -c %Y "$state/fetch-ok" 2> /dev/null) || return 0
     (($(date +%s) - t >= hours * 3600)) || return 0
@@ -138,7 +143,7 @@ forge_up() {
 # line when pushes arrive again.
 heartbeat() {
     local d=$state minutes age up
-    minutes=$(sed -n 's/^HEARTBEAT_MINUTES=\([1-9][0-9]*\)$/\1/p' "$conf/alert.conf" 2> /dev/null | tail -n 1)
+    minutes=$(sed -n 's/^HEARTBEAT_MINUTES=\([1-9][0-9]*\)$/\1/p' "$conf/alert.conf" 2> /dev/null | tail -n 1 || true)
     minutes=${minutes:-15}
     [[ -f $d/last-push ]] || return 0
     age=$((($(date +%s) - $(stat -c %Y "$d/last-push")) / 60))
@@ -194,8 +199,10 @@ if ! why=$(timeout 300 ccs-check receive "$staging/push" 2>&1); then
     exit 1
 fi
 touch "$state/last-push" 2> /dev/null || true   # the backend's heartbeat (--heartbeat)
-# site-data.json alone (none: it didn't change, and the live site's is built from)
-other=$(cd "$staging/push" && find . -type f ! -path ./site-data.json | head -n 3)
+# site-data.json alone (none: it didn't change, and the live site's is built from). (find || true:
+# head stops reading after 3, and a find with more to say dies of SIGPIPE, which would end the
+# gate with no word)
+other=$(cd "$staging/push" && { find . -type f ! -path ./site-data.json || true; } | head -n 3)
 [[ ! $other ]] || refuse "it sent other files than site-data.json (${other//$'\n'/, })" push "a push with other files than site-data.json"
 data=$staging/push/site-data.json
 [[ -f $data ]] || data=$live/site-data.json
@@ -224,13 +231,29 @@ fetch || refuse "it can't read the proposals repository ($conf/proposals.conf)" 
 [[ -f $data ]] || { say "no site-data.json yet: nothing to build"; exit 0; }
 onion=$(tr -d ' \n' 2> /dev/null < "$conf/onion") || onion=''
 [[ $onion =~ ^[a-z2-7]{56}\.onion$ ]] || onion=
-site=$(sed -n 's/^SITE_URL=//p' "$conf/alert.conf" 2> /dev/null | tail -n 1)
+site=$(sed -n 's/^SITE_URL=//p' "$conf/alert.conf" 2> /dev/null | tail -n 1 || true)
 
-# Built again only when what it's built from changed (site-data.json, the list, its QR codes,
-# allowed, the design, the repository's commit, this gate), and once a day whatever happens: the
-# live site is the last build that went live, and the same inputs build the same site.
+# site-data.json: every value of its kind (ccs-check data), checked against the repository's
+# proposals (its last two commits: the backend's checkout may be one behind or ahead) and the
+# addresses the live site has given them (the pins, and its projects.json); written again as it
+# was read, $checked, what the site is built from (and what tells whether it changed: the live
+# site's copy, built from when the push has none, is that too)
+props=$staging/proposals checked=$staging/data.json pins=$state/pins
+for rev in refs/heads/ccs refs/heads/ccs~1; do
+    git -C "$git" rev-parse -q --verify "$rev^{commit}" > /dev/null || continue
+    git -C "$git" -c core.quotePath=false ls-tree --name-only "$rev" | grep '\.md$' || true
+done | sort -u > "$props"
+if ! why=$(timeout 60 ccs-check data "$data" "$list" "$props" "$hosts" "$live" "$pins" "$checked"); then
+    say "site-data.json held back (${why:-not checked}): the live site stays as it is"
+    alert data "the web server held back the backend's site-data.json: ${why:-not checked} (the live site stays as it is) @ @SITE@"
+    exit 1
+fi
+
+# Built again only when what it's built from changed (site-data.json as checked, the list, its QR
+# codes, allowed, the design, the repository's commit, this gate), and once a day whatever
+# happens: the live site is the last build that went live, and the same inputs build the same site.
 inputs=$( {
-    cat -- "${BASH_SOURCE[0]}" "$data" "$list" "$list.pin" "$list.qr.sha256" "$conf/proposals.conf"
+    cat -- "${BASH_SOURCE[0]}" "$checked" "$list" "$list.pin" "$list.qr.sha256" "$conf/proposals.conf"
     cat -- "$conf/allowed" "$list.viewkey" "$conf/onion" 2> /dev/null || true
     grep '^SITE_URL=' "$conf/alert.conf" 2> /dev/null || true
     for d in "$design" "$list.qr" /usr/local/lib/ccs-gate; do (cd "$d" 2> /dev/null && find . -type f -print0 | sort -z | xargs -0 -r sha256sum); done
@@ -241,23 +264,9 @@ if [[ $inputs == "$(cat "$state/built-with" 2> /dev/null)" && $(find "$state/bui
     exit 0
 fi
 
-# site-data.json: every value of its kind (ccs-check data), checked against the repository's
-# proposals (its last two commits: the backend's checkout may be one behind or ahead) and the
-# live site's addresses
-props=$staging/proposals
-for rev in refs/heads/ccs refs/heads/ccs~1; do
-    git -C "$git" rev-parse -q --verify "$rev^{commit}" > /dev/null || continue
-    git -C "$git" -c core.quotePath=false ls-tree --name-only "$rev" | grep '\.md$' || true
-done | sort -u > "$props"
-if ! why=$(timeout 60 ccs-check data "$data" "$list" "$props" "$hosts" "$live"); then
-    say "site-data.json held back (${why:-not checked}): the live site stays as it is"
-    alert data "the web server held back the backend's site-data.json: ${why:-not checked} (the live site stays as it is) @ @SITE@"
-    exit 1
-fi
-
 # the site, built here (ccs-gate-build: lib/site-data.sh's site_from_data and the vendored
 # ccs-front-bash)
-if ! DATA=$data GIT=$git DESIGN=$design LIST=$list QR=$list.qr MRS=$mrs MR_REPOS=$hosts ONION=$onion SITE=${site%/} \
+if ! DATA=$checked GIT=$git DESIGN=$design LIST=$list QR=$list.qr MRS=$mrs MR_REPOS=$hosts ONION=$onion SITE=${site%/} \
     timeout 600 ccs-gate-build "$staging/site" > "$staging/build.log" 2>&1; then
     say "could not build the site (ccs-gate-build): the live site stays as it is"
     while IFS= read -r l; do say "  $l"; done < <(grep -v 'skipping ' "$staging/build.log" | tail -n 3)
@@ -280,12 +289,16 @@ gone=$( {
     grep '\.html$' <<<"$failed" || true
     { find "$live/proposals" -name '*.html' -type f 2> /dev/null || true; } | while IFS= read -r f; do f=${f#"$live/"}; [[ -f $staging/site/$f ]] || echo "$f"; done
 } | sort -u)
-n=$(grep -c . <<<"$gone" || true)
+# and those that left it in the last day ($state/removed: "seconds page" lines), so a backend
+# hiding a few at each push is held as one hiding them all at once is
+now=$(date +%s)
+recent=$(awk -v t=$((now - 86400)) '$1 >= t { print $2 }' "$state/removed" 2> /dev/null || true)
+n=$(printf '%s\n%s\n' "$gone" "$recent" | sort -u | grep -c . || true)
 # (meant: $state/allow-remove, for one build: used up when it goes live)
-if ((n > ${CCS_GATE_REMOVE:-3})) && [[ ! -f $state/allow-remove ]]; then
-    say "$n pages would leave the site at once (failed, or their proposals gone): more than ${CCS_GATE_REMOVE:-3}, so none of the new site goes live"
+if [[ $gone ]] && ((n > ${CCS_GATE_REMOVE:-3})) && [[ ! -f $state/allow-remove ]]; then
+    say "$n pages would have left the site within a day (failed, or their proposals gone): more than ${CCS_GATE_REMOVE:-3}, so none of the new site goes live"
     while IFS= read -r f; do say "  $f"; done < <(head -n 10 <<<"$gone")
-    alert remove-many "the web server would take $n pages off the site at once (failed its checks, or their proposals are gone from the repository): none of the new site goes live; is the branch right? @ @SITE@"
+    alert remove-many "the web server would take $n pages off the site within a day (failed its checks, or their proposals are gone from the repository or hidden): none of the new site goes live; is the branch right? @ @SITE@"
     exit 1
 fi
 if [[ $bad ]]; then
@@ -308,15 +321,34 @@ if [[ $bad ]]; then
         [[ ! $sent ]] || k=$((k + 1))
     done < <(for x in '$2 !~ /^!/ && $1 ~ /\.html$/' '$2 !~ /^!/ && $1 !~ /\.html$/' '$2 ~ /^!/'; do awk -F '\t' "$x" <<<"$bad"; done)
 fi
+# a page leaving that didn't fail: IRC told too (three alerts at most, one a page an hour), as
+# a backend hiding a proposal mustn't do it unseen
+k=0
 while IFS= read -r f; do
     if [[ $f == proposals/* && -f $live/$f ]] && ! grep -qFx -- "$f" <<<"$failed"; then
         say "took $f off the site: its proposal is no longer in the repository (or hidden)"
+        if ((k < 3)); then
+            alert "gone-$f" "the web server took a page off the site: its proposal is no longer in the repository, or the backend hides it @ @SITE@/$f"
+            [[ ! $sent ]] || k=$((k + 1))
+        fi
     fi
 done <<<"$gone"
 
 # the site live: each file that changed written beside its live copy and renamed over it (644,
-# folders 755), and what the build no longer has removed
-ccs-check copy --delete "$staging/site" "$live"
-[[ ! -f $state/allow-remove ]] || { rm -f "$state/allow-remove"; say "allow-remove: $n pages left the site; the file is used up"; }
+# folders 755), and what the build no longer has removed. One that fails part-way (a disk full)
+# leaves the live site part old, part new: said, not left to the next push.
+ccs-check copy --delete "$staging/site" "$live" \
+    || refuse "the copy into the live site failed part-way: the live site may be part old, part new" copy "the copy into the live site failed part-way (a disk full?): it may be part old, part new"
+if [[ -f $state/allow-remove ]]; then
+    rm -f "$state/allow-remove" "$state/removed"; say "allow-remove: $n pages left the site; the file is used up"
+elif [[ $gone ]]; then
+    { awk -v t=$((now - 86400)) '$1 >= t' "$state/removed" 2> /dev/null || true; while IFS= read -r f; do echo "$now $f"; done <<<"$gone"; } > "$state/removed.new"
+    mv -f "$state/removed.new" "$state/removed"
+fi
+# the pins: each proposal's address from when it first had one on the live site, never changed by
+# a push (ccs-check data holds a push to them); a person lets one go (troubleshooting.md)
+{ cat -- "$pins" 2> /dev/null || true
+  jq -r '.[] | select((.filename | type) == "string" and (.address | type) == "string") | "\(.filename) \(.address)"' "$live/projects.json" 2> /dev/null || true
+} | awk 'NF == 2 && !seen[$1]++' > "$pins.new" && mv -f "$pins.new" "$pins"
 say "built the site from site-data.json (the design ${design##*/}, the proposals at $(git -C "$git" rev-parse --short refs/heads/ccs)): live"
 printf '%s\n' "$inputs" > "$state/built-with"

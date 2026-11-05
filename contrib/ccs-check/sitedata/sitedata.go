@@ -1,23 +1,28 @@
 // Package sitedata: site-data.json, the backend's whole push: what only it knows, the inputs of
 // ccs-bash's lib/site.jq but what the web server reads from the proposals repository itself (the
 // front matter, each proposal's merge request): each proposal's subaddress index and dates, its
-// funds, the ideas. The web server builds the site from it (ccs-gate-build) once it passes here:
-// every key once as Go reads it, no other key, each value of its kind: an index the signed list
-// has, never 0 (the wallet's main address) nor two proposals' one, and the address the live site
-// has for the proposal (its projects.json); amounts as ccs-bash's xmr4 writes them; an idea's name
-// and author plain text, its link a merge request of the proposals repository.
+// funds, the ideas. The web server builds the site (ccs-gate-build) from what passes here, as Go
+// writes it again (Clean), never from the bytes pushed: every key once and byte for byte as
+// ccs-bash writes it, no other key, each value of its kind: an index the signed list has, never 0
+// (the wallet's main address) nor two proposals' one, and for a proposal the live site has given
+// an address (the gate's pins, and its projects.json) that address, whatever the push; amounts as
+// ccs-bash's xmr4 writes them; an idea's name and author plain text with no address in it, its
+// link a merge request of the proposals repository.
 package sitedata
 
 import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"ccs-check/addr"
 )
 
 type stateEntry struct {
@@ -28,9 +33,12 @@ type stateEntry struct {
 }
 
 type fundEntry struct {
-	Amount, Raised, Needed *string
-	Pending                *json.Number
-	Count, Percentage      *int64
+	Amount     *string      `json:"amount"`
+	Raised     *string      `json:"raised"`
+	Pending    *json.Number `json:"pending"`
+	Count      *int64       `json:"count"`
+	Percentage *int64       `json:"percentage"`
+	Needed     *string      `json:"needed"`
 }
 
 type ideaEntry struct {
@@ -46,6 +54,80 @@ type siteData struct {
 	State map[string]*stateEntry `json:"state"`
 	Funds map[string]*fundEntry  `json:"funds"`
 	Ideas []*ideaEntry           `json:"ideas"`
+}
+
+// shape: what may be at a place in site-data.json, to read its keys by (exact)
+type shape struct {
+	fields map[string]*shape // an object of these keys (each nil: a value, no object or array)
+	each   *shape            // an object of any keys (file.md), or an array: each of its values
+}
+
+func names(ks ...string) *shape {
+	m := map[string]*shape{}
+	for _, k := range ks {
+		m[k] = nil
+	}
+	return &shape{fields: m}
+}
+
+// the keys as ccs-bash writes them (siteData's json tags)
+var dataShape = &shape{fields: map[string]*shape{
+	"state": {each: names("gitlab_url", "subaddr_index", "funding_required_date", "funded_date")},
+	"funds": {each: names("amount", "raised", "pending", "count", "percentage", "needed")},
+	"ideas": {each: names("name", "gitlab-url", "author", "date", "upvotes", "downvotes")},
+}}
+
+// exact: the value dec reads next has each key once in its object, and byte for byte one s
+// names. Go's decoder takes "STATE" or "Subaddr_Index" for "state" or "subaddr_index", and the
+// last of a key written twice; jq, which builds the site, reads only the exact key: one
+// site-data.json would be two (review 12's H-1). A value's kind is Decode's to check.
+func exact(dec *json.Decoder, s *shape) error {
+	t, err := dec.Token()
+	if err != nil {
+		return err
+	}
+	d, ok := t.(json.Delim)
+	if !ok {
+		return nil
+	}
+	if s == nil || s.fields == nil && s.each == nil {
+		return errors.New("an object or array where a value goes")
+	}
+	if d == '[' {
+		if s.each == nil {
+			return errors.New("an array where an object goes")
+		}
+		for dec.More() {
+			if err := exact(dec, s.each); err != nil {
+				return err
+			}
+		}
+		_, err = dec.Token()
+		return err
+	}
+	seen := map[string]bool{}
+	for dec.More() {
+		t, err := dec.Token()
+		if err != nil {
+			return err
+		}
+		k, _ := t.(string)
+		if seen[k] {
+			return fmt.Errorf("the key %.40q twice", k)
+		}
+		seen[k] = true
+		sub := s.each
+		if s.fields != nil {
+			if sub, ok = s.fields[k]; !ok {
+				return fmt.Errorf("the key %.40q", k)
+			}
+		}
+		if err := exact(dec, sub); err != nil {
+			return err
+		}
+	}
+	_, err = dec.Token()
+	return err
 }
 
 // Max: a larger site-data.json is not read (the real one, 316 proposals, is about 100 kB)
@@ -64,14 +146,17 @@ var (
 type Checker struct {
 	index     map[string]string // the signed list's addresses, by index
 	proposals map[string]bool   // the proposals (file.md) in the repository's commits fetched
-	pins      map[string]string // the live site's address of each of them, the list's
+	pins      map[string]string // the address the live site has given each proposal (file.md), the list's
 	link      *regexp.Regexp    // a merge request of the proposals repository
 }
 
 // New: from the signed list ("index address" lines), the proposals in the repository (a file of
-// their names, file.md, one a line), HOSTS (where the repository is: host/path, space-separated)
-// and the live site (its projects.json: the addresses its proposals have; "": none)
-func New(list, proposals, hosts, live string) (*Checker, error) {
+// their names, file.md, one a line), HOSTS (where the repository is: host/path, space-separated),
+// the live site (its projects.json: the addresses its proposals have; "": none) and PINS (the
+// gate's own record of them, "file.md address" lines, each kept from when the proposal first had
+// it: a push hiding a proposal from projects.json doesn't let its address go; it wins over
+// projects.json; "", or no file: none)
+func New(list, proposals, hosts, live, pins string) (*Checker, error) {
 	c := &Checker{index: map[string]string{}, proposals: map[string]bool{}, pins: map[string]string{}}
 	b, err := os.ReadFile(list)
 	if err != nil {
@@ -101,9 +186,20 @@ func New(list, proposals, hosts, live string) (*Checker, error) {
 		hs = []string{`\b\B`} // (no host: no link passes)
 	}
 	c.link = regexp.MustCompile(`^https://(` + strings.Join(hs, "|") + `)(/-/merge_requests/|/merge_requests/|/pulls/)[0-9]{1,10}$`)
+	if pins != "" {
+		b, err := os.ReadFile(pins)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+		for _, l := range strings.Split(string(b), "\n") {
+			if f := strings.Fields(l); len(f) == 2 && listed[f[1]] && c.pins[f[0]] == "" {
+				c.pins[f[0]] = f[1]
+			}
+		}
+	}
 	if live != "" {
 		for f, a := range addresses(live) {
-			if listed[a] && c.proposals[f] {
+			if listed[a] && c.pins[f] == "" {
 				c.pins[f] = a
 			}
 		}
@@ -176,9 +272,43 @@ func isRun(r rune) bool {
 	return r > 0x7f || r >= '1' && r <= '9' || r >= 'A' && r <= 'Z' && r != 'I' && r != 'O' || r >= 'a' && r <= 'z' && r != 'l'
 }
 
-// read: b as siteData, strictly: no unknown key, nothing after it
+// address: whether s (an idea's name or author) has an address, as the gate's scan reads the
+// site's JSON: in groups, a character not ASCII dropped or a space, or drawn as an ASCII one
+func address(s string) bool {
+	c, out := addr.New(), map[string]bool{}
+	c.Start()
+	readings := []string{}
+	for _, repl := range []rune{-1, ' '} {
+		readings = append(readings, strings.Map(func(r rune) rune {
+			if r > 0x7f {
+				return repl
+			}
+			return r
+		}, s))
+	}
+	if t, drawn := addr.Lookalikes(s); drawn {
+		readings = append(readings, t)
+	}
+	for _, t := range readings {
+		if c.Runs(t, out) != nil {
+			return true
+		}
+	}
+	return len(out) > 0
+}
+
+// read: b as siteData, strictly: UTF-8, each key once and exactly as ccs-bash writes it, no
+// unknown key, nothing after it
 func read(b []byte) (*siteData, error) {
+	if !utf8.Valid(b) {
+		return nil, errors.New("not UTF-8")
+	}
 	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.UseNumber()
+	if err := exact(dec, dataShape); err != nil {
+		return nil, err
+	}
+	dec = json.NewDecoder(bytes.NewReader(b))
 	dec.DisallowUnknownFields()
 	dec.UseNumber()
 	var d siteData
@@ -196,13 +326,35 @@ func read(b []byte) (*siteData, error) {
 
 // Check: "" if site-data.json (its bytes b) passes, else why not
 func (c *Checker) Check(b []byte) string {
+	_, why := c.Clean(b)
+	return why
+}
+
+// Clean: site-data.json (its bytes b) as Check read it, written again (each key as ccs-bash
+// writes it, once, nothing else): what the site is built from and the live site has, never b
+// itself; or why it fails
+func (c *Checker) Clean(b []byte) ([]byte, string) {
 	if len(b) > Max {
-		return "a site-data.json over 4 MB"
+		return nil, "a site-data.json over 4 MB"
 	}
 	d, err := read(b)
 	if err != nil {
-		return "a site-data.json that isn't as ccs-bash writes it (" + err.Error() + ")"
+		return nil, "a site-data.json that isn't as ccs-bash writes it (" + err.Error() + ")"
 	}
+	if why := c.check(d); why != "" {
+		return nil, why
+	}
+	var out bytes.Buffer
+	enc := json.NewEncoder(&out)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "    ")
+	if err := enc.Encode(d); err != nil {
+		return nil, "site-data.json can't be written again (" + err.Error() + ")"
+	}
+	return out.Bytes(), ""
+}
+
+func (c *Checker) check(d *siteData) string {
 	owners := map[string]string{}
 	for f, s := range d.State {
 		switch {
@@ -217,6 +369,9 @@ func (c *Checker) Check(b []byte) string {
 			return f + ": a date that isn't one (UTC, as ccs-bash writes them)"
 		}
 		if s.SubaddrIndex == nil {
+			if c.pins[f] != "" {
+				return f + ": no subaddress, where the live site has given it one (the gate's pins)"
+			}
 			continue
 		}
 		a, ok := c.index[strconv.FormatInt(*s.SubaddrIndex, 10)]
@@ -231,9 +386,17 @@ func (c *Checker) Check(b []byte) string {
 			return f + ": another subaddress than the live site has for it"
 		}
 	}
+	// (a pin of a proposal no longer in the repository holds nothing: a renamed one's address goes
+	// with it)
 	for f, a := range c.pins {
+		if !c.proposals[f] {
+			continue
+		}
 		if o := owners[a]; o != "" && o != f {
 			return o + ": the subaddress " + f + " has on the live site"
+		}
+		if _, ok := d.State[f]; !ok {
+			return f + ": no state, where the live site has given it a subaddress (the gate's pins)"
 		}
 	}
 	for f, x := range d.Funds {
@@ -258,6 +421,8 @@ func (c *Checker) Check(b []byte) string {
 			return n + ": without all of name, gitlab-url, author, date"
 		case !text(*x.Name) || !text(*x.Author):
 			return n + ": a name or author that isn't plain text (escaped, no bidi controls, no run of 90 that could be an address)"
+		case address(*x.Name) || address(*x.Author):
+			return n + ": an address in its name or author (in groups, or in letters drawn as an address's)"
 		case !c.link.MatchString(*x.GitlabURL):
 			return n + ": a link that isn't a merge request of the proposals repository"
 		case !dateRx.MatchString(*x.Date):
