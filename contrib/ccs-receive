@@ -278,7 +278,7 @@ while IFS= read -r f; do [[ ! $f ]] || rm -f -- "$staging/site/$f"; done <<<"$fa
 # hasn't (their proposals gone from the repository, or hidden)
 gone=$( {
     grep '\.html$' <<<"$failed" || true
-    (cd "$live" && find proposals -name '*.html' -type f 2> /dev/null || true) | while IFS= read -r f; do [[ -f $staging/site/$f ]] || echo "$f"; done
+    { find "$live/proposals" -name '*.html' -type f 2> /dev/null || true; } | while IFS= read -r f; do f=${f#"$live/"}; [[ -f $staging/site/$f ]] || echo "$f"; done
 } | sort -u)
 n=$(grep -c . <<<"$gone" || true)
 # (meant: $state/allow-remove, for one build: used up when it goes live)
