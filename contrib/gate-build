@@ -4,8 +4,8 @@
 # site.jq) from DATA (the push's site-data.json as ccs-check data read it and wrote it again), the newest commit
 # of the proposals repository the gate fetched (GIT, a bare repository, refs/heads/ccs: each
 # proposal's merge request read from its history, under MRS, https://host, if set, for the
-# repositories MR_REPOS names, host/path, space-separated: a proposal's own gitlab_url only one of
-# theirs, and only where it has none from there) and the
+# repositories MR_REPOS names, host/path, space-separated: a proposal's own gitlab_url only if it
+# is one of theirs) and the
 # signed list (LIST, its .asc, .key.asc, .pin, .qr.sha256, .viewkey beside it); then the vendored
 # ccs-front-bash (vendor/ccs-front-bash) with DESIGN (a design release, unpacked), the list, and
 # QR (the list's QR codes, <address>.png, installed beside it: ccs-front-bash takes each only as

@@ -228,6 +228,13 @@ if push > /dev/null && [[ $(livepage) == *'merge_requests/5"'* && $(livepage) !=
     ok "review 12 (L-3): a gitlab_url in a proposal's front matter: its link is still its merge request"
 else livepage | grep -o 'href="[^"]*"' | grep -v '\.\./' || true; fail "a front matter gitlab_url"; fi
 repo front p
+# one of the repository's own merge requests: the proposer's correction wins (a file added twice:
+# rehrar-defcon-reimburse-2019.md, !67 then !69)
+repo front p 'gitlab_url: https://repo.test/monero-project/ccs-proposals/-/merge_requests/77'
+if push > /dev/null && [[ $(livepage) == *'merge_requests/77"'* ]]; then
+    ok "a gitlab_url in the front matter that is the repository's own merge request: its link"
+else livepage | grep -o 'href="[^"]*merge[^"]*"' || true; fail "a front matter merge request"; fi
+repo front p
 
 # the push is site-data.json alone: a page, or anything else, refuses all of it
 rc=0; hostile page || rc=$?

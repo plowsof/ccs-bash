@@ -153,8 +153,9 @@ repository it fetches, the design and the signed list installed here. Each push,
    ("See merge request monero-project/ccs-proposals!522": the one that added the proposal's
    file), linked under `MERGE_REQUESTS`, and only to the repository itself (its own address or
    `LINK_HOSTS`': a message naming another project on the forge, anyone's, gives no link). A
-   proposal's own `gitlab_url` (its front matter) is its link only where no merge commit gives
-   one, and only if it is a merge request of the repository itself;
+   proposal's own `gitlab_url` (its front matter) is its link only if it is a merge request of
+   the repository itself, and then it wins (a file added twice: the oldest merge commit isn't
+   always the proposal's);
 3. checks **`site-data.json`** (`ccs-check data`): every key once, byte for byte as ccs-bash
    writes it (Go's decoder would read `STATE` or `Subaddr_Index` as the key, where jq, which
    builds the site, reads only the exact one), and no other; each value of its kind; each index
@@ -269,7 +270,7 @@ way around it, each case named in its output:
   groups, split by markup, a letter Cyrillic, written backwards after a bidi override), back
   once mended; a QR code that isn't the list's; a proposal taken out of the repository (IRC
   told); four at once held, and four one a push within a day (`allow-remove` lets them go); a
-  front matter `gitlab_url` doesn't replace the merge request link;
+  front matter `gitlab_url` out of the repository doesn't replace the merge request link;
 - **refused, every push:** a page or anything else pushed; no design release, no QR codes, a list
   that isn't the pinned one, QR codes' sums that aren't, an empty list; a tar no backend makes; a
   push of 20,000 files (saying why);

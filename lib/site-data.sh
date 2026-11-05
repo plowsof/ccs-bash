@@ -51,9 +51,11 @@ merge_requests() {
 # its state each address the list's, and each merge request LINKS' (merge_requests' JSON), if
 # given; a Funding Required proposal without an address kept off the site, as the backend keeps
 # it (mirror_hide). With REPOS (the proposals repository's addresses, host/path, space-separated:
-# the web server's build), a proposal's own gitlab_url (its front matter) only where it has no
-# merge request from LINKS or DATA, and only one of those repositories' merge requests: a
-# proposal's text can't link its page elsewhere (review 12's L-3)
+# the web server's build), a proposal's own gitlab_url (its front matter) only if it is one of
+# those repositories' merge requests, else its merge request from LINKS or DATA: a proposal's
+# text can't link its page elsewhere (review 12's L-3). Where it is one, it wins: the proposer's
+# own correction (rehrar-defcon-reimburse-2019.md, added by !67, taken out, added again by !69:
+# the oldest merge commit, LINKS', is !67)
 site_from_data() {
     local data=$1 list=$2 links=${3:-} repos=${4-}
     read_proposals "$PROPOSALS_DIR" > "$WORK/props.json" || return 1
@@ -66,7 +68,6 @@ site_from_data() {
     jq --slurpfile s "$WORK/state.json" --arg repos " $repos " --arg held "${4+1}" '
         map(select(.layout != "fr" or ($s[0][.file].address // null) != null)
             | if $held == "" or .gitlab_url == null then .
-              elif ($s[0][.file].gitlab_url // null) != null then .gitlab_url = null
               else (.gitlab_url | capture("^https://(?<r>[^ ]+?)(/-/merge_requests/|/merge_requests/|/pulls/)[0-9]{1,10}$")? // {r: ""}) as $m
                 | if $m.r != "" and ($repos | contains(" " + $m.r + " ")) then . else .gitlab_url = null end
               end)' \
