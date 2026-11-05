@@ -1,10 +1,13 @@
 # Recommended design
 
-**No front-end framework on any live machine, and no application code on the public web
-server.** Bash, awk and jq on a backend that accepts no connections turn the proposals and the
-wallet into finished HTML; the web server only receives the files and serves them.
+**No front-end framework on any live machine, and the public web server trusts nothing it is
+sent.** Bash, awk and jq on a backend that accepts no connections turn the proposals and the
+wallet into the site and a small data file, `site-data.json`: what only the backend knows (the
+totals, the dates, each proposal's subaddress as an *index* into the signed list). The web server
+checks that file, builds the site from it itself with the same ccs-front-bash release, the design
+and the proposals repository it fetches, checks what it built, and serves it.
 
-![Bash on the backend renders the whole site and pushes it; the web server only serves files](design.svg)
+![The backend computes the site's data and pushes it with the site; the web server checks the data, builds the site itself and serves it](design.svg)
 
 ## Why not a live front end
 
@@ -12,7 +15,7 @@ wallet into finished HTML; the web server only receives the files and serves the
 |---|---|---|
 | Code reachable from the internet | the app and its npm tree | Caddy serving files, from a pinned, attested image |
 | Supply chain on live machines | npm (today's ccs-front: Ruby gems) | bash, awk, jq (no qrencode: the QR codes are made once, with the signed list) |
-| Proposal Markdown rendered by | the framework, on the public server | a small awk renderer that escapes everything first, on the backend |
+| Proposal Markdown rendered by | the framework, on the public server | a small awk renderer that escapes everything first, on both machines (the web server builds the site itself, from the repository) |
 | A compromised web server | can change any page until noticed | can too, but every page is pushed again each run, and ccs-watch alerts IRC within minutes |
 
 The donation addresses are what an attacker wants, and the web server shows them: keep it smallest
@@ -62,16 +65,24 @@ machine and the IRC bot; ccs-watch through Tor and a proxy; a mirror to the site
 - **Attested releases:** anyone can rebuild a release from its tag, byte for byte, and sign the
   result into [ccs-sigs](https://github.com/plowsof/ccs-sigs), as Feather Wallet does; a release is
   verified against those signatures before it is installed ([contrib/release](../contrib/release/README.md)).
-- **The push:** `site/` to the web server, only the files whose contents changed since what the
-  gate last took (`contrib/ccs-push`: their sums against its record; every file once a day), as a
-  tar over ssh; the gate answers which it held back, and those go again next time.
+- **The push:** `site/` to the web server, `site-data.json` with it, only the files whose contents
+  changed since what the gate last took (`contrib/ccs-push`: their sums against its record; every
+  file once a day), as a tar over ssh; the gate answers which it held back, and those go again
+  next time.
 
 **Web server:** Caddy (StageX's) serving `/var/lib/ccs-data` over HTTPS, its certificates its
 own, and Tor (built from its signed source) serving it as an onion, both in the gate's image;
 and a write-only push account whose key runs only the gate
 (`contrib/ccs-receive`, its checks [ccs-check](ccs-check.md), one static Go binary): through the
 host's sshd, or in Docker through the gate image's own sshd on its own port (StageX, attested
-with ccs-bash's release). The gate holds back any page that isn't the design's own, filled as
+with ccs-bash's release). The gate **builds the site itself** from the push's `site-data.json`
+once it passes its check (each value of its kind; each proposal's subaddress an index the signed
+list has, one proposal's only and the one the live site has for it), with the ccs-front-bash
+release its image carries (`vendor/ccs-front-bash`), the newest design release and the
+proposals repository it fetches itself; the backend's own pages are dropped (without a
+`site-data.json` that passes, or if the build fails, they are checked instead, and IRC is told).
+Then a file goes live only if every check it needs passed it, nothing for want of a complaint:
+the gate holds back any page that isn't the design's own, filled as
 ccs-front-bash fills it (a proposal's text as the proposals repository has it), any file with an
 address that isn't the wallet's (as text or link, however split or disguised), a donation QR
 code that isn't the signed list's file, a feed that isn't ccs-front-bash's, a proposal image that
@@ -81,9 +92,10 @@ for), and any other file that isn't the design release's
 [the web server](web-server.md)). Nothing
 else of the CCS runs there but the gate's heartbeat (an alert when pushes stop).
 
-ccs-front-bash runs on the backend: whatever writes the addresses into pages can redirect
-donations, so it belongs with ccs-bash, and pushing finished pages overwrites a page changed on
-the web server on the next run.
+ccs-front-bash runs on both machines. On the backend it builds the site ccs-watch compares the
+live one with; on the web server, the site that goes live, from the checked data: whatever writes
+the addresses into pages can redirect donations, so there it writes only the signed list's line
+of each index, never an address the backend chose.
 
 ## What one compromise can and can't do
 
@@ -97,10 +109,12 @@ drop the gate's alarms.
   only by guessing (Tor and a clearnet proxy, three browsers' ways of asking, random times),
   which is why the Verify page asks visitors to check too. It can't change the state, the
   addresses or the backups.
-- **The backend taken over:** it can push anything, but the gate lets through only the design's
-  pages filled as ccs-front-bash fills them, the proposals' text as their repository has it, and
-  addresses from the signed list, made offline by a Core Team member. It can stop pushing: the
-  web server's heartbeat says so. It can't send a donation anywhere but the CCS wallet.
+- **The backend taken over:** it can push anything, but the gate builds the pages itself from the
+  data it checks, and lets through only the design's pages filled as ccs-front-bash fills them,
+  the proposals' text as their repository has it, and addresses from the signed list, made
+  offline by a Core Team member, each proposal keeping the one it has. It can still give wrong
+  totals and dates (numbers the gate can't check), or stop pushing: the web server's heartbeat
+  says so. It can't send a donation anywhere but the CCS wallet.
 
 What the watching doesn't cover is one flaw that opens both at once:
 
@@ -134,6 +148,8 @@ modified: each run starts again from it, so a bad run can't build on a bad one.
 
 jq renders each fragment (every value HTML-escaped, links https only) and awk swaps it in. A
 missing, unmatched or repeated marker fails the run; the last good site stays and is pushed again.
+The web server runs the same release, from ccs-bash's copy of it (`vendor/ccs-front-bash`, its
+tag and commit checked in CI).
 
 **Markdown:** a strict subset in awk. Everything is HTML-escaped first, so only tags the renderer
 writes appear; raw HTML shows as text, links must be `https:`, images become links (nothing loads
@@ -157,7 +173,7 @@ installed); visitors check the wallet itself:
 |---|---|
 | the offline machine | made from a view-only wallet, with each address's QR code (qrencode), and signed by a Core Team member's own key (the one the Monero repository publishes); kept in ccs-bash's `subaddresses/<wallet>/` with `wallet.txt` (the wallet's address and view key), where others reproduce its sha256 and its QR codes' |
 | backend, `/etc/ccs-front/` | ccs-front-bash checks the list against its pin, then every donation address, and puts each one's QR code from the list on the site: what ccs-bash's account writes can't change one |
-| web server, `/etc/ccs-gate/` (installed by hand) | the gate checks every address on every pushed page, however written, and takes a donation QR code only as the list's file of the box's address (by its sum: it never makes or reads one): a taken-over backend can't get a wrong one live |
+| web server, `/etc/ccs-gate/` (installed by hand) | the gate builds each donation box from the list's line of the proposal's index, and checks every address on every page, however written, and takes a donation QR code only as the list's file of the box's address (by its sum: it never makes or reads one): a taken-over backend can't get a wrong one live |
 | the Verify page | visitors check the address their wallet shows in a view-only copy of the CCS wallet, from its published address and view key: the defence left if the web server is taken over |
 
 So a wrong address has to get past the backend, the web server, ccs-watch and anyone who looks

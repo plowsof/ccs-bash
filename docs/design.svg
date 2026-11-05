@@ -24,7 +24,7 @@
 
   <!-- title -->
   <text x="30" y="40" font-size="22" font-weight="700" fill="#0f172a">CCS: recommended architecture</text>
-  <text x="30" y="62" font-size="13.5" fill="#475569">Bash on the backend computes and renders everything and only connects out. The public web server only receives files and serves them.</text>
+  <text x="30" y="62" font-size="13.5" fill="#475569">Bash on the backend computes everything and only connects out. The public web server checks the backend's data, builds the site from it itself and serves it.</text>
 
   <g transform="translate(0,115)">
   <!-- zones -->
@@ -136,8 +136,8 @@
     <text x="890" y="273" font-size="14" font-weight="700" fill="#0f172a">ccs-data + the gate</text>
     <use href="#signedlist" x="964" y="252" width="26" height="26"/>
     <text x="908" y="291" font-size="12" fill="#475569">write-only push to staging;</text>
-    <text x="908" y="306" font-size="12" fill="#475569">pages, feed vs the design;</text>
-    <text x="908" y="321" font-size="12" fill="#475569">texts, images vs the repo;</text>
+    <text x="908" y="306" font-size="12" fill="#475569">site-data.json checked; the</text>
+    <text x="908" y="321" font-size="12" fill="#475569">site built here (front-bash);</text>
     <text x="908" y="336" font-size="12" fill="#475569">addresses, QR codes vs</text>
     <text x="908" y="351" font-size="12" font-weight="600" fill="#b45309">the signed list</text>
     <text x="908" y="422" font-size="15" font-weight="700" fill="#0f172a">Caddy, Tor</text>
@@ -178,8 +178,8 @@
     <!-- the push -->
   <path d="M730,463 H770 V290 H809" fill="none" stroke="#16a34a" stroke-width="3.5" marker-end="url(#gb)"/>
   <g transform="translate(700,580)">
-    <rect x="0" y="0" width="230" height="30" rx="15" fill="#dcfce7" stroke="#16a34a"/>
-    <text x="115" y="20" text-anchor="middle" font-size="12.5" font-weight="600" fill="#166534">write-only push of what changed</text>
+    <rect x="0" y="0" width="270" height="30" rx="15" fill="#dcfce7" stroke="#16a34a"/>
+    <text x="135" y="20" text-anchor="middle" font-size="12.5" font-weight="600" fill="#166534">push: what changed + site-data.json</text>
   </g>
   <path d="M770,463 V578" fill="none" stroke="#16a34a" stroke-width="1.5" stroke-dasharray="3 3"/>
   <!-- web server inside -->
@@ -255,6 +255,6 @@
     <path d="M520,10 H554" stroke="#64748b" stroke-width="2.5"/><text x="562" y="14">fetched or read (outgoing connections only)</text>
   <use href="#signedlist" x="905" y="-1" width="20" height="20"/>
   <text x="930" y="14" font-size="12.5" fill="#334155">the signed subaddress list</text>
-    <text x="0" y="40" fill="#64748b">No Jekyll or front-end framework on any live machine. Every page is made fresh from the original each run; what changed is pushed, and checked.</text>
+    <text x="0" y="40" fill="#64748b">No Jekyll or front-end framework on any live machine. Every page is made fresh from the original each run, on the backend and again on the web server, from the checked data.</text>
   </g>
 </svg>
