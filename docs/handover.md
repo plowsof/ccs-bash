@@ -230,11 +230,11 @@ The compose's `front` ([docker](docker.md)), from ccs-front-bash's pinned image,
 ## 6. The web server
 
 [Two machines](two-machines.md): the write-only push account, the site's Caddy and Tor (HTTPS and
-the onion, from the gate's image), and the gate's files (its design, `markdown.awk`, the list's files, `allowed`, `proposals.conf`);
+the onion, from the gate's image), and the gate's files (its design, the list's files and QR codes, `allowed`, `proposals.conf`);
 then the gate in Docker ([the web server in Docker](docker.md#the-web-server-in-docker)).
 Everything on it, by version, and what a reviewer reads to trust it without trusting the
-backend: [the web server](web-server.md). It takes the proposals repository as reviewed: a
-proposal's text, links and images go live as merged, its images never read, so whoever merges
+backend: [the web server](web-server.md). It builds the site itself, and takes the proposals
+repository as reviewed: a proposal's text, links and images go live as merged, its images never read, so whoever merges
 proposals checks their images too (an address or a QR code in one goes live).
 
 ## 7. The backup machine
@@ -383,14 +383,12 @@ agreeing, answering) and changes nothing.
 | File | Setting | For ccs.getmonero.org | Step |
 |---|---|---|---|
 | `/etc/ssh/authorized_keys/ccs-data` | `from=`, the key | the backend's address and its push key, `command="/usr/local/bin/ccs-receive"`; `sshd_config`'s `Match User ccs-data` reads only it | 6 |
-| `/etc/ccs-gate/` | `subaddresses.txt` and its `.pin`, `.asc`, `.key.asc`, `.qr.sha256` | the same files as the backend's (not `.qr/`) | 6 |
-| | `design.sha256` | the design release's files, from its zip (two-machines, "The gate") | 6 |
-| | `design/<release>/` | the design's release zip, unpacked (the same as the backend's); `design.sha256` from it | 6 |
-| | `markdown.awk` | `lib/markdown.awk` of the ccs-front-bash release the backend runs | 6 |
-| | `proposals.conf` | `PROPOSALS_GIT=https://repo.getmonero.org/monero-project/ccs-proposals.git`, `PROPOSALS_BRANCH=master` (and `LINK_HOSTS`, other repositories a proposal's merge request link may be in, as host/path) | 6 |
+| `/etc/ccs-gate/` | `subaddresses.txt` and its `.pin`, `.asc`, `.key.asc`, `.qr.sha256`, `.qr/` | the signed list's files, its QR codes too (each checked against its sum) | 6 |
+| | `design/<release>/` | the design's release zip, unpacked: the gate builds the site with the newest | 6 |
+| | `proposals.conf` | `PROPOSALS_GIT=https://repo.getmonero.org/monero-project/ccs-proposals.git`, `PROPOSALS_BRANCH=master`, `MERGE_REQUESTS=https://repo.getmonero.org` (each proposal's link: the merge request its merge commit names); `LINK_HOSTS`, other repositories an idea's link may be in, as host/path | 6 |
 | | `subaddresses.txt.viewkey` | the same as the backend's (the Verify page is then checked word for word) | 6 |
-| | `allowed` | the General Fund, `888tNkZrPN6JsEgekjMnABU4TBzc2Dt29EPAvkRxbANsAnjyPbb3iQ1YBRk1UXcdRsiKc9dhwMVgN5S9cQUiyoogDavup3H`, and any address a proposal's text quotes (the gate's refusal names it) | 6 |
-| | `alert.conf` | `ALERT_URL` (the bot), `SITE_URL=https://ccs.getmonero.org` (the gate takes a feed only with links under it) | 8 |
+| | `allowed` | the General Fund, `888tNkZrPN6JsEgekjMnABU4TBzc2Dt29EPAvkRxbANsAnjyPbb3iQ1YBRk1UXcdRsiKc9dhwMVgN5S9cQUiyoogDavup3H`, and any address a proposal's text quotes (the gate's log names it) | 6 |
+| | `alert.conf` | `ALERT_URL` (the bot), `SITE_URL=https://ccs.getmonero.org` (the feed's links) | 8 |
 | | `onion` | optional: the site's onion address, one line (Tor's `/var/lib/tor/hidden_service/ccs/hostname`, [two machines](two-machines.md)); the only one the footer may show | 6 |
 | `/opt/ccs-bash/contrib/docker/web/.env` | `CCS_SITE_HOST`, `CCS_ACME_EMAIL`, `CCS_ONION` | `ccs.getmonero.org` (its DNS records the web server's), an address for Let's Encrypt, the onion | 6 |
 | | `snippets/ccs-headers.conf` | the security headers, as in two-machines (A+ on securityheaders.com) | 6 |

@@ -132,112 +132,68 @@ security group). The admins' own ssh: [admin access](admin-access.md).
 device, `..`, an absolute path, a name twice, a file under a page, a backslash, no tar at all):
 each refuses the whole push, nothing live changes, nothing is written outside; `tests/web.sh`
 tries other commands, forwarding and another machine; `contrib/ccs-check/build.sh test` and
-`fuzz` the receiver itself. A taken-over backend can still push false pages: the gate is for that.
+`fuzz` the receiver itself. A taken-over backend can still send a false `site-data.json`: the
+gate is for that.
 
-## The gate: the web server checks every page
+## The gate: the web server builds the site itself
 
-`contrib/ccs-receive`, the push key's forced command. It doesn't guess how a browser shows
-what it is sent; it knows what a page may be. Each push, one at a time, it
+`contrib/ccs-receive`, the push key's forced command. The backend sends no pages: the push is
+`site-data.json` alone, what only the backend knows (each proposal's subaddress *index*, its dates
+and funds, and the ideas). The web server builds every page itself, from that, the proposals
+repository it fetches, the design and the signed list installed here. Each push, one at a time, it
 
-1. makes a staging folder a copy of the live site (`ccs-check copy`), and receives the push into
-   it (`ccs-check receive`: a tar of plain files, as above). What it checks below are the
-   files the push changed, and the ones it held back last time (their last good copy is live, so
-   the same file sent again fails again): the live site holds only what passed, and a live one that no
-   longer passes for an address goes (step 5). Every page and JSON file is checked again
-   when what they were checked against changes (the list or its pin, `allowed`, the design,
-   `markdown.awk`, `proposals.conf`, the proposals commit fetched, `ccs-receive` itself or
-   `ccs-check`), and once a day whatever happens. Its log says how many: `checking 3 of 1022 pages and JSON files`;
+1. receives the push into an empty staging folder (`ccs-check receive`: a tar of plain files, as
+   above); any file but `site-data.json` refuses all of it. No `site-data.json` (it didn't
+   change): the live site's is built from. Built again only when what the site is built from
+   changed (`site-data.json`, the list, its QR codes, `allowed`, the design, the proposals commit
+   fetched, `proposals.conf`, the gate), and once a day whatever happens;
+2. fetches the **proposals repository** (`proposals.conf`), all its history (about 3 MB; the last
+   fetch if it can't): each proposal's text, front matter and images come from here, reviewed
+   and merged, never from the backend; and its **merge request**, read from GitLab's merge commits
+   ("See merge request monero-project/ccs-proposals!522": the one that added the proposal's
+   file), linked under `MERGE_REQUESTS`;
+3. checks **`site-data.json`** (`ccs-check data`): every key once and no other, each value of its
+   kind; each index one the signed list has, never 0 (the wallet's main address), one
+   proposal's only, and the one the live site has for the proposal (a push can't give a proposal
+   another address, nor one another proposal has, while the proposal is in the repository: a
+   renamed one's goes with it); amounts and dates as ccs-bash writes them; an idea's name and
+   author plain text (escaped, 1000 characters at most, no bidi controls, no run of 90 characters
+   each base58 or not ASCII: no address, padded, split by invisible characters or drawn with
+   look-alikes), its link a merge request of the proposals repository itself (its address, host
+   and path, and `LINK_HOSTS`: not another repository on its forge, which anyone can make). One
+   that fails is held back: the live site stays as it is, and IRC is told;
+4. **builds the site** (`ccs-gate-build`): ccs-bash's own steps for the site's JSON (`site.jq`,
+   each address the signed list's line of its index) and the ccs-front-bash release the image
+   vendors, with the newest design release; each QR code the signed list's own file of its address
+   (`subaddresses.txt.qr/`, installed here); a proposal's text escaped by ccs-front-bash's
+   `markdown.awk`. A build that fails: the live site stays as it is, and IRC is told;
+5. checks **what it built** (`ccs-check gate`): every address (95 or 106 base58 characters) in its
+   pages, JSON and feed against the signed list and `allowed`, as written (tags and attributes
+   too, entities decoded, a non-ASCII character read both as nothing and as a space; one in groups
+   split by up to three spaces or punctuation, `4A9b - xZq3`, `4A9b/xZq3`, or split between two
+   elements a browser lays side by side, where its checksum says it is one), the JSON as JSON
+   too; none in the feed; no `data:` image, no NUL byte. A file that needs more than 3000
+   checksums or 20 s fails alone ("too many runs that could be addresses"). And every QR code,
+   `qr/<address>.png`, exactly the signed list's file of that address (its sum in
+   `subaddresses.txt.qr.sha256`, which the `.pin`'s `qr` line pins). This is the backstop for an
+   address in a proposal's own text (the repository's review is the first check of that);
+6. copies the site live (`ccs-check copy --delete`: each file written beside its live copy and
+   renamed over it, 644; what the build no longer has, a proposal taken out of the repository,
+   goes). A file that failed step 5 is left out, so its live copy goes too, and IRC is told: one bad
+   page doesn't stop the rest. But more than 3 pages leaving at once (`CCS_GATE_REMOVE`: failed,
+   or their proposals gone: a branch emptied, a forge answering wrong, a backend hiding Funding
+   Required proposals by their index): none of the new site goes live, and IRC is told; a person
+   decides (`/var/lib/ccs-gate/allow-remove` lets them go, for one build:
+   [troubleshooting](troubleshooting.md#what-irc-says));
+7. refuses every push without its pinned list (or with one of no addresses), the QR codes' sums
+   the `.pin` names, the QR codes, a design release (`design/vX.Y.Z/`), `proposals.conf`,
+   `ccs-check`, `ccs-gate-build` or `git`.
 
-   **builds the site itself** when the push carries a `site-data.json` that passes its
-   check (below): `ccs-gate-build` makes the whole site with the backend's own steps (the
-   proposals' front matter and images from the repository fetched here, `site.jq`) and the
-   ccs-front-bash release the image vendors, from the newest design release, the signed list (each
-   address the list's line of its index) and the push's QR codes (each taken only as its sum in
-   the list's `.qr.sha256`). Staging becomes that site: the backend's own pages are dropped, and
-   every check below runs on what was built. Its log says how many built files differed from the
-   pushed ones (`0 of its 418 files differ`); no `site-data.json`, one that fails, or a build that
-   fails (IRC told): the pushed pages are checked as before;
-2. checks **every page against the design**: the design's release zip, unpacked here, has every
-   page and every part ccs-front-bash fills them with (ccs-front-hugo's README, "What
-   ccs-front-bash fills in"). A page must be one of the design's own, byte for byte outside its
-   `<!-- ccs:… -->` regions, each region filled with the design's parts and each `{{slot}}` with a
-   value of its kind:
-   - a number, an amount or a date as ccs-bash writes them;
-   - a name, author or tag: escaped text, 1000 characters at most, no bidi controls (they can
-     reorder an address's halves), and no run of 90 characters each base58 or not ASCII: no
-     address, padded, split by invisible characters or drawn with look-alikes. ccs-bash shortens
-     idea titles by the same rule;
-   - a link to a proposal: the site's own page, or a merge request of the proposals repository
-     itself (`proposals.conf`'s address, host and path, and `LINK_HOSTS`; `/-/merge_requests/N`,
-     `/merge_requests/N` or `/pulls/N`): not another repository on its forge, which anyone can
-     make, and no `..` step, `%` or backslash to leave it by. Any merge request number, though:
-     anyone can open one there, so a taken-over backend could link a proposal's "Comments and
-     updates" to theirs (the forge's page, saying whatever they wrote; not an address on the site);
-   - a proposal's text, milestones and payouts: exactly what `markdown.awk` (installed here)
-     makes of its file in the **proposals repository**, which the gate fetches itself each push
-     (its last two commits, for a merge landing mid-push; the last fetch if it can't). A backend
-     can't change what a reviewed proposal says, or what it is paid for;
-   - the donation box: **one address of the signed list** (not `allowed`'s: those are no
-     proposal's), the same in its text and `monero:` link, its QR code that address's file,
-     `qr/<address>.png` (step 4); and **its proposal's**: the one the live site's `projects.json`
-     has for it (a push can't give a proposal another address, nor one another proposal has, while
-     the proposal is in the repository's newest commit: a renamed one's goes with it); for a
-     proposal new to the site, the one the push's `projects.json` gives it, which no other
-     proposal has;
-   - `projects.json` (the `/projects` API: Feather's CCS tab shows it, its Donate button fills in
-     the address) is checked here too: each entry exactly site.jq's of its proposal's front matter
-     (its name, author, date, stage, goal and link; any number only for contributions, raised and
-     percentage), every key once and no other, an address of the signed list on one proposal only,
-     and the one the live site has for it;
-   - `site-data.json` (what the web server builds the site from): what only the backend knows, each proposal's subaddress
-     *index* (the signed list's line, never 0, one proposal's only, the live site's address for
-     it), merge request, dates and funds as ccs-bash writes them, and the ideas, their names and
-     authors plain text, their links the repository's merge requests; every key once, no other.
-
-   A page not checked in time (5 minutes) or over 2 MB is held back: what isn't known good
-   doesn't go live;
-3. checks **every address** (95 or 106 base58 characters) in pages and JSON against the signed
-   list and `allowed`, as written (tags and attributes too, entities decoded, a non-ASCII
-   character read both as nothing and as a space; one in groups split by up to three spaces or
-   punctuation, `4A9b - xZq3`, `4A9b/xZq3`, or split between two elements a browser lays side by
-   side, two tag labels, where its checksum says it is one), the JSON as JSON
-   too, its strings read the same way. One pass, 2 minutes at most for all; a file that needs more
-   than 3000 checksums or 20 s is held back alone ("too many runs that could be addresses"), not
-   every file with it. No `data:` image at all (the site's QR codes are files, step 4). Pages
-   and JSON must start with `<`, `[` or `{` (a browser shows `<img src="x.html">` by its bytes);
-4. checks every other file the push changes: the design's, byte for byte (`design.sha256`: a
-   stylesheet can hide an address, an image be a QR code); a proposal's image the proposals
-   repository has, byte for byte at that path (never read: the repository's review vouches for
-   what it shows, [the web server](web-server.md#what-it-guarantees-and-what-not));
-   a donation box's QR code, `qr/<address>.png`: the signed list's own file of that address, byte
-   for byte (its sum in `subaddresses.txt.qr.sha256`, which the `.pin`'s `qr` line pins; made with
-   the list, ccs-front-bash's `tools/make-qr.sh`): the gate never makes or reads one;
-   `projects.json`; `feed.xml`, line for line as ccs-front-bash writes it (its items plain text,
-   each a link to one of this site's proposal pages under `SITE_URL`, 100 at most, and no address
-   at all, however written); or the list's files as installed here. Each a plain file where the live site
-   has one (a symlink or a folder in a page's place would take the page away);
-5. copies staging into the live site, except a file that fails, which keeps its last good copy:
-   one bad page doesn't stop the rest. The push then exits 7 (a refused one: 1); which file and
-   why: `journalctl -t ccs-gate` (and `/var/log/ccs-gate.log` if created), and IRC. The one
-   exception: a proposal page the push didn't send, whose proposal is in neither commit just
-   fetched (not the last fetch), and with nothing else wrong, is a proposal taken out of the
-   repository (its `.md` in neither commit's tree). The push can't delete, so the gate takes it,
-   and its `images/<name>/`, off the live site, and the push is good; but never more than 3 at
-   once (`CCS_GATE_REMOVE`): more (a branch emptied or rewritten, a forge answering wrong) stay
-   held back, and IRC is told. And a live file the push didn't send that no longer passes for an
-   address (the list, `allowed` or the gate changed under it: an address that isn't the wallet's
-   nor allowed, a donation box's not in the list) would stay live if held back: it goes off the
-   site, into the gate's `quarantine/` (its state folder), and IRC is told; the backend's next
-   good copy goes live. At most 3 a push (`CCS_GATE_TAKEDOWN`): more (a wrong list or `allowed`)
-   stay, and IRC is told;
-6. refuses the whole push without its pinned list (or with one of no addresses) and QR codes' sums, `design.sha256`, the design,
-   `markdown.awk`, `proposals.conf`, `ccs-check` or `git`, a design release (`design/vX.Y.Z/`), or
-   for a file name with a control character in it.
-
-With `/etc/ccs-gate/alert.conf` it tells IRC itself (once an hour per address or file, three a
-push, a foreign address first, also when the backend hangs up mid-check): the alarm that still
-sounds when the backend is the one lying. Every line it sends, and what to do:
-[troubleshooting, What IRC says](troubleshooting.md#what-irc-says).
+The push's answer is its exit: 0, or 1 (nothing new went live); why: `journalctl -t ccs-gate`
+(and `/var/log/ccs-gate.log` if created), and IRC. With `/etc/ccs-gate/alert.conf` it tells IRC
+itself (once an hour per address or file, three a push, a foreign address first, also when the
+backend hangs up mid-build): the alarm that still sounds when the backend is the one lying. Every
+line it sends, and what to do: [troubleshooting, What IRC says](troubleshooting.md#what-irc-says).
 
 Set it up once, as root (in Docker, then [its own steps](docker.md#setting-it-up-1)):
 
@@ -247,71 +203,68 @@ install -d -m 755 /etc/ccs-gate /etc/ccs-gate/design
 install -d -o ccs-data -m 755 /var/lib/ccs-gate                      # one push at a time, the last push (the heartbeat), when it last alerted, the proposals fetched
 install -m 640 -g ccs-data /dev/null /etc/ccs-gate/alert.conf        # optional: the bot (as ccs-watch's, plain text POST)
 printf 'ALERT_URL=http://<bot>:8086/<path>\nSITE_URL=https://<site>\n' > /etc/ccs-gate/alert.conf
-# (SITE_URL: also the feed's address; feed.xml passes only with links under it, the backend's CCS_SITE_URL)
+# (SITE_URL: also the feed's links, the backend's CCS_SITE_URL)
 # the signed list, its pin, signature and key (ccs-front-bash, setup step 5); its view key file too, if the backend has one
 install -m 644 subaddresses.txt subaddresses.txt.pin subaddresses.txt.asc subaddresses.txt.key.asc subaddresses.txt.viewkey subaddresses.txt.qr.sha256 /etc/ccs-gate/
+# its QR codes (tools/make-qr.sh's), each checked against its sum
+install -d -m 755 /etc/ccs-gate/subaddresses.txt.qr && install -m 644 subaddresses.txt.qr/*.png /etc/ccs-gate/subaddresses.txt.qr/
+(cd /etc/ccs-gate/subaddresses.txt.qr && sha256sum -c --quiet ../subaddresses.txt.qr.sha256)
 cat > /etc/ccs-gate/allowed <<'LIST'                                # other addresses allowed on the site, one a line
 888tNkZrPN6JsEgekjMnABU4TBzc2Dt29EPAvkRxbANsAnjyPbb3iQ1YBRk1UXcdRsiKc9dhwMVgN5S9cQUiyoogDavup3H  # the General Fund
 LIST
 # the proposals repository the backend reads (its checkout's origin), and its branch; LINK_HOSTS:
-# other places a proposal's link may go to, as host/path of a repository (an older forge its merge
-# requests were on: repo.getmonero.org/monero-project/ccs-proposals). A host alone allows its
-# every page, anyone's repository there too
-printf 'PROPOSALS_GIT=https://repo.getmonero.org/monero-project/ccs-proposals.git\nPROPOSALS_BRANCH=master\n' > /etc/ccs-gate/proposals.conf
-# the markdown.awk of the ccs-front-bash release the backend runs (its lib/markdown.awk)
-install -m 644 <ccs-front-bash checkout at the attested commit>/lib/markdown.awk /etc/ccs-gate/markdown.awk
+# other places an idea's link may go to, as host/path of a repository (an older forge its merge
+# requests were on: repo.getmonero.org/monero-project/ccs-proposals); MERGE_REQUESTS: the forge
+# whose "See merge request <project>!N" the repository's merge commits end with (none: no links)
+printf 'PROPOSALS_GIT=https://repo.getmonero.org/monero-project/ccs-proposals.git\nPROPOSALS_BRANCH=master\nMERGE_REQUESTS=https://repo.getmonero.org\n' > /etc/ccs-gate/proposals.conf
 ```
 
 The list's files: as [the signed list](signed-list.md) says, checked for this machine too (a
-taken-over backend would bring both a list and the sums it is compared with), the QR codes' sums
-here but not their images.
+taken-over backend would bring both a list and the sums it is compared with).
 
-**The design**, the release zip the backend runs, unpacked, and the sums of every file but the pages:
+**The design**, the release zip the backend runs, unpacked:
 
 ```
 v=v0.1.29                                                            # the handover's releases table
 sha256sum ccs-front-hugo-$v.zip                                      # the attested one
 unzip -q ccs-front-hugo-$v.zip -d /etc/ccs-gate/design/$v
-(cd /etc/ccs-gate/design/$v && find . -type f ! -name '*.html' -exec sha256sum {} +) > /etc/ccs-gate/design.sha256
 ```
 
-Each design in `design/` named as its release (`v0.1.25`): the gate takes no other folder there
-(a build of the design's left beside them is no design). A new design: unpack it beside the old one and **add** (`>>`) its lines to `design.sha256` before
-the backend switches; the old can go once the new is live. A changed `markdown.awk`: install it
-beside the old as `markdown-<release>.awk` first. Empty `/var/lib/ccs-data` before the first push
-if anything is in it (the gate trusts what is live).
+Each design in `design/` named as its release (`v0.1.25`): the gate builds with the newest, and
+takes no other folder there (a build of the design's left beside them is no design). A new
+design: unpack it beside the old one; the old can go once the new is live. Empty
+`/var/lib/ccs-data` before the first push if anything is in it (the build replaces it).
 
-A proposal quoting another address doesn't update until that address is in `allowed` (the
-refusal names it; on the testnet, two). A new list: its files, the same way.
+A proposal quoting another address goes off the site until that address is in `allowed` (the log
+names it; on the testnet, two). A new list: its files and QR codes, the same way.
 
-`tests/gate.sh` builds this in containers (with `GATE_IMAGE`, from the gate's image) and pushes
-each way around it, each case named in its output:
+`tests/gate.sh` builds this in the gate's image, with the design's real release, and pushes each
+way around it, each case named in its output:
 
-- **held back:** an address split, disguised (entities, invisible or look-alike characters, bidi)
-  or in a QR code of another address; a QR code that isn't the list's file of the box's address,
-  or a `data:` image; a page or text that isn't the design's or the repository's;
-  a link out of the repository; a stylesheet, image or list that isn't the installed one;
-- **refused, every push:** no design or `markdown.awk`, a list that isn't the pinned one;
-  deleting, and anything outside the folder;
-- **checked again:** only what a push changed; a held-back file sent again unchanged; every page
-  after a change to what it is checked against, or a day after the last full check;
-- **through:** a good push after a held-back one; the repository down; two pushes at once;
-- **alerts:** a check that stops holds back every page; a backend that hangs up mid-check.
+- **built and live:** a push of `site-data.json`; each proposal's merge request link; a donation,
+  a proposal edited (its link still the merge request that added it); built again when what it's
+  built from changes, or a day later; not again for the same data;
+- **held back:** a `site-data.json` with an index the list hasn't, 0, another than the live
+  site's, a key more, markup or an address in an idea, a link out of the repository, a proposal the
+  repository hasn't;
+- **off the site:** a proposal's page with an address that isn't the wallet's (as written, in
+  groups, split by markup), back once mended; a QR code that isn't the list's; a proposal taken
+  out of the repository; four at once held (`allow-remove` lets them go);
+- **refused, every push:** a page or anything else pushed; no design release, no QR codes, a list
+  that isn't the pinned one, QR codes' sums that aren't, an empty list; a tar no backend makes;
+- **through:** the repository down (one alert after 6 hours); two pushes at once; a backend that
+  hangs up mid-build.
 
 **What it can't see:** what only the backend knows: a total, count or percentage that is wrong but
-a number; an idea that is no merge request (still escaped text linking to the repository); one of
-the address a proposal new to the site is first given (one of the list's that no other proposal
-has: from then on it is that proposal's); the dates only the backend keeps (when a proposal went to Funding Required, was funded). A
-proposal's name, author, date, goal, stage, milestone counts, link and tags are its front
-matter's, as the gate reads it itself from the repository (ccs-bash's own `lib/frontmatter.awk`,
-in the gate's image; `fronts`, `ccs-check pages`' front.go), on its page and on its cards; a
-sidebar's tag and a tag page are a tag some proposal has. Nor anything once the web
-server itself is taken over: then ccs-watch and visitors are the defence. The checks are
-`ccs-check` ([ccs-check.md](ccs-check.md): Go, memory-safe, one static binary). The donation
-boxes' QR codes are never made or decoded here: each is the signed list's file of its address,
-taken by its sum, and the web server has no qrencode. No image is read at all: a proposal's is
-the proposals repository's, byte for byte, and what it shows (an address, a QR code of one) is
-that repository's review's to catch, as its text's links are.
+a number; an idea that is no merge request (still escaped text linking to the repository); which
+of the list's addresses a proposal new to the site is first given (one no other proposal has: from
+then on it is that proposal's); the dates only the backend keeps (when a proposal went to Funding
+Required, was funded). Nor anything once the web server itself is taken over: then ccs-watch and
+visitors are the defence. The checks are `ccs-check` ([ccs-check.md](ccs-check.md): Go,
+memory-safe, one static binary); the build is ccs-bash's `site.jq` and the vendored ccs-front-bash
+(bash, jq, awk: [the web server](web-server.md)). No image is read at all: a proposal's is the
+proposals repository's, and what it shows (an address, a QR code of one) is that repository's
+review's to catch, as its text's links are.
 
 ### The heartbeat: the web server notices a silent backend
 

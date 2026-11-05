@@ -1238,4 +1238,22 @@ if bash -c 'source "$1/../ccs-back.sh" && PROPOSALS_DIR=$2 OUTPUT_DIR=$3/out WOR
     if ((same)); then echo "ok   the site's JSON from site-data.json is the run's own (proposals, completed, projects, images)"
     else echo "FAIL the site's JSON from site-data.json differs from the run's"; status=1; fi
 else echo "FAIL site_from_data failed"; cat "$sd/log"; status=1; fi
+# each proposal's merge request, from the repository's merge commits (lib/site-data.sh's
+# merge_requests): the one that added the file, not a later one that changed it; none for a file a
+# plain commit added; a name with a space, as the repository has one
+mr=$TEST_TMP/mr
+g() { git -C "$mr" -c user.name=t -c user.email=t@t "$@"; }
+merge() {   # merge BRANCH N FILE TEXT: FILE written on BRANCH, merged as GitLab merges !N
+    g checkout -q -b "$1" master && printf '%s\n' "$4" > "$mr/$3" && g add -A && g commit -q -m "$1"
+    g checkout -q master && g merge -q --no-ff "$1" -m "Merge branch '$1' into 'master'" -m "A title" -m "See merge request monero-project/ccs-proposals!$2"
+}
+git init -q -b master "$mr" && g commit -q --allow-empty -m start
+merge a 5 p.md one && merge b 9 p.md two && merge c 7 ' spaced.md' three
+printf 'x\n' > "$mr/q.md" && g add -A && g commit -q -m 'a plain commit'
+g update-ref refs/heads/ccs master
+want='{"p.md":"https://repo.test/monero-project/ccs-proposals/-/merge_requests/5"," spaced.md":"https://repo.test/monero-project/ccs-proposals/-/merge_requests/7"}'
+if got=$(bash -c 'source "$1/../ccs-back.sh" && merge_requests "$2" https://repo.test/' _ "$here" "$mr" | jq -cS .) \
+    && [[ $got == "$(jq -cS . <<<"$want")" ]]; then
+    echo "ok   each proposal's merge request read from the merge commit that added it"
+else echo "FAIL merge_requests: $got"; status=1; fi
 exit "$status"
