@@ -3,7 +3,7 @@
 # no QR reader (nothing on the web server reads an image); sshd; Caddy and Tor (the site's front),
 # Tor without relay code and the configs they run checked; and none of what the image
 # leaves out (Python, libffi, zbar, libjpeg, giflib, qrencode, libpng: the gate makes and reads
-# no image; rsync and xxhash: the push is a tar, read by ccs-check; jq, acl, attr, ncurses' other
+# no image; rsync and xxhash: the push is a tar, read by ccs-check; acl, attr, ncurses' other
 # libraries: nothing used them; an ssh client, sftp, git's servers).
 set -uo pipefail
 status=0
@@ -27,18 +27,22 @@ if [[ $v == "Tor version 0.4."* ]] && grep -qx 'relay: no' <<<"$m" && grep -qx '
     ok "${v%.}: no relay or directory authority code, its torrc valid"
 else fail "tor: $v; $m"; fi
 present=''
-for c in ssh scp sftp git-daemon git-shell ssh-agent python3 python rrsync rsync qrencode jq getfacl; do command -v "$c" > /dev/null && present+=" $c"; done
+for c in ssh scp sftp git-daemon git-shell ssh-agent python3 python rrsync rsync qrencode getfacl; do command -v "$c" > /dev/null && present+=" $c"; done
 [[ -e /usr/lib/ssh/sftp-server ]] && present+=" sftp-server"
 for l in /usr/lib/libzbar.so* /usr/lib/libjpeg.so* /usr/lib/libturbojpeg.so* /usr/lib/libgif.so* /usr/lib/libffi.so* /usr/lib/libpython* /usr/lib/libpng*.so* /usr/lib/libqrencode.so* \
-    /usr/lib/libxxhash.so* /usr/lib/libjq.so* /usr/lib/libonig.so* /usr/lib/libacl.so* /usr/lib/libattr.so* \
+    /usr/lib/libxxhash.so* /usr/lib/libacl.so* /usr/lib/libattr.so* \
     /usr/lib/libformw.so* /usr/lib/libmenuw.so* /usr/lib/libpanelw.so* /usr/lib/libncurses++w.so*; do
     [[ -e $l ]] && present+=" ${l##*/}"
 done
-if [[ -z $present ]]; then ok "no Python, libffi, zbar, libjpeg, giflib, qrencode, libpng, rsync, xxhash, jq, acl, attr or unused ncurses; no ssh client, sftp or git server"; else fail "in the image:$present"; fi
+if [[ -z $present ]]; then ok "no Python, libffi, zbar, libjpeg, giflib, qrencode, libpng, rsync, xxhash, acl, attr or unused ncurses; no ssh client, sftp or git server"; else fail "in the image:$present"; fi
 # its userland busybox's, only the applets in gate-busybox-applets (no GNU coreutils, gawk...)
 gnu=''
 for c in awk find grep sed tar flock cmp sort sha256sum ls; do [[ $(command -v "$c") -ef /usr/bin/busybox ]] || gnu+=" $c"; done
 for c in gawk gsed gtar od dd env; do command -v "$c" > /dev/null && gnu+=" $c"; done
 if [[ -z $gnu ]]; then ok "its tools busybox's, only the applets it needs"; else fail "not busybox's, or not needed:$gnu"; fi
+# the site built here: jq, the vendored ccs-front-bash release, the backend's own steps
+if v=$(jq --version 2>&1) && [[ -x /usr/local/bin/ccs-gate-build && -f /usr/local/lib/ccs-gate/vendor/ccs-front-bash/ccs-front-bash.sh \
+    && -f /usr/local/lib/ccs-gate/lib/site-data.sh ]]; then ok "$v, ccs-front-bash $(grep -v '^#' /usr/local/lib/ccs-gate/vendor/ccs-front-bash/RELEASE | cut -d' ' -f1) and ccs-gate-build, for the site built here"
+else fail "the site's build: jq '$v', ccs-gate-build or the vendored ccs-front-bash missing"; fi
 rm -rf "$t"
 exit "$status"

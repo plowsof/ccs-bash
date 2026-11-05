@@ -147,6 +147,16 @@ what it is sent; it knows what a page may be. Each push, one at a time, it
    when what they were checked against changes (the list or its pin, `allowed`, the design,
    `markdown.awk`, `proposals.conf`, the proposals commit fetched, `ccs-receive` itself or
    `ccs-check`), and once a day whatever happens. Its log says how many: `checking 3 of 1022 pages and JSON files`;
+
+   **builds the site itself** when the push carries a `site-data.json` that passes its
+   check (below): `ccs-gate-build` makes the whole site with the backend's own steps (the
+   proposals' front matter and images from the repository fetched here, `site.jq`) and the
+   ccs-front-bash release the image vendors, from the newest design release, the signed list (each
+   address the list's line of its index) and the push's QR codes (each taken only as its sum in
+   the list's `.qr.sha256`). Staging becomes that site: the backend's own pages are dropped, and
+   every check below runs on what was built. Its log says how many built files differed from the
+   pushed ones (`0 of its 418 files differ`); no `site-data.json`, one that fails, or a build that
+   fails (IRC told): the pushed pages are checked as before;
 2. checks **every page against the design**: the design's release zip, unpacked here, has every
    page and every part ccs-front-bash fills them with (ccs-front-hugo's README, "What
    ccs-front-bash fills in"). A page must be one of the design's own, byte for byte outside its
@@ -179,8 +189,7 @@ what it is sent; it knows what a page may be. Each push, one at a time, it
      (its name, author, date, stage, goal and link; any number only for contributions, raised and
      percentage), every key once and no other, an address of the signed list on one proposal only,
      and the one the live site has for it;
-   - `site-data.json` (what the web server is to build the site from itself, the design's
-     step 6; for now only checked): what only the backend knows, each proposal's subaddress
+   - `site-data.json` (what the web server builds the site from): what only the backend knows, each proposal's subaddress
      *index* (the signed list's line, never 0, one proposal's only, the live site's address for
      it), merge request, dates and funds as ccs-bash writes them, and the ideas, their names and
      authors plain text, their links the repository's merge requests; every key once, no other.

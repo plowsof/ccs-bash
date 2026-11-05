@@ -80,12 +80,18 @@ COPY --from=openssl / /
 COPY --from=libzstd / /
 COPY --from=zlib / /
 COPY --from=git / /
+COPY --from=jq / /
 COPY --from=openssh / /
 COPY --from=caddy /usr/bin/caddy /usr/bin/caddy
 COPY --from=libevent / /
 COPY --from=tor /rootfs/ /
 COPY contrib/ccs-receive contrib/ccs-backup-receive /usr/local/bin/
 COPY lib/frontmatter.awk lib/feed.awk /usr/local/lib/ccs-gate/
+# the site built here (contrib/gate-build): the backend's own steps for its JSON
+# (lib/site-data.sh and what it uses), and the vendored ccs-front-bash release (vendor/)
+COPY lib/common.sh lib/proposals.sh lib/images.sh lib/site-data.sh lib/site.jq lib/frontmatter.awk /usr/local/lib/ccs-gate/lib/
+COPY vendor/ccs-front-bash /usr/local/lib/ccs-gate/vendor/ccs-front-bash
+COPY contrib/gate-build /usr/local/lib/ccs-gate/contrib/gate-build
 COPY --from=ccs-check --chown=0:0 /tmp/ccs-check /usr/local/bin/ccs-check
 COPY contrib/docker/web/sshd_config /etc/ssh/sshd_config
 COPY contrib/docker/web/init /usr/local/bin/ccs-web-init
@@ -114,6 +120,9 @@ RUN cd /rootfs \
         usr/bin/clear usr/bin/infocmp usr/bin/infotocap usr/bin/reset usr/bin/tabs usr/bin/tic usr/bin/toe \
         usr/bin/tput usr/bin/tset usr/bin/event_rpcgen.py \
     && rm -f usr/lib/libform*.so* usr/lib/libmenu*.so* usr/lib/libpanel*.so* usr/lib/libncurses++*.so* \
+    && ln -s ../lib/ccs-gate/contrib/gate-build usr/local/bin/ccs-gate-build \
+    && find usr/local/lib/ccs-gate -type d -exec chmod 755 {} + && find usr/local/lib/ccs-gate -type f -exec chmod 644 {} + \
+    && chmod 755 usr/local/lib/ccs-gate/contrib/gate-build \
     && mkdir -p var/log && ln -s bash usr/bin/sh && ln -sf /etc/ccs-ssh/keys/passwd etc/passwd && ln -sf /etc/ccs-ssh/keys/group etc/group \
     && chmod 755 usr/local/bin/ccs-receive usr/local/bin/ccs-backup-receive usr/local/bin/ccs-check usr/local/bin/ccs-web-init && chmod 644 etc/ssh/sshd_config etc/caddy/Caddyfile etc/tor/torrc usr/local/lib/ccs-gate/frontmatter.awk usr/local/lib/ccs-gate/feed.awk \
     && find . -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
