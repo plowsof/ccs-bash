@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # contrib/ccs-watch against a local "web server" (python3 http.server) and a fake bot that keeps
-# what it is sent: nothing changed, no alert; a page changed there, an alert naming it and the
-# address that isn't the wallet's, once an hour; the site down three times, an alert.
+# what it is sent: every address the wallet's, no alert; a foreign address on a page, or a box
+# that isn't its proposal's, an alert naming it, once an hour; the site down three times, an alert.
 set -euo pipefail
 here=$(dirname "$(readlink -f "$0")")
 tmp=$(mktemp -d)
@@ -17,38 +17,38 @@ port() { python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)
 ccs_watch() {
     if [[ ${CCS_WATCH_IMAGE:-} ]]; then
         docker run --rm --network host --read-only --tmpfs /tmp -u "$(id -u):$(id -g)" -v "$tmp:$tmp" \
-            -e CCS_WATCH_STATE -e CCS_WATCH_PULL -e CCS_WATCH_FORGE -e CCS_WATCH_WAITS -e CCS_WATCH_SUMS \
+            -e CCS_WATCH_STATE -e CCS_WATCH_PULL -e CCS_WATCH_FORGE -e CCS_WATCH_WAITS \
             --entrypoint /opt/ccs-bash/contrib/ccs-watch "$CCS_WATCH_IMAGE" "$@"
     else
         "$here/../contrib/ccs-watch" "$@"
     fi
 }
 
-addr() { printf '%s%094d' "${2:-9}" "$1" | tr 0 1; }
-mkdir -p "$tmp/local/proposals" "$tmp/local/funding-required" "$tmp/local/donate" "$tmp/local/verify"
-for i in 0 1 2; do echo "$i $(addr "$i")"; done > "$tmp/list.txt"
-# the files the pages use: stylesheets (theme.css and its dark and light ones), the General Fund's
-# QR code, an icon in a srcset
-mkdir -p "$tmp/local/assets"
-for t in theme theme-dark theme-light; do echo ".$t {}" > "$tmp/local/assets/$t.css"; done
-echo qr > "$tmp/local/assets/general-fund-qr.png"; echo icon > "$tmp/local/assets/logo-2x.png"
-echo '<link rel="stylesheet" href="assets/theme.css"><img src="assets/general-fund-qr.png" srcset="assets/logo-2x.png 2x">home' > "$tmp/local/index.html"
-for d in funding-required donate verify; do echo "$d" > "$tmp/local/$d/index.html"; done
-# a donation box, and the General Fund in the footer (on every page, not the wallet's)
-echo "<link rel=\"stylesheet\" href=\"../assets/theme.css\"><a href=\"../index.html\">home</a><details class=\"contribute\"><a class=\"qr\" href=\"monero:$(addr 1)\"></a><div class=\"address\">$(addr 1)</div></details><p class=\"address\">$(addr 3 8)</p>" > "$tmp/local/proposals/a b.html"
-echo "<a class=\"qr\" href=\"monero:$(addr 0)\"></a> the General Fund in the footer, no Contribute box" > "$tmp/local/proposals/done.html"
-cp -r "$tmp/local" "$tmp/remote"
-# /dark/ and /light/: the same files, but their own theme.css (the web server's theme lines)
+addr() { printf '%s%094d' "${2:-9}" "$1" | tr 0 z; }
+# the signed list, its QR codes beside it (subaddresses.txt.qr/); ccs-bash's projects.json (what
+# each proposal's box must show): "a b" funding required with the list's 1, "done" completed
+mkdir -p "$tmp/out" "$tmp/list.txt.qr"
+for i in 0 1 2; do echo "$i $(addr "$i")"; echo "qr of $i" > "$tmp/list.txt.qr/$(addr "$i").png"; done > "$tmp/list.txt"
+printf '[{"filename":"a b.md","state":"FUNDING-REQUIRED","address":"%s"},{"filename":"done.md","state":"COMPLETED","address":null}]\n' "$(addr 1)" > "$tmp/out/projects.json"
+# the site as the web server built it: the fixed pages, the General Fund (allowed) in a footer,
+# the box with its address and the list's QR code of it
+mkdir -p "$tmp/remote/proposals" "$tmp/remote/funding-required" "$tmp/remote/donate" "$tmp/remote/verify" "$tmp/remote/qr"
+echo "<p>home</p><p class=\"address\">$(addr 3 8)</p>" > "$tmp/remote/index.html"
+for d in funding-required donate verify; do echo "$d" > "$tmp/remote/$d/index.html"; done
+echo "<a href=\"../index.html\">home</a><details class=\"contribute\"><a class=\"qr\" href=\"monero:$(addr 1)\"><img src=\"../qr/$(addr 1).png\"></a><div class=\"address\">$(addr 1)</div></details><p class=\"address\">$(addr 3 8)</p>" > "$tmp/remote/proposals/a b.html"
+echo "<p>the General Fund in the footer, no box</p><p class=\"address\">$(addr 3 8)</p>" > "$tmp/remote/proposals/done.html"
+echo '[{"filename":"a b.md"}]' > "$tmp/remote/projects"
+cp "$tmp/list.txt.qr/$(addr 1).png" "$tmp/remote/qr/"
+echo '<p>not here</p>' > "$tmp/remote/404.html"
+# /dark/ and /light/: the same pages (the web server's theme lines)
 for t in dark light; do
-    mkdir -p "$tmp/remote/$t/assets"
-    for f in index.html funding-required donate verify proposals; do ln -s "../$f" "$tmp/remote/$t/$f"; done
-    for f in "$tmp/local/assets"/*; do ln -s "../../assets/${f##*/}" "$tmp/remote/$t/assets/${f##*/}"; done
-    rm "$tmp/remote/$t/assets/theme.css" && cp "$tmp/local/assets/theme-$t.css" "$tmp/remote/$t/assets/theme.css"
+    mkdir -p "$tmp/remote/$t"
+    for f in index.html funding-required donate verify proposals qr projects; do ln -s "../$f" "$tmp/remote/$t/$f"; done
 done
 
 web=$(port) bot=$(port)
-# the "web server": the files, and the theme lines' redirects (?theme=dark|light|system: the same
-# page under /dark/, /light/ or no prefix), as nginx answers them
+# the "web server": the files, a 404 for anything else, and the theme lines' redirects
+# (?theme=dark|light|system: the same page under /dark/, /light/ or no prefix), as Caddy answers
 python3 -c '
 import http.server, os, re, sys, urllib.parse
 class H(http.server.SimpleHTTPRequestHandler):
@@ -59,6 +59,10 @@ class H(http.server.SimpleHTTPRequestHandler):
             self.send_response(302); self.send_header("Location", page if t == "system" else "/" + t + page)
             self.send_header("Content-Length", "0"); self.end_headers(); return
         super().do_GET()
+    def send_error(self, code, *a, **k):
+        if code != 404: return super().send_error(code, *a, **k)
+        body = open("404.html", "rb").read()
+        self.send_response(404); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
     def log_message(self, *a): pass
 os.chdir(sys.argv[2]); http.server.ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()' "$web" "$tmp/remote" & pids+=($!)
 python3 -c '
@@ -71,27 +75,16 @@ class H(http.server.BaseHTTPRequestHandler):
     def log_message(self, *a): pass
 http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()' "$bot" "$tmp/bot.txt" & pids+=($!)
 sleep 1
-printf 'ALERT_URL=http://127.0.0.1:%s/simple?channel=%%23ccs\nSUBADDRESSES=%s\nALERT_PLAIN=1\nWATCH_THEMES=1\n' "$bot" "$tmp/list.txt" > "$tmp/alert.conf"
-watch() { CCS_WATCH_STATE=$tmp/state ccs_watch "http://127.0.0.1:$web" "$tmp/local" "$tmp/alert.conf" 2> "$tmp/log"; }
+printf 'ALERT_URL=http://127.0.0.1:%s/simple?channel=%%23ccs\nSUBADDRESSES=%s\nWATCH_ALLOWED=%s\nALERT_PLAIN=1\nWATCH_THEMES=1\n' "$bot" "$tmp/list.txt" "$(addr 3 8)" > "$tmp/alert.conf"
+watch() { CCS_WATCH_STATE=$tmp/state ccs_watch "http://127.0.0.1:$web" "$tmp/out" "$tmp/alert.conf" 2> "$tmp/log"; }
 alerts() { [[ -f $tmp/bot.txt ]] && wc -l < "$tmp/bot.txt" || echo 0; }
 
 # (busybox's sleep: whole seconds)
 if [[ ${CCS_WATCH_IMAGE:-} ]]; then export CCS_WATCH_WAITS="1 1"; else export CCS_WATCH_WAITS="0.2 0.2"; fi
 page=$tmp/remote/proposals/a\ b.html
-if watch && [[ $(alerts) == 0 ]] && grep -q "the 5 pages on .*, and the 6 other pages and files, are what was pushed" "$tmp/log"; then ok "nothing changed: no alert (5 pages: 4 fixed, 1 with a donation box; 6 others: the page without one, theme.css and its dark and light ones, the QR code, the icon)"; else cat "$tmp/log"; fail "unchanged site"; fi
-
-# The files a page uses, under /dark/ and /light/ too (a visitor who picked a theme loads them
-# there: the links are relative): another General Fund QR code served only there alerts, within a
-# few runs (each file under one prefix a run, at random)
-for t in dark light; do rm "$tmp/remote/$t/assets/general-fund-qr.png"; echo "another address's QR code" > "$tmp/remote/$t/assets/general-fund-qr.png"; done
-for _ in $(seq 20); do watch || true; [[ $(alerts) == 0 ]] || break; done
-if [[ $(alerts) == 1 ]] && grep -qE "the file differs from what was pushed .* @ http://127.0.0.1:$web/(dark|light)/assets/general-fund-qr.png" "$tmp/bot.txt"; then
-    ok "a QR code changed only under /dark/ and /light/: an alert naming it there"
-else
-    cat "$tmp/bot.txt" 2> /dev/null; fail "a file changed only under a theme prefix"
-fi
-for t in dark light; do rm "$tmp/remote/$t/assets/general-fund-qr.png"; ln -s ../../assets/general-fund-qr.png "$tmp/remote/$t/assets/general-fund-qr.png"; done
-: > "$tmp/bot.txt"; rm -f "$tmp/state"/alert-* "$tmp/state"/differs-*
+if watch && [[ $(alerts) == 0 ]] && grep -q "the 5 pages on .*, and the 2 others: every address the wallet's, each donation box its proposal's" "$tmp/log"; then
+    ok "every address the wallet's or allowed: no alert (5 pages: 4 fixed, 1 with a donation box; 2 others: the page without one, /projects)"
+else cat "$tmp/log"; fail "a good site"; fi
 
 # Never an alert for the web server being slow, down or answering nothing: those are failed
 # fetches, not "differs".
@@ -139,27 +132,25 @@ sed -i "s/$(addr 1)/$(addr 7 B)/g" "$page"
 watch || true
 if [[ $(alerts) == 2 ]]; then ok "changed, put back, changed again within a day: the first run that sees it again alerts"; else cat "$tmp/log"; fail "a page changed every other run"; fi
 cp "$tmp/page.good" "$page"; rm -f "$tmp/state"/differs-*
-
-# The files a page uses are watched too: a stylesheet can hide an address and show another, an
-# image can be another QR code. Each alerts as a page does (the second run that sees it).
-cp "$tmp/bot.txt" "$tmp/bot.before" 2> /dev/null || : > "$tmp/bot.before"
-for f in assets/theme.css dark/assets/theme.css assets/general-fund-qr.png assets/logo-2x.png; do
+# Another of the list's addresses in the box (another proposal's): not its own, an alert on the
+# second run; the list's QR code of another address in it, likewise
+for c in "box|s/monero:$(addr 1)/monero:$(addr 2)/|the donation box isn't its proposal's address" "qr|qr|the donation box's QR code isn't the signed list's of its address"; do
+    IFS='|' read -r what how why <<<"$c"
     : > "$tmp/bot.txt"; rm -f "$tmp/state"/alert-* "$tmp/state"/differs-*
-    cp --remove-destination "$tmp/remote/$f" "$tmp/changed" && echo '.address { display: none }' >> "$tmp/changed"
-    cp "$tmp/remote/$f" "$tmp/good" && cp --remove-destination "$tmp/changed" "$tmp/remote/$f"
+    if [[ $what == qr ]]; then cp "$tmp/list.txt.qr/$(addr 2).png" "$tmp/remote/qr/$(addr 1).png"; else sed -i "$how" "$page"; fi
     watch || true; watch || true
-    # (fetched under /, /dark/ or /light/ at random, but theme.css: each prefix has its own)
-    strip() { if [[ $f == *theme.css ]]; then cat "$@"; else sed -E 's#/(dark|light)/#/#' "$@"; fi; }
-    if [[ $(alerts) == 1 ]] && strip "$tmp/bot.txt" | grep -qF "the file differs from what was pushed (a page's stylesheet, font or image) @ http://127.0.0.1:$web/$f"; then
-        ok "a file a page uses changed: $f"
-    else
-        cat "$tmp/log" "$tmp/bot.txt"; fail "a changed $f"
-    fi
-    cp "$tmp/good" "$tmp/remote/$f"
+    if [[ $(alerts) == 1 ]] && sed -E 's#/(dark|light)/#/#' "$tmp/bot.txt" | grep -qF "$why"; then ok "$why: an alert"; else cat "$tmp/log" "$tmp/bot.txt"; fail "$why"; fi
+    cp "$tmp/page.good" "$page"; cp "$tmp/list.txt.qr/$(addr 1).png" "$tmp/remote/qr/"
 done
-rm -f "$tmp/state"/differs-*
-watch || { cat "$tmp/log"; fail "put back"; }
-cp "$tmp/bot.before" "$tmp/bot.txt"
+: > "$tmp/bot.txt"; rm -f "$tmp/state"/alert-* "$tmp/state"/differs-*
+# An address on a page that isn't a box's (a proposal's text, the footer): any one not the list's
+# nor allowed alerts too
+echo "<p>or send to $(addr 7 B)</p>" >> "$tmp/remote/proposals/done.html"
+for _ in $(seq 20); do watch || true; [[ $(alerts) == 0 ]] || break; done
+if [[ $(alerts) == 1 ]] && grep -qF "donation address $(addr 7 B | sed -E 's/^(.{6}).*(.{4})$/\1…\2/') does not match the CCS wallet" "$tmp/bot.txt"; then
+    ok "a foreign address on a page without a box (seen when it is among the sampled ones): an alert"
+else cat "$tmp/log" "$tmp/bot.txt"; fail "a foreign address in a page's text"; fi
+sed -i '$d' "$tmp/remote/proposals/done.html"; : > "$tmp/bot.txt"; rm -f "$tmp/state"/alert-* "$tmp/state"/differs-*
 
 # Changed for a moment only (a push landing): put back before the recheck, never alerts.
 rm -f "$tmp/state"/alert-*; base=$(alerts)
@@ -169,39 +160,6 @@ for _ in 1 2; do
     watch || true; wait "$putback"
 done
 if [[ $(alerts) == "$base" ]]; then ok "changed for a moment on two runs: no alert"; else cat "$tmp/bot.txt"; fail "a moment's change"; fi
-
-# What the compose's watch compares with is a copy of what was pushed, which the push stage writes;
-# CCS_WATCH_SUMS holds the front's sums of that run's site (which the copy must be) and of the runs
-# since. A push landing during a check: the web server serving the newer push is serving what was
-# pushed, no sighting on two runs, no alert; serving neither push still alerts on the second run.
-# A copy that isn't the front's site (the push stage changed it): nothing compared, an alert.
-sums() { (cd "$1" && find . -type f -exec sha256sum {} +) > "$2"; }
-mkdir -p "$tmp/newer" && cp -r "$tmp/local/." "$tmp/newer/"
-sed -i 's/>home$/>home, pushed again/' "$tmp/newer/index.html" "$tmp/remote/index.html"
-sums "$tmp/local" "$tmp/sums-1"; sums "$tmp/newer" "$tmp/sums-2"
-# (handed only the run's own sums, as when the next run finished during the check: sums-2 is found beside it)
-cwatch() { CCS_WATCH_SUMS="$tmp/sums-1" watch; }
-rm -f "$tmp/state"/differs-* "$tmp/state"/alert-*; was=$base base=$(alerts)
-if cwatch && cwatch && [[ $(alerts) == "$base" ]] && ! grep -q 'differs' "$tmp/log"; then
-    ok "a push landing during a check: the newer push's page served, no sighting, no alert"
-else
-    cat "$tmp/log"; fail "a push landing during a check"
-fi
-echo "<p>$(addr 7 B)</p>" >> "$tmp/remote/index.html"
-cwatch || true; cwatch || true
-if [[ $(alerts) == $((base + 1)) ]]; then ok "a push landing during a check, but the page served is neither push's: an alert"; else cat "$tmp/log" "$tmp/bot.txt"; fail "neither push's page"; fi
-cp "$tmp/local/index.html" "$tmp/remote/index.html"; rm -f "$tmp/state"/differs-* "$tmp/state"/alert-*
-# the push stage taken over: it writes the web server's page into what was pushed, so they agree
-cp -r "$tmp/local" "$tmp/forged" && echo "<p>$(addr 7 B)</p>" >> "$tmp/forged/index.html" && cp "$tmp/forged/index.html" "$tmp/remote/index.html"
-n=$(alerts)
-if ! CCS_WATCH_STATE=$tmp/state CCS_WATCH_SUMS="$tmp/sums-1" ccs_watch "http://127.0.0.1:$web" "$tmp/forged" "$tmp/alert.conf" 2> "$tmp/log" \
-    && [[ $(alerts) == $((n + 1)) ]] && grep -qF "what was pushed isn't the site the front made (sums-1)" "$tmp/bot.txt"; then
-    ok "what was pushed changed to match the web server's page (the push stage taken over): an alert, nothing compared with it"
-else
-    cat "$tmp/log" "$tmp/bot.txt"; fail "a forged copy of what was pushed"
-fi
-cp "$tmp/local/index.html" "$tmp/remote/index.html"; rm -rf "$tmp/newer" "$tmp/forged" "$tmp/sums-1" "$tmp/sums-2"; rm -f "$tmp/state"/differs-* "$tmp/state"/alert-*
-head -n "$was" "$tmp/bot.txt" > "$tmp/bot.tmp" && mv "$tmp/bot.tmp" "$tmp/bot.txt"; base=$was   # (the cases after count from there)
 
 # The web server goes away while a changed page is being rechecked: nothing is known, no alert.
 sed -i "s/$(addr 1)/$(addr 7 B)/g" "$page"
@@ -277,9 +235,11 @@ if ccs_watch --test https://ccs.test/ "$tmp/wmb.conf" > /dev/null \
 else
     cat "$tmp/bot.txt"; fail "wmb"
 fi
-# Asked for as Tor Browser asks: a page as a page, a stylesheet as one (a web server can't pick
-# out the watcher by a missing Sec-Fetch-* header)
-hdr=$(port); mkdir -p "$tmp/h/site/assets"; echo '<link rel="stylesheet" href="assets/s.css">' > "$tmp/h/site/index.html"; printf '@font-face { src: url("f.woff2") format("woff2") }\n' > "$tmp/h/site/assets/s.css"; echo font > "$tmp/h/site/assets/f.woff2"
+# Asked for as Tor Browser asks: a page as a page, an image as one (a web server can't pick out
+# the watcher by a missing Sec-Fetch-* header)
+hdr=$(port); mkdir -p "$tmp/h/site/proposals" "$tmp/h/site/qr" "$tmp/h/out"
+echo '<p>home</p>' > "$tmp/h/site/index.html"
+cp "$tmp/page.good" "$tmp/h/site/proposals/a b.html" && cp "$tmp/remote/qr/$(addr 1).png" "$tmp/h/site/qr/" && cp "$tmp/out/projects.json" "$tmp/h/out/"
 python3 -c '
 import http.server, sys, os
 class H(http.server.SimpleHTTPRequestHandler):
@@ -289,30 +249,30 @@ class H(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *a): pass
 os.chdir(sys.argv[3]); http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()' "$hdr" "$tmp/h/seen" "$tmp/h/site" & pids+=($!)
 sleep 1
-CCS_WATCH_STATE=$tmp/h/state ccs_watch "http://127.0.0.1:$hdr" "$tmp/h/site" /nonexistent 2> /dev/null || true
+printf 'SUBADDRESSES=%s\nWATCH_ALLOWED=%s\n' "$tmp/list.txt" "$(addr 3 8)" > "$tmp/h/alert.conf"
+CCS_WATCH_STATE=$tmp/h/state ccs_watch "http://127.0.0.1:$hdr" "$tmp/h/out" "$tmp/h/alert.conf" 2> "$tmp/h/log" || true
 if grep -qE '^/ .*Sec-Fetch-Dest: document\|Sec-Fetch-Mode: navigate\|Sec-Fetch-Site: (none|same-origin|cross-site)\|Sec-Fetch-User: \?1' "$tmp/h/seen" \
-    && grep -q '^/ .*Upgrade-Insecure-Requests: 1' "$tmp/h/seen" && grep -q '^/assets/s.css .*Sec-Fetch-Dest: style' "$tmp/h/seen" \
-    && ! grep -q '^/assets/s.css .*Sec-Fetch-User' "$tmp/h/seen" && grep -q '^/assets/f.woff2 .*Sec-Fetch-Dest: font' "$tmp/h/seen"; then
-    ok "asked for as Tor Browser asks: a page with Sec-Fetch-Dest: document, a stylesheet with style, the font it uses (url()) with font"
+    && grep -q '^/ .*Upgrade-Insecure-Requests: 1' "$tmp/h/seen" && grep -q "^/qr/$(addr 1).png .*Sec-Fetch-Dest: image" "$tmp/h/seen" \
+    && ! grep -q "^/qr/.*Sec-Fetch-User" "$tmp/h/seen"; then
+    ok "asked for as Tor Browser asks: a page with Sec-Fetch-Dest: document, the box's QR code with image"
 else
-    cat "$tmp/h/seen"; fail "the headers a page and a stylesheet are asked for with"
+    cut -c1-60 "$tmp/h/seen"; cat "$tmp/h/log"; fail "the headers a page and an image are asked for with"
 fi
 # Visitors reach a donation page from the site's own lists (Sec-Fetch-Site: same-origin) or from
 # another site (cross-site), not only typed in (none): a web server that changes the page only for
 # those must not be invisible to the watcher. Over ten runs, some fetches of it as a click-through.
-mkdir -p "$tmp/h/site/proposals"; echo '<details class="contribute">x</details>' > "$tmp/h/site/proposals/p.html"
 : > "$tmp/h/seen"
-for _ in $(seq 10); do CCS_WATCH_STATE=$tmp/h/state ccs_watch "http://127.0.0.1:$hdr" "$tmp/h/site" /nonexistent 2> /dev/null || true; done
-if grep -qE '^/proposals/p.html .*Sec-Fetch-Site: (same-origin|cross-site)' "$tmp/h/seen"; then
+for _ in $(seq 10); do CCS_WATCH_STATE=$tmp/h/state ccs_watch "http://127.0.0.1:$hdr" "$tmp/h/out" "$tmp/h/alert.conf" 2> /dev/null || true; done
+if grep -qE '^/proposals/a%20b.html .*Sec-Fetch-Site: (same-origin|cross-site)' "$tmp/h/seen"; then
     ok "a donation page is sometimes asked for as a visitor clicking through to it"
 else
     fail "a donation page only ever asked for as typed in (Sec-Fetch-Site: none): a web server can tell the watcher"
 fi
-# A page that was never pushed: answered 404 with the pushed 404 page (as nginx's error_page does),
-# no alert; the web server's own page there instead (FAKE set), an alert on the second run
-mkdir -p "$tmp/n/site/assets" && echo '<p>home</p>' > "$tmp/n/site/index.html" && echo shell > "$tmp/n/site/assets/clam.gif"
-echo '<p>not here</p><img src="./assets/clam.gif">' > "$tmp/n/site/404.html"
-nf=$(port); : > "$tmp/n/bot.txt"
+# A page that doesn't exist: answered 404 (as Caddy's error page does), no alert; the web
+# server's own page there instead (FAKE set), an alert on the second run
+mkdir -p "$tmp/n/site" "$tmp/n/out" && echo '<p>home</p>' > "$tmp/n/site/index.html" && echo '[]' > "$tmp/n/out/projects.json"
+echo '<p>not here</p>' > "$tmp/n/site/404.html"
+nf=$(port)
 python3 -c '
 import http.server, os, sys
 class H(http.server.SimpleHTTPRequestHandler):
@@ -324,18 +284,18 @@ class H(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *a): pass
 os.chdir(sys.argv[3]); http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()' "$nf" "$tmp/n/FAKE" "$tmp/n/site" & pids+=($!)
 sleep 1
-printf 'ALERT_URL=http://127.0.0.1:%s/simple?channel=%%23ccs\nALERT_PLAIN=1\n' "$bot" > "$tmp/n/alert.conf"
-nwatch() { CCS_WATCH_STATE=$tmp/n/state ccs_watch "http://127.0.0.1:$nf" "$tmp/n/site" "$tmp/n/alert.conf" 2> "$tmp/n/log"; }
+printf 'ALERT_URL=http://127.0.0.1:%s/simple?channel=%%23ccs\nALERT_PLAIN=1\nSUBADDRESSES=%s\n' "$bot" "$tmp/list.txt" > "$tmp/n/alert.conf"
+nwatch() { CCS_WATCH_STATE=$tmp/n/state ccs_watch "http://127.0.0.1:$nf" "$tmp/n/out" "$tmp/n/alert.conf" 2> "$tmp/n/log"; }
 before=$(alerts)
-nwatch; nwatch
-if [[ $(alerts) == "$before" ]] && grep -q "and the 2 other pages and files, are what was pushed" "$tmp/n/log"; then
-    ok "a page never pushed answers 404 with the pushed 404 page: no alert; the files the 404 page uses (its logo) checked too (2: the logo, and the 404 page as one of the sampled pages)"
+nwatch || true; nwatch || true
+if [[ $(alerts) == "$before" ]] && ! grep -q "doesn't exist" "$tmp/n/log"; then
+    ok "a page that doesn't exist answers 404: no alert"
 else cat "$tmp/n/log"; fail "a 404 page"; fi
 touch "$tmp/n/FAKE"
 nwatch || true; first=$(alerts); nwatch || true
-if [[ $first == "$before" && $(alerts) == $((before + 1)) ]] && tail -n 1 "$tmp/bot.txt" | grep -q "a page that was never pushed answers HTTP 200, not the pushed 404 page"; then
-    ok "the web server's own page at a path never pushed: an alert, on the second run that sees it"
-else cat "$tmp/n/log"; tail -n 2 "$tmp/bot.txt"; fail "a page never pushed"; fi
+if [[ $first == "$before" && $(alerts) == $((before + 1)) ]] && tail -n 1 "$tmp/bot.txt" | grep -q "a page that doesn't exist answers HTTP 200, not a 404"; then
+    ok "the web server's own page at a path that doesn't exist: an alert, on the second run that sees it"
+else cat "$tmp/n/log"; tail -n 2 "$tmp/bot.txt"; fail "a page that doesn't exist"; fi
 
 # Security review 5 (2026-10-27): a web server (attacker 2) that serves visitors a foreign address
 # on a donation page while trying to hide it from the watcher. One local "web server" as nginx
@@ -349,8 +309,10 @@ else cat "$tmp/n/log"; tail -n 2 "$tmp/bot.txt"; fail "a page never pushed"; fi
 #   browser        the foreign page to every browser but Tor Browser
 #   unpushed       its own page at every name never pushed but a 12-hex-digit one
 #   theme          the theme button sends visitors elsewhere
-mkdir -p "$tmp/e/site/proposals"
+mkdir -p "$tmp/e/site/proposals" "$tmp/e/out"
 echo '<p>not here</p>' > "$tmp/e/site/404.html"; echo '<p>home</p>' > "$tmp/e/site/index.html"
+printf '[{"filename":"p.md","state":"FUNDING-REQUIRED","address":"%s"}]\n' "$(addr 1)" > "$tmp/e/out/projects.json"
+for d in funding-required donate verify; do mkdir -p "$tmp/e/site/$d" && echo "$d" > "$tmp/e/site/$d/index.html"; done; echo '[]' > "$tmp/e/site/projects"
 echo "<details class=\"contribute\"><a href=\"monero:$(addr 1)\"></a><div class=\"address\">$(addr 1)</div></details>" > "$tmp/e/site/proposals/p.html"
 sed "s/$(addr 1)/$(addr 7 B)/g" "$tmp/e/site/proposals/p.html" > "$tmp/e/evil.html"
 ep=$(port)
@@ -390,14 +352,14 @@ class H(http.server.BaseHTTPRequestHandler):
 http.server.ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()' "$ep" "$tmp/e" & pids+=($!)
 echo none > "$tmp/e/MODE"; touch "$tmp/e/PUSH"
 sleep 1
-printf 'ALERT_URL=http://127.0.0.1:%s/simple?channel=%%23ccs\nALERT_PLAIN=1\nWATCH_SAMPLE=0\nWATCH_THEMES=1\n' "$bot" > "$tmp/e/alert.conf"
+printf 'ALERT_URL=http://127.0.0.1:%s/simple?channel=%%23ccs\nALERT_PLAIN=1\nWATCH_SAMPLE=0\nWATCH_THEMES=1\nSUBADDRESSES=%s\n' "$bot" "$tmp/list.txt" > "$tmp/e/alert.conf"
 # a run right after a push (the update script's), and one between pushes (ccs-watch.timer's)
-ewatch() { CCS_WATCH_STATE=$tmp/e/state ccs_watch "http://127.0.0.1:$ep" "$tmp/e/site" "$tmp/e/${econf:-alert.conf}" 2> "$tmp/e/log" || true; }
+ewatch() { CCS_WATCH_STATE=$tmp/e/state ccs_watch "http://127.0.0.1:$ep" "$tmp/e/out" "$tmp/e/${econf:-alert.conf}" 2> "$tmp/e/log" || true; }
 push() { touch "$tmp/e/PUSH"; sleep 0.05; ewatch; }
 # a visitor (Chrome) asking for the donation page: does it get the foreign address?
 visitor() { curl -s -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36' "http://127.0.0.1:$ep/proposals/p.html" | grep -c "$(addr 7 B)" || true; }
 echo none > "$tmp/e/MODE"; rm -rf "$tmp/e/state"; : > "$tmp/bot.txt"; push; push
-if [[ $(alerts) == 0 ]] && grep -q "are what was pushed" "$tmp/e/log"; then ok "review 5: the test's web server, honest: no alert"; else cat "$tmp/e/log" "$tmp/bot.txt"; fail "review 5: the honest web server"; fi
+if [[ $(alerts) == 0 ]] && grep -q "every address the wallet's" "$tmp/e/log"; then ok "review 5: the test's web server, honest: no alert"; else cat "$tmp/e/log" "$tmp/bot.txt"; fail "review 5: the honest web server"; fi
 etry() {   # etry MODE RUNS WHAT: RUNS pushes, each with a timer run after it; a visitor looks in between
     local seen=0 i
     echo "$1" > "$tmp/e/MODE"; rm -rf "$tmp/e/state" "$tmp/e/EVIL"; : > "$tmp/bot.txt"; sleep 5
@@ -426,8 +388,8 @@ if ((seen == 2)) && [[ $(alerts) != 0 ]]; then ok "review 5: the foreign page on
 etry after-unpushed 2 "the foreign page from the watcher's ask for a page never pushed until the next push"
 etry browser 6 "the foreign page to every browser but Tor Browser"
 echo unpushed > "$tmp/e/MODE"; rm -rf "$tmp/e/state"; : > "$tmp/bot.txt"; push; push
-if [[ $(curl -s "http://127.0.0.1:$ep/proposals/ccs-fund-raise.html") == "<p>Donate here</p>" ]] && grep -q "a page that was never pushed answers HTTP 200" "$tmp/bot.txt"; then
-    ok "review 5: its own page at every name never pushed that isn't 12 hex digits: an alert"
+if [[ $(curl -s "http://127.0.0.1:$ep/proposals/ccs-fund-raise.html") == "<p>Donate here</p>" ]] && grep -q "a page that doesn't exist answers HTTP 200" "$tmp/bot.txt"; then
+    ok "review 5: its own page at every name that doesn't exist but a 12-hex-digit one: an alert"
 else cat "$tmp/e/log"; fail "review 5: never-pushed names"; fi
 echo theme > "$tmp/e/MODE"; rm -rf "$tmp/e/state"; : > "$tmp/bot.txt"; push; push
 if grep -q "the theme button sends visitors to http://127.0.0.1:$ep/elsewhere/" "$tmp/bot.txt"; then ok "review 5: the theme button sending visitors elsewhere: an alert"; else cat "$tmp/e/log"; fail "review 5: the theme button's redirect"; fi

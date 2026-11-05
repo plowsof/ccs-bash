@@ -30,15 +30,16 @@ reads this page from the same checkout, so its hints are the release's.
 |---|---|---|
 | **backend** | every run, every step: errors, warnings, proposals skipped and why | `ccs status`, `ccs log` ([looking](#looking)); the whole log: `journalctl -t ccs -n 100` |
 | | the update loop and the wallet | `docker compose ps` in `/opt/ccs-bash/contrib/docker/backend`; one service's lines: `docker compose logs -n 50 <service>` |
-| | what the site was made from | `/var/lib/ccs/out/*.json` (ccs-bash's JSON), `/var/lib/ccs/www/site/` (the pages pushed) |
+| | what the site is made from | `/var/lib/ccs/out/site-data.json` (what is pushed), `/var/lib/ccs/out/*.json` (ccs-bash's JSON, as the web server makes it too) |
 | | the state: which proposal has which subaddress | `/var/lib/ccs/state/proposals.csv` (the one file nothing can make again); `deposits.csv` and `ideas.cache` beside it are caches |
 | **web server** | the gate: each push, what it built, what it held back and why | `journalctl -t ccs-gate -n 50` (and `/var/log/ccs-gate.log` if created); in Docker `/var/log/ccs-web/ccs-gate.log` |
 | | the live site, and its settings | `/var/lib/ccs-data/` (live), `/etc/ccs-gate/` (the list and its QR codes, `allowed`, the design, `proposals.conf`) |
 | **backup machine** | the copies of the state | `ls -l /var/lib/ccs-backup/` (`proposals-<time>.csv`, every version; `deposits.csv`, one copy) |
 
-A run, every 2 minutes and on each donation: pull the proposals → ccs-bash (JSON) → back up the
-state → ccs-front-bash (pages) → push, through the gate → ccs-watch compares the live pages. A good
-run ends with `ccs-watch: the N pages on https://… and the M other pages and files, are what was pushed`.
+A run, every 2 minutes and on each donation: pull the proposals → ccs-bash (JSON,
+`site-data.json`) → back up the state → push `site-data.json` to the gate, which builds the site →
+ccs-watch checks the live pages' addresses. A good run ends with `ccs-watch: the N pages on
+https://…, and the M others: every address the wallet's, each donation box its proposal's`.
 
 ## A proposal isn't on the site
 
@@ -56,8 +57,9 @@ run ends with `ccs-watch: the N pages on https://… and the M other pages and f
    | `no frontmatter between --- lines` | the file must start with `---`, the front matter, `---` |
    | `bad filename`, `filename is not valid UTF-8`, `not a plain file` | rename it: `<plain-name>.md` |
 3. **Is it in the JSON?** `jq '.[] | .proposals[] | select(."local-url" | test("<name>"))' /var/lib/ccs/out/proposals.json`.
-   In the JSON but not on the site: `ccs log` (`left off the site`)
-   (its address isn't on the signed list: see [the whole site](#the-whole-site-isnt-updating), `ccs-front-bash`).
+   In the JSON but not on the site: the web server's log (`journalctl -t ccs-gate`: `left off
+   the site`, its address not on the signed list, or `took … off the site`: [a page isn't
+   updating](#a-proposals-page-isnt-updating-old-text-old-totals)).
    A funding-required one needs a donation address: `ccs generate:addresses <name>.md` shows its
    subaddress. `warning: GitLab lookup failed for new proposal <name>.md, retrying next run`:
    the forge's API is down, it gets its address once it answers.
@@ -132,11 +134,8 @@ A title with a long run of address characters is shortened (`9ZqZqZ…ZqZq`).
 | Step | Common causes |
 |---|---|
 | `ccs-bash` | the wallet (above); `cannot read config`, `config … is writable by ccs` (it must be root's, 640, group ccs) |
-| `ccs-front-bash` | `<file>: no donation address` (a funding-required proposal without one: see the GitLab lookup above); `warning: left off the site: <page>: its donation address … is not one of the wallet's` (that proposal is left off, the rest of the site goes out; an index past the signed list's end: make a longer list ([the signed list](signed-list.md#a-new-list)); else **stop and look**); `no proposal file`, marker errors (`no <!-- /ccs:… -->`, `nothing to fill`): the design and ccs-front-bash aren't releases that go together ([the releases](handover.md#the-releases)) |
-| `the push` | the lines above it in the log say which: `ssh: connect … timed out` or `refused` (the web server or its firewall), `Permission denied (publickey)` (the push key, or the web server's `from=`), `Host key verification failed` (the web server's host key changed: check why before trusting it); or the gate refused: on the web server, `journalctl -t ccs-gate -n 20` (`refused the push: …` names what it lacks) |
+| `the push` | the lines above it in the log say which: `ssh: connect … timed out` or `refused` (the web server or its firewall), `Permission denied (publickey)` (the push key, or the web server's `from=`), `Host key verification failed` (the web server's host key changed: check why before trusting it); or the gate refused or held it back: on the web server, `journalctl -t ccs-gate -n 20` (`refused the push: …` names what it lacks; [a page isn't updating](#a-proposals-page-isnt-updating-old-text-old-totals)) |
 | `the backup (proposals.csv)` / `the backup (deposits.csv)` | the line above it says why: `ssh: connect … timed out`, `Permission denied` (the backup machine, its key or `from=`); `ccs-backup: … 256 MB already` (its folder is full: look at what is in it, a taken-over backend can fill it); `the new deposits.csv lacks N deposit(s)` (a reorg deeper than 30 blocks, or the wallet rescanning: [make deposits.csv again](#make-depositscsv-again)) |
-| `the push (the web server held a file back)` | see [a page isn't updating](#a-proposals-page-isnt-updating-old-text-old-totals); the push's log names each (`ccs-push: held back by the web server: <file>: <why>`), and sends it again next run |
-| `ccs-push: not sent (a backslash or control character in its name): <file>` | a file the site has whose name the gate refuses: the rest goes. A proposal's file name: rename it in the proposals repository |
 | `Unable to find image` / `pull access denied` | an image `.env` names is gone (a Docker cleanup): build or load that attested ID again ([deploying a set](deploying.md), 2); a stopped container on each image keeps it |
 
 ## What IRC says
@@ -145,12 +144,11 @@ A title with a long run of address characters is shortened (`9ZqZqZ…ZqZq`).
 |---|---|---|
 | `the backend has failed N runs in a row since …: <steps>` | backend | three or more failed runs: [the whole site isn't updating](#the-whole-site-isnt-updating); once an hour while it lasts |
 | `the backend runs again, after N failed runs` | backend | it recovered |
-| `the page differs from what was pushed @ <url>`, `donation address … does not match the CCS wallet`, `the file differs from what was pushed (a page's stylesheet, font or image)` | backend (ccs-watch) | the web server serves something the backend didn't push: **stop and look at the web server**, it may be taken over. Once fixed: a stylesheet, font or image it served is kept a year by visitors' browsers (hashed names, `immutable`): a changed file of the design's needs a new release (new names), and say so on IRC |
-| `the page answers HTTP <code>, not what was pushed (N checks in a row)` | backend | one page keeps answering something else (a redirect, an error) while the site answers: the web server's `www` (Caddy: `docker compose logs www`), or worse |
+| `donation address … does not match the CCS wallet`, `the donation box isn't its proposal's address (…)`, `the donation box's QR code isn't the signed list's of its address` | backend (ccs-watch) | the web server serves a visitor an address that isn't the wallet's, or another proposal's: **stop and look at the web server**, it may be taken over. An address a proposal's text quotes (in the gate's `allowed`, not in `WATCH_ALLOWED`): add it to alert.conf's `WATCH_ALLOWED` |
+| `the page answers HTTP <code>, not the page (N checks in a row)` | backend | one page keeps answering something else (a redirect, an error) while the site answers: the web server's `www` (Caddy: `docker compose logs www`), or worse |
 | `<site> could not be fetched (N checks in a row)` | backend | the site is down or unreachable through the watcher's proxy (Tor) |
-| `a page that was never pushed answers HTTP <code>, not the pushed 404 page @ <url>` | backend | the web server serves pages the backend never made: **stop and look at the web server**, as for a page that differs |
+| `a page that doesn't exist answers HTTP <code>, not a 404 @ <url>` | backend | the web server serves pages the site doesn't have: **stop and look at the web server**, as for a foreign address |
 | `the theme button sends visitors to <where> (HTTP <code>), not to the page @ <url>` | backend | the web server's Caddyfile isn't the image's (a changed config), or the web server is taken over |
-| `what was pushed isn't the site the front made (…): the push stage changed it?` | backend | the copy of what was pushed doesn't match the sums the front wrote of the site it made: the push stage (or its client) changed it. **Stop and look at the backend** |
 | `test, please ignore @ <site>` | backend | someone ran `ccs-watch --test` |
 | `the web server took a page off the site: donation address … is not in the signed list` / `took a file off the site: <reason>` | web server | [a page isn't updating](#a-proposals-page-isnt-updating-old-text-old-totals) |
 | `the web server held back the backend's site-data.json: <why>` | web server | the same table: the live site stays as it was |

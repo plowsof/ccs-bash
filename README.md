@@ -36,10 +36,10 @@ Three repositories, and no framework, database or JavaScript on any live machine
 | Repository | What it is |
 |---|---|
 | **ccs-bash** (this one) | the backend: proposals, the wallet, totals, addresses, as JSON |
-| [ccs-front-bash](https://github.com/plowsof/ccs-front-bash) | the site builder: fills the design with ccs-bash's data, every page, in bash |
+| [ccs-front-bash](https://github.com/plowsof/ccs-front-bash) | the site builder: fills the design with ccs-bash's data, every page, in bash; vendored here and run on the web server |
 | [ccs-front-hugo](https://github.com/plowsof/ccs-front-hugo) | the design: the site's HTML and CSS, built once with Hugo, released as a reproducible zip |
 
-<p align="center"><img src="docs/design.svg" width="760" alt="The recommended architecture: the backend makes the site and pushes it to a web server that only serves files"></p>
+<p align="center"><img src="docs/design.svg" width="760" alt="The recommended architecture: the backend pushes what only it knows to a web server that builds and serves the site"></p>
 
 **Start here: [the handover](docs/handover.md)**, from ccs-back and Jekyll to this, step by step.
 Why it's built this way: [the design](docs/design.md).
