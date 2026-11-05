@@ -2,7 +2,8 @@
 # findutils, grep, sed, gawk, diffutils, tar and util-linux's flock: what contrib/ccs-receive,
 # contrib/ccs-backup-receive, contrib/docker/web/init and the web compose's healthchecks run
 # (awk: markdown.awk, frontmatter.awk and feed.awk on the same awk the backend runs them on), plus
-# chown, cp, install and ls for tests/gate.sh, so it runs against exactly what ships. Nothing else
+# chown, cp, install and ls for tests/gate.sh, so it runs against exactly what ships; readlink, diff, ln and sync for
+# the site built here (contrib/gate-build, ccs-front-bash, lib/images.sh and common.sh). Nothing else
 # is compiled into busybox.
 awk
 basename
@@ -14,6 +15,7 @@ comm
 cp
 cut
 date
+diff
 dirname
 du
 find
@@ -21,10 +23,12 @@ flock
 grep
 head
 install
+ln
 ls
 mkdir
 mktemp
 mv
+readlink
 rm
 rmdir
 sed
@@ -32,6 +36,7 @@ sha256sum
 sleep
 sort
 stat
+sync
 tail
 tar
 test

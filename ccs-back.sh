@@ -69,7 +69,7 @@ build_site() {
     # site-data.json: what only this run knows, site.jq's inputs but the front matter (which the
     # web server reads from the repository itself): each proposal's subaddress index (not its
     # address: the signed list's line), merge request and dates, its funds, the ideas. The web
-    # server checks it (ccs-check pages) and builds the site from it (design: step 6)
+    # server checks it (ccs-check pages) and builds the site from it
     atomic_write "$OUTPUT_DIR/site-data.json" jq -n --indent 4 \
         --slurpfile props "$WORK/props.json" --slurpfile state "$WORK/state.json" \
         --slurpfile funds "$WORK/funds.json" --slurpfile ideas "$WORK/ideas.json" '

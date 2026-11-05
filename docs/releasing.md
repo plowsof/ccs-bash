@@ -67,3 +67,16 @@ green.
 The set still changes: the other two keep their versions, and the new set is attested whole
 (`build` builds all three, by default the newest of each). On the machines, only the changed
 part is deployed ([what to do for what changed](deploying.md#what-to-do-for-what-changed)).
+
+## A ccs-front-bash release
+
+The web server builds the site itself with a copy of ccs-front-bash in the gate's image
+(`vendor/ccs-front-bash`). After tagging a ccs-front-bash release, bring it into ccs-bash
+as a small PR, then release ccs-bash too (the gate's image changes):
+
+```
+contrib/vendor-front-bash vX.Y.Z      # the tag's files, and RELEASE: its tag and commit
+```
+
+CI checks the copy is that commit's, file for file (`contrib/vendor-front-bash --check`). The
+backend runs the same release (its compose's `CCS_FRONT_IMAGE`): deploy both in the one set.

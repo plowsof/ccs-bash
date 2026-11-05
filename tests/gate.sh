@@ -476,13 +476,21 @@ v=$((v + 1)); site "$v" "$good"; projects "$good" "R&amp;D notes" | put projects
 held "$v" projects.json "projects.json, a title that isn't its proposal's front matter" 'R&amp;D'
 v=$((v + 1)); site "$v" "$good"; on backend "sed -i 's/\"gitlab_url\":null/\"gitlab_url\":null,\"url\":\"https:\/\/evil.test\"/' /out/projects.json"
 held "$v" projects.json "projects.json, a key ccs-bash doesn't write" 'evil.test'
-# site-data.json (what the web server is to build the site from: step 6): p's index the list's line
+# site-data.json (what the web server builds the site from): p's index the list's line
 # of its live address (2), its funds as ccs-bash writes them; another index, held back
 sitedata() {
     printf '{"state": {"p.md": {"gitlab_url": null, "subaddr_index": %s, "funding_required_date": null, "funded_date": null}},\n "funds": {"p.md": {"amount": "10.0000", "raised": "0.0000", "pending": 0, "count": 0, "percentage": 0, "needed": "10.0000"}},\n "ideas": []}\n' "$1"
 }
 v=$((v + 1)); site "$v" "$good"; sitedata 2 | put site-data.json
 passes "$v" site-data.json "site-data.json as ccs-bash writes it" '"subaddr_index": 2'
+# ... and the gate's image builds the site from it: here it can't (this test's design isn't
+# a whole one), so the pushed pages are checked instead, and IRC is told
+if [[ $img ]]; then
+    if on web "grep -q 'could not build the site here (ccs-gate-build): the pushed pages are checked instead' /var/log/ccs-gate.log" \
+        && bot | grep -qF "the web server could not build the site from site-data.json: the pushed pages are checked instead"; then
+        ok "a site it can't build (a design that isn't whole): the pushed pages checked instead, IRC told"
+    else on web 'tail -n 4 /var/log/ccs-gate.log'; fail "a failed build of the site"; fi
+fi
 v=$((v + 1)); site "$v" "$good"; sitedata 1 | put site-data.json
 held "$v" site-data.json "site-data.json, another subaddress than the live site has for the proposal" '"subaddr_index": 1'
 v=$((v + 1)); site "$v" "$(addr 1)"

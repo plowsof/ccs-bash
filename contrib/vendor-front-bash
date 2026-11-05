@@ -1,0 +1,30 @@
+#!/bin/bash
+# vendor-front-bash TAG | --check: vendor/ccs-front-bash, the ccs-front-bash release the gate's image
+# builds the site with, as that tag has it (ccs-front-bash.sh, lib/, LICENSE; RELEASE names the tag
+# and its commit). --check: the files are exactly the ones RELEASE names, at that commit (CI).
+# Needs git and network (it clones ccs-front-bash).
+set -euo pipefail
+here=$(dirname "$(readlink -f "$0")")
+v=$here/../vendor/ccs-front-bash
+repo=${CCS_FRONT_BASH_REPO:-https://github.com/plowsof/ccs-front-bash}
+t=$(mktemp -d)
+trap 'rm -rf "$t"' EXIT
+files=(ccs-front-bash.sh lib LICENSE)
+if [[ ${1:-} == --check ]]; then
+    read -r tag commit < <(grep -v '^#' "$v/RELEASE")
+    [[ $tag =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ && $commit =~ ^[0-9a-f]{40}$ ]] || { echo "vendor-front-bash: RELEASE is not 'vX.Y.Z <commit>'" >&2; exit 1; }
+    git clone -q "$repo" "$t/src"
+    [[ $(git -C "$t/src" rev-parse "$tag^{commit}") == "$commit" ]] || { echo "vendor-front-bash: $tag is not $commit" >&2; exit 1; }
+    mkdir "$t/want" && git -C "$t/src" archive "$commit" "${files[@]}" | tar -x -C "$t/want"
+    cp "$v/RELEASE" "$t/want/RELEASE"
+    if diff -r "$t/want" "$v"; then echo "vendor/ccs-front-bash: $tag ($commit), as it has it"; else echo "vendor-front-bash: vendor/ccs-front-bash is not $tag's" >&2; exit 1; fi
+    exit 0
+fi
+tag=${1:?TAG (a ccs-front-bash release, vX.Y.Z) or --check}
+git clone -q --branch "$tag" "$repo" "$t/src"
+commit=$(git -C "$t/src" rev-parse HEAD)
+head=$(grep '^#' "$v/RELEASE")
+rm -rf "$v" && mkdir -p "$v"
+git -C "$t/src" archive "$commit" "${files[@]}" | tar -x -C "$v"
+printf '%s\n%s %s\n' "$head" "$tag" "$commit" > "$v/RELEASE"
+echo "vendor/ccs-front-bash: $tag ($commit)"

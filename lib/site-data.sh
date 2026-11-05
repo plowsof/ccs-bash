@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # The site's JSON (what ccs-front-bash builds the site from), from site-data.json: as ccs-back.sh's
 # build_site writes it, but each proposal's address the signed list's line of its index. The web
-# server is to build the site this way itself (docs: step 6), from the proposals repository it
+# server builds the site this way itself, from the proposals repository it
 # fetches and the site-data.json it checked; tests/run.sh and contrib/compare-site check that it
 # gives the same JSON as the backend's own run.
 
