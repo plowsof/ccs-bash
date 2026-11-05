@@ -4,6 +4,46 @@ Steps a release needs **once**, on top of [deploying a set](deploying.md).
 Newest first. Upgrading across several releases: do each step listed between the running release
 and the new one, oldest first. A release not listed needs none.
 
+## ccs-bash v0.2.53: the backend sends only site-data.json; the web server builds the site
+
+The backend no longer runs ccs-front-bash (no `front` service) and pushes `site-data.json` alone;
+the web server's gate builds the site from it every time, with the signed list's QR codes
+installed there, and refuses a push with any other file. ccs-watch checks the live pages'
+addresses instead of comparing them with a pushed copy.
+
+**This once, the backend goes first:** the old gate takes a push of `site-data.json` alone (it
+builds the site from it, as v0.2.52 does), the new one refuses the old backend's pages.
+
+1. **The web server, prepared** (nothing restarts): the list's QR codes beside the list, from the
+   backend's `/etc/ccs-front/subaddresses.txt.qr/`, checked against their pinned sums; and each
+   proposal's merge request link read from the repository's merge commits:
+   ```
+   install -d -m 755 /etc/ccs-gate/subaddresses.txt.qr && install -m 644 <the list's>/subaddresses.txt.qr/*.png /etc/ccs-gate/subaddresses.txt.qr/
+   (cd /etc/ccs-gate/subaddresses.txt.qr && sha256sum -c --quiet ../subaddresses.txt.qr.sha256)
+   cp -a /etc/ccs-gate/proposals.conf "$B/" && echo 'MERGE_REQUESTS=https://repo.getmonero.org' >> /etc/ccs-gate/proposals.conf
+   ```
+2. **The backend** (its step 4), with the compose's old `front` container taken down and its
+   settings out of `.env`:
+   ```
+   sed -i '/^CCS_FRONT_IMAGE=/d; /^FRONT_UID=/d; /^#\?CCS_ONION=/d' "$D/.env"
+   cd "$D" && docker compose config -q && docker compose up -d --remove-orphans
+   ```
+   In alert.conf, `WATCH_ALLOWED`: every address in the web server's `allowed`, space-separated
+   (none set: the General Fund alone). The next push is `site-data.json` (`ccs status`: the push
+   `pushed`), and the old gate builds the site from it.
+3. **The web server's gate** (its step 3b). Its first push builds the site: `built the site from
+   site-data.json (…): live`. Then what it no longer reads can go:
+   ```
+   rm -f /etc/ccs-gate/markdown*.awk /etc/ccs-gate/design.sha256*
+   rm -rf /var/lib/ccs-gate/bodies-* /var/lib/ccs-gate/fronts-* /var/lib/ccs-gate/held /var/lib/ccs-gate/checked-with /var/lib/ccs-gate/quarantine
+   ```
+4. **The backend, after:** what only `front` and the pushed copy used:
+   `rm -rf /var/lib/ccs/www /var/lib/ccs/pushed /var/lib/ccs/run/front /opt/ccs-front-hugo` and
+   `userdel ccs-front`; ccs-front-bash's keep container and image (`docker rm ccs-front-bash-keep-<release>`).
+
+Going back: the old backend's `.env` and checkout (its `front` comes back with `docker compose
+up -d`), then the old gate; the files above, from `$B` and the releases, if already removed.
+
 ## ccs-bash v0.2.45: the site served from the gate's image (Caddy and Tor, not the host's nginx)
 
 The web server compose's `www` (Caddy) and `tor` take over from the host's nginx, certbot and the
