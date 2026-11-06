@@ -32,8 +32,8 @@ reads this page from the same checkout, so its hints are the release's.
 | | the update loop and the wallet | `docker compose ps` in `/opt/ccs-bash/contrib/docker/backend`; one service's lines: `docker compose logs -n 50 <service>` |
 | | what the site was made from | `/var/lib/ccs/out/*.json` (ccs-bash's JSON), `/var/lib/ccs/www/site/` (the pages pushed) |
 | | the state: which proposal has which subaddress | `/var/lib/ccs/state/proposals.csv` (the one file nothing can make again); `deposits.csv` and `ideas.cache` beside it are caches |
-| **web server** | the gate: each push, what it held back and why | `journalctl -t ccs-gate -n 50` (and `/var/log/ccs-gate.log` if created); in Docker `/var/log/ccs-web/ccs-gate.log` |
-| | the live site, and its settings | `/var/lib/ccs-data/` (live), `/etc/ccs-gate/` (the list, `allowed`, the design, `markdown.awk`, `proposals.conf`) |
+| **web server** | the gate: each push, what it built, what it held back and why | `journalctl -t ccs-gate -n 50` (and `/var/log/ccs-gate.log` if created); in Docker `/var/log/ccs-web/ccs-gate.log` |
+| | the live site, and its settings | `/var/lib/ccs-data/` (live), `/etc/ccs-gate/` (the list and its QR codes, `allowed`, the design, `proposals.conf`) |
 | **backup machine** | the copies of the state | `ls -l /var/lib/ccs-backup/` (`proposals-<time>.csv`, every version; `deposits.csv`, one copy) |
 
 A run, every 2 minutes and on each donation: pull the proposals → ccs-bash (JSON) → back up the
@@ -64,26 +64,21 @@ run ends with `ccs-watch: the N pages on https://… and the M other pages and f
 
 ## A proposal's page isn't updating (old text, old totals)
 
-The gate held it back; its last good copy stays live. On the **web server**,
+The web server builds the site; a page that fails its checks goes off the site, and a build or
+`site-data.json` that fails leaves the live site as it was. On the **web server**,
 `journalctl -t ccs-gate -n 50` says why (in Docker: `tail -n 50 /var/log/ccs-web/ccs-gate.log`):
 
 | The gate says | Meaning | Fix |
 |---|---|---|
-| `<file>: <address>` (and IRC: `donation address … is not in the signed list`) | an address on the page isn't one of the wallet's | a proposal quoting another address (a payout address, an example): add it to `/etc/ccs-gate/allowed`, one a line with a `#` comment. Not that: **stop and look**, someone may be trying to show a foreign address |
-| `not the text, milestones or payouts of its proposal as the proposals repository has them` | the page's text isn't what the gate makes of the proposal's file | a merge landing between the backend's pull and the push: gone next run. Lasting: the web server's `markdown.awk` isn't the backend's ccs-front-bash's (install it), or the gate can't fetch the repository (`could not fetch the proposals repository`: its last fetch is used) |
-| `a proposal page with no proposal (<name>.md) in the proposals repository` | the gate's copy of the repository doesn't have it yet (merged after its fetch), or the backend still sends a proposal taken out of it | the next fetch; one taken out goes by itself once the backend stops sending it (`removed proposals/<name>.html … from the site`) |
-| `not a page of the design as ccs-front-bash fills it`, `a page the design does not have`, `the design has no part or slot` | the page isn't the design's | after a design or ccs-front-bash upgrade: the web server lacks the new design (`/etc/ccs-gate/design/<release>/`, `design.sha256`). Otherwise: **stop and look**, the backend sent something else |
-| `not the signed list's QR code of that address (its .qr.sha256)`, `a donation box whose QR code is not its address's (…)` | a `qr/<address>.png` that isn't the list's own file of that address, or a box showing another address's | every QR code at once: the backend's `/etc/ccs-front/subaddresses.txt.qr/` isn't the list's (`tools/verify-subaddresses.sh` there). Otherwise **stop and look** |
-| `not a QR code of the list's (qr/<address>.png)`, `a data: image (the site has none: …)` | a file in `qr/` not named as an address, or an image written into a page or JSON | a backend older than the gate (ccs-front-bash before the QR files): upgrade it. Otherwise **stop and look** |
-| `an address in the feed, which never has one`, `not the feed (…)`, `item N is not one the feed has`, `a link to no proposal page of this site` | `feed.xml` isn't the feed as ccs-front-bash writes it | after a ccs-front-bash upgrade: the web server's `ccs-receive` (the release's) too; `SITE_URL` in the web server's `alert.conf` must be the site's (the backend's `CCS_SITE_URL`). Otherwise **stop and look** |
-| `a page over 2 MB`, `too many runs that could be addresses to check`, `its addresses could not be read in time`, `a page the gate could not check (in time)` | a page too large, or made to be slow to check (the largest real page is under 200 kB) | **stop and look** (a machine too slow, every push: its load) |
-| `a NUL byte`, `not text that starts as a page or JSON does`, `not a plain file or folder`, `a folder where the site has a file` | nothing ccs-front-bash writes | **stop and look** |
-| `not the design's (design.sha256)` | a stylesheet, font or icon that isn't the design release's | install the new design's lines on the web server, or **stop and look** |
-| `not the proposals repository's images/…` | a proposal image the repository doesn't have at that path | it was changed or removed upstream; the next fetch, or **stop and look** |
-| `held back N file(s), with an address that isn't the wallet's nor allowed, or not allowed here` | the lines under it name each file and why (the rows above) | the rest of the push went live |
-| `could not fetch the proposals repository (proposals.conf): checking against the last fetch` | the gate couldn't fetch the repository this push (the forge down, or `proposals.conf` wrong): pages are checked against its last fetch | a proposal merged or changed since is held back until a fetch works; after `FORGE_HOURS`, IRC says so |
+| `<file>: <address>` (and IRC: `donation address … is not in the signed list`) | an address on the page isn't one of the wallet's: in a proposal's own text (the box's is the list's by construction) | a proposal quoting another address (a payout address, an example): add it to `/etc/ccs-gate/allowed`, one a line with a `#` comment; the page comes back on the next build. Not that: **stop and look**, a proposal merged with a foreign address |
+| `site-data.json held back (<why>)` | the backend's data isn't as ccs-bash writes it: an index the list hasn't, another than the live site's for that proposal, a proposal the repository hasn't, markup in an idea | `a proposal the repository hasn't`: a merge the gate hasn't fetched yet, gone next push. Another index than the live site's: **stop and look at the backend** (its state changed). Otherwise the backend and gate aren't one release |
+| `could not build the site (ccs-gate-build)` | the lines under it say why | after a design upgrade: the design release isn't one this ccs-front-bash fills (the handover's releases table). Otherwise the build's own error: report it |
+| `N pages would leave the site at once` | more than 3 pages failed, or their proposals are gone from the repository (a branch emptied or rewritten, `proposals.conf` on the wrong one), or the backend hid Funding Required proposals (no index) | look at the pages it names. Meant (proposals taken out together): `touch /var/lib/ccs-gate/allow-remove` (owned by ccs-data), and the next push lets them go |
+| `not the signed list's QR code of that address (its .qr.sha256)`, `not a QR code of the list's` | a file in `/etc/ccs-gate/subaddresses.txt.qr/` isn't the list's | install the list's QR codes again, checked: `sha256sum -c` ([the signed list](signed-list.md)) |
+| `too many runs that could be addresses to check`, `its addresses could not be read` | a page made to be slow to check (the largest real page is under 200 kB) | a proposal's text: look at it |
+| `could not fetch the proposals repository (proposals.conf): building from the last fetch` | the gate couldn't fetch the repository this push (the forge down, or `proposals.conf` wrong) | a proposal merged or changed since shows once a fetch works; after `FORGE_HOURS`, IRC says so |
 
-The push then exits 7: a failed run; ccs-watch still checks the live pages.
+The push then exits 1: a failed run (but for a page taken off, which leaves the rest live).
 
 ## The totals look stuck, or wrong
 
@@ -157,16 +152,16 @@ A title with a long run of address characters is shortened (`9ZqZqZ…ZqZq`).
 | `the theme button sends visitors to <where> (HTTP <code>), not to the page @ <url>` | backend | the web server's Caddyfile isn't the image's (a changed config), or the web server is taken over |
 | `what was pushed isn't the site the front made (…): the push stage changed it?` | backend | the copy of what was pushed doesn't match the sums the front wrote of the site it made: the push stage (or its client) changed it. **Stop and look at the backend** |
 | `test, please ignore @ <site>` | backend | someone ran `ccs-watch --test` |
-| `the web server held back a page: donation address … is not in the signed list` / `held back a file: <reason>` | web server | [a page isn't updating](#a-proposals-page-isnt-updating-old-text-old-totals) |
-| `the web server would take N proposal pages off the site at once …: none taken` | web server | more than 3 (`CCS_GATE_REMOVE`) proposal pages are in neither commit of the repository just fetched: a branch emptied or rewritten, or `proposals.conf` on the wrong one. They stay live, held back, until a person decides |
-| `the web server took a file off the site: it no longer passes for an address` | web server | a live file the backend didn't replace fails against the list, `allowed` or gate as they are now: it is in `/var/lib/ccs-gate/quarantine/`. Meant (a new list): the backend's next copy goes live. Not: **stop and look**, as for an address not in the list |
-| `N live files no longer pass for an address …: none taken off the site` | web server | more than 3 (`CCS_GATE_TAKEDOWN`) at once: the list or `allowed` installed is likely wrong. They stay live, held back, until a person decides |
-| `the web server refuses every push: <reason>` | web server | the gate lacks something (its list isn't its pin's, no design, no `markdown.awk`, …): fix it on the web server |
+| `the web server took a page off the site: donation address … is not in the signed list` / `took a file off the site: <reason>` | web server | [a page isn't updating](#a-proposals-page-isnt-updating-old-text-old-totals) |
+| `the web server held back the backend's site-data.json: <why>` | web server | the same table: the live site stays as it was |
+| `the web server could not build the site from site-data.json` | web server | the same table |
+| `the web server would take N pages off the site at once …: none of the new site goes live` | web server | more than 3 (`CCS_GATE_REMOVE`) pages would go: failed, or their proposals gone from the repository just fetched (a branch emptied or rewritten, `proposals.conf` on the wrong one), or hidden. The site stays as it was until a person decides (`allow-remove`, the same table) |
+| `the web server refuses every push: <reason>` | web server | the gate lacks something (its list isn't its pin's, no design release, no QR codes, …), or the backend sent other files than `site-data.json` (a backend older than the gate: upgrade it; else **stop and look at the backend**): fix it on the web server |
 | `the web server refused a push it could not take: <why>` | web server | the push's tar broke a rule (a link, a path out of the site, a name twice, a file under a page, too large) or didn't arrive whole in 5 minutes. Once, with a network break: the next run sends it again. A link or a path out: no backend's push makes one: **stop and look at the backend** |
 | `a push has been checked for over 10 minutes: the pushes after it are refused …` | web server | one check is stuck: `journalctl -t ccs-gate` (in Docker `/var/log/ccs-web/ccs-gate.log`), then restart the gate (`docker compose restart gate` in `/opt/ccs-bash/contrib/docker/web`) |
 | `no push from the backend for N minutes` / `pushes from the backend arrive again` | web server | the backend can't reach it (off, its network, the push key); the backend's own alerts cover a backend that runs but fails |
 | `GitLab/Forgejo hasn't answered for over Nh: …` / `answers again` | backend | the proposals' forge is down (or its URL changed): the site keeps its last proposals and Ideas; after `FORGE_HOURS` (`/etc/ccs/alert.conf`, default 6). Check `REPOSITORY_URL` and the checkout's remote by hand |
-| `the web server can't fetch the proposals repository since …` / `fetches … again` | web server | the same seen from the gate (or its `proposals.conf` is wrong): pages are checked against its last fetch, so a proposal merged or changed since is held back |
+| `the web server can't fetch the proposals repository since …` / `fetches … again` | web server | the same seen from the gate (or its `proposals.conf` is wrong): the site is built from its last fetch, so a proposal merged or changed since doesn't show yet |
 
 ## Doing things by hand
 
@@ -252,8 +247,8 @@ docker compose start pull
 
 [Deploying a release, going back](deploying.md#going-back): the
 previous `.env`, checkout and design from the backup folder made before the deploy; the old
-images are still there (their keep containers, `docker ps -a --filter name=keep`). The gate allows
-both designs while both are in `/etc/ccs-gate/design/` and `design.sha256`.
+images are still there (their keep containers, `docker ps -a --filter name=keep`). The gate builds
+with the newest design in `/etc/ccs-gate/design/`: going back, move the new one out.
 
 ## Don't
 

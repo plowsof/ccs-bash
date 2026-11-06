@@ -190,8 +190,8 @@ jobs:
       - name: tests/regtest.sh
         run: FRONT_BASH="$RUNNER_TEMP/ccs-front-bash" tests/regtest.sh
   host-tests:
-    name: host tests (the gate, the watcher)
-    # The two-machine setup (docs/two-machines.md): the gate, pushed to and attacked from the backend's key.
+    name: host tests (the watcher)
+    # ccs-watch on the host (the gate's own tests run in the gate's image: gate-image).
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, pinned by commit
@@ -200,7 +200,5 @@ jobs:
         with:
           path: container/sources
           key: sources-${{ hashFiles('container/sources.lock') }}
-      - name: the gate (contrib/ccs-receive)
-        run: tests/gate.sh
       - name: the watcher (contrib/ccs-watch)
         run: tests/watch.sh

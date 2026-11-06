@@ -5,9 +5,9 @@
 # signatures checked), sources by sha256 (sources.lock), no network in the steps, every file the
 # commit's time, one layer in an empty image. Its userland busybox, built here with only the
 # applets in gate-busybox-applets (as the ccs-bash image's); its checks ccs-check's (contrib/ccs-check: Go, built here), which also
-# receives the push (a tar, read in Go: no rsync). No Python, and nothing here reads an image: a
-# proposal's is taken byte for byte as the proposals repository's, a donation box's QR code as
-# the signed list's file, by its sum.
+# receives the push (a tar, read in Go: no rsync), and the site it builds: jq and the vendored
+# ccs-front-bash. No Python, and nothing here reads an image: a proposal's is the proposals
+# repository's, a donation box's QR code the signed list's file, by its sum.
 
 # ccs-check, the gate's checks in Go (contrib/ccs-check: Go's standard library alone, no module),
 # as its build.sh builds it: StageX's Go alone (it has no shell: the exec form), as root (a clone
@@ -86,9 +86,8 @@ COPY --from=caddy /usr/bin/caddy /usr/bin/caddy
 COPY --from=libevent / /
 COPY --from=tor /rootfs/ /
 COPY contrib/ccs-receive contrib/ccs-backup-receive /usr/local/bin/
-COPY lib/frontmatter.awk lib/feed.awk /usr/local/lib/ccs-gate/
-# the site built here (contrib/gate-build): the backend's own steps for its JSON
-# (lib/site-data.sh and what it uses), and the vendored ccs-front-bash release (vendor/)
+# the site, built here (contrib/gate-build): ccs-bash's steps for its JSON (lib/site-data.sh and
+# what it uses), and the vendored ccs-front-bash release (vendor/)
 COPY lib/common.sh lib/proposals.sh lib/images.sh lib/site-data.sh lib/site.jq lib/frontmatter.awk /usr/local/lib/ccs-gate/lib/
 COPY vendor/ccs-front-bash /usr/local/lib/ccs-gate/vendor/ccs-front-bash
 COPY contrib/gate-build /usr/local/lib/ccs-gate/contrib/gate-build
@@ -124,7 +123,7 @@ RUN cd /rootfs \
     && find usr/local/lib/ccs-gate -type d -exec chmod 755 {} + && find usr/local/lib/ccs-gate -type f -exec chmod 644 {} + \
     && chmod 755 usr/local/lib/ccs-gate/contrib/gate-build \
     && mkdir -p var/log && ln -s bash usr/bin/sh && ln -sf /etc/ccs-ssh/keys/passwd etc/passwd && ln -sf /etc/ccs-ssh/keys/group etc/group \
-    && chmod 755 usr/local/bin/ccs-receive usr/local/bin/ccs-backup-receive usr/local/bin/ccs-check usr/local/bin/ccs-web-init && chmod 644 etc/ssh/sshd_config etc/caddy/Caddyfile etc/tor/torrc usr/local/lib/ccs-gate/frontmatter.awk usr/local/lib/ccs-gate/feed.awk \
+    && chmod 755 usr/local/bin/ccs-receive usr/local/bin/ccs-backup-receive usr/local/bin/ccs-check usr/local/bin/ccs-web-init && chmod 644 etc/ssh/sshd_config etc/caddy/Caddyfile etc/tor/torrc \
     && find . -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
 
 FROM scratch AS image

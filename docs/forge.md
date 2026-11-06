@@ -13,8 +13,8 @@ Nothing needs doing for a few hours; the site keeps working.
 - **The backend:** each run's `git pull` fails, which isn't counted as a failed run. The last
   checkout, ideas and votes stay. After `FORGE_HOURS` (`/etc/ccs/alert.conf`, default 6), IRC
   hears "GitLab/Forgejo hasn't answered for over Nh", and "answers again" when it does.
-- **The gate:** it checks against its last fetch. A proposal merged or changed since is held back
-  until a fetch works. After `FORGE_HOURS` (`/etc/ccs-gate/alert.conf`), IRC hears "the web
+- **The gate:** it builds the site from its last fetch. A proposal merged or changed since shows
+  once a fetch works. After `FORGE_HOURS` (`/etc/ccs-gate/alert.conf`), IRC hears "the web
   server can't fetch the proposals repository since …".
 - **Not possible meanwhile:** merging or changing a proposal, new ideas, votes, comments.
 
