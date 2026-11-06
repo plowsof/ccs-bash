@@ -48,10 +48,8 @@
   <!-- run order (green) -->
   <g fill="none" stroke="#16a34a" stroke-width="2.4" marker-end="url(#g)">
     <path d="M255,262 H300"/>
-    <path d="M360,325 L190,430"/>
     <path d="M430,325 V425"/>
     <path d="M555,492 H590"/>
-    <path d="M150,555 V585 H650 V560"/>
     <path d="M710,560 V600"/>
   </g>
   <!-- ccs-bash to the wallet (purple) -->
@@ -86,15 +84,6 @@
     <text x="605" y="286" fill="#b45309" font-weight="600">holds: the wallet</text>
     <text x="605" y="304">tx-notify: a line on pull's "now"</text>
 
-    <!-- front -->
-    <g filter="url(#sh)"><rect x="45" y="430" width="210" height="125" rx="10" fill="#ffffff" stroke="#94a3b8"/></g>
-    <circle cx="66" cy="452" r="11" fill="#16a34a"/><text x="62" y="456" font-size="12" font-weight="700" fill="#ffffff">3</text>
-    <text x="84" y="457" font-size="15" font-weight="700" fill="#0f172a">front</text>
-    <text x="60" y="480">user ccs-front · ccs-front-bash</text>
-    <text x="60" y="498" font-weight="700" fill="#0f172a">network: none</text>
-    <text x="60" y="516">reads: the design, the JSON</text>
-    <text x="60" y="534">writes: the site</text>
-
     <!-- backup -->
     <g filter="url(#sh)"><rect x="315" y="430" width="240" height="125" rx="10" fill="#ffffff" stroke="#94a3b8"/></g>
     <circle cx="336" cy="452" r="11" fill="#16a34a"/><text x="332" y="456" font-size="12" font-weight="700" fill="#ffffff">3</text>
@@ -110,7 +99,7 @@
     <text x="629" y="457" font-size="15" font-weight="700" fill="#0f172a">push</text>
     <text x="605" y="480">user ccs-push · a tar over ssh</text>
     <text x="605" y="498">out: the web server (:2223)</text>
-    <text x="605" y="516">reads: the site; writes: pushed/</text>
+    <text x="605" y="516">reads: site-data.json (ccs-bash's)</text>
     <text x="605" y="534" fill="#b45309" font-weight="600">holds: the push key</text>
 
     <!-- watch -->
@@ -119,7 +108,7 @@
     <text x="629" y="632" font-size="15" font-weight="700" fill="#0f172a">watch</text>
     <text x="605" y="655">user ccs-watch · ccs-watch</text>
     <text x="605" y="673">after each push, and at random</text>
-    <text x="605" y="691">the live pages = pushed/ ?</text>
+    <text x="605" y="691">live addresses = the list's?</text>
     <text x="605" y="709" fill="#b45309" font-weight="600">holds: alert.conf</text>
   </g>
 
@@ -138,7 +127,7 @@
   <text x="60" y="780" font-size="13.5" font-weight="700" fill="#14532d">The run folder, /var/lib/ccs/run: how they take turns</text>
   <g font-size="12" fill="#166534">
     <text x="60" y="802">each stage's "done", "status", "at", its own user's; pipes that wake the next (a speed-up: each looks every 5 s);</text>
-    <text x="60" y="820">the results only the push may write, "now" only the wallet; the push's lock. No stage starts another.</text>
+    <text x="60" y="820">the results only the push may write, "now" only the wallet. No stage starts another.</text>
   </g>
 
   <!-- outside -->
@@ -157,16 +146,16 @@
 
     <rect x="905" y="440" width="270" height="100" rx="10" fill="#fff7ea" stroke="#d97706" stroke-width="2" stroke-dasharray="7 5"/>
     <text x="920" y="466" font-size="14" font-weight="700" fill="#9a3412">WEB SERVER (its gate: :2223)</text>
-    <text x="920" y="486">its gate checks every page against</text>
-    <text x="920" y="504">the design and the proposals, every</text>
-    <text x="920" y="522">address against the signed list</text>
+    <text x="920" y="486">its gate checks site-data.json, builds</text>
+    <text x="920" y="504">the site from it and the proposals,</text>
+    <text x="920" y="522">every address vs the signed list</text>
 
     <g filter="url(#sh)"><rect x="905" y="680" width="270" height="64" rx="10" fill="#ffffff" stroke="#94a3b8"/></g>
     <text x="920" y="704" font-size="14" font-weight="700" fill="#0f172a">IRC (alerts)</text>
     <text x="920" y="721">three failed runs (or none);</text>
-    <text x="920" y="737">a page not as pushed</text>
+    <text x="920" y="737">an address not the wallet's</text>
   </g>
-  <text x="838" y="468" font-size="11" fill="#475569">tar</text>
+  <text x="838" y="468" font-size="11" fill="#475569">data</text>
   <text x="880" y="640" font-size="11" fill="#475569" transform="rotate(-90 880 640)">via Tor, as a visitor</text>
 
   <!-- legend -->
