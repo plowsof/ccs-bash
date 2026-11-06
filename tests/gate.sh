@@ -300,16 +300,22 @@ repo edit w "Send to $grouped"
 if push > /dev/null && on web '! test -e /var/lib/ccs-data/proposals/w.html'; then ok "an address in groups of four in a proposal's text: found, the page off the site"; else logtail; fail "an address in groups"; fi
 repo edit w "Send to ${fake:0:40}**${fake:40:10}**${fake:50}"
 if push > /dev/null && on web '! test -e /var/lib/ccs-data/proposals/w.html'; then ok "an address split by markup (bold) in a proposal's text: found"; else logtail; fail "an address split by markup"; fi
-# review 12's M-1: written backwards after a bidi override (shown the right way round), or with a
-# letter drawn as an address's (a Cyrillic а): found, the page off the site
+# review 12's M-1: written backwards after a bidi override (which would show it the right way
+# round): the override dropped from the text (ccs-check nobidi), so the page shows it as written,
+# backwards, no address; with a letter drawn as an address's (a Cyrillic а): found, the page off
 backwards=$(rev <<<"$grouped")
-for c in "written backwards after U+202E (as an entity)|&#x202E;$backwards&#x202C;|!a bidi control" "raw U+202E|$(printf '\xe2\x80\xae')$backwards|!a bidi control" "in groups, a letter Cyrillic|${grouped/a/а}|$fake"; do
-    IFS='|' read -r what text why <<<"$c"
+for c in "written backwards after U+202E (as an entity)|&#x202E;$backwards&#x202C;" "written backwards after a raw U+202E|$(printf '\xe2\x80\xae')$backwards"; do
+    IFS='|' read -r what text <<<"$c"
     repo edit w "Send to $text"
-    if push > /dev/null && on web '! test -e /var/lib/ccs-data/proposals/w.html' && on web "grep -qF 'proposals/w.html: ${why}' /var/log/ccs-gate.log"; then
-        ok "review 12 (M-1): an address $what in a proposal's text: the page off the site"
-    else logtail; fail "an address $what"; fi
+    if push > /dev/null && [[ $(livefile proposals/w.html) == *"Send to ${backwards% }"* ]] \
+        && ! livefile proposals/w.html | grep -qE "$(printf '\xe2\x80[\xaa-\xae]')|&#x202[a-eA-E];"; then
+        ok "review 12 (M-1): an address $what: the override dropped, the page live as written"
+    else logtail; livefile proposals/w.html | grep -o 'Send to.\{0,40\}' || true; fail "an address $what"; fi
 done
+repo edit w "Send to ${grouped/a/а}"
+if push > /dev/null && on web '! test -e /var/lib/ccs-data/proposals/w.html' && on web "grep -qF 'proposals/w.html: $fake' /var/log/ccs-gate.log"; then
+    ok "review 12 (M-1): an address in groups, a letter Cyrillic, in a proposal's text: the page off the site"
+else logtail; fail "an address in groups, a letter Cyrillic"; fi
 repo edit w 'Back to work.'
 if push > /dev/null && [[ $(livefile proposals/w.html) == *"Back to work."* ]]; then ok "the text mended: the page back"; else logtail; fail "a mended page"; fi
 
