@@ -45,13 +45,19 @@ merge_requests() {
         | jq -R -n '[inputs | split("\t") | {key: .[0], value: .[1]}] | from_entries'
 }
 
-# site_from_data DATA LIST [LINKS]: OUTPUT_DIR's site JSON and images (images.json, images/) from
-# the proposals in PROPOSALS_DIR, DATA (site-data.json) and LIST (the signed list, "index address"
-# lines): the backend's own steps (read_proposals, proposal_images, site_json), its state each
-# address the list's, and each merge request LINKS' (merge_requests' JSON), if given; a Funding
-# Required proposal without an address kept off the site, as the backend keeps it (mirror_hide)
+# site_from_data DATA LIST [LINKS [REPOS]]: OUTPUT_DIR's site JSON and images (images.json,
+# images/) from the proposals in PROPOSALS_DIR, DATA (site-data.json) and LIST (the signed list,
+# "index address" lines): the backend's own steps (read_proposals, proposal_images, site_json),
+# its state each address the list's, and each merge request LINKS' (merge_requests' JSON), if
+# given; a Funding Required proposal without an address kept off the site, as the backend keeps
+# it (mirror_hide). With REPOS (the proposals repository's addresses, host/path, space-separated:
+# the web server's build), a proposal's own gitlab_url (its front matter) only if it is one of
+# those repositories' merge requests, else its merge request from LINKS or DATA: a proposal's
+# text can't link its page elsewhere (review 12's L-3). Where it is one, it wins: the proposer's
+# own correction (rehrar-defcon-reimburse-2019.md, added by !67, taken out, added again by !69:
+# the oldest merge commit, LINKS', is !67)
 site_from_data() {
-    local data=$1 list=$2 links=${3:-}
+    local data=$1 list=$2 links=${3:-} repos=${4-}
     read_proposals "$PROPOSALS_DIR" > "$WORK/props.json" || return 1
     jq -n --slurpfile d "$data" --rawfile l "$list" --slurpfile m "${links:-/dev/null}" --arg links "$links" '
         ($l | split("\n") | map(split(" ") | select(length >= 2) | {key: .[0], value: .[1]}) | from_entries) as $at
@@ -59,7 +65,12 @@ site_from_data() {
             + if $links == "" then {} else {gitlab_url: ($m[0][$f] // null)} end)) | from_entries' \
         > "$WORK/state.json" || return 1
     jq '.funds' "$data" > "$WORK/funds.json" && jq '.ideas' "$data" > "$WORK/ideas.json" || return 1
-    jq --slurpfile s "$WORK/state.json" 'map(select(.layout != "fr" or ($s[0][.file].address // null) != null))' \
+    jq --slurpfile s "$WORK/state.json" --arg repos " $repos " --arg held "${4+1}" '
+        map(select(.layout != "fr" or ($s[0][.file].address // null) != null)
+            | if $held == "" or .gitlab_url == null then .
+              else (.gitlab_url | capture("^https://(?<r>[^ ]+?)(/-/merge_requests/|/merge_requests/|/pulls/)[0-9]{1,10}$")? // {r: ""}) as $m
+                | if $m.r != "" and ($repos | contains(" " + $m.r + " ")) then . else .gitlab_url = null end
+              end)' \
         "$WORK/props.json" > "$WORK/props.tmp" && mv "$WORK/props.tmp" "$WORK/props.json" || return 1
     proposal_images || return 1
     site_json

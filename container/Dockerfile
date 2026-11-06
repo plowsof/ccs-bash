@@ -30,6 +30,15 @@ RUN --mount=type=bind,source=container,target=/pin \
         ! "/rootfs/usr/bin/$applet" --help 2>&1 | grep -q "applet not found" || { echo "$applet not built" >&2; exit 1; }; \
     done
 
+# ccs-check (contrib/ccs-check), the gate's checks in Go: here for ccs-watch, which reads the live
+# pages' addresses with its scan, as the gate reads them (entities, groups, letters drawn as an
+# address's, a bidi control). Built as gate.Dockerfile builds it: StageX's Go alone (no shell:
+# the exec form), as root, with no network, so the same bytes
+FROM go AS ccs-check
+USER 0
+ENV HOME=/tmp GOCACHE=/tmp/cache GOPATH=/tmp/go CGO_ENABLED=0 GOFLAGS=-mod=readonly GOPROXY=off GOTOOLCHAIN=local
+RUN --mount=type=bind,source=contrib/ccs-check,target=/src ["/usr/bin/go", "-C", "/src", "build", "-trimpath", "-buildvcs=false", "-ldflags=-buildid=", "-o", "/tmp/ccs-check", "."]
+
 # Everything ccs-bash runs, and nothing else. bash runs the scripts.
 FROM scratch AS tree
 COPY --from=filesystem / /
@@ -51,6 +60,7 @@ COPY ccs-back.sh /opt/ccs-bash/
 COPY lib/ /opt/ccs-bash/lib/
 COPY contrib/docker/backend/step /opt/ccs-bash/contrib/docker/backend/step
 COPY contrib/ccs-watch /opt/ccs-bash/contrib/ccs-watch
+COPY --from=ccs-check /tmp/ccs-check /usr/local/bin/ccs-check
 COPY contrib/ccs-push /opt/ccs-bash/contrib/ccs-push
 # run by hand when the CCS moves to a new wallet (docs/handover.md, "Retiring a wallet")
 COPY contrib/retire-wallet /opt/ccs-bash/contrib/retire-wallet
@@ -76,6 +86,7 @@ RUN cd /rootfs \
         usr/bin/infotocap usr/bin/reset usr/bin/tabs usr/bin/tic usr/bin/toe usr/bin/tput usr/bin/tset \
     && chmod 755 opt/ccs-bash opt/ccs-bash/lib opt/ccs-bash/ccs-back.sh && chmod 644 opt/ccs-bash/lib/* \
     && chmod 755 opt/ccs-bash/contrib opt/ccs-bash/contrib/docker opt/ccs-bash/contrib/docker/backend opt/ccs-bash/contrib/docker/backend/step opt/ccs-bash/contrib/ccs-watch opt/ccs-bash/contrib/ccs-push opt/ccs-bash/contrib/retire-wallet \
+    && chmod 755 usr/local/bin/ccs-check \
     && find . -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
 
 FROM scratch AS image

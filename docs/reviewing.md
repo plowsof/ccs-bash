@@ -154,9 +154,10 @@ list, writes the site.
 - [`contrib/ccs-watch`](../contrib/ccs-watch) (`watch`, as `ccs-watch`): the live pages' addresses,
   as one of three browsers through a random proxy (what it fetches, and why:
   [two machines](two-machines.md#watching-the-web-server-the-backend-raises-the-alarm)): `wrong`,
-  every 95- or 106-character base58 run on a page the signed list's or `WATCH_ALLOWED`'s, a
-  funding-required proposal's box its own address (ccs-bash's `projects.json`) and its QR code
-  the list's file of it; it refetches before it counts, `sighted` keeps the day's sightings.
+  every address on a page, as the gate's `ccs-check scan` reads it (in the image; without it,
+  every 95- or 106-character base58 run), the signed list's or `WATCH_ALLOWED`'s, a
+  funding-required proposal's box its own address (ccs-bash's `projects.json`) and its one image
+  (the design's `ccs:donate` part) its QR code, the list's file of it; it refetches before it counts, `sighted` keeps the day's sightings.
   After each push and between pushes at random times (the `watch` stage). A wrong page (three
   fetches over 40 s, or a recheck not answered) alerts the second time it is seen within a day;
   so does a page answering anything but 200 three checks in a row; `--run`, three failed runs.
