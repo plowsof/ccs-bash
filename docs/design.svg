@@ -24,7 +24,7 @@
 
   <!-- title -->
   <text x="30" y="40" font-size="22" font-weight="700" fill="#0f172a">CCS: recommended architecture</text>
-  <text x="30" y="62" font-size="13.5" fill="#475569">Bash on the backend computes everything and only connects out. The public web server checks the backend's data, builds the site from it itself and serves it.</text>
+  <text x="30" y="62" font-size="13.5" fill="#475569">Bash on the backend works out what only it knows and only connects out. The public web server checks that data, builds the site from it itself and serves it.</text>
 
   <g transform="translate(0,115)">
   <!-- zones -->
@@ -60,45 +60,30 @@
 
   <!-- backend cards -->
   <g filter="url(#sh)" fill="#ffffff" stroke="#cbd5e1">
-    <rect x="520" y="150" width="210" height="98" rx="10"/>
     <rect x="265" y="280" width="200" height="98" rx="10"/>
     <rect x="520" y="280" width="210" height="98" rx="10"/>
     <rect x="265" y="420" width="200" height="86" rx="10"/>
-    <rect x="520" y="420" width="210" height="86" rx="10"/>
   </g>
-  <rect x="520" y="150" width="6" height="98" rx="3" fill="#7c3aed"/>
   <rect x="265" y="280" width="6" height="98" rx="3" fill="#16a34a"/>
   <rect x="520" y="280" width="6" height="98" rx="3" fill="#16a34a"/>
   <rect x="265" y="420" width="6" height="86" rx="3" fill="#3b6fd8"/>
-  <rect x="520" y="420" width="6" height="86" rx="3" fill="#16a34a"/>
 
   <g text-anchor="middle">
-    <text x="627" y="180" font-size="15" font-weight="700" fill="#0f172a">the original</text>
-    <text x="627" y="200" font-size="12.5" fill="#475569">ccs-front-hugo's built site,</text>
-    <text x="627" y="217" font-size="12.5" fill="#475569">HTML with markers</text>
-    <text x="627" y="237" font-size="11.5" font-weight="600" fill="#7c3aed">NEVER MODIFIED</text>
-
     <text x="367" y="310" font-size="15" font-weight="700" fill="#0f172a">ccs-bash</text>
     <text x="367" y="330" font-size="12.5" fill="#475569">totals, addresses, ideas</text>
     <text x="367" y="347" font-size="12.5" fill="#475569">→ JSON (data only)</text>
     <text x="367" y="367" font-size="11.5" font-weight="600" fill="#16a34a">2 MIN OR ON A TX · STAGEX</text>
 
-    <text x="627" y="310" font-size="15" font-weight="700" fill="#0f172a">ccs-front-bash</text>
-    <use href="#signedlist" x="696" y="286" width="28" height="28"/>
-    <text x="627" y="330" font-size="12.5" fill="#475569">fills a copy; the list's QR codes;</text>
-    <text x="627" y="347" font-size="12.5" fill="#475569">addresses vs <tspan font-weight="600" fill="#b45309">the signed list</tspan></text>
-    <text x="627" y="367" font-size="11.5" font-weight="600" fill="#16a34a">EVERY RUN · STAGEX IMAGE</text>
+    <text x="627" y="310" font-size="15" font-weight="700" fill="#0f172a">site-data.json</text>
+    <text x="627" y="330" font-size="12.5" fill="#475569">each proposal's subaddress</text>
+    <text x="627" y="347" font-size="12.5" fill="#475569">index, dates, funds; the ideas</text>
+    <text x="627" y="367" font-size="11.5" font-weight="600" fill="#16a34a">EVERY RUN · DATA ONLY</text>
 
     <text x="367" y="452" font-size="15" font-weight="700" fill="#0f172a">monero-wallet-rpc</text>
     <text x="367" y="472" font-size="12.5" fill="#475569">view-only, own user</text>
     <text x="367" y="489" font-size="12.5" fill="#475569">local only</text>
 
-    <text x="650" y="452" font-size="15" font-weight="700" fill="#0f172a">site/</text>
-    <text x="627" y="472" font-size="12.5" fill="#475569">lists, amounts, QR codes,</text>
-    <text x="627" y="489" font-size="12.5" fill="#475569">new pages; fresh each run</text>
   </g>
-  <!-- folder icon -->
-  <path d="M588,439 h10 l3,4 h15 v14 h-28 z" fill="#16a34a" opacity="0.85"/>
 
   <!-- state file: cylinder -->
   <g transform="translate(300,548)">
@@ -135,9 +120,9 @@
   <g text-anchor="middle">
     <text x="890" y="273" font-size="14" font-weight="700" fill="#0f172a">ccs-data + the gate</text>
     <use href="#signedlist" x="964" y="252" width="26" height="26"/>
-    <text x="908" y="291" font-size="12" fill="#475569">write-only push to staging;</text>
-    <text x="908" y="306" font-size="12" fill="#475569">site-data.json checked; the</text>
-    <text x="908" y="321" font-size="12" fill="#475569">site built here (front-bash);</text>
+    <text x="908" y="291" font-size="12" fill="#475569">takes site-data.json alone,</text>
+    <text x="908" y="306" font-size="12" fill="#475569">checks it, builds the site</text>
+    <text x="908" y="321" font-size="12" fill="#475569">(the design, front-bash);</text>
     <text x="908" y="336" font-size="12" fill="#475569">addresses, QR codes vs</text>
     <text x="908" y="351" font-size="12" font-weight="600" fill="#b45309">the signed list</text>
     <text x="908" y="422" font-size="15" font-weight="700" fill="#0f172a">Caddy, Tor</text>
@@ -167,21 +152,17 @@
   <g fill="none" stroke="#16a34a" stroke-width="2.5" marker-end="url(#g)">
     <path d="M367,420 V382"/>
     <path d="M465,325 H516"/>
-    <path d="M627,378 V416"/>
   </g>
   <path d="M290,378 V548" fill="none" stroke="#3b6fd8" stroke-width="2" stroke-dasharray="4 4"/>
   <text x="375" y="400" font-size="12" fill="#15803d">RPC</text>
-  <text x="490" y="316" text-anchor="middle" font-size="12" fill="#15803d">JSON</text>
-  <text x="490" y="342" text-anchor="middle" font-size="12" fill="#15803d">.md</text>
-  <!-- on a merge -->
-  <path d="M627,248 V276" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#s)"/>
+  <text x="490" y="316" text-anchor="middle" font-size="12" fill="#15803d">writes</text>
     <!-- the push -->
-  <path d="M730,463 H770 V290 H809" fill="none" stroke="#16a34a" stroke-width="3.5" marker-end="url(#gb)"/>
+  <path d="M730,325 H770 V290 H809" fill="none" stroke="#16a34a" stroke-width="3.5" marker-end="url(#gb)"/>
   <g transform="translate(700,580)">
     <rect x="0" y="0" width="270" height="30" rx="15" fill="#dcfce7" stroke="#16a34a"/>
-    <text x="135" y="20" text-anchor="middle" font-size="12.5" font-weight="600" fill="#166534">push: what changed + site-data.json</text>
+    <text x="135" y="20" text-anchor="middle" font-size="12.5" font-weight="600" fill="#166534">push: site-data.json, if changed</text>
   </g>
-  <path d="M770,463 V578" fill="none" stroke="#16a34a" stroke-width="1.5" stroke-dasharray="3 3"/>
+  <path d="M770,325 V578" fill="none" stroke="#16a34a" stroke-width="1.5" stroke-dasharray="3 3"/>
   <!-- web server inside -->
   <path d="M905,360 V386" fill="none" stroke="#d97706" stroke-width="2.5" marker-end="url(#o)"/>
   <text x="913" y="378" font-size="11.5" fill="#b45309">only if all pass</text>
@@ -190,7 +171,7 @@
 
   </g>
 
-  <!-- offline front-end build: outside, above the backend; drawn last so the arrow is on top -->
+  <!-- offline front-end build: outside, above the backend; its release zip goes to the web server -->
   <!-- ccs-sigs: anyone rebuilds each release and signs what they get (as Feather's feather-sigs);
        the backend's releases are checked against them before they are installed -->
   <rect x="30" y="80" width="300" height="92" rx="12" fill="#ecfdf5" stroke="#0f766e" stroke-width="2" stroke-dasharray="6 4" filter="url(#sh)"/>
@@ -207,18 +188,13 @@
   <text x="625" y="123" text-anchor="middle" font-size="12.5" fill="#475569">the only place a framework (Hugo) runs: it builds</text>
   <text x="625" y="140" text-anchor="middle" font-size="12.5" fill="#475569">the site once, on a machine that is never live</text>
   <text x="625" y="161" text-anchor="middle" font-size="11.5" font-weight="600" fill="#7c3aed">ONCE PER DESIGN CHANGE</text>
-  <path d="M625,172 V261" fill="none" stroke="#7c3aed" stroke-width="2.5" stroke-dasharray="6 4" marker-end="url(#p)"/>
-  <g transform="translate(372,180)">
-    <rect x="0" y="0" width="240" height="22" rx="11" fill="#ffffff" stroke="#7c3aed"/>
-    <text x="120" y="15" text-anchor="middle" font-size="11.5" font-weight="600" fill="#6d28d9">carried over once: signed, hash checked</text>
-  </g>
 
-  <!-- the watcher: after each push, the live donation pages fetched as a visitor and compared -->
+  <!-- the watcher: after each push, the live donation pages fetched as a visitor, their addresses checked -->
   <rect x="470" y="640" width="210" height="82" rx="10" fill="#ffffff" stroke="#cbd5e1" filter="url(#sh)"/>
   <rect x="470" y="640" width="6" height="82" rx="3" fill="#c2410c"/>
   <g text-anchor="middle">
     <text x="577" y="662" font-size="14" font-weight="700" fill="#0f172a">ccs-watch</text>
-    <text x="577" y="680" font-size="12" fill="#475569">pages, files, /projects = pushed?</text>
+    <text x="577" y="680" font-size="12" fill="#475569">addresses = the signed list's?</text>
     <text x="577" y="696" font-size="12" fill="#475569">if not, or unreachable, to IRC:</text>
     <text x="577" y="712" font-size="11.5" font-weight="600" fill="#c2410c">#irc-room</text>
   </g>
@@ -236,17 +212,19 @@
     <text x="1117" y="730" font-size="11" fill="#475569">and ccs-watch</text>
   </g>
   <path d="M995,395 H1028 V690 H1036" fill="none" stroke="#c2410c" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#o)"/>
-  <text x="1000" y="388" font-size="11" fill="#c2410c">a pushed file held back</text>
+  <text x="1000" y="388" font-size="11" fill="#c2410c">a page off, data held back</text>
   <!-- the gate reads the proposals itself (their text, their images), fetched each push, and has the design's pages and parts -->
   <path d="M30,288 H16 V74 H1042 V372 H1001" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#s)"/>
   <text x="1050" y="150" font-size="11" fill="#475569">fetched by the gate</text>
   <text x="1050" y="164" font-size="11" fill="#475569">each push: the</text>
-  <text x="1050" y="178" font-size="11" fill="#475569">proposals' texts</text>
-  <text x="1050" y="192" font-size="11" fill="#475569">and images</text>
+  <text x="1050" y="178" font-size="11" fill="#475569">proposals' texts,</text>
+  <text x="1050" y="192" font-size="11" fill="#475569">images and merge</text>
+  <text x="1050" y="206" font-size="11" fill="#475569">requests</text>
   <path d="M795,126 H975 V356" fill="none" stroke="#7c3aed" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#p)"/>
-  <text x="983" y="262" font-size="11" fill="#6d28d9">and to the gate</text>
+  <text x="983" y="250" font-size="11" fill="#6d28d9">its release zip,</text>
+  <text x="983" y="264" font-size="11" fill="#6d28d9">hash checked</text>
   <path d="M600,722 V760 H1110 V742" fill="none" stroke="#c2410c" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#o)"/>
-  <text x="790" y="754" font-size="11" fill="#c2410c">served page or file ≠ what was pushed</text>
+  <text x="790" y="754" font-size="11" fill="#c2410c">an address that isn't the wallet's</text>
 
   <!-- legend -->
   <g transform="translate(30,775)" font-size="12.5" fill="#334155">
@@ -255,6 +233,6 @@
     <path d="M520,10 H554" stroke="#64748b" stroke-width="2.5"/><text x="562" y="14">fetched or read (outgoing connections only)</text>
   <use href="#signedlist" x="905" y="-1" width="20" height="20"/>
   <text x="930" y="14" font-size="12.5" fill="#334155">the signed subaddress list</text>
-    <text x="0" y="40" fill="#64748b">No Jekyll or front-end framework on any live machine. Every page is made fresh from the original each run, on the backend and again on the web server, from the checked data.</text>
+    <text x="0" y="40" fill="#64748b">No Jekyll or front-end framework on any live machine. The web server makes every page fresh from the design, from the checked data.</text>
   </g>
 </svg>
