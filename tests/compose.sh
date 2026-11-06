@@ -24,7 +24,7 @@ mkdir -p "$t/bin" "$t/state/retired" "$t/proposals"
 : > "$t/pull-ok" && : > "$t/watched"
 echo "a.md,1" > "$t/state/proposals.csv"
 # stand-ins: ccs-back.sh fails when $t/fail-bash exists, else writes its JSON; ssh
-# keeps what the backup sent, and counts a push (asked to "receive": its tar read and listed);
+# keeps what the backup sent, and counts a push (asked to "receive": site-data.json, or nothing);
 # ccs-watch keeps how it was asked
 cat > "$t/bin/ccs-back" <<'EOF'
 #!/usr/bin/env bash
@@ -42,7 +42,7 @@ echo pulled >> "$T/pulls"
 EOF
 cat > "$t/bin/ssh" <<'EOF'
 #!/usr/bin/env bash
-if [[ ${*: -1} == receive ]]; then echo push >> "$T/pushes"; tar -t -f - >> "$T/pushed-files" 2>&1; exit 0; fi
+if [[ ${*: -1} == receive ]]; then echo push >> "$T/pushes"; c=''; IFS= read -r -n 1 c || true; [[ $c != '{' ]] || echo site-data.json >> "$T/pushed-files"; cat > /dev/null; exit 0; fi
 cat >> "$T/sent"
 EOF
 cat > "$t/bin/ccs-watch" <<'EOF'

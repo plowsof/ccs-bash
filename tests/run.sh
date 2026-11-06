@@ -1229,13 +1229,14 @@ rm -rf "$sd" && mkdir -p "$sd/out" "$sd/work"
 jq -rn --slurpfile d "$TEST_TMP/out/site-data.json" --slurpfile p "$TEST_TMP/out/projects.json" '
     ($p[0] | map({key: .filename, value: .address}) | from_entries) as $a
     | $d[0].state | to_entries[] | select(.value.subaddr_index != null and $a[.key] != null) | "\(.value.subaddr_index) \($a[.key])"' > "$sd/list"
-if bash -c 'source "$1/../ccs-back.sh" && PROPOSALS_DIR=$2 OUTPUT_DIR=$3/out WORK=$3/work && site_from_data "$4" "$3/list"' \
+# (the web server's images too: the backend makes none, since it sends site-data.json alone)
+if bash -c 'source "$1/../ccs-back.sh" && source "$1/../lib/images.sh" && PROPOSALS_DIR=$2 OUTPUT_DIR=$3/out WORK=$3/work && site_from_data "$4" "$3/list"' \
     _ "$here" "$FIXTURES/proposals" "$sd" "$TEST_TMP/out/site-data.json" 2> "$sd/log"; then
     same=1
-    for f in proposals.json completed-proposals.json projects.json images.json; do
+    for f in proposals.json completed-proposals.json projects.json; do
         diff -u "$TEST_TMP/out/$f" "$sd/out/$f" || same=0
     done
-    if ((same)); then echo "ok   the site's JSON from site-data.json is the run's own (proposals, completed, projects, images)"
+    if ((same)); then echo "ok   the site's JSON from site-data.json is the run's own (proposals, completed, projects)"
     else echo "FAIL the site's JSON from site-data.json differs from the run's"; status=1; fi
 else echo "FAIL site_from_data failed"; cat "$sd/log"; status=1; fi
 # each proposal's merge request, from the repository's merge commits (lib/site-data.sh's

@@ -57,7 +57,8 @@ COPY --from=jq / /
 COPY --from=git / /
 COPY --from=openssh / /
 COPY ccs-back.sh /opt/ccs-bash/
-COPY lib/ /opt/ccs-bash/lib/
+# (not images.sh: the backend sends site-data.json alone, the web server makes the site's images)
+COPY lib/common.sh lib/proposals.sh lib/frontmatter.awk lib/gitlab.sh lib/wallet.sh lib/mirror.sh lib/site-data.sh lib/site.jq /opt/ccs-bash/lib/
 COPY contrib/docker/backend/step /opt/ccs-bash/contrib/docker/backend/step
 COPY contrib/ccs-watch /opt/ccs-bash/contrib/ccs-watch
 COPY --from=ccs-check /tmp/ccs-check /usr/local/bin/ccs-check
