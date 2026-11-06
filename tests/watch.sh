@@ -145,6 +145,13 @@ for c in "box|s/monero:$(addr 1)/monero:$(addr 2)/|the donation box isn't its pr
     if [[ $(alerts) == 1 ]] && sed -E 's#/(dark|light)/#/#' "$tmp/bot.txt" | grep -qF "$why"; then ok "$why: an alert"; else cat "$tmp/log" "$tmp/bot.txt"; fail "$why"; fi
     cp "$tmp/page.good" "$page"; cp "$tmp/list.txt.qr/$(addr 1).png" "$tmp/remote/qr/"
 done
+# A proposal at its goal: the design's "Funded" in place of the box, no address of its own on the
+# page (the General Fund's in the footer): nothing to alert
+: > "$tmp/bot.txt"; rm -f "$tmp/state"/alert-* "$tmp/state"/differs-*
+echo "<a href=\"../index.html\">home</a><!-- ccs:donate --><progress max=\"100\" value=\"100\">100%</progress><div class=\"contribute\"><span class=\"button primary funded\">Funded</span></div><!-- /ccs:donate --><a class=\"qr\" href=\"monero:$(addr 3 8)\"><img src=\"../assets/fund-qr.png\"></a>" > "$page"
+watch || true; watch || true
+if [[ $(alerts) == 0 ]]; then ok "a proposal at its goal (Funded, no box): no alert"; else cat "$tmp/log" "$tmp/bot.txt"; fail "a funded proposal's page"; fi
+cp "$tmp/page.good" "$page"
 : > "$tmp/bot.txt"; rm -f "$tmp/state"/alert-* "$tmp/state"/differs-*
 # An address on a page that isn't a box's (a proposal's text, the footer): any one not the list's
 # nor allowed alerts too
