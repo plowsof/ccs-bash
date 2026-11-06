@@ -84,6 +84,7 @@ if k == "dotdot": add("../../../tmp/escaped")
 if k == "absolute": add("/tmp/escaped")
 if k == "twice": add("site-data.json", b"{}"); add("./site-data.json", b"{}")
 if k == "address": add("pay/" + sys.argv[2] + "/../x.json")
+if k == "page": add("site-data.json", b"{}"); add("index.html", b"<p>Donate here</p>")
 out.close()
 PY
 docker cp "$files/hostile.py" "$name-backend:/hostile.py"
@@ -175,7 +176,7 @@ data() {
 # put FILE: stdin as the backend's /out/FILE
 put() { docker exec -i "$name-backend" sh -c "mkdir -p \"\$(dirname '/out/$1')\" && cat > '/out/$1'"; }
 # push: as the backend pushes (contrib/ccs-push): what changed, a tar over ssh
-push() { on backend "/ccs-push /out /pushed /state -T -o BatchMode=yes -o StrictHostKeyChecking=yes ccs-data@$web 2>&1"; }
+push() { on backend "/ccs-push /out/site-data.json /state -T -o BatchMode=yes -o StrictHostKeyChecking=yes ccs-data@$web 2>&1"; }
 # hostile KIND: hostile.py's tar sent as a push; its exit
 hostile() { on backend "python3 /hostile.py $1 ${2:-} | ssh -T -o BatchMode=yes ccs-data@$web receive > /dev/null 2>&1"; }
 livefile() { on web "cat '/var/lib/ccs-data/$1' 2> /dev/null || true"; }
@@ -210,15 +211,11 @@ if push > /dev/null && [[ $(livepage) == *"in 3 parts."* && $(livepage) == *'mer
 else logtail; fail "an edited proposal"; fi
 
 # the push is site-data.json alone: a page, or anything else, refuses all of it
-put index.html <<<'<p>Donate here</p>'
-rc=0; out=$(push) || rc=$?
-if ((rc == 1)) && [[ $(livefile index.html) != *"Donate here"* && $out == *"other files than site-data.json"* ]] \
+rc=0; hostile page || rc=$?
+if ((rc == 1)) && [[ $(livefile index.html) != *"Donate here"* ]] && on web "grep -q 'other files than site-data.json (./index.html)' /var/log/ccs-gate.log" \
     && bot | grep -qF "the web server refuses every push: a push with other files than site-data.json"; then
     ok "a push with a page in it: refused whole, IRC told"
-else echo "exit $rc: $out"; fail "a push with a page"; fi
-on backend 'rm /out/index.html'
-on backend 'rm -rf /state'   # (ccs-push sends everything again: the gate took nothing)
-push > /dev/null || true
+else echo "exit $rc"; logtail 2; fail "a push with a page"; fi
 
 # site-data.json that fails (ccs-check data): held back, the live site as it was, IRC told
 before=$(raised)
@@ -382,7 +379,7 @@ if ! grep -q root <<<"$(on backend "ssh -o BatchMode=yes ccs-data@$web 'cat /etc
 
 # two pushes at once: the second waits for the first (one staging folder, one at a time)
 data 40.0000 | put site-data.json
-on backend "(/ccs-push /out /pushed-a /state-a -T -o BatchMode=yes ccs-data@$web > /tmp/a 2>&1; echo \$? >> /tmp/a) & (/ccs-push /out /pushed-b /state-b -T -o BatchMode=yes ccs-data@$web > /tmp/b 2>&1; echo \$? >> /tmp/b) & wait"
+on backend "(/ccs-push /out/site-data.json /state-a -T -o BatchMode=yes ccs-data@$web > /tmp/a 2>&1; echo \$? >> /tmp/a) & (/ccs-push /out/site-data.json /state-b -T -o BatchMode=yes ccs-data@$web > /tmp/b 2>&1; echo \$? >> /tmp/b) & wait"
 if [[ $(on backend 'tail -n 1 /tmp/a; tail -n 1 /tmp/b') == $'0\n0' && $(raised) == 40 ]]; then ok "two pushes at once both go through, one after the other"; else on backend 'cat /tmp/a /tmp/b'; fail "two pushes at once"; fi
 # a backend that hangs up while the gate builds: the gate still finishes, and alerts what it took off
 repo edit w "Pay $fake here."
@@ -390,7 +387,7 @@ data 41.0000 | put site-data.json
 alerts=$(bot | grep -c . || true)
 on web 'rm -f /var/lib/ccs-gate/alert-addr-*'
 before=$(on web 'stat -c %Y /var/lib/ccs-gate/last-push 2> /dev/null || echo 0')
-on backend "/ccs-push /out /pushed /state -T -o BatchMode=yes ccs-data@$web > /dev/null 2>&1 &"
+on backend "/ccs-push /out/site-data.json /state -T -o BatchMode=yes ccs-data@$web > /dev/null 2>&1 &"
 for _ in $(seq 100); do [[ $(on web 'stat -c %Y /var/lib/ccs-gate/last-push 2> /dev/null || echo 0') != "$before" ]] && break; sleep 0.1; done
 on backend 'pkill -x ssh || true'
 for _ in $(seq 300); do on web 'for p in /proc/[0-9]*/cmdline; do { tr "\0" " " < $p; } 2> /dev/null; echo; done | grep -q "[c]cs-receive"' || break; sleep 0.2; done

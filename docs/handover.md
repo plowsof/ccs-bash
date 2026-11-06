@@ -3,7 +3,7 @@
 For the maintainer of ccs.getmonero.org (today: ccs-back, PHP and MySQL, and the Jekyll
 ccs-front). The steps build the setup below box by box; then the old site is switched off.
 
-<p align="center"><img src="design.svg" width="900" alt="The setup: the backend (monero-wallet-rpc, ccs-bash, ccs-front-bash) makes the whole site from the design and pushes it to a web server whose gate checks every page against the design and the proposals repository, and every address against the signed list; ccs-watch checks the live pages and alerts IRC, and the web server alerts when pushes stop; the state is backed up; releases are attested in ccs-sigs"></p>
+<p align="center"><img src="design.svg" width="900" alt="The setup: the backend (monero-wallet-rpc, ccs-bash) pushes site-data.json, what only it knows, to a web server whose gate checks it and builds the whole site itself from it, the design, the proposals repository and the signed list, and checks every address on it against the list; ccs-watch checks the live pages' addresses and alerts IRC, and the web server alerts when pushes stop; the state is backed up; releases are attested in ccs-sigs"></p>
 
 **Stays:** the proposals repository, the CCS wallet and every proposal's subaddress, the site's
 address and `/projects`. **Goes:** PHP, MySQL, Jekyll, Ruby; the web server runs no code. Why:
@@ -210,8 +210,8 @@ rpc get_address '{"account_index":0,"address_index":[8,9]}' \
 
 ## 3. The design
 
-ccs-front-hugo's release zip, sha256 checked, unpacked on the backend: [setup](setup.md#the-backend),
-step 3.
+ccs-front-hugo's release zip, sha256 checked, unpacked on the web server, which builds the site
+with it: [two machines](two-machines.md#the-gate-the-web-server-builds-the-site-itself).
 
 ## 4. The signed subaddress list
 
@@ -222,10 +222,12 @@ it on both machines, with its QR codes and the view key file: [the signed list](
 Write `list-signers` yourself from the fingerprints in step 2, never one that comes with a list.
 From then on each machine trusts the `.pin`; changing it, or `list-signers`, needs root there.
 
-## 5. ccs-front-bash (the backend)
+## 5. ccs-front-bash (the web server)
 
-The compose's `front` ([docker](docker.md)), from ccs-front-bash's pinned image, with the design
-(step 3) and the list (step 4). It makes `/var/lib/ccs/www/site` each run.
+Nothing to install: the gate's image carries the ccs-front-bash release that fills the design
+(`vendor/ccs-front-bash`, [releasing](releasing.md#a-ccs-front-bash-release)), and the web server
+builds the site with it from the backend's `site-data.json`, the design (step 3) and the list
+(step 4).
 
 ## 6. The web server
 
@@ -244,8 +246,9 @@ receiver in Docker, the web server compose's `backup` profile ([docker](docker.m
 
 ## 8. The alerts
 
-ccs-watch on the backend (the live pages are what was pushed; three failed runs), the gate on the
-web server (a held-back page; no push for 15 minutes): both post one line to the IRC bot's URL
+ccs-watch on the backend (every address on the live pages the wallet's, each donation box its
+proposal's; three failed runs), the gate on the web server (a page taken off, a `site-data.json`
+held back; no push for 15 minutes): both post one line to the IRC bot's URL
 ([two machines](two-machines.md#watching-the-web-server-the-backend-raises-the-alarm); every
 line and what to do: [troubleshooting](troubleshooting.md#what-irc-says)).
 `ccs-watch --test https://ccs.getmonero.org` sends one message to check it.
@@ -254,8 +257,8 @@ line and what to do: [troubleshooting](troubleshooting.md#what-irc-says)).
 
 The backend compose ([docker](docker.md)) runs one update every 2 minutes and on each new
 donation, each stage its own container and user: the proposals pulled, ccs-bash, the backup,
-ccs-front-bash, the push to the web server's gate, ccs-watch (and its checks between pushes, at
-random times). With the IDs and the web server and backup machine in `.env`:
+the push of `site-data.json` to the web server's gate, ccs-watch (and its checks between pushes,
+at random times). With the IDs and the web server and backup machine in `.env`:
 
 ```
 cd /opt/ccs-bash/contrib/docker/backend && docker compose up -d
@@ -269,7 +272,7 @@ ccs config:check                # nothing failing
 With steps 1–9 running, the new site is complete on the web server before anyone sees it.
 
 1. Check every page, the Verify page, an address against the list, and the log (each run ends
-   with `ccs-watch: the N pages ... are what was pushed`).
+   with `ccs-watch: the N pages ...: every address the wallet's, each donation box its proposal's`).
 2. Stop ccs-back's cron and its `--tx-notify` script.
 3. Point `ccs.getmonero.org`'s DNS at the web server (its certificate: step 6).
 4. Stop ccs-back, its database and Jekyll; keep the machine for a while (going back: the DNS, and
@@ -307,10 +310,9 @@ starts each step as its account.
 | `ccs-wallet` | runs monero-wallet-rpc, with a login: on 127.0.0.1, or in Docker on the network only ccs-bash is on | spend: the wallet is view-only |
 | `ccs-git` | owns the proposals checkout and pulls it | anything else: no shell |
 | `ccs` | runs ccs-bash; owns the state and the JSON | write the proposals; log in |
-| `ccs-front` | makes the site (no network) | write anything but the site |
-| `ccs-push` (Docker) | holds the push key; pushes the site; owns the copy of what was pushed and each run's result | write the state or the site |
+| `ccs-push` (Docker) | holds the push key; pushes `site-data.json`; owns each run's result | write the state |
 | `ccs-send` (Docker) | holds the backup key; sends the state when it changes | write the state |
-| `ccs-watch` | runs ccs-watch: reads alert.conf, owns its counters | write the state, the site or what was pushed |
+| `ccs-watch` | runs ccs-watch: reads alert.conf, owns its counters | write the state |
 
 **The web server:** 80 and 443 open to everyone; 22 to you; to the backend, 2223, the gate's own
 sshd ([the web server in Docker](docker.md#the-web-server-in-docker)).
@@ -361,22 +363,20 @@ agreeing, answering) and changes nothing.
 | | `REPOSITORY_URL` | `https://repo.getmonero.org/api/v4/projects/54` | 2 |
 | | `MIN_CONFIRMATIONS` | `10` | 2 |
 | the proposals checkout | its remote | `https://repo.getmonero.org/monero-project/ccs-proposals.git` | 2 |
-| `/opt/ccs-front-hugo/public` | the design | the release zip of [the releases](#the-releases), its sha256 checked | 3 |
-| `/etc/ccs-front/` | `subaddresses.txt` and its `.asc`, `.key.asc`, `.pin`, `.qr.sha256`, `.qr/` | made by a Core Team member, signed with their own key (binaryFate's or luigi1111's), checked with `tools/verify-subaddresses.sh` | 4 |
+| `/etc/ccs-front/` | `subaddresses.txt` and its `.asc`, `.key.asc`, `.pin`, `.qr.sha256`, `.qr/` | made by a Core Team member, signed with their own key (binaryFate's or luigi1111's), checked with `tools/verify-subaddresses.sh`; what ccs-watch checks the live pages against | 4 |
 | | `list-signers` | `81AC591FE9C4B65C5806AFC3F0AF4D462A0BDF92  # binaryFate` and `8777AB8F778EE89487A2F8E7F4ACA0183641E010  # luigi1111`, from the Monero repository's `utils/gpg_keys/` | 4 |
 | | `subaddresses.txt.viewkey` | as in step 4 | 4 |
 | `/etc/ccs/push/` | `id_ed25519` (the push key), `known_hosts` | the web server's host key: its gate's (`/etc/ccs-gate/ssh/ssh_host_ed25519_key.pub` there, as `[<web server>]:2223 ssh-ed25519 …`); `ccs-push`, 600 | 6 |
 | `/etc/ccs/backup/` | `id_ed25519`, `known_hosts` | the backup key, the backup machine's host key (its receiver's, as `[<backup machine>]:2224 ssh-ed25519 …`); `ccs-send`, 600 | 7 |
 | `/etc/ccs/alert.conf` | `ALERT_URL` | the IRC bot's URL (below) | 8 |
-| | `SUBADDRESSES`, `WATCH_PROXY`, `WATCH_THEMES`, `WATCH_SAMPLE` | `/etc/ccs-front/subaddresses.txt`; `socks5h://host.docker.internal:9050` (Tor, step 1) and a clearnet proxy elsewhere; `1`; `10` (other pages checked each run, at random) | 8 |
+| | `SUBADDRESSES`, `WATCH_ALLOWED`, `WATCH_PROXY`, `WATCH_THEMES`, `WATCH_SAMPLE` | `/etc/ccs-front/subaddresses.txt`; the web server's `allowed` addresses, space-separated (default: the General Fund); `socks5h://host.docker.internal:9050` (Tor, step 1) and a clearnet proxy elsewhere; `1`; `10` (other proposals' pages checked each run, at random) | 8 |
 | `/etc/ccs/trusted-signers` | the attesters you trust | their keys' fingerprints, one a line | upgrading |
-| `/opt/ccs-bash/contrib/docker/backend/.env` | `CCS_BASH_IMAGE`, `CCS_FRONT_IMAGE`, `WALLET_IMAGE` | the attested IDs of [the releases](#the-releases); the wallet's, as built | docker, upgrading |
-| | `CCS_UID`, `GIT_UID`, `FRONT_UID`, `WALLET_UID`, `PUSH_UID`, `SEND_UID`, `WATCH_UID` | the host's users, `uid:gid` | docker |
+| `/opt/ccs-bash/contrib/docker/backend/.env` | `CCS_BASH_IMAGE`, `WALLET_IMAGE` | the attested IDs of [the releases](#the-releases); the wallet's, as built | docker, upgrading |
+| | `CCS_UID`, `GIT_UID`, `WALLET_UID`, `PUSH_UID`, `SEND_UID`, `WATCH_UID` | the host's users, `uid:gid` | docker |
 | | `WALLET_PORT` | `18082`, `wallet-rpc.conf`'s `rpc-bind-port` (its healthcheck: without it the compose waits forever) | docker |
-| | `CCS_PUSH`, `CCS_BACKUP`, `CCS_SITE_URL` | `ccs-data@<web server>`, `ccs-backup@<backup machine>`, `https://ccs.getmonero.org` (also the feed's links: the same as the web server's `alert.conf` `SITE_URL`) | docker |
+| | `CCS_PUSH`, `CCS_BACKUP`, `CCS_SITE_URL` | `ccs-data@<web server>`, `ccs-backup@<backup machine>`, `https://ccs.getmonero.org` (the site ccs-watch checks: the same as the web server's `alert.conf` `SITE_URL`) | docker |
 | | `CCS_PUSH_PORT`, `CCS_BACKUP_PORT` | `2223`, `2224` (the web server compose's gate and backup receiver) | docker |
 | | `COMPOSE_FILE` | only with a monerod, Tor or bot on the backend's 127.0.0.1: `compose.yml:compose.host.yml` | docker |
-| | `CCS_ONION` | optional: the site's onion address, for every page's footer; the same as the web server's `/etc/ccs-gate/onion` ([below](#the-onion-address)) | docker |
 
 **The web server**
 
@@ -396,23 +396,18 @@ agreeing, answering) and changes nothing.
 ### The onion address
 
 Optional: with an onion service ([two machines](two-machines.md), "The onion"), every
-page's footer says "Also on Tor: <its address>". The address is in two places, which must agree:
-the web server's `/etc/ccs-gate/onion` (root, 644: the only onion the gate lets a footer show, and
-the same in its compose's `.env` as `CCS_ONION`, for the `Onion-Location` header) and the backend
-compose's `.env`, `CCS_ONION` (what ccs-front-bash writes). Setting or changing it,
-between runs: the web server's file first, then the backend's `.env` and `docker compose up -d
-front` (a new variable needs a new container). Until the backend's next run, its pages still have
-the old line: the gate holds them back (their last good copies stay live) and that run fails, which
-is all. Removing it: the backend's `CCS_ONION` first, then the file.
+page's footer says "Also on Tor: <its address>". The address is on the web server alone, in two
+places, which must agree: `/etc/ccs-gate/onion` (root, 644: the gate builds every page's footer
+with it) and its compose's `.env` as `CCS_ONION` (the `Onion-Location` header). Setting,
+changing or removing it: both, then `docker compose up -d`; the next push builds the site with it.
 
 ### The feed
 
 `/feed.xml`, RSS: each proposal put to Funding Required, and each fully funded (its goal raised in
 confirmed donations while in Funding Required), the 50 newest. ccs-bash records when each happened
-(`proposals.csv`'s `funding_required_date` and `funded_date`), ccs-front-bash writes the feed with
-the backend's `CCS_SITE_URL`, and the gate takes it only exactly in that form, each item a link to
-one of the site's proposal pages under its own `alert.conf` `SITE_URL`: set the two to the same
-address. A proposal funded before ccs-bash recorded it has no "fully funded" item.
+(`proposals.csv`'s `funding_required_date` and `funded_date`), the web server builds the feed
+with them, each item a link to one of the site's proposal pages under its `alert.conf`
+`SITE_URL`. A proposal funded before ccs-bash recorded it has no "fully funded" item.
 
 **The backup machine:** the `ccs-backup` account, with the backend's key in
 `/etc/ssh/authorized_keys/ccs-backup` (step 7).
@@ -500,13 +495,14 @@ label (the run stops on a subaddress whose label names another proposal), and in
 
 A release is published by its repository (a tag: the release workflow builds it, checks it builds
 the same twice and publishes the image or zip with its ID or sha256: [releasing](image.md#releases));
-a deploy puts a set of three on the machines. Nothing changes on a machine until you deploy.
+a deploy puts a set (ccs-bash and the design) on the machines. Nothing changes on a machine until you deploy.
 
 Images are built on the machine from the attested commit (the same commit gives the same ID, so it
 can be checked); the design comes as its zip, checked by sha256. ccs-bash's image holds
-`ccs-back.sh`, `lib/`, the compose's stage runner (`step`) and ccs-watch; the gate's image the gate
-and `ccs-backup-receive` (ccs-front-bash's: its own). What runs on the machines from the checkout
-(`ccs`, the compose files, the front's `step`, `container/build.sh`) isn't in an image, so another
+`ccs-back.sh`, `lib/`, the compose's stage runner (`step`) and ccs-watch; the gate's image the gate,
+the site's build (`gate-build`, `lib/`, the vendored ccs-front-bash) and `ccs-backup-receive`.
+What runs on the machines from the checkout (`ccs`, the compose files, `container/build.sh`)
+isn't in an image, so another
 commit with the same image files would build the same ID. They are trusted because they come from
 the commit the signers attested: check that commit out, never only the tag.
 

@@ -181,7 +181,7 @@ cmd_log() {
     echo "The errors and warnings of the last $n run(s), lines $from to $to of ${LOG_NAME:-$LOG} (each once, the last time it was said):"
     # (and the gate's reason for each file it held back: "ccs-gate:   <file>: <why>")
     sed -n "${from},${to}p" "$LOG" | grep -iE 'error|warning|fail|refus|held back|alert|could not|can.t |cannot|denied|timed out|not ok|stop|^ccs-gate:   ' \
-        | grep -vE 'ccs-watch: the [0-9]+ pages on .* are what was pushed|^(skipping|ignoring) ' \
+        | grep -vE 'ccs-watch: the [0-9]+ pages on .* every address the wallet.s|^(skipping|ignoring) ' \
         | jq -R -s -r --argjson h "$(hints)" '
             split("\n") | map(select(. != "")) | map({line: ., msg: sub("^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9:]{8} "; "")})
             | group_by(.msg) | map({line: .[-1].line, msg: .[0].msg, n: length}) | sort_by(.line)[]
@@ -202,7 +202,7 @@ cmd_status() {
     f=$(docker ps -a --filter label=com.docker.compose.project=backend --format '{{.Label "com.docker.compose.service"}} {{.State}} {{.Status}}' 2> /dev/null \
             | grep -v '^init ' | sed -E 's/^([^ ]+ [^ ]+) .*\((healthy|unhealthy|health: starting)\).*/\1 \2/; t; s/^([^ ]+ [^ ]+) .*/\1/' | sort | paste -sd ',' - | sed 's/,/, /g') || f=''
     echo "the compose: ${f:-not running}$(running && echo ", a run going now")"
-    echo "the stages: $(for s in pull ccs-bash backup front push watch; do printf '%s %s; ' "$s" "$(cat "$RUN_DIR/$s/status" 2> /dev/null || echo '?')"; done)"
+    echo "the stages: $(for s in pull ccs-bash backup push watch; do printf '%s %s; ' "$s" "$(cat "$RUN_DIR/$s/status" 2> /dev/null || echo '?')"; done)"
     at=$(grep -n '^== run ' "$LOG" | tail -n 1) || at=''
     if [[ $at ]]; then
         read -r f last <<<"$(runs_range 1)"
@@ -220,7 +220,7 @@ cmd_status() {
     f=$(read_ccs "$OUTPUT_DIR/projects.json" 2> /dev/null | jq -r '[length, (map(select(.state == "FUNDING-REQUIRED")) | length)] | "\(.[0]) proposals, \(.[1]) funding required"' 2> /dev/null || echo "no projects.json")
     echo "the site: $f"
     echo "the wallet: $(wallet_line)"
-    echo "the releases: the compose's images: $(docker ps --filter label=com.docker.compose.project=backend --format '{{.Label "com.docker.compose.service"}}={{.Image}}' 2> /dev/null | sort -u -t= -k2,2 | sed 's/sha256:\(.\{12\}\).*/\1/' | paste -sd ' ' -), design $(cut -d' ' -f1 /opt/ccs-front-hugo/VERSION 2> /dev/null || echo '?')"
+    echo "the releases: the compose's images: $(docker ps --filter label=com.docker.compose.project=backend --format '{{.Label "com.docker.compose.service"}}={{.Image}}' 2> /dev/null | sort -u -t= -k2,2 | sed 's/sha256:\(.\{12\}\).*/\1/' | paste -sd ' ' -)"
 }
 # the wallet's height and the node's, the wallet's main address (its config's login, not shown)
 wallet_line() {
@@ -278,7 +278,7 @@ cmd_check() {
     file $wconf root ccs-wallet 640 && ok "$wconf"
     file $aconf root $wu 640 && ok "$aconf"
     file /etc/ccs/trusted-signers root root 644 && ok "/etc/ccs/trusted-signers"
-    for f in subaddresses.txt subaddresses.txt.asc subaddresses.txt.key.asc subaddresses.txt.pin list-signers; do
+    for f in subaddresses.txt subaddresses.txt.asc subaddresses.txt.key.asc subaddresses.txt.pin subaddresses.txt.qr.sha256 list-signers; do
         file "/etc/ccs-front/$f" root root 644 && ok "/etc/ccs-front/$f"
     done
     file $pkeys/id_ed25519 $pu $pu 600 && ok "$pkeys/id_ed25519 (the push key)"
@@ -288,7 +288,6 @@ cmd_check() {
         file /etc/ccs/backup/id_ed25519 $bu $bu 600 && ok "/etc/ccs/backup/id_ed25519 (the backup key)"
         file /etc/ccs/backup/known_hosts $bu $bu 600 && ok "/etc/ccs/backup/known_hosts"
         file /var/lib/ccs/watch $wu $wu 755 && ok "/var/lib/ccs/watch (ccs-watch's state)"
-        file /var/lib/ccs/pushed $pu $pu 755 && ok "/var/lib/ccs/pushed (what was pushed)"
         [[ $(kv "$env" COMPOSE_FILE) == *compose.host.yml* ]] && hostmode=1
     else
         warn "no $env: the compose isn't set up yet (docs/docker.md, setting it up)"
@@ -309,7 +308,7 @@ cmd_check() {
         v=$(kv "$env" WALLET_PORT)
         [[ ${v:-18082} == "${port:-x}" ]] \
             && ok ".env's WALLET_PORT is the wallet's port (its healthcheck)" || bad ".env's WALLET_PORT (${v:-unset: 18082}) isn't rpc-bind-port ($port): the wallet never shows healthy, ccs-bash never starts"
-        for v in CCS_BASH_IMAGE CCS_FRONT_IMAGE WALLET_IMAGE; do [[ $(kv "$env" $v) =~ ^sha256:[0-9a-f]{64}$ ]] || bad ".env's $v: not an image ID (sha256:...)"; done
+        for v in CCS_BASH_IMAGE WALLET_IMAGE; do [[ $(kv "$env" $v) =~ ^sha256:[0-9a-f]{64}$ ]] || bad ".env's $v: not an image ID (sha256:...)"; done
         if [[ $hostmode ]]; then
             [[ $host == 127.0.0.1 || $host == localhost ]] && ok "RPC_URL on 127.0.0.1 (compose.host.yml)" || bad "RPC_URL: with compose.host.yml, http://127.0.0.1:$port/json_rpc"
         else
@@ -321,7 +320,7 @@ cmd_check() {
                 && bad "alert.conf: the bot or a proxy on 127.0.0.1: the watch's container can't reach it (a proxy here: host.docker.internal, listening on the bridge's address; the bot on a third machine; docs/handover.md 1)"
         fi
     fi
-    [[ $(kv $aconf SUBADDRESSES) == /etc/ccs-front/subaddresses.txt ]] && ok "alert.conf's SUBADDRESSES" || warn "alert.conf: no SUBADDRESSES=/etc/ccs-front/subaddresses.txt (an alert won't name a foreign address)"
+    [[ $(kv $aconf SUBADDRESSES) == /etc/ccs-front/subaddresses.txt ]] && ok "alert.conf's SUBADDRESSES" || warn "alert.conf: no SUBADDRESSES=/etc/ccs-front/subaddresses.txt (ccs-watch checks the live addresses against the default, that one)"
     [[ $(kv $aconf WATCH_PROXY) ]] && ok "alert.conf's WATCH_PROXY" || warn "alert.conf: no WATCH_PROXY (the web server can tell the watcher by its address)"
 
     [[ ${CCS_CHECK_OFFLINE:-} ]] && { echo "($fails failed, $warns warnings; nothing asked: CCS_CHECK_OFFLINE)"; ((fails == 0)); return; }
@@ -355,15 +354,13 @@ cmd_check() {
             ssh-keygen -F "$name" -f "$kh" > /dev/null 2>&1 && ok "${who%%:*}: $name's host key in $kh" || bad "${who%%:*}: no host key for $name in $kh"
         done
         local sigs=${CCS_SIGS_REPO:-/opt/ccs-sigs} id
-        for v in CCS_BASH_IMAGE CCS_FRONT_IMAGE; do
-            id=$(kv "$env" $v); id=${id#sha256:}
-            docker image inspect "sha256:$id" > /dev/null 2>&1 || { bad ".env's $v: no such image here"; continue; }
-            if grep -rqs --include='*SHA256SUMS*' "^$id " "$sigs"; then ok ".env's $v: attested in ccs-sigs (contrib/release/verify checks by whom)"
-            # (a testnet deploying its own builds, each rebuilt here and checked against its release
-            # notes' ID, unsigned: CCS_UNATTESTED=1 in .env; never on mainnet)
-            elif [[ $(kv "$env" CCS_UNATTESTED) == 1 ]]; then warn ".env's $v: in no attestation (CCS_UNATTESTED=1: a testnet's own release)"
-            else bad ".env's $v: in no attestation in $sigs (a dev build?)"; fi
-        done
+        v=CCS_BASH_IMAGE id=$(kv "$env" CCS_BASH_IMAGE); id=${id#sha256:}
+        if ! docker image inspect "sha256:$id" > /dev/null 2>&1; then bad ".env's $v: no such image here"
+        elif grep -rqs --include='*SHA256SUMS*' "^$id " "$sigs"; then ok ".env's $v: attested in ccs-sigs (contrib/release/verify checks by whom)"
+        # (a testnet deploying its own builds, each rebuilt here and checked against its release
+        # notes' ID, unsigned: CCS_UNATTESTED=1 in .env; never on mainnet)
+        elif [[ $(kv "$env" CCS_UNATTESTED) == 1 ]]; then warn ".env's $v: in no attestation (CCS_UNATTESTED=1: a testnet's own release)"
+        else bad ".env's $v: in no attestation in $sigs (a dev build?)"; fi
         docker image inspect "$(kv "$env" WALLET_IMAGE)" > /dev/null 2>&1 && ok ".env's WALLET_IMAGE is here" || bad ".env's WALLET_IMAGE: no such image here"
     fi
     echo "($fails failed, $warns warnings)"

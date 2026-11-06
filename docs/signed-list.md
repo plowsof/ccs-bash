@@ -3,8 +3,9 @@
 Every donation address the site shows must be one of the live wallet's first 15,000
 subaddresses, and its QR code that list's own image of it. The list is made once, from the
 wallet's public address and view key, signed by a Core Team member, and installed by hand on both
-machines: ccs-front-bash leaves any other address off the site, and the web server's gate holds
-it back. Visitors check an address against the wallet itself on the Verify page.
+machines: the web server builds the site with it (each donation address the list's line of its
+proposal's index), its gate takes a page with any other address off the site, and the backend's
+ccs-watch alerts if the live site shows one. Visitors check an address against the wallet itself on the Verify page.
 
 The tools are ccs-front-bash's ([its `tools/`](https://github.com/plowsof/ccs-front-bash/tree/v0.1.26/tools),
 v0.1.26), run from a checkout of it: `make-subaddresses.sh`, `make-qr.sh`, `sign-subaddresses.sh`
@@ -121,12 +122,13 @@ source-text shared by luigi1111 here
 
 ## What each run then does
 
-ccs-front-bash checks the list and its QR sums against the `.pin` (another list stops the run),
-then every address the site would show: a funding-required proposal or a `/projects` entry whose
-address isn't on it is left off (`warning: left off the site: …`), the rest is made, and the run
-exits 3. Each donation box shows its address, its QR code `qr/<address>.png` (the list's file) and
-a link to `/verify/`. The web server builds the site the same way from its own copy, and checks
-every page's addresses and QR files against it ([where an address is checked](reviewing.md#where-an-address-is-checked-against-the-signed-list)).
+On the web server, the gate checks the list and its QR sums against the `.pin` (another list
+refuses every push); each proposal's address is the list's line of the index `site-data.json`
+gives it, and ccs-front-bash, building the site, checks the list and every address again (one not
+on it: that proposal is left off, `warning: left off the site: …`). Each donation box shows its
+address, its QR code `qr/<address>.png` (the list's file) and a link to `/verify/`. The gate then
+checks every page's addresses and QR files against the list
+([where an address is checked](reviewing.md#where-an-address-is-checked-against-the-signed-list)).
 
 ## A new list
 

@@ -1,67 +1,35 @@
 #!/usr/bin/env bash
-# ccs-push SITE PUSHED STATE SSH_ARG...: the site to the web server's gate (docs/two-machines.md),
-# only the files that changed, as a tar on ssh's stdin: `ssh SSH_ARG... receive < tar`, the last
+# ccs-push DATA STATE SSH_ARG...: site-data.json (DATA, ccs-bash's) to the web server's gate
+# (docs/two-machines.md), as a tar on ssh's stdin: `ssh SSH_ARG... receive < tar`, the last
 # SSH_ARG the push account (ccs-data@<web server>). The gate reads the tar with Go (ccs-check
-# receive: plain files and folders only), checks each file and answers on stdout which it held
-# back ("held<TAB>file<TAB>why"); it exits 0, 7 (some held back, the rest live) or 1 (refused).
-#   - STATE/accepted: the sums of what the gate took ("<sha256>  ./<path>", sha256sum's), written
-#     after each push that went through, the files it held back left out: they go again next
-#     time. A file whose sum is in it isn't sent. None, or STATE/full older than a day: every file
-#     (a day at most to mend whatever the gate has that this doesn't know).
-#   - PUSHED: ccs-watch's copy of what was pushed (its compare), made SITE's after a push that
-#     went through (7 too), under the caller's lock on ccs-watch.
-#   - a name with a backslash or a control character isn't sent (the gate refuses a push with
-#     one), and is said.
-# Exits as the push did (ssh's: 255 when it couldn't connect). Needs bash, find, sha256sum, sort,
-# awk, tar (busybox's or GNU), cp, mkdir, rm, and ssh.
+# receive), checks the data and builds the site from it; it exits 0, or 1 (refused or held back).
+#   - STATE/accepted: the sum of the site-data.json the gate last took. The same one isn't sent
+#     again (the push is then an empty tar: still the heartbeat), but once a day (STATE/full: a
+#     day at most to mend whatever the gate has that this doesn't know).
+# Exits as the push did (ssh's: 255 when it couldn't connect). Needs bash, sha256sum, tar
+# (busybox's or GNU), and ssh.
 set -euo pipefail
 export LC_ALL=C
-site=${1:?SITE} pushed=${2:?PUSHED} state=${3:?STATE}
-shift 3
+data=${1:?DATA} state=${2:?STATE}
+shift 2
 (($#)) || { echo "ccs-push: no ssh destination" >&2; exit 2; }
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-mkdir -p "$state" "$pushed"
-
-# the site's files and their sums, sorted by name: no name with \ or a control character (GNU
-# sha256sum would escape it; the gate refuses it)
-(cd "$site" && find . -type f -name '*[\\[:cntrl:]]*' -print) | while IFS= read -r f; do
-    echo "ccs-push: not sent (a backslash or control character in its name): ${f:2:80}" >&2
-done
-(cd "$site" && find . -type f ! -name '*[\\[:cntrl:]]*' -print0 | xargs -0 -r sha256sum) | sort -k 2 > "$tmp/now"
-
-# what to send: every file once a day (or with no record of what the gate took), else the
-# files whose sums the gate hasn't taken
+mkdir -p "$state"
+sum=$(sha256sum < "$data" | cut -d' ' -f1)
 full=''
-if [[ ! -s $state/accepted || -z $(find "$state/full" -mmin -1440 2> /dev/null) ]]; then full=1; : > "$tmp/accepted"; else cp "$state/accepted" "$tmp/accepted"; fi
-awk 'FILENAME == ARGV[1] { took[$0] = 1; next } !($0 in took) { print substr($0, 67) }' "$tmp/accepted" "$tmp/now" > "$tmp/send"
-
-# the tar: the files only (the gate makes their folders), names as "./path"; none (nothing
-# changed: the push is still the heartbeat), an empty tar
-if [[ -s $tmp/send ]]; then
-    (cd "$site" && tar -c -f - -T "$tmp/send") > "$tmp/push.tar"
+[[ $(find "$state/full" -mmin -1440 2> /dev/null) ]] || full=1
+if [[ $full || $sum != "$(cat "$state/accepted" 2> /dev/null)" ]]; then
+    cp "$data" "$tmp/site-data.json"
+    (cd "$tmp" && tar -c -f - site-data.json) > "$tmp/push.tar"
+    echo "ccs-push: sending site-data.json${full:+ (once a day)}" >&2
 else
-    printf '%01024d' 0 | tr 0 '\000' > "$tmp/push.tar"   # (busybox's head has no -c here)
+    printf '%01024d' 0 | tr 0 '\000' > "$tmp/push.tar"   # (an empty tar; busybox's head has no -c here)
 fi
-echo "ccs-push: sending $(wc -l < "$tmp/send") of $(wc -l < "$tmp/now") files${full:+ (all of them: once a day)}" >&2
-
 rc=0
-ssh "$@" receive < "$tmp/push.tar" > "$tmp/answer" || rc=$?
-grep -E '^held	' "$tmp/answer" | cut -f2- | sed 's/	/: /; s/^/ccs-push: held back by the web server: /' >&2 || true
-if ((rc == 0 || rc == 7)); then
-    # what the gate took: every sum now, but the files it held back
-    awk -F '\t' 'FILENAME == ARGV[1] { if ($1 == "held") held["./" $2] = 1; next } !(substr($0, 67) in held)' "$tmp/answer" "$tmp/now" > "$state/accepted.new"
-    mv -f "$state/accepted.new" "$state/accepted"
+ssh "$@" receive < "$tmp/push.tar" || rc=$?
+if ((rc == 0)); then
+    printf '%s\n' "$sum" > "$state/accepted"
     [[ ! $full ]] || touch "$state/full"
-    # ccs-watch's copy: the files sent copied in, the ones SITE no longer has taken out
-    while IFS= read -r f; do
-        # (no -p: the push's user doesn't own the front's files, so busybox's cp -p warns of each
-        # owner it can't keep; ccs-watch compares bytes)
-        mkdir -p "$pushed/$(dirname "$f")" && cp "$site/$f" "$pushed/$f"
-    done < "$tmp/send"
-    (cd "$pushed" && find . -type f -print) | awk 'FILENAME == ARGV[1] { has[substr($0, 67)] = 1; next } !($0 in has)' "$tmp/now" - | while IFS= read -r f; do
-        rm -f -- "$pushed/$f"
-    done
-    find "$pushed" -mindepth 1 -type d -empty -delete 2> /dev/null || true
 fi
 exit "$rc"
