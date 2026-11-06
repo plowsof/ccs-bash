@@ -265,8 +265,8 @@ short() { sed -E 's/^(.{6}).*(.{4})$/\1…\2/' | paste -sd ' '; }
 scanner=${CCS_CHECK-$(command -v ccs-check || true)}
 
 # wrong FILE WANT: "" if every address on the page FILE (as text or a link, read as the gate reads
-# it: scanner) is the list's or allowed and, WANT not "-", its donation box (a monero: link) WANT's
-# alone, its one image the QR code qr/WANT.png, the list's file of it; else what is wrong
+# it: scanner) is the list's or allowed and, WANT not "-", its donation box (a monero: link), if
+# it shows one, WANT's alone, its one image the QR code qr/WANT.png, the list's file of it; else what is wrong
 wrong() {
     local found foreign box region imgs lines why first='' mode=scan
     if [[ $scanner ]]; then
@@ -287,6 +287,9 @@ wrong() {
     [[ ! $foreign ]] || { echo "donation address $red$(short <<<"$foreign")$off does not match the CCS wallet"; return; }
     [[ $2 != - ]] || return 0
     box=$(grep -oE 'monero:[1-9A-HJ-NP-Za-km-z]{95}' "$1" | sort -u | grep -vxF "monero:${WATCH_ALLOWED// /$'\n'monero:}" || true)
+    # no box at all (a proposal at its goal: the design's "Funded" in its place): no address there
+    # to be wrong
+    [[ $box ]] || return 0
     [[ $box == "monero:$2" ]] || { echo "the donation box isn't its proposal's address (${2:0:6}…${2: -4})"; return; }
     # the box, the design's ccs:donate part: one image, qr/WANT.png, and no style that could draw
     # another (review 12's L-2: a box with the right link and text, and another image, passed)

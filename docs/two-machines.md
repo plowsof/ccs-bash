@@ -177,7 +177,9 @@ repository it fetches, the design and the signed list installed here. Each push,
 4. **builds the site** (`ccs-gate-build`): ccs-bash's own steps for the site's JSON (`site.jq`,
    each address the signed list's line of its index) and the ccs-front-bash release the image
    vendors, with the newest design release; each QR code the signed list's own file of its address
-   (`subaddresses.txt.qr/`, installed here); a proposal's text escaped by ccs-front-bash's
+   (`subaddresses.txt.qr/`, installed here); a proposal's text without its bidi controls
+   (`ccs-check nobidi`: they show what follows them in another order than written; 36c3.md has
+   one, pasted with a number), then escaped by ccs-front-bash's
    `markdown.awk`. A build that fails: the live site stays as it is, and IRC is told;
 5. checks **what it built** (`ccs-check gate`): every address (95 or 106 base58 characters) in its
    pages, JSON and feed against the signed list and `allowed`, as written (tags and attributes
@@ -188,7 +190,8 @@ repository it fetches, the design and the signed list installed here. Each push,
    elements a browser lays side by side, where its checksum says it is one), the JSON as JSON
    too; none in the feed; no `data:` image, no NUL byte, no bidi control (U+202A-202E,
    U+2066-2069, as itself or an entity: it shows the text after it in another order than it is
-   written, an address written backwards the right way round). A file that needs more than 3000
+   written, an address written backwards the right way round: the build drops those in a
+   proposal's text, so one here came another way). A file that needs more than 3000
    checksums or 20 s fails alone ("too many runs that could be addresses"). And every QR code,
    `qr/<address>.png`, exactly the signed list's file of that address (its sum in
    `subaddresses.txt.qr.sha256`, which the `.pin`'s `qr` line pins). This is the backstop for an
