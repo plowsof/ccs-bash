@@ -2,7 +2,7 @@
 
 ccs-bash is bash, awk and jq, except in one place: the web server's gate,
 [`contrib/ccs-receive`](../contrib/ccs-receive), which checks every push from the backend before
-it goes live. Its checks are one static Go binary, [`ccs-check`](../contrib/ccs-check), built
+it goes live, and of the site the web server builds from it. Its checks are one static Go binary, [`ccs-check`](../contrib/ccs-check), built
 reproducibly by StageX's Go; nothing on the servers runs Python (the gate's checks were Python
 until they were ported). Some test scripts use Python; they run in CI and on a developer's
 machine.
@@ -11,11 +11,11 @@ machine.
 
 | Subcommand | What it checks |
 |---|---|
-| `gate` | which of a push's files go live (`gate/gate.go`): each file the push changed, and each page and JSON file to check again, needs the checks its name calls for (the ones below; the design's, the list's QR codes' and files' and the repository's images' bytes; the feed, `lib/feed.awk`), and goes live only if each passed it: one that didn't finish or didn't get to it holds it back |
-| `pages` | every page is the design's, its regions filled only with the design's parts, a proposal's text as the proposals repository has it, a donation box one address of the signed list and its proposal's (the live site's `projects.json`'s), its QR code `qr/<that address>.png` (the file itself: the list's, by its sum, `ccs-receive`; never decoded); `projects.json` each entry its proposal's front matter, its address its own (`pages/projects.go`); `site-data.json` each value of its kind, each index the list's and its proposal's (`pages/sitedata.go`) |
+| `data` | the push, `site-data.json` (`sitedata/sitedata.go`): every key once and no other, each value of its kind; each index the signed list's, never 0, one proposal's only, and the one the live site has for it (its `projects.json`); amounts and dates as ccs-bash writes them; an idea's name and author plain text, its link a merge request of the proposals repository |
+| `gate` | which files of the site built here go live (`gate/gate.go`): the scans below over every page, JSON file and the feed (no address in the feed), and every QR code `qr/<address>.png` the signed list's own file (its sum in `.qr.sha256`; never decoded); a file it can't read fails |
 | `scan`, `json`, `nul` | every address in the pages, JSON and feed, also spaced out, split (between elements too) or drawn with look-alikes (Monero's base58 and Keccak checksum), is the wallet's or allowed; `projects.json` reads as JSON; no NUL byte |
 | `receive` | receives the push, a tar of the files that changed (`contrib/ccs-push`): plain files only (a folder only as a file needs it: a folder entry makes nothing), at clean paths under staging, each written beside and renamed into place, within its limits; anything else refuses the whole push (in place of rsync, which the gate no longer has) |
-| `copy` | the live site into staging before a push, staging into the live site after (rsync -a's quick check, each file renamed into place, 644/755) |
+| `copy` | the site built into the live site (rsync -a's quick check, each file renamed into place, 644/755; `--delete`: what the build no longer has goes) |
 
 Each subcommand takes the command line the Python block it replaced took and printed the same
 lines: it was checked against that Python on generated and mutated files, and on the live
@@ -25,8 +25,10 @@ the backend's QR codes with qrencode's (they are the signed list's files now, ta
 sums), and `qr`, which read QR codes in the proposals' images with gozxing (a proposal's image is
 taken as the proposals repository has it, byte for byte: that repository's review vouches for
 what it shows; [the web server](web-server.md#what-it-guarantees-and-what-not)). Its own tests:
-`contrib/ccs-check/build.sh test` (Go tests) and `fuzz` (CI).
-Anything that can be plain text matching stays awk (the feed check, `lib/feed.awk`, which `gate` runs).
+`contrib/ccs-check/build.sh test` (Go tests) and `fuzz` (CI). Gone since the web server builds
+the site itself: `pages`, which matched every pushed page against the design (`pages.go`, its
+matcher `match.go`, `front.go`, `projects.go`: about 1,800 lines), and the feed's check
+(`lib/feed.awk`): the gate builds them now, from data it checks.
 
 ## Built from
 
@@ -34,7 +36,7 @@ Anything that can be plain text matching stays awk (the feed check, `lib/feed.aw
   ([image.md](image.md)); `CGO_ENABLED=0`, `-trimpath`, no network: `contrib/ccs-check/build.sh`
   and the gate's image make the same bytes (attesters sign the gate image).
 - **No module**: Go's standard library and our own code only (`addr`: base58 and Keccak;
-  `pages/match.go`: the page patterns' matcher; `push`: the push's tar, read with `archive/tar`).
+  `push`: the push's tar, read with `archive/tar`).
   `go.mod` requires nothing, so there is nothing to fetch, pin or patch.
 
 ## Who can reach it
@@ -54,15 +56,15 @@ ccs-check never sees a visitor. Its only input is a push from the backend:
   `receive`, the files by the checks; no C program parses it (no rsync, no image library). The
   only C that touches the backend is sshd, before any of this. No image is decoded at all.
 - **Limits:** a time limit on every run (`timeout`, 20 seconds to 5 minutes); a push over 512 MB
-  (64 MB a file) isn't taken, a page over 2 MB isn't matched; `pages` takes 1 GB at most; the
-  container has 2 GB and 256 processes.
+  (64 MB a file) isn't taken, a `site-data.json` over 4 MB isn't read; the container has 2 GB
+  and 256 processes.
 - **No root**: sshd hands the push to the `ccs-data` account; ccs-check runs as it. The
   container is read-only but for its own folders, with no capabilities beyond sshd's and
   `no-new-privileges`.
-- **Failing closed**: a crash, a timeout, no design release to check a page against: held back
-  (its last good copy stays live) or the push refused.
-- **No XML or HTML parser**: pages and the feed are matched as text against the exact form the
-  design and ccs-front-bash write.
+- **Failing closed**: a crash, a timeout, a file it can't read: that file fails (it goes off the
+  site), or nothing new goes live.
+- **No XML or HTML parser**: the pages are scanned as text; `site-data.json` is read by
+  `encoding/json`, strictly.
 
 What it does **not** stop: ccs-check runs as `ccs-data`, which can write the live site's files
 (that is its job). A compromised backend that found a way to make the checks pass a bad page

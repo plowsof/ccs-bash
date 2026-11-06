@@ -20,8 +20,8 @@ made again from the list (step 1).
 | `subaddresses.txt` | `index address` lines, 0 to 14,999; line 0 the main address | yes | yes |
 | `subaddresses.txt.asc`, `.key.asc` | the signature, the signer's public key | yes | yes |
 | `subaddresses.txt.pin` | `sha256 <the list's>`, `key <the signer's fingerprint>`, `qr <the sha256 of .qr.sha256>`: what each machine trusts | yes | yes |
-| `subaddresses.txt.qr/` | `<address>.png` for each address, `qrencode -s 10 "monero:<address>"` | yes | no: the backend pushes the ones the site shows |
-| `subaddresses.txt.qr.sha256` | each QR code's sha256, in the list's order | yes | yes: the gate takes a `qr/` file only as its sum |
+| `subaddresses.txt.qr/` | `<address>.png` for each address, `qrencode -s 10 "monero:<address>"` | yes | yes: the site's QR codes, each taken only as its sum |
+| `subaddresses.txt.qr.sha256` | each QR code's sha256, in the list's order | yes | yes: each `qr/` file the site shows must be one of these |
 | `subaddresses.txt.viewkey` | the view key, and where it was published (`source`, `source-text`) | yes | yes |
 | `list-signers` | the fingerprints you accept, written by you, never one that came with the list | yes | yes |
 
@@ -106,8 +106,9 @@ A revoked key: don't install the list; ask the Core Team for one signed again.
 
 Run the check on a computer you trust, with qrencode: the offline machine the list was made on, or
 your own; not the backend, which could print OK over a list it swapped. Then copy the files to
-each machine as the table above says: the web server gets the sums, not the images,
-and checks the list's files too ([the web server](web-server.md), "What is installed by hand"):
+each machine as the table above says, and check the QR codes there against their sums
+(`cd subaddresses.txt.qr && sha256sum -c --quiet ../subaddresses.txt.qr.sha256`); the web
+server checks the list's files too ([the web server](web-server.md), "What is installed by hand"):
 a taken-over backend would bring both a list and the sums it is compared with.
 
 The view key file, beside them, for the Verify page (for the mainnet):
@@ -124,8 +125,8 @@ ccs-front-bash checks the list and its QR sums against the `.pin` (another list 
 then every address the site would show: a funding-required proposal or a `/projects` entry whose
 address isn't on it is left off (`warning: left off the site: …`), the rest is made, and the run
 exits 3. Each donation box shows its address, its QR code `qr/<address>.png` (the list's file) and
-a link to `/verify/`. The gate checks each pushed page's addresses and QR files against its own
-copy ([where an address is checked](reviewing.md#where-an-address-is-checked-against-the-signed-list)).
+a link to `/verify/`. The web server builds the site the same way from its own copy, and checks
+every page's addresses and QR files against it ([where an address is checked](reviewing.md#where-an-address-is-checked-against-the-signed-list)).
 
 ## A new list
 

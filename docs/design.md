@@ -88,7 +88,7 @@ address that isn't the wallet's (as text or link, however split or disguised), a
 code that isn't the signed list's file, a feed that isn't ccs-front-bash's, a proposal image that
 isn't the repository's own (byte for byte: what it shows is that repository's review's to vouch
 for), and any other file that isn't the design release's
-([details](two-machines.md#the-gate-the-web-server-checks-every-page); what to review there:
+([details](two-machines.md#the-gate-the-web-server-builds-the-site-itself); what to review there:
 [the web server](web-server.md)). Nothing
 else of the CCS runs there but the gate's heartbeat (an alert when pushes stop).
 
