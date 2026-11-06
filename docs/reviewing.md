@@ -31,11 +31,11 @@ wallet's. [The design](design.md) says why it is built this way.
 
 In Docker, the production setup ([docker](docker.md)), the backend compose runs one service a
 stage, each its own container and user, every one read-only, no capabilities, `no-new-privileges`,
-no Docker socket: `pull` as `ccs-git`, `ccs-bash` as `ccs`, `backup` as `ccs-send`, `front` as
-`ccs-front` with no network, `push` as `ccs-push`, `watch` as `ccs-watch`.
+no Docker socket: `pull` as `ccs-git`, `ccs-bash` as `ccs`, `backup` as `ccs-send`, `push` as
+`ccs-push`, `watch` as `ccs-watch`.
 
 - [`contrib/docker/backend/step`](../contrib/docker/backend/step), each stage's runner (in
-  ccs-bash's image, and mounted from the checkout for `front`): the stages take turns through the
+  ccs-bash's image): the stages take turns through the
   run folder (each one's `done`, `status`, `at`, its own user's; pipes that wake the next); a run
   every 120 s, sooner once wallet-rpc's `tx-notify` (`ccs-notify`) writes a line on pull's `now`,
   never two starts closer than 30 s; each run's result only `push` writes and `watch` reads.
@@ -111,11 +111,12 @@ wallet-rpc shares.
 - [`lib/site.jq`](../lib/site.jq): `proposals.json`, `completed-proposals.json`, `projects.json`;
   every text `@html`, every link `https:` only.
 
-### ccs-front-bash: the JSON and the design to the site
+### ccs-front-bash: the JSON and the design to the site (on the web server)
 
-[Its repository](https://github.com/plowsof/ccs-front-bash). Pinned container, no network,
-read-only, its own user; reads the design, the JSON, the proposals and the signed list, writes
-`site/`.
+[Its repository](https://github.com/plowsof/ccs-front-bash), its release vendored in the gate's
+image (`vendor/ccs-front-bash`) and run there by `ccs-gate-build`, on the JSON `site_from_data`
+made of the checked `site-data.json`; reads the design, the JSON, the proposals and the signed
+list, writes the site.
 
 - `ccs-front-bash.sh`: `main` copies the design (not `parts/`), fills the lists, tag pages and
   proposal pages into `site.new`, then swaps it in (a failure keeps the last site).
@@ -146,19 +147,20 @@ read-only, its own user; reads the design, the JSON, the proposals and the signe
 
 ### Push, watcher, backup
 
-- [`contrib/ccs-push`](../contrib/ccs-push), the push (`push`, as `ccs-push`): the site's sums against `accepted`, what the gate last took (every file once a day,
-  `full`); the files that differ as a tar (busybox's; a name with a backslash or a control
-  character not sent) on ssh's stdin to the web server's key, which runs only the gate; the
-  gate's answer read (`held` lines: left out of `accepted`, so sent again); then `pushed/`, the
-  copy of what went, under the lock the watch shares.
-- [`contrib/ccs-watch`](../contrib/ccs-watch) (`watch`, as `ccs-watch`): the live pages against `pushed/`, byte for
-  byte, as one of three browsers through a random proxy (what it fetches, and why:
-  [two machines](two-machines.md#watching-the-web-server-the-backend-raises-the-alarm)); `differs`
-  refetches before it counts, `sighted` keeps the day's sightings. After each
-  push and between pushes at random times (the `watch` stage). A difference (three fetches over 40 s, or a
-  recheck not answered) alerts the second time it is seen within a day; so does a page answering
-  anything but 200 three checks in a row; `--run`, three failed runs. Its config is read key by
-  key, never sourced.
+- [`contrib/ccs-push`](../contrib/ccs-push), the push (`push`, as `ccs-push`): `site-data.json`
+  when its sum isn't `accepted`'s, what the gate last took (and once a day, `full`), as a tar
+  (busybox's) on ssh's stdin to the web server's key, which runs only the gate; else an empty
+  tar, the heartbeat. `accepted` written only when the gate took it (exit 0).
+- [`contrib/ccs-watch`](../contrib/ccs-watch) (`watch`, as `ccs-watch`): the live pages' addresses,
+  as one of three browsers through a random proxy (what it fetches, and why:
+  [two machines](two-machines.md#watching-the-web-server-the-backend-raises-the-alarm)): `wrong`,
+  every 95- or 106-character base58 run on a page the signed list's or `WATCH_ALLOWED`'s, a
+  funding-required proposal's box its own address (ccs-bash's `projects.json`) and its QR code
+  the list's file of it; it refetches before it counts, `sighted` keeps the day's sightings.
+  After each push and between pushes at random times (the `watch` stage). A wrong page (three
+  fetches over 40 s, or a recheck not answered) alerts the second time it is seen within a day;
+  so does a page answering anything but 200 three checks in a row; `--run`, three failed runs.
+  Its config is read key by key, never sourced.
 - [`contrib/migrate/compare-deposits`](../contrib/migrate/compare-deposits), as root, once:
   ccs-back's `deposits` table against the first run's `deposits.csv` (every line of which is
   checked first: it is `ccs`'s file); exits 1 if ccs-back has a deposit the wallet lacks, or
@@ -231,7 +233,7 @@ key; its `.pin` (sha256 and key) is what each machine trusts, installed by hand 
 | 7. Every address on every page is on the list | `ccs-check gate`'s `scans` (`ccs-check scan`, `json`) | every 95- or 106-character address in a page or JSON, as written (entities read, a non-ASCII character as nothing and as a space, in groups or across elements by its checksum), is a line of the list or in `allowed`; the feed has none | that file off the site, IRC told |
 | 8. Every QR code is of a listed address | `ccs-check gate` (`Run`, `scans`) | every `qr/<address>.png` is that address's file of the list's, byte for byte (its sum in `.qr.sha256`); no `data:` image; never made or decoded | that file off the site |
 | 9. Addresses only where the design puts them | the build itself (`ccs-gate-build`) | a page is the design filled by ccs-front-bash on the web server: a donation box's address is the list's line of its proposal's index, never text the backend sent | (by construction) |
-| 10. What is live is what was pushed | `contrib/ccs-watch`, the page comparison (`differs`) | the live donation pages (and others at random) byte for byte; a live address not on the list is named in the alert | IRC told |
+| 10. What is live has only the list's addresses | `contrib/ccs-watch` (`wrong`) | the live donation pages (and others at random): every address the list's or allowed, each box its proposal's, its QR code the list's file; a live address not on the list is named in the alert | IRC told |
 | 11. The visitor | the Verify page (`parts/verify.html`, filled by `check_addresses`) | the wallet's address and view key, and where they were published: a view-only copy of the wallet says whether an address is its own (`get_address_index`) | the visitor doesn't pay |
 
 Function names, not line numbers, so this stays right as the code moves. Steps 3–9 stop a wrong

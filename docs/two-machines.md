@@ -1,8 +1,8 @@
 # Two machines: the backend pushes, the web server only receives
 
-The backend takes no incoming connections; after each run it pushes the site to the web server,
-whose push key runs only the gate: it checks every file before it goes live, and Caddy serves what
-passed. The gate and its heartbeat run from the gate's attested image, with their own sshd on
+The backend takes no incoming connections; after each run it pushes `site-data.json`, what only
+it knows, to the web server, whose push key runs only the gate: it checks the data, builds the
+site from it and checks what it built, and Caddy serves what passed. The gate and its heartbeat run from the gate's attested image, with their own sshd on
 port 2223, and Caddy and Tor serve the site and its onion ([the web server in Docker](docker.md#the-web-server-in-docker)).
 
 **The push account:**
@@ -16,7 +16,7 @@ install -d -m 755 /etc/ssh/authorized_keys                # root-owned, outside 
 from="<backend IP>",command="/usr/local/bin/ccs-receive",restrict ssh-ed25519 AAAA... ccs-bash
 ```
 
-The push is a tar of the files that changed (the backend's [`contrib/ccs-push`](../contrib/ccs-push),
+The push is a tar of `site-data.json` when it changed (the backend's [`contrib/ccs-push`](../contrib/ccs-push),
 over this key, asking for `receive`), read by the gate's own Go code (`ccs-check receive`), never
 by rsync or any other C program, into its staging folder, so:
 
@@ -24,8 +24,8 @@ by rsync or any other C program, into its staging folder, so:
 |---|---|
 | `restrict` | shells, forwarding, a terminal |
 | `command=` the gate, which takes `receive` only | any other command (a shell, scp, rsync, reading back) |
-| `ccs-check receive`: plain files, at clean paths under the folder (folders only as a file needs them, and none left live by a held-back file) | an empty folder standing where a page comes later; writing outside it (`..`, an absolute path), links of either kind (a `projects.json` link to any file would get the web server to publish it), devices, a name twice, a file under a page: any of them refuses the whole push |
-| no delete in the push at all | deleting |
+| `ccs-check receive`: plain files, at clean paths under the folder | writing outside it (`..`, an absolute path), links of either kind, devices, a name twice: any of them refuses the whole push |
+| the gate: `site-data.json` alone | any other file (a page, a stylesheet): refuses the whole push |
 | its limits: 512 MB a push, 64 MB a file, 100,000 files, 5 minutes | filling the disk, holding the gate |
 | `from=` | use from another machine |
 | key file root-owned, outside its home | loosening the key line, adding a key |
@@ -93,9 +93,8 @@ the machine reaches the onion's side. A single-hop service: the site is public a
 known, so the server's own anonymity buys nothing, and fewer hops make it quicker. The clearnet
 site says so (`Onion-Location`, which Tor Browser turns into ".onion available"), and so does the
 footer: the address in `/etc/ccs-gate/onion` (root, 644), the same as the web server's `.env`
-`CCS_ONION` and the backend compose's `CCS_ONION`, which ccs-front-bash writes in every page's
-footer. The gate takes the footer's onion line only with the address in its own file: a backend
-can't point visitors at another onion. The onion's key, `/var/lib/ccs-tor/ccs/hs_ed25519_secret_key`,
+`CCS_ONION`: the gate builds every page's footer with it, so a backend can't point visitors at
+another onion. The onion's key, `/var/lib/ccs-tor/ccs/hs_ed25519_secret_key`,
 is the onion's identity, as the TLS key is the clearnet site's: back it up as root, show it no one.
 
 **Setting them up**, as root: their users and folders, then the compose ([the web server in
@@ -123,13 +122,14 @@ runuser -u ccs-push -- ssh-keygen -t ed25519 -N '' -f /etc/ccs/push/id_ed25519
 echo "[<web server>]:2223 ssh-ed25519 AAAA..." > /etc/ccs/push/known_hosts
 ```
 
-The push (a tar of the files that changed since what the gate last took, `contrib/ccs-push`) goes
+The push (a tar of `site-data.json` when it changed since what the gate last took, else an empty
+one, the heartbeat: `contrib/ccs-push`) goes
 to `CCS_PUSH_PORT` (2223) of the compose's `.env`. The web server needs 2223 open to the backend only (the backup machine: 2224)
 and 80/443 to everyone, in its firewall *and* a cloud provider's (an Oracle security list, an AWS
 security group). The admins' own ssh: [admin access](admin-access.md).
 
 `tests/gate.sh` sends each of those as a tar from the backend's key (a symlink, a hard link, a
-device, `..`, an absolute path, a name twice, a file under a page, a backslash, no tar at all):
+device, `..`, an absolute path, a name twice, a page beside `site-data.json`, no tar at all):
 each refuses the whole push, nothing live changes, nothing is written outside; `tests/web.sh`
 tries other commands, forwarding and another machine; `contrib/ccs-check/build.sh test` and
 `fuzz` the receiver itself. A taken-over backend can still send a false `site-data.json`: the
@@ -287,29 +287,34 @@ the web server compose's `heartbeat` service.
 ## Watching the web server: the backend raises the alarm
 
 `contrib/ccs-watch`, on the backend after each push and between pushes, fetches the pages that ask for donations
-(home, Funding Required, Donate, Verify, each funding-required proposal), every file they use
-(stylesheets, fonts, icons, the General Fund's QR code, proposal images: a stylesheet can hide an
-address), `WATCH_SAMPLE` (10) other pages at random (any page could get a donation box) and
-`/projects`, and compares each byte for byte with what was last pushed. A difference alerts the
-second time it is seen within a day (runs that see the right page in between or not), naming the
-page and any address not on the list; a recheck that isn't answered counts as still different. So
-does a page answering anything else three checks in a row while the site answers, a page never
-pushed answering anything but the 404 page, and the theme button leading anywhere but the page.
+(home, Funding Required, Donate, Verify, each funding-required proposal), `WATCH_SAMPLE` (10)
+other proposals' pages at random (any page could get a donation box) and `/projects`, and checks
+their addresses: every address on them (95 or 106 base58 characters, as text or link) the signed
+list's or `WATCH_ALLOWED`'s (the General Fund, and what the gate's `allowed` has); each
+funding-required proposal's donation box its own address, as ccs-bash gave it (`projects.json`),
+and its QR code the list's own file of it. The web server builds the pages itself, so they aren't
+compared with anything the backend made: what this sees is a web server serving a visitor an
+address that isn't the wallet's. A wrong page alerts the second time it is seen within a day
+(runs that see the right page in between or not), naming any address not on the list; a recheck
+that isn't answered counts as still wrong. So does a page answering anything else three checks in
+a row while the site answers, a page that doesn't exist answering anything but a 404, and the
+theme button leading anywhere but the page.
 
 To make it harder for the web server to serve it the right pages and visitors others, it asks
 as one of three browsers, picked at random each run: Tor Browser, Firefox or Chrome, each with its
 own user agent and headers (`Sec-Fetch-*` by what is fetched, a page typed in, clicked on the site
 or from another at random; keep their versions current with `WATCH_FIREFOX_ESR`, `WATCH_FIREFOX`,
-`WATCH_CHROME`). It asks in no fixed order, each page and each file the pages use under `/`,
-`/dark/` or `/light/` at random (`WATCH_THEMES=1`), through a proxy picked at random each fetch;
-among them, at a random place, a page never pushed, named as the site's own are, and the theme
-button on a page. It runs right after each push and between pushes at random times
+`WATCH_CHROME`). It asks in no fixed order, each page under `/`, `/dark/` or `/light/` at random
+(`WATCH_THEMES=1`), through a proxy picked at random each fetch; among them, at a random place, a
+page that doesn't exist, named as the site's own are, and the theme button on a page. It runs right after each push and between pushes at random times
 (the compose's `watch` does both, [docker](docker.md)), so a web server that serves its own pages once
 the check after a push is over is seen too.
 
 A web server can still tell it apart: a page fetched without its stylesheets and fonts, and curl's
-TLS handshake. The never-pushed page catches a web server that serves its own page at any name, not
-one that adds pages at names it picks. Tor alone isn't enough (its exits are public): add a
+TLS handshake. Nor does it see a stylesheet that hides an address or shows another: the gate builds
+those from the design, and a web server taken over could change them; the Verify page is the
+visitor's check. The page that doesn't exist catches a web server that serves its own page at any
+name, not one that adds pages at names it picks. Tor alone isn't enough (its exits are public): add a
 clearnet proxy on another network (`ssh -D 1080 <machine>`, kept up by a service), and if you can,
 a second ccs-watch elsewhere.
 
@@ -323,15 +328,15 @@ watch's user:
 install -m 640 -g ccs-watch /dev/null /etc/ccs/alert.conf
 cat > /etc/ccs/alert.conf <<'CONF'
 ALERT_URL=https://<the bot>/simple?channel=%23<channel>
-SUBADDRESSES=/etc/ccs-front/subaddresses.txt        # to name addresses not on the list
+SUBADDRESSES=/etc/ccs-front/subaddresses.txt        # the signed list (and its QR codes beside it, .qr/)
+WATCH_ALLOWED=888tNkZrPN6JsEgekjMnABU4TBzc2Dt29EPAvkRxbANsAnjyPbb3iQ1YBRk1UXcdRsiKc9dhwMVgN5S9cQUiyoogDavup3H   # the web server's allowed addresses, space-separated
 WATCH_PROXY=socks5h://host.docker.internal:9050 socks5h://host.docker.internal:1080   # one at random a fetch: Tor (apt install tor) and a clearnet one elsewhere, on the bridge's address (handover, 1)
 WATCH_THEMES=1                                      # also /dark/ and /light/ (the theme lines above)
-WATCH_SAMPLE=10                                     # other pages, at random, each run
+WATCH_SAMPLE=10                                     # other proposals' pages, at random, each run
 CONF
 ```
 
-It runs after each push (also exit 7: a web server that lies can't hide behind a held-back page),
-and is given how each run went (the compose's `push` hands it each run's result), so a stopped backend is an alarm too. One alert per problem
+It runs after each push, and is given how each run went (the compose's `push` hands it each run's result), so a stopped backend is an alarm too. One alert per problem
 an hour; "could not be fetched" after three checks; "the backend has failed N runs in a row" after
 three failed runs (about six minutes), and "runs again" after: [every line](troubleshooting.md#what-irc-says).
 A careful attacker on the web server can still tell the watcher apart (above). Hence the Verify

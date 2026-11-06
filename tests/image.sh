@@ -24,29 +24,30 @@ mkdir -p "$t/site/p" && echo x > "$t/site/p/a b.html" && printf './p/a b.html\n'
 if [[ $out == *OpenSSH* || $out == *"No user exists for uid"* ]] && (cd "$t/site" && tar -c -f - -T "$t/list") | tar -t -f - | grep -qx './p/a b.html'; then
     ok "ssh, and busybox's tar (a tar of the files listed)"
 else fail "ssh or tar: $out"; fi
-# ccs-push with busybox's tools: a first push (every file), then one with nothing changed (an
+# ccs-push with busybox's tools: a first push (site-data.json), then one with nothing changed (an
 # empty tar, two zero blocks); ssh a stand-in that reads the tar and answers as the gate does
 here=$(dirname "$(readlink -f "$0")")
 # (a function, exported: /tmp here is noexec)
-mkdir -p "$t/pushed" "$t/state"
+echo '{"state": {}, "funds": {}, "ideas": []}' > "$t/site-data.json"
 # shellcheck disable=SC2317,SC2329  # (exported: ccs-push calls it)
-ssh() { tar -t -f - > "$T/got"; }
+ssh() { tar -x -O -f - > "$T/got"; }
 export -f ssh
 export T=$t
-r1=0; bash "$here/../contrib/ccs-push" "$t/site" "$t/pushed" "$t/state" host > "$t/p1" 2>&1 || r1=$?
-n1=$(wc -l < "$t/got")
-r2=0; bash "$here/../contrib/ccs-push" "$t/site" "$t/pushed" "$t/state" host > "$t/p2" 2>&1 || r2=$?
-# ... and of files another user owns (this checkout's, mounted read-only): as the push stage
-# runs, its own user, not the front's (CI runs this test as root and as user 10005: review 10's
-# L-4: a root-only success hides there)
-mkdir -p "$t/3" && empty=$(test -s "$t/got" && echo no || echo yes)
-r3=0; T=$t/3 bash "$here/../contrib/ccs-push" "$here/../contrib/docker/backend" "$t/pushed3" "$t/state3" host > "$t/p3" 2>&1 || r3=$?
+r1=0; bash "$here/../contrib/ccs-push" "$t/site-data.json" "$t/state" host > "$t/p1" 2>&1 || r1=$?
+cp "$t/got" "$t/got1"
+r2=0; bash "$here/../contrib/ccs-push" "$t/site-data.json" "$t/state" host > "$t/p2" 2>&1 || r2=$?
+empty=$(test -s "$t/got" && echo no || echo yes)
+# ... and a file another user owns (this checkout's, mounted read-only): as the push stage runs,
+# its own user, not ccs-bash's (CI runs this test as root and as user 10005: review 10's L-4: a
+# root-only success hides there)
+mkdir -p "$t/3"
+r3=0; T=$t/3 bash "$here/../contrib/ccs-push" "$here/../contrib/docker/backend/compose.yml" "$t/state3" host > "$t/p3" 2>&1 || r3=$?
 unset -f ssh
-if ((r3 == 0)) && cmp -s "$here/../contrib/docker/backend/compose.yml" "$t/pushed3/compose.yml"; then
-    ok "ccs-push: files another user owns ($(id -u) pushing $(stat -c %u "$here/../contrib/docker/backend/compose.yml")'s)"
-else cat "$t/p3"; fail "ccs-push of another user's files (exit $r3)"; fi
-if ((r1 == 0 && r2 == 0 && n1 == 1)) && [[ $empty == yes ]] && cmp -s "$t/site/p/a b.html" "$t/pushed/p/a b.html" && grep -q 'sending 0 of 1' "$t/p2"; then
-    ok "ccs-push: the first push every file, the next an empty tar, pushed/ the site"
+if ((r3 == 0)) && cmp -s "$here/../contrib/docker/backend/compose.yml" "$t/3/got"; then
+    ok "ccs-push: a file another user owns ($(id -u) pushing $(stat -c %u "$here/../contrib/docker/backend/compose.yml")'s)"
+else cat "$t/p3"; fail "ccs-push of another user's file (exit $r3)"; fi
+if ((r1 == 0 && r2 == 0)) && cmp -s "$t/site-data.json" "$t/got1" && [[ $empty == yes ]] && grep -q 'sending site-data.json' "$t/p1"; then
+    ok "ccs-push: the first push site-data.json, the next (unchanged) an empty tar"
 else cat "$t/p1" "$t/p2"; fail "ccs-push with busybox (exits $r1 $r2)"; fi
 if [[ $(printf '' | openssl dgst -keccak-256 -r) == c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470* ]]; then ok "openssl's Keccak-256"; else fail "openssl's Keccak-256"; fi
 # retire-wallet, run by hand in the compose (docs/handover.md, "Retiring a wallet"): the

@@ -79,4 +79,4 @@ contrib/vendor-front-bash vX.Y.Z      # the tag's files, and RELEASE: its tag an
 ```
 
 CI checks the copy is that commit's, file for file (`contrib/vendor-front-bash --check`). The
-backend runs the same release (its compose's `CCS_FRONT_IMAGE`): deploy both in the one set.
+backend doesn't run ccs-front-bash: the gate's image is the one place it runs.
