@@ -38,7 +38,7 @@ new set replaces the row (earlier sets: this file's history, and ccs-sigs).
 
 | Set | ccs-bash | ccs-front-bash | ccs-front-hugo | Running on |
 |---|---|---|---|---|
-| 2026-11-05 | v0.2.52 | v0.1.28 | v0.1.29 | [ccs.monerodevs.org](https://ccs.monerodevs.org), in mirror mode, with its onion, its feed and `site-data.json`: the web server builds the site itself from that data (its log: `0 of its 418 files differ from the pushed ones`), the backend's pages its fallback; the backend compose and the web server compose (the gate default-deny in Go, its image busybox's), the site served by its `www` (Caddy) and `tor`. Unsigned (a testnet's own release, `CCS_UNATTESTED=1`): each machine rebuilt it and checked the release notes' IDs |
+| 2026-11-06 | v0.2.54 | v0.1.28 (vendored in the gate's image) | v0.1.29 | [ccs.monerodevs.org](https://ccs.monerodevs.org), in mirror mode, with its onion, its feed and `site-data.json`: the backend sends only `site-data.json`, the web server checks it and builds every page itself (the backend has no `front` service), each proposal's merge request from the repository's merge commits, each proposal's address pinned by the gate (`/var/lib/ccs-gate/pins`); ccs-watch reads the live pages with the gate's scan; the site served by its `www` (Caddy) and `tor`. Unsigned (a testnet's own release, `CCS_UNATTESTED=1`): each machine rebuilt it and checked the release notes' IDs |
 
 Each is reproducible, and attested in [ccs-sigs](https://github.com/plowsof/ccs-sigs) by those who
 rebuilt it: on the testnet so far by one throwaway key a set (one person; the CCS's should be two
