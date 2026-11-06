@@ -135,8 +135,9 @@ A list or QR codes' sums that aren't the pinned ones, or no design release, refu
 2. **What is running:** `docker compose ps` (the gate and the heartbeat, healthy) and
    `docker inspect --format '{{.Image}}' web-gate-1`: the attested ID.
 3. **Its files:** the table above, each against its source.
-4. **What it serves:** ccs-watch, on the backend, fetches the live pages as a visitor and compares
-   them byte for byte with what was pushed; any visitor can check an address on the Verify page.
+4. **What it serves:** ccs-watch, on the backend, fetches the live pages as a visitor and checks
+   their addresses against the signed list and each donation box against its proposal's; any
+   visitor can check an address on the Verify page.
 
 ## What doesn't need reviewing
 

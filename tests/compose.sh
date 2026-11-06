@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# The backend compose's stages (contrib/docker/backend/step) without Docker: the six run as
-# processes here, ccs-back.sh, ccs-front-bash, ccs-watch, git and ssh stand-ins (the push is
+# The backend compose's stages (contrib/docker/backend/step) without Docker: the five run as
+# processes here, ccs-back.sh, ccs-watch, git and ssh stand-ins (the push is
 # contrib/ccs-push itself, its ssh the stand-in), and take
 # turns as the compose's containers do: each run's result on the push's "watch" pipe, the
 # "== run" lines in the pull's output, the backup's sums (a file sent once until it changes), a
@@ -18,12 +18,12 @@ status=0
 ok() { echo "ok   $1"; }
 fail() { echo "FAIL $1"; status=1; }
 stop() { for p in "${pids[@]}"; do kill "$p" 2> /dev/null; done; wait 2> /dev/null; pids=(); }
-start() { for s in pull ccs-bash backup front push; do "$step" "$s" >> "$t/out-$s" 2>&1 & pids+=($!); done; }
+start() { for s in pull ccs-bash backup push; do "$step" "$s" >> "$t/out-$s" 2>&1 & pids+=($!); done; }
 
-mkdir -p "$t/bin" "$t/state/retired" "$t/www/site" "$t/pushed" "$t/proposals"
+mkdir -p "$t/bin" "$t/state/retired" "$t/proposals"
 : > "$t/pull-ok" && : > "$t/watched"
 echo "a.md,1" > "$t/state/proposals.csv"
-# stand-ins: ccs-back.sh fails when $t/fail-bash exists; ccs-front-bash writes the site; ssh
+# stand-ins: ccs-back.sh fails when $t/fail-bash exists, else writes its JSON; ssh
 # keeps what the backup sent, and counts a push (asked to "receive": its tar read and listed);
 # ccs-watch keeps how it was asked
 cat > "$t/bin/ccs-back" <<'EOF'
@@ -33,11 +33,8 @@ cat > "$t/bin/ccs-back" <<'EOF'
 # a donation pending, when $T/pending exists: proposals.json says so, as ccs-bash's does
 p=0; [[ -e $T/pending ]] && p=0.5
 mkdir -p "$T/out" && echo "[{\"stage\": \"Funding Required\", \"proposals\": [{\"amount-pending\": $p}]}]" > "$T/out/proposals.json"
+echo '{"state": {}, "funds": {}, "ideas": []}' > "$T/out/site-data.json"
 echo "ccs-bash ran"
-EOF
-cat > "$t/bin/ccs-front" <<'EOF'
-#!/usr/bin/env bash
-echo "<p>$(date +%s%N)</p>" > "$T/www/site/index.html" && echo "filled $T/www/site"
 EOF
 cat > "$t/bin/git" <<'EOF'
 #!/usr/bin/env bash
@@ -51,26 +48,25 @@ EOF
 cat > "$t/bin/ccs-watch" <<'EOF'
 #!/usr/bin/env bash
 echo "$*" >> "$T/watched"
-[[ $1 == --run ]] || echo "${CCS_WATCH_SUMS:-}" >> "$T/watched-sums"
 EOF
 chmod 755 "$t/bin"/*
 
 export T=$t PATH="$t/bin:$PATH" CCS_RUN=$t/run CCS_EVERY=1 STATE_DIR=$t/state \
-    CCS_BACK=$t/bin/ccs-back CCS_FRONT=$t/bin/ccs-front CCS_PROPOSALS=$t/proposals CCS_PULL_OK=$t/pull-ok \
-    CCS_BACKUP=backup@test CCS_BACKUP_KEYS=$t CCS_PUSH=data@test CCS_SITE=$t/www/site CCS_PUSHED=$t/pushed \
-    CCS_WATCH=$t/bin/ccs-watch CCS_OUT=$t/out CCS_FRONT_SITE=$t/www/site CCS_PUSH_SCRIPT=$here/../contrib/ccs-push
+    CCS_BACK=$t/bin/ccs-back CCS_PROPOSALS=$t/proposals CCS_PULL_OK=$t/pull-ok \
+    CCS_BACKUP=backup@test CCS_BACKUP_KEYS=$t CCS_PUSH=data@test \
+    CCS_WATCH=$t/bin/ccs-watch CCS_OUT=$t/out CCS_PUSH_SCRIPT=$here/../contrib/ccs-push
 me="$(id -u):$(id -g)"
-if ! CCS_UIDS="pull=$me ccs-bash=$me backup=$me front=$me push=$me watch=$me" CCS_NOW_GID=$me CCS_WATCH_GID=$(id -g) "$step" init > /dev/null; then
+if ! CCS_UIDS="pull=$me ccs-bash=$me backup=$me push=$me watch=$me" CCS_NOW_GID=$me CCS_WATCH_GID=$(id -g) "$step" init > /dev/null; then
     fail "init"; exit 1
 fi
-if [[ -p $t/run/pull/now && -p $t/run/push/watch && -p $t/run/front/wake && -d $t/run/watch && -f $t/run/watch.lock ]]; then
-    ok "init: a folder and pipes for each stage, the push's lock"
+if [[ -p $t/run/pull/now && -p $t/run/push/watch && -p $t/run/backup/wake && -d $t/run/watch ]]; then
+    ok "init: a folder and pipes for each stage"
 else fail "init's pipes"; fi
 # the two pipes whose lines mean something writable by their one writer's group only; the others
 # by any stage (a line there only has a stage look at the "done" counters again)
-if [[ $(stat -c %a "$t/run/pull/now") == 660 && $(stat -c %a "$t/run/push/watch") == 660 && $(stat -c %a "$t/run/front/wake") == 622 ]]; then
+if [[ $(stat -c %a "$t/run/pull/now") == 660 && $(stat -c %a "$t/run/push/watch") == 660 && $(stat -c %a "$t/run/backup/wake") == 622 ]]; then
     ok "init: now and watch 660 (the wallet's group, the watch's), the wake pipes 622"
-else fail "the pipes' modes: $(stat -c '%n %a' "$t/run/pull/now" "$t/run/push/watch" "$t/run/front/wake" | tr '\n' ' ')"; fi
+else fail "the pipes' modes: $(stat -c '%n %a' "$t/run/pull/now" "$t/run/push/watch" "$t/run/backup/wake" | tr '\n' ' ')"; fi
 exec 3<> "$t/run/push/watch"
 start
 # until run N is pushed (90 s at most)
@@ -79,8 +75,8 @@ line() { local l; IFS= read -r -t 30 l <&3 && printf '%s\n' "$l"; }
 
 if until_pushed 2 && [[ $(line) == "1 pushed ok" && $(line) == "2 pushed ok" ]] \
     && [[ $(grep -c '^== run ' "$t/out-pull") -ge 2 && $(wc -l < "$t/pushes") -ge 2 && $(wc -l < "$t/pulls") -ge 2 ]] \
-    && [[ -s $t/pushed/index.html && $(cat "$t/run/front/status") == *ok ]]; then
-    ok "runs taken in turn: pull, ccs-bash, backup and front, push; each result on the watch pipe; the runs in the output"
+    && grep -qx 'site-data.json' "$t/pushed-files"; then
+    ok "runs taken in turn: pull, ccs-bash, backup, push (site-data.json); each result on the watch pipe; the runs in the output"
 else fail "the runs"; cat "$t"/out-*; ls -l "$t/run"/*; fi
 if [[ $(grep -c 'a.md,1' "$t/sent") == 1 && -s $t/run/backup/sent-proposals.csv ]]; then
     ok "backup: a state file sent once, until it changes"
@@ -151,13 +147,13 @@ unset CCS_MIN_GAP
 
 # the healthcheck: every stage finished something within CCS_HEALTH seconds
 unhealthy=''
-for s in pull ccs-bash backup front push; do "$step" health "$s" > /dev/null || unhealthy+=" $s"; done
+for s in pull ccs-bash backup push; do "$step" health "$s" > /dev/null || unhealthy+=" $s"; done
 if [[ -z $unhealthy ]] && ! CCS_HEALTH=0 "$step" health pull > /dev/null && ! "$step" health watch > /dev/null; then
     ok "health: each stage that finished a run lately healthy; one that hasn't (watch, not started yet) not"
 else fail "health:$unhealthy"; fi
 
-# the watch stage, once the test no longer reads the pipe: after a push, the pages (under the
-# lock) and the run's result; between pushes, the pages again (CCS_WATCH_EVERY)
+# the watch stage, once the test no longer reads the pipe: after a push, the pages and the run's
+# result; between pushes, the pages again (CCS_WATCH_EVERY)
 # (no run going: CCS_EVERY is an hour; the lines of the runs before read and dropped first)
 while IFS= read -r -t 1 _ <&3; do :; done
 exec 3<&-
@@ -165,16 +161,9 @@ CCS_WATCH_EVERY=3600 CCS_WATCH_RANDOM=1 "$step" watch https://site.test >> "$t/o
 n=$(cat "$t/run/push/done"); sleep 1
 printf 'tx\n' 1<> "$t/run/pull/now"
 for ((i = 0; i < 30; i++)); do (($(cat "$t/run/watch/done" 2> /dev/null || echo 0) > n)) && break; sleep 1; done
-if [[ $(sed -n 1p "$t/watched") == "https://site.test /"* && $(sed -n 2p "$t/watched") == "--run ok" && $(wc -l < "$t/watched") == 2 ]]; then
-    ok "watch: after a push, the live pages against what was pushed, then the run's result"
+if [[ $(sed -n 1p "$t/watched") == "https://site.test $t/out" && $(sed -n 2p "$t/watched") == "--run ok" && $(wc -l < "$t/watched") == 2 ]]; then
+    ok "watch: after a push, the live pages' addresses (against ccs-bash's JSON), then the run's result"
 else fail "watch after a push"; cat "$t/watched" "$t/out-watch"; fi
-# what was pushed checked against the front's own sums (its folder, not the push's): the run's
-# sums made by the front, the push saying which run's site it pushed, the watch handed that one
-p=$(cat "$t/run/push/pushed" 2> /dev/null)
-if [[ $p && $(sed -n 1p "$t/watched-sums") == "$t/run/front/sums-$p"* ]] \
-    && cmp -s <(cd "$t/pushed" && find . -type f -exec sha256sum {} + | sort) <(sort "$t/run/front/sums-$p"); then
-    ok "watch: handed the front's sums of the run pushed ($p), which what was pushed is"
-else fail "the front's sums"; ls "$t/run/front" "$t/run/push"; cat "$t/watched-sums"; fi
 stop
 : > "$t/watched"
 exec 3<> "$t/run/push/watch"; while IFS= read -r -t 1 _ <&3; do :; done; exec 3<&-
@@ -194,13 +183,4 @@ if (($(grep -c -- '^--run no run finished for 0 min (a stage stopped or stuck: c
     ok "watch: no run's result for CCS_WATCH_STALL, a failed run (a stage stopped or stuck), again after as long"
 else fail "the stall"; cat "$t/watched"; fi
 
-# no lock file (init not run again since it was added): the push goes all the same, and says so
-stop
-rm -f "$t/run/watch.lock"
-start
-n=$(cat "$t/run/push/done") before=$(wc -l < "$t/pushes"); sleep 1
-printf 'tx\n' 1<> "$t/run/pull/now"
-if until_pushed $((n + 1)) && (($(wc -l < "$t/pushes") > before)) && grep -q 'warning: no lock' "$t/out-push"; then
-    ok "no lock file: the push goes all the same, with a warning"
-else fail "the push without its lock"; cat "$t/out-push"; fi
 exit "$status"

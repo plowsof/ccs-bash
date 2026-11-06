@@ -1041,8 +1041,8 @@ if command -v sort > /dev/null && command -v runuser > /dev/null; then
     chmod 640 "$r"/etc/ccs/ccs.conf "$r"/etc/ccs/alert.conf "$r"/etc/ccs-wallet/wallet-rpc.conf
     chmod 644 "$r"/etc/ccs/trusted-signers "$r"/etc/ccs-front/list-signers
     chmod 600 "$r"/opt/ccs-bash/contrib/docker/backend/.env
-    mkdir -p "$r/etc/ccs/push" "$r/etc/ccs/backup" && install -d -m 755 "$r/var/lib/ccs/watch" "$r/var/lib/ccs/pushed"
-    for f in subaddresses.txt subaddresses.txt.asc subaddresses.txt.key.asc subaddresses.txt.pin; do install -m 644 /dev/null "$r/etc/ccs-front/$f"; done
+    mkdir -p "$r/etc/ccs/push" "$r/etc/ccs/backup" && install -d -m 755 "$r/var/lib/ccs/watch"
+    for f in subaddresses.txt subaddresses.txt.asc subaddresses.txt.key.asc subaddresses.txt.pin subaddresses.txt.qr.sha256; do install -m 644 /dev/null "$r/etc/ccs-front/$f"; done
     for f in etc/ccs/push/id_ed25519 etc/ccs/push/known_hosts etc/ccs/backup/id_ed25519 etc/ccs/backup/known_hosts; do install -m 600 /dev/null "$r/$f"; done
     out=$(ck) && rc=0 || rc=$?
     if ((rc == 1)) && grep -q '^FAIL /etc/ccs/ccs.conf: 1 line(s) still to fill in (RPC_PASSWORD)$' <<<"$out" \

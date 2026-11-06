@@ -1,20 +1,20 @@
 # The backend in Docker
 
-<p align="center"><img src="docker-design.svg" width="900" alt="The backend in Docker: pull, ccs-bash, front and backup, push and watch take turns through the run folder, each in its own container as its own user with its own folders and secret; ccs-bash and the wallet alone share an internal network; front has none"></p>
+<p align="center"><img src="docker-design.svg" width="900" alt="The backend in Docker: pull, ccs-bash, backup, push and watch take turns through the run folder, each in its own container as its own user with its own folders and secret; ccs-bash and the wallet alone share an internal network"></p>
 
 [`contrib/docker/backend/compose.yml`](../contrib/docker/backend/compose.yml) runs the backend:
-the update (the proposals pulled, ccs-bash, the backup, ccs-front-bash, the push) and ccs-watch,
+the update (the proposals pulled, ccs-bash, the backup, the push of `site-data.json`) and ccs-watch,
 one service a stage, and monero-wallet-rpc. The host keeps only the folders, config and keys
 ([setup](setup.md#the-backend)).
 
 ## The design
 
-It is [the recommended architecture](design.md) unchanged: the backend makes the whole site and
-only connects out; the web server's gate checks every page; ccs-watch checks the live ones; the
-state goes to the backup machine. Docker only changes how each side runs: each step in a
-container of its own, as a user of its own, so a fault in one (a hostile proposal file against
-ccs-front-bash, a forge's answer against ccs-bash) reaches only that container's folders and
-secret.
+It is [the recommended architecture](design.md) unchanged: the backend works out what only it
+knows (`site-data.json`: each proposal's subaddress index, its funds and dates, the ideas) and only
+connects out; the web server checks that and builds the site itself; ccs-watch checks the live
+pages' addresses; the state goes to the backup machine. Docker only changes how each side runs:
+each step in a container of its own, as a user of its own, so a fault in one (a forge's answer
+against ccs-bash, say) reaches only that container's folders and secret.
 
 | Service | Its image | Its user | Its network | What it holds or may write |
 |---|---|---|---|---|
@@ -22,27 +22,25 @@ secret.
 | `pull` | ccs-bash's | `ccs-git` | out | the proposals checkout |
 | `ccs-bash` | ccs-bash's | `ccs` | `wallet`, out | the state, the JSON |
 | `backup` | ccs-bash's | `ccs-send` | out | **the backup key**; the sums of what it sent |
-| `front` | ccs-front-bash's | `ccs-front` | **none** | the site |
-| `push` | ccs-bash's | `ccs-push` | out | **the push key**; the copy of what was pushed; each run's result |
+| `push` | ccs-bash's | `ccs-push` | out | **the push key**; each run's result |
 | `watch` | ccs-bash's | `ccs-watch` | out | **alert.conf**; its own counters |
 
 - **Every one** read-only, no capabilities, `no-new-privileges`, a numeric user, only its folders.
   None has the Docker socket: no stage can start, stop or reach into another, and none can write
-  another's files: ccs-bash can't change what was pushed, the sums of what was backed up, or the
-  watch's counts of failed runs.
+  another's files: ccs-bash can't change the sums of what was backed up, or the watch's counts of
+  failed runs.
 - **"Out"** is Docker's default network: out to anywhere, nothing in. There is no filter of
   where to: the push's key works only on the web server, the backup key only on the backup
   machine, and that is what keeps them to those.
 - **The wallet's RPC** is on the `wallet` network only, which is internal: ccs-bash is the one
   other container on it, and neither reaches out through it (the wallet has its own way out to
   monerod; ccs-bash, to the forge). Its login stays in `wallet-rpc.conf`.
-- **Why a container a stage, not one:** each secret is in the one container that needs it, and
-  the one that reads untrusted input (front: proposal files) has no network and no secret. One
+- **Why a container a stage, not one:** each secret is in the one container that needs it. One
   container for the whole update would put the wallet's RPC, the push key and the backup key
-  beside ccs-front-bash. The price is the run folder, below.
+  side by side. The price is the run folder, below.
 - **How they take turns** ([`step`](../contrib/docker/backend/step)): the run folder
   (`/var/lib/ccs/run`) has each stage's folder, its own user's: `done` (the last run it finished),
-  `status`, `at`; pipes that wake the next; and the push's lock, which the watch shares. A wake
+  `status`, `at`; pipes that wake the next. A wake
   pipe only makes it quicker (a waiting stage looks at the others' `done` every 5 seconds anyway),
   so any stage may write one. The two that mean something are their writer's alone: each run's
   result (`push/watch`) only the push writes and the watch reads; a line on `pull/now` starts a run
@@ -52,14 +50,12 @@ secret.
   after a run that left a donation pending, so its confirmation shows a run later; and never two
   starts closer than 30 seconds (`CCS_MIN_GAP`), so a stream of transactions can't make the runs
   follow each other faster than that.
-- **The images** by ID, never pulled: ccs-bash's and ccs-front-bash's as
-  [their releases](handover.md#the-releases) attest them (the same checks:
+- **The images** by ID, never pulled: ccs-bash's as
+  [its releases](handover.md#the-releases) attest it (the same checks:
   [upgrading](handover.md#upgrading)). ccs-bash's carries git and its https transport, and ssh
   (StageX, signatures checked as its other packages; the push's tar is busybox's), and of those packages nothing else
-  ([`container/Dockerfile`](../container/Dockerfile), checked by `tests/image.sh`). Two things run
-  that no attestation covers: the front's stage runner, `step`, mounted from ccs-bash's checkout
-  (check it out at the attested commit: [upgrading](handover.md#upgrading)); and the wallet's
-  image, built here, not StageX's (monero isn't packaged there; its release is built for glibc)
+  ([`container/Dockerfile`](../container/Dockerfile), checked by `tests/image.sh`). One thing runs
+  that no attestation covers: the wallet's image, built here, not StageX's (monero isn't packaged there; its release is built for glibc)
   and not attested: its archive is checked against getmonero.org's signed hashes (kept in the
   repository), the signature against binaryFate's key by fingerprint.
 - **Building** is on the backend (`container/build.sh`), or anywhere, then copied: `docker save
@@ -68,14 +64,9 @@ secret.
 - **The log:** every container's output to journald under one name, `ccs`: a run's lines in
   order, whichever stage said them, rotated by journald (`journalctl -t ccs`). `ccs log` and
   `ccs status` read it.
-- **The watch's check** holds the push's lock only while it copies what was pushed (6.5 MB on
-  the testnet, a moment), then compares the copy: a push never waits for its minute of fetches.
-  What it compares with isn't taken on the push's word: the front writes the sums of each site it
-  makes in its own folder (`run/front/sums-N`, the last 10), the push says which run's site it
-  pushed, and the copy must be that site, or the watch compares nothing and alerts. A file the
-  web server answers as a later run's site has it counts as pushed too: a push landing during the
-  fetches isn't a difference. The push reads the web server's answers; this way a flaw in its
-  client can't make the watch see the web server's pages as the backend's.
+- **The watch's check** asks the live site for its pages as a visitor would and checks their
+  addresses against the signed list and ccs-bash's own `projects.json` (each donation box its
+  proposal's address, its QR code the list's file): it needs nothing the push writes.
 - **Limits:** every container 1 GB of memory (the wallet 4 GB), 256 processes, a 256 MB `/tmp`
   (memory too); ccs-watch's fetches and the mirror's feed 16 MB each, decompressed: one that sends
   more can't take the machine's memory from monerod and the wallet.
@@ -110,7 +101,7 @@ On the backend, as root, after [setup](setup.md#the-backend)'s accounts, folders
 they are public: [contrib/examples/backend](../contrib/examples/backend/README.md), which also
 says how to install them; `ccs config:check` then says what is missing or wrong.
 
-1. **The images.** ccs-bash's and ccs-front-bash's: their attested IDs, built here
+1. **The images.** ccs-bash's: its attested ID, built here
    (`container/build.sh`) or loaded. The wallet's:
    `docker build -q contrib/docker/backend/wallet-rpc` (its ID: the output).
 2. **The compose's own users, and their folders:**
@@ -118,9 +109,7 @@ says how to install them; `ccs config:check` then says what is missing or wrong.
    for u in ccs-push ccs-send ccs-watch; do useradd --system --no-create-home --shell /usr/sbin/nologin $u; done
    install -d -o ccs-push -m 700 /etc/ccs/push             # the push key and the web server's host key
    install -d -o ccs-send -m 700 /etc/ccs/backup           # the backup key and the backup machine's
-   install -d -o ccs-push -m 755 /var/lib/ccs/pushed       # what was pushed
    install -d -o ccs-watch -m 755 /var/lib/ccs/watch       # ccs-watch's counters
-   install -d -o ccs-front -m 755 /var/lib/ccs/www         # the site
    install -o ccs-git -m 644 /dev/null /var/lib/ccs/pull-ok
    chgrp ccs-watch /etc/ccs/alert.conf                     # root:ccs-watch 640
    ```
@@ -129,7 +118,7 @@ says how to install them; `ccs config:check` then says what is missing or wrong.
    Docker](#the-web-server-in-docker) for the host keys' lines).
 3. **`ccs.conf`'s `RPC_URL`:** `http://wallet-rpc:18082/json_rpc` (or 127.0.0.1, above).
 4. **`.env`** beside `compose.yml` (root's, 600), from the examples (or
-   [`env.example`](../contrib/docker/backend/env.example)): the three image IDs, the users'
+   [`env.example`](../contrib/docker/backend/env.example)): the two image IDs, the users'
    `uid:gid` (`id -u ccs`, `id -g ccs`...), the push and backup accounts and their ports, the
    site's address; `WALLET_PORT` if `rpc-bind-port` isn't 18082.
 5. **The run folder:** `install -d -m 755 /var/lib/ccs/run`, then
@@ -156,11 +145,11 @@ follows every stage; `docker compose logs -f <service>` one. A stage that fails 
 - **Retiring a wallet** ([the handover](handover.md#retiring-a-wallet)): `retire-wallet` runs in
   ccs-bash's container (`docker compose run`), paused as above; the old wallet's copy, for
   `--again`, is the `retired-wallet-rpc` service (`--profile retired`).
-- **A design upgrade** needs nothing more: `front` mounts `/opt/ccs-front-hugo`, so a renamed
-  `public` is seen. Likewise the site: `push` mounts `/var/lib/ccs/www`, not `www/site`, which
-  ccs-front-bash replaces each run (a mount of a folder keeps the one it was given).
+- **A design upgrade** is the web server's alone ([deploying](deploying.md), 3a): the backend
+  has no design.
 - **The proposals checkout replaced** ([another forge](troubleshooting.md#move-the-proposals-to-another-forge)):
-  `docker compose up -d --force-recreate pull ccs-bash front` after, for the same reason.
+  `docker compose up -d --force-recreate pull ccs-bash` after (a mount of a folder keeps the one
+  it was given).
 
 ## The web server in Docker
 

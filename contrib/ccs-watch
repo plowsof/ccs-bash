@@ -1,18 +1,16 @@
 #!/usr/bin/env bash
-# ccs-watch SITE_URL LOCAL_SITE [CONF]: the backend watching the web server. Right after a push,
-# and between pushes at random times (ccs-watch.timer, docs/handover.md), fetch the pages where
-# donations are asked for (home, Funding Required, Donate, Verify, every funding-required proposal)
-# from SITE_URL, as a visitor's browser would, and every file they use (stylesheets with
-# theme.css, fonts, icons, the QR codes, images), and compare each, byte for byte,
-# with LOCAL_SITE, what was last pushed. A difference means the web server serves something the
-# backend didn't make (a push skips a file whose size and time were kept: this doesn't): alert,
-# the second time it is seen within a day. Also a page never pushed (it must be the 404 page) and,
-# with the themes, the theme button's redirect. CCS_WATCH_SUMS (the backend compose's): the sums
-# of the sites the front stage made ("sha256  ./path", sha256sum's), the first the one LOCAL_SITE
-# is, then those made since. LOCAL_SITE must be the first, or nothing is compared and it alerts:
-# the push stage, which writes what was pushed, also reads the web server's answers, so it mustn't
-# be what the web server is checked against. A file as a later one has it is what was pushed too
-# (a push landing during the check's minute of fetches changes the live site, not LOCAL_SITE).
+# ccs-watch SITE_URL OUT [CONF]: the backend watching the web server. After each run, and between
+# runs at random times (ccs-watch.timer, docs/handover.md), fetch the pages where donations are
+# asked for (home, Funding Required, Donate, Verify, every funding-required proposal), and some
+# others at random, from SITE_URL as a visitor's browser would, and check their addresses: every
+# address on them (95 or 106 base58 characters, as text or link) is one of the wallet's signed
+# list (SUBADDRESSES) or allowed (WATCH_ALLOWED: the General Fund); each funding-required
+# proposal's donation box is its own address, as ccs-bash gave it (OUT/projects.json), and its QR
+# code the list's own file of that address (SUBADDRESSES.qr/). A page that fails on three fetches
+# alerts, the second time it is seen within a day. Also a page that doesn't exist (it must answer
+# 404) and, with the themes, the theme button's redirect. The web server builds the pages itself:
+# what they say is its gate's to check; what this sees is a web server serving a visitor an
+# address that isn't the wallet's.
 # CONF (default /etc/ccs/alert.conf, root-owned, not in any repository):
 #   ALERT_URL=https://bot.example/simple?channel=%23ccs   POSTed the message as plain text
 #                                                         (CptHook's simple module, ntfy, ...)
@@ -25,16 +23,18 @@
 #                                                         can't tell the watcher by its address
 #   WATCH_THEMES=1                                        also /dark/ and /light/ (the theme lines
 #                                                         in docs/two-machines.md): each page under
-#                                                         one of the three, at random, and both
-#                                                         theme.css files
-#   WATCH_SAMPLE=10                                       how many of the other pages to check
-#                                                         too, at random each run (default 10)
+#                                                         one of the three, at random
+#   WATCH_SAMPLE=10                                       how many of the other proposals' pages to
+#                                                         check too, at random each run (default 10)
 #   WATCH_FIREFOX_ESR=140 WATCH_FIREFOX=144 WATCH_CHROME=141
 #                                                         optional: the browsers' current versions
 #                                                         (Tor Browser's Firefox ESR, Firefox,
 #                                                         Chrome): one asked as, at random each
 #                                                         run; a version no one runs is a tell
-#   SUBADDRESSES=/etc/ccs-front/subaddresses.txt          optional: name addresses not on it
+#   SUBADDRESSES=/etc/ccs-front/subaddresses.txt          the signed list (the default), its QR
+#                                                         codes in subaddresses.txt.qr/ beside it
+#   WATCH_ALLOWED=888tNk...                               the other addresses a page may show,
+#                                                         space-separated (default: the General Fund)
 #   FORGE_HOURS=6                                         optional: how long GitLab or Forgejo may
 #                                                         be down before --run alerts (default 6)
 #   ALERT_PREFIX=[CCS-watch]                              optional: how messages start
@@ -62,28 +62,11 @@ if [[ ${1:-} == --run ]]; then
     [[ ${2:-} ]] || { echo "usage: ccs-watch --run ok|STEPS [CONF]" >&2; exit 2; }
     run_result=$2; set -- - /nonexistent "${3:-/etc/ccs/alert.conf}"
 fi
-site_url=${1:?SITE_URL} local_site=${2:?LOCAL_SITE} conf=${3:-/etc/ccs/alert.conf}
-read -ra sums <<<"${CCS_WATCH_SUMS:-}"
-# pushed FILE P: FILE is the site's P as it was pushed: as LOCAL_SITE has it, or as a site the
-# front made since has it (CCS_WATCH_SUMS, and any sums-M beside its first, sums-N, with M > N:
-# looked for at each comparison, as a run can finish and push during the check's fetches)
-pushed() {
-    cmp -s "$1" "$local_site/$2" && return 0
-    ((${#sums[@]})) || return 1
-    local line f n later=()
-    line="$(sha256sum < "$1" | cut -d' ' -f1)  ./$2"
-    n=${sums[0]##*/sums-}
-    if [[ $n =~ ^[0-9]+$ ]]; then
-        for f in "${sums[0]%/*}"/sums-*; do
-            [[ ${f##*/sums-} =~ ^[0-9]+$ ]] && ((${f##*/sums-} > n)) && later+=("$f")
-        done
-    fi
-    grep -qxF "$line" "${sums[@]}" "${later[@]}" 2> /dev/null
-}
+site_url=${1:?SITE_URL} out=${2:?OUT} conf=${3:-/etc/ccs/alert.conf}
 state=${CCS_WATCH_STATE:-/var/lib/ccs/state/watch}
 ALERT_URL='' WATCH_PROXY='' WATCH_THEMES='' SUBADDRESSES='' ALERT_PREFIX='' ALERT_TARGET='' ALERT_PASSWORD='' ALERT_PLAIN='' FORGE_HOURS=''
-WATCH_FIREFOX_ESR='' WATCH_FIREFOX='' WATCH_CHROME=''
-keys='ALERT_URL|WATCH_PROXY|WATCH_THEMES|SUBADDRESSES|ALERT_PREFIX|ALERT_TARGET|ALERT_PASSWORD|ALERT_PLAIN|FORGE_HOURS|WATCH_FIREFOX_ESR|WATCH_FIREFOX|WATCH_CHROME'
+WATCH_FIREFOX_ESR='' WATCH_FIREFOX='' WATCH_CHROME='' WATCH_ALLOWED='' WATCH_SAMPLE=${WATCH_SAMPLE:-}
+keys='ALERT_URL|WATCH_PROXY|WATCH_THEMES|SUBADDRESSES|ALERT_PREFIX|ALERT_TARGET|ALERT_PASSWORD|ALERT_PLAIN|FORGE_HOURS|WATCH_FIREFOX_ESR|WATCH_FIREFOX|WATCH_CHROME|WATCH_ALLOWED|WATCH_SAMPLE'
 if [[ -f $conf ]]; then
     # only these keys, KEY=value lines; nothing in it is run
     while IFS='=' read -r k v; do
@@ -181,21 +164,6 @@ fetch() {
     return 1
 }
 
-# differs URL P: 0 if the page still differs from P as pushed on two more whole fetches, 10s and 30s
-# later (a push may be landing), or a recheck isn't answered (a web server refusing the watcher's
-# second ask mustn't hide what the first saw; $tmp/page keeps the last differing answer); 1 only
-# if it matches again
-differs() {
-    local wait
-    for wait in ${CCS_WATCH_WAITS:-10 30}; do   # (tests make them shorter)
-        sleep "$wait"
-        fetch "$1" "$tmp/again" || continue
-        pushed "$tmp/again" "$2" && return 1
-        cp "$tmp/again" "$tmp/page"
-    done
-    return 0
-}
-
 # sighted FILE...: 0 if any of these marks a difference seen within the last 24 hours (the second
 # sighting: alert); else 1, the first, marked now. A run that sees no difference doesn't clear it:
 # a web server showing its own page only on every other push is still seen twice.
@@ -252,110 +220,69 @@ if [[ $test_only ]]; then
     exit 0
 fi
 
-# what was pushed, as the front made it (CCS_WATCH_SUMS' first): else nothing is compared with it
-if ((${#sums[@]})); then
-    if [[ ! -r ${sums[0]} ]] || ! cmp -s <(cd "$local_site" && find . -type f -exec sha256sum {} + | sort) <(sort "${sums[0]}"); then
-        alert pushed "what was pushed isn't the site the front made (${sums[0]##*/}): the push stage changed it? Nothing compared with it (ccs log on the backend)"
-        exit 1
-    fi
-fi
-
-# the pages: the fixed ones, and every proposal page with a donation box
-pages=(index.html funding-required/index.html donate/index.html verify/index.html)
-while IFS= read -r f; do pages+=("proposals/${f##*/}"); done \
-    < <(grep -l 'class="contribute"' "$local_site"/proposals/*.html 2> /dev/null || true)   # the Contribute box: funding-required only
-
-# what they use: every file of the site's own a page links to with href=, src= or srcset= (the
-# pages' links are relative), but not other pages, and every file those stylesheets use with
-# url() (fonts, icons: a changed font can draw one character as another); with the themes, both
-# theme.css files
-# local_ref DIR REF: REF, a link in the file DIR/..., as a path in the site, if it is one of its files
-local_ref() {
-    local ref=${2%%[?#]*} path part parts=()
-    [[ $ref && $ref != *:* && $ref != //* && $ref != */ && $ref != *.html ]] || return 0
-    if [[ $ref == /* ]]; then path=${ref#/}; else path=$1/$ref; fi
-    # DIR/REF with its . and .. resolved, by name (realpath -m, which busybox's hasn't); a .. past
-    # the site's top is none of its files
-    local IFS=/
-    for part in $path; do
-        case $part in
-            '' | .) ;;
-            ..) ((${#parts[@]})) || return 0; unset 'parts[${#parts[@]}-1]' ;;
-            *) parts+=("$part") ;;
-        esac
-    done
-    path="${parts[*]}"
-    [[ $path && -f $local_site/$path ]] && printf '%s\n' "$path"
-    return 0
-}
-uses() {
-    local p d ref list
-    # (and the 404 page's, which any path that wasn't pushed shows: its shell logo, say)
-    list=$(for p in "${pages[@]}" 404.html; do
-        [[ -f $local_site/$p ]] || continue
-        d=${p%/*}; [[ $d == "$p" ]] && d=.
-        grep -oE '(href|src|srcset)="[^"]*"' "$local_site/$p" | sed -E 's/^[a-z]+="//; s/"$//' | tr ',' '\n' \
-            | awk '{ print $1 }' | while IFS= read -r ref; do local_ref "$d" "$ref"; done
-    done | sort -u)
-    { printf '%s\n' "$list"
-      grep '\.css$' <<<"$list" | while IFS= read -r p; do
-          d=${p%/*}; [[ $d == "$p" ]] && d=.
-          grep -oE 'url\([^)]*\)' "$local_site/$p" | sed -E "s/^url\\(['\"]?//; s/['\"]?\\)\$//" \
-              | while IFS= read -r ref; do local_ref "$d" "$ref"; done
-      done; } | grep . | sort -u
-}
-# each check "address<TAB>local file"; a page, and each file the pages use, under one of the theme
-# prefixes at random: a visitor on /dark/ loads /dark/assets/... (the links are relative), which a
-# web server could serve otherwise than /assets/...
-checks=()
-prefixes=('')
-[[ $WATCH_THEMES ]] && prefixes+=(dark/ light/)
-for p in "${pages[@]}"; do
-    [[ -f $local_site/$p ]] && checks+=("${prefixes[RANDOM % ${#prefixes[@]}]}${p%index.html}"$'\t'"$p")
-done
-# (theme.css is another file under each: theme-dark.css and theme-light.css, checked below)
-while IFS= read -r f; do
-    if [[ $f == assets/theme.css ]]; then checks+=("$f"$'\t'"$f"); continue; fi
-    checks+=("${prefixes[RANDOM % ${#prefixes[@]}]}$f"$'\t'"$f")
-done < <(uses)
-if [[ $WATCH_THEMES ]]; then
-    for t in dark light; do
-        [[ -f $local_site/assets/theme-$t.css ]] && checks+=("$t/assets/theme.css"$'\t'"assets/theme-$t.css")
-    done
-fi
-# and WATCH_SAMPLE (default 10) of every other page, at random, so that each is seen within a few
-# runs: a web server could add a donation box to any page; and /projects, the JSON others read
-sample=${WATCH_SAMPLE:-10}
-[[ $sample =~ ^[0-9]+$ ]] || sample=10
-while IFS= read -r p; do
-    checks+=("${prefixes[RANDOM % ${#prefixes[@]}]}${p%index.html}"$'\t'"$p")
-done < <(cd "$local_site" && find . -name '*.html' | sed 's#^\./##' | grep -vxF -f <(printf '%s\n' "${pages[@]}") | shuf -n "$sample")
-[[ -f $local_site/projects.json ]] && checks+=("projects"$'\t'"projects.json")
-fetches=$(printf '%s\n' "${checks[@]}" | grep -c .)
-# and, among them at random (no fixed last ask that a web server could switch after):
-# - a page that was never pushed, named like the site's own: the web server must answer 404 with
-#   the pushed 404 page. Its own page there (a fake proposal, a donation box) is something the
-#   backend never made, which the checks above can't see (they ask only for pushed files);
-# - with the themes, the theme button (?theme=dark|light|system) on a page: it must send the
-#   visitor to that same page under that prefix (or none), not elsewhere.
-[[ -f $local_site/404.html ]] && checks+=(unpushed)
-if [[ $WATCH_THEMES ]]; then
-    p=$(printf '%s\n' "${checks[@]}" | awk -F'\t' '$2 ~ /\.html$/ && $2 != "404.html" { print $2 }' | shuf -n 1)
-    [[ $p ]] && checks+=("theme"$'\t'"$p")
-fi
-mapfile -t checks < <(printf '%s\n' "${checks[@]}" | grep . | shuf)   # in no fixed order
-
+# what the pages are checked against: the signed list and its QR codes, the allowed addresses,
+# and each proposal's own address (ccs-bash's projects.json)
+list=${SUBADDRESSES:-/etc/ccs-front/subaddresses.txt}
+[[ -r $list && -r $out/projects.json ]] || { log "no $list or $out/projects.json: nothing to check the pages against"; exit 1; }
+WATCH_ALLOWED=${WATCH_ALLOWED:-888tNkZrPN6JsEgekjMnABU4TBzc2Dt29EPAvkRxbANsAnjyPbb3iQ1YBRk1UXcdRsiKc9dhwMVgN5S9cQUiyoogDavup3H}
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
+{ awk 'NF >= 2 { print $2 }' "$list"; tr ' ' '\n' <<<"$WATCH_ALLOWED"; } | grep . | sort -u > "$tmp/ok"
+# each proposal page's name, its address (funding required: its donation box's; "" for none)
+jq -r '.[] | select(.filename | type == "string") | [(.filename | sub("\\.md$"; "")), (if .state == "FUNDING-REQUIRED" then .address // "" else "" end)] | @tsv' \
+    "$out/projects.json" > "$tmp/proposals" || { log "$out/projects.json can't be read"; exit 1; }
+
+# the pages: the fixed ones, every funding-required proposal's, and WATCH_SAMPLE (10) of the other
+# proposals' at random, so that each is seen within a few runs (a web server could add a donation
+# box to any page); /projects, the JSON others read. Each under one of the theme prefixes at random
+prefixes=('')
+[[ $WATCH_THEMES ]] && prefixes+=(dark/ light/)
+pre() { printf '%s' "${prefixes[RANDOM % ${#prefixes[@]}]}"; }
+[[ $WATCH_SAMPLE =~ ^[0-9]+$ ]] || WATCH_SAMPLE=10
+checks=()
+for p in '' funding-required/ donate/ verify/; do checks+=("$(pre)$p"$'\t'"-"); done
+while IFS=$'\t' read -r name a; do checks+=("$(pre)proposals/$name.html"$'\t'"$a"); done < <(awk -F '\t' '$2 != ""' "$tmp/proposals")
+while IFS=$'\t' read -r name _; do checks+=("$(pre)proposals/$name.html"$'\t'"-"); done < <(awk -F '\t' '$2 == ""' "$tmp/proposals" | shuf -n "$WATCH_SAMPLE")
+checks+=("projects"$'\t'"-")
+pages=$(awk -F '\t' '$2 != ""' "$tmp/proposals" | grep -c . || true); pages=$((pages + 4))
+fetches=${#checks[@]}
+# and, among them at random (no fixed last ask that a web server could switch after): a page that
+# doesn't exist, named like the site's own, which must answer 404; with the themes, the theme
+# button (?theme=dark|light|system) on a page, which must send the visitor to that same page
+# under that prefix (or none), not elsewhere
+checks+=(missing)
+[[ $WATCH_THEMES ]] && checks+=("theme"$'\t'"$(shuf -n 1 -e '' funding-required/ donate/ verify/)")
+mapfile -t checks < <(printf '%s\n' "${checks[@]}" | grep . | shuf)   # in no fixed order
+
 bad=0 failed=0 answered=()
 urlof() { printf '%s/%s' "$site_url" "$(jq -rn --arg p "$1" '$p | split("/") | map(@uri) | join("/")')"; }
+short() { sed -E 's/^(.{6}).*(.{4})$/\1…\2/' | paste -sd ' '; }
 
-# unpushed: a path never pushed, named as the site's own are (a proposal's name with -2, two of
+# wrong FILE WANT: "" if every address on the page FILE (as text, entities aside, or a link) is the
+# list's or allowed and, WANT not "-", its donation box (a monero: link) WANT's alone, with its QR
+# code (qr/<address>.png) the list's file of it; else what is wrong
+wrong() {
+    local found foreign box qr
+    found=$(grep -oE '(^|[^1-9A-HJ-NP-Za-km-z])([1-9A-HJ-NP-Za-km-z]{106}|[1-9A-HJ-NP-Za-km-z]{95})([^1-9A-HJ-NP-Za-km-z]|$)' "$1" \
+        | grep -oE '[1-9A-HJ-NP-Za-km-z]{95,106}' | sort -u || true)
+    foreign=$(comm -23 <(printf '%s\n' "$found" | grep .) "$tmp/ok" | head -n 3 || true)
+    [[ ! $foreign ]] || { echo "donation address $red$(short <<<"$foreign")$off does not match the CCS wallet"; return; }
+    [[ $2 != - ]] || return 0
+    box=$(grep -oE 'monero:[1-9A-HJ-NP-Za-km-z]{95}' "$1" | sort -u | grep -vxF "monero:${WATCH_ALLOWED// /$'\n'monero:}" || true)
+    [[ $box == "monero:$2" ]] || { echo "the donation box isn't its proposal's address (${2:0:6}…${2: -4})"; return; }
+    qr=$(grep -oE "[^\"']*qr/$2\\.png" "$1" | head -n 1 || true)
+    [[ $qr && -f $list.qr/$2.png ]] || return 0
+    # (the page's own link, from where it is: ../qr/<address>.png)
+    fetch "$(urlof "qr/$2.png")" "$tmp/qr" || return 0
+    cmp -s "$tmp/qr" "$list.qr/$2.png" || echo "the donation box's QR code isn't the signed list's of its address"
+}
+
+# missing: a path that doesn't exist, named as the site's own are (a proposal's name with -2, two of
 # them run together, ...), in proposals/ or not, under a theme prefix at random: a web server that
 # answers its own page only where the watcher never asks must not know where that is
-unpushed() {
+missing() {
     local names=() a b name='' try
-    mapfile -t names < <(cd "$local_site" && for f in proposals/*.html; do [[ -f $f ]] && basename "$f" .html; done)
+    mapfile -t names < <(cut -f1 "$tmp/proposals")
     for _ in 1 2 3 4 5 6; do
         try=$(printf '%04x%04x%04x' $RANDOM $RANDOM $RANDOM)
         if ((${#names[@]})); then
@@ -368,26 +295,27 @@ unpushed() {
             esac
         fi
         case $((RANDOM % 5)) in 0) try=$try.html ;; 1) try=$try/ ;; *) try=proposals/$try.html ;; esac
-        [[ -e $local_site/$try || -e $local_site/${try%/}.html ]] || { name=$try; break; }
+        grep -qxF -- "${try#proposals/}" <(sed 's/$/.html/' <(cut -f1 "$tmp/proposals")) || { name=$try; break; }
     done
     [[ $name ]] || name=proposals/$(printf '%04x%04x%04x' $RANDOM $RANDOM $RANDOM).html
-    name=${prefixes[RANDOM % ${#prefixes[@]}]}$name
+    name=$(pre)$name
     rc=0; fetch "$(urlof "$name")" "$tmp/page" || rc=$?
-    if ((rc == 3)) && [[ $code == 404 ]] && pushed "$tmp/page" 404.html; then return; fi
     ((rc == 1)) && return   # nothing answered: nothing known
+    local why=''
+    if ((rc == 3)) && [[ $code == 404 ]]; then why=$(wrong "$tmp/page" -); [[ $why ]] || return 0; fi
     bad=$((bad + 1))
-    if ! sighted "$state/differs-unpushed"; then
-        log "$(urlof "$name") (never pushed) answers HTTP $code, not the 404 page; alerting if it does again within a day"
+    if ! sighted "$state/differs-missing"; then
+        log "$(urlof "$name") (no such page) answers HTTP $code${why:+: $why}, not a 404; alerting if it does again within a day"
     else
-        alert unpushed "a page that was never pushed answers HTTP $code, not the pushed 404 page @ $(urlof "$name")"
+        alert missing "a page that doesn't exist answers HTTP $code${why:+ ($why)}, not a 404 @ $(urlof "$name")"
     fi
 }
 
 # theme PAGE: the theme button on PAGE, under a prefix at random, as a click on it: HTTP 302 to
 # that page under /dark/ or /light/, or none for system (the theme lines in docs/two-machines.md)
 theme() {
-    local page=${1%index.html} t want from rc
-    t=$(shuf -n 1 -e dark light system) from=${prefixes[RANDOM % ${#prefixes[@]}]}
+    local page=$1 t want from rc
+    t=$(shuf -n 1 -e dark light system) from=$(pre)
     if [[ $t == system ]]; then want=$(urlof "$page"); else want=$(urlof "$t/$page"); fi
     rc=0; fetch "$(urlof "$from$page")?theme=$t" "$tmp/page" || rc=$?
     ((rc == 1)) && return
@@ -402,14 +330,14 @@ theme() {
 
 for c in "${checks[@]}"; do
     case $c in
-        unpushed) unpushed; continue ;;
+        missing) missing; continue ;;
         theme$'\t'*) theme "${c#*$'\t'}"; continue ;;
     esac
-    remote=${c%%$'\t'*} p=${c#*$'\t'}
+    remote=${c%%$'\t'*} want=${c#*$'\t'}
     url=$(urlof "$remote")
-    # seen: by the pushed file (differing under any prefix, then any other: alert), and by the
-    # address, prefix and all (differing only under /dark/: the next time /dark/ is the prefix
-    # picked for it alerts, whatever the others showed in between)
+    # seen: by the page, prefix aside (wrong under any prefix, then any other: alert), and by
+    # the address, prefix and all
+    p=${remote#dark/} p=${p#light/}
     seen=$state/differs-${p//[^A-Za-z0-9._-]/_} seen_at=$state/differs-at-${remote//[^A-Za-z0-9._-]/_}
     other=$state/answers-${p//[^A-Za-z0-9._-]/_}
     rc=0; fetch "$url" "$tmp/page" || rc=$?
@@ -423,41 +351,39 @@ for c in "${checks[@]}"; do
         continue
     fi
     rm -f "$other"
-    pushed "$tmp/page" "$p" && continue
-    differs "$url" "$p" || continue
-    # It differed on three fetches over 40s (or wasn't answered again). The second run within a
-    # day that sees it alerts, runs that see the page right in between or not: no single moment,
-    # push or glitch, raises an alarm, and neither does showing it only now and then hide it.
+    why=$(wrong "$tmp/page" "$want")
+    [[ $why ]] || continue
+    # wrong: on two more whole fetches, 10s and 30s later (a build may be landing), or a recheck
+    # not answered (a web server refusing the watcher's second ask mustn't hide what the first saw)
+    for wait in ${CCS_WATCH_WAITS:-10 30}; do   # (tests make them shorter)
+        sleep "$wait"
+        fetch "$url" "$tmp/again" || continue
+        why=$(wrong "$tmp/again" "$want")
+        [[ $why ]] || break
+    done
+    [[ $why ]] || continue
+    # The second run within a day that sees it alerts, runs that see the page right in between or
+    # not: no single moment, a build or a glitch, raises an alarm, and neither does showing it only
+    # now and then hide it.
     bad=$((bad + 1))
     if ! sighted "$seen" "$seen_at"; then
-        log "$url differs from what was pushed; alerting if it does again within a day"; continue
+        log "$url: $why; alerting if it does again within a day"; continue
     fi
     # n1oc's style: "<what> @ <link>"; an address shortened to its first 6 and last 4
-    what="the page differs from what was pushed"
-    [[ $p == *.html ]] || what="the file differs from what was pushed (a page's stylesheet, font or image)"
-    if [[ $p == *.html && $SUBADDRESSES && -f $SUBADDRESSES ]]; then
-        # the addresses on the live page that aren't on the pushed one (the General Fund in every
-        # footer is on both), and of those, the ones not on the wallet's signed list
-        addrs() { grep -o 'monero:[0-9A-Za-z]\{95\}\|class="address">[0-9A-Za-z]\{95\}' "$1" | grep -o '[0-9A-Za-z]\{95\}$' | sort -u; }
-        foreign=$(comm -23 <(addrs "$tmp/page") <(addrs "$local_site/$p") \
-            | awk 'NR == FNR { ok[$2] = 1; next } !($0 in ok)' "$SUBADDRESSES" - | head -n 3 || true)
-        [[ $foreign ]] && what="donation address $red$(sed -E 's/^(.{6}).*(.{4})$/\1…\2/' <<<"$foreign" | paste -sd ' ')$off does not match the CCS wallet"
-    fi
-    alert "page-$p" "$what @ $url"
+    alert "page-$p" "$why @ $url"
 done
 if ((failed == fetches)); then
     n=$(($(cat "$state/unreachable" 2> /dev/null || echo 0) + 1)); echo "$n" > "$state/unreachable"
     ((n < 3)) || alert unreachable "$site_url could not be fetched ($n checks in a row)"
 else
     rm -f "$state/unreachable"
-    # The site answers, but a page or file keeps answering something else (a redirect, an error,
+    # The site answers, but a page keeps answering something else (a redirect, an error,
     # nothing): three checks in a row alert, as a web server sending visitors elsewhere would
     for a in "${answered[@]}"; do
         IFS=$'\t' read -r n c p url <<<"$a"
         [[ $c == 200 ]] && c='200 with nothing'
-        ((n < 3)) || alert "page-$p" "the page answers HTTP $c, not what was pushed ($n checks in a row) @ $url"
+        ((n < 3)) || alert "page-$p" "the page answers HTTP $c, not the page ($n checks in a row) @ $url"
     done
 fi
-n=0; for p in "${pages[@]}"; do [[ -f $local_site/$p ]] && n=$((n + 1)); done
-((bad == 0 && failed == 0)) && log "the $n pages on $site_url, and the $((fetches - n)) other pages and files, are what was pushed (asked for as $browser)"
+((bad == 0 && failed == 0)) && log "the $pages pages on $site_url, and the $((fetches - pages)) others: every address the wallet's, each donation box its proposal's (asked for as $browser)"
 exit $((bad > 0))

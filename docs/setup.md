@@ -49,7 +49,6 @@ apt install git jq curl gpg openssh-client
    git -C /opt/ccs-bash checkout <commit>    # the one contrib/release/verify prints for the release you run (the handover, "Deploying a set", 1-2): not the tag, which can move; not master
    useradd --system --home-dir /var/lib/ccs --shell /usr/sbin/nologin ccs
    useradd --system --no-create-home --shell /usr/sbin/nologin ccs-git   # owns the proposals checkout
-   useradd --system --no-create-home --shell /usr/sbin/nologin ccs-front # makes the site
    install -d -m 755 /var/lib/ccs
    install -d -o ccs -g ccs -m 755 /var/lib/ccs/state /var/lib/ccs/out
    install -o ccs -g ccs -m 644 /dev/null /var/lib/ccs/state/proposals.csv   # fresh install only
@@ -73,21 +72,10 @@ apt install git jq curl gpg openssh-client
    ([troubleshooting](troubleshooting.md#looking)): `ln -s /opt/ccs-bash/contrib/ccs /usr/local/bin/ccs`
    (a link: it reads its docs from the checkout, which each upgrade moves to the new release).
 
-3. **The design and the site builder's files:** the design's release, unpacked where the
-   compose's `front` reads it; its sha256 the attested one ([the releases](handover.md#the-releases)):
-
-   ```
-   v=<the design's release>
-   curl -fLO https://github.com/plowsof/ccs-front-hugo/releases/download/$v/ccs-front-hugo-$v.zip
-   sha256sum ccs-front-hugo-$v.zip           # the attested sha256
-   rm -rf /opt/ccs-front-hugo/public && install -d -m 755 /opt/ccs-front-hugo/public
-   unzip -q ccs-front-hugo-$v.zip -d /opt/ccs-front-hugo/public
-   echo "$v <its sha256>" > /opt/ccs-front-hugo/VERSION      # for ccs status
-   install -d -m 755 /etc/ccs-front                           # the signed list: signed-list.md
-   ```
-
-   It stays root's: the site builder only reads it. A new design is a new release, unpacked the
-   same way.
+3. **The signed list's folder:** `install -d -m 755 /etc/ccs-front`, its files as
+   [the signed list](signed-list.md) says (ccs-watch checks the live pages' addresses against
+   them). The design isn't installed here: the web server builds the site
+   ([two machines](two-machines.md#the-gate-the-web-server-builds-the-site-itself)).
 
 Then the compose: [docker, setting it up](docker.md#setting-it-up).
 

@@ -1,29 +1,28 @@
 # Deploying a release
 
-**When:** a release of ccs-bash, ccs-front-bash or ccs-front-hugo has been attested in
+**When:** a release of ccs-bash (ccs-front-bash comes in it, vendored) or ccs-front-hugo has been attested in
 [ccs-sigs](https://github.com/plowsof/ccs-sigs) ([releasing](releasing.md)) and should run on the
 machines. Nothing changes on a machine until you do this.
 
-The set is the three releases together, as ccs-sigs names it, e.g.
-`ccs-bash-v0.2.47+ccs-front-bash-v0.1.27+ccs-front-hugo-v0.1.29`. Below, `SET` is that name, and
-`IDB`, `IDG`, `IDF` and `ZIP` are what `verify` prints for it:
-- `IDB`: ccs-bash's image ID;
-- `IDG`: the gate's;
-- `IDF`: ccs-front-bash's;
+The set is the releases together, as ccs-sigs names it, e.g.
+`ccs-bash-v0.2.53+ccs-front-hugo-v0.1.29`. Below, `SET` is that name, and `IDB`, `IDG` and `ZIP`
+are what `verify` prints for it:
+- `IDB`: ccs-bash's image ID (the backend's);
+- `IDG`: the gate's (the web server's, with the vendored ccs-front-bash in it);
 - `ZIP`: the design zip's sha256.
 
-**The backend stays running.** The web server goes first, because its gate accepts pages of the
-old and new release alike. The backend is switched between two runs. Don't stop it: the
-web server's heartbeat alerts after 15 minutes without a push.
+**The backend stays running.** The web server goes first: it builds the site from the backend's
+`site-data.json`, which old and new releases write alike ([upgrading](upgrading.md) says when one
+doesn't). The backend is switched between two runs. Don't stop it: the web server's heartbeat
+alerts after 15 minutes without a push.
 
 ## What to do for what changed
 
 | Changed | Web server | Backend |
 |---|---|---|
-| the design only (ccs-front-hugo) | steps 1, 3a | steps 1, 4a, 5a |
-| ccs-front-bash only | — | steps 1, 2 (its image), 4, 5 |
-| ccs-bash (any code: the gate, the backend, or both) | steps 1, 2, 3b | steps 1, 2, 4, 5 |
-| a new `{{slot}}` (design and front-bash together) | the gate first (3b), then 3a | then 4, 5 together |
+| the design only (ccs-front-hugo) | steps 1, 3a | — |
+| ccs-bash (any code: the gate, the backend, the vendored ccs-front-bash) | steps 1, 2, 3b | steps 1, 2, 4 |
+| a design and a ccs-front-bash that need each other (a new `{{slot}}`) | 3b, then 3a at once | — |
 
 Before a ccs-bash release, read [upgrading](upgrading.md) for anything it needs once.
 
@@ -81,12 +80,10 @@ git -C "$W" checkout -q <ccs-bash's commit>; git -C "$W" describe --tags     # t
 docker image inspect ccs-bash:<release> --format '{{.Id}}'                  # must be IDB
 ```
 
-Do the same for ccs-front-bash: `/root/ccs/src-ccs-front-bash`, its commit, `container/build.sh
-ccs-front-bash:<release>`, which must give `IDF`. Any other ID: stop.
+Any other ID: stop.
 - **The gate's image** is built on the web server.
-- **The backend's images** are each kept by a stopped container, so no cleanup removes them:
-  `docker create --name ccs-bash-keep-<release> --network none "$IDB"`, and the same for
-  ccs-front-bash.
+- **The backend's image** is kept by a stopped container, so no cleanup removes it:
+  `docker create --name ccs-bash-keep-<release> --network none "$IDB"`.
 
 A build that stops with `sources has files that are not in sources.lock`: a source an older
 release needed is still in `container/sources/` (a download cache, not in git); move it aside.
@@ -118,40 +115,18 @@ docker compose ps                    # gate, heartbeat, backup, www, tor: the ne
 The site is down for a few seconds while `www` and `tor` restart. The backup machine's compose
 gets the same, with `--profile backup up -d backup`.
 
-## 4. The backend, prepared
-
-The loop keeps running. **4a. A new design:** unpacked beside the one in use.
-
-```
-curl -fsSLo /tmp/d.zip …; echo "$ZIP  /tmp/d.zip" | sha256sum -c -
-rm -rf /opt/ccs-front-hugo/public.new && unzip -q /tmp/d.zip -d /opt/ccs-front-hugo/public.new
-chmod -R u=rwX,go=rX /opt/ccs-front-hugo/public.new
-```
-
-## 5. The backend, switched between runs
+## 4. The backend, switched between runs
 
 Wait until a run has pushed: `ccs status` shows no run going, or `/var/lib/ccs/run/push/done`
 changes. Then at once:
 
 ```
-D=/opt/ccs-bash/contrib/docker/backend; cp -a "$D/.env" /opt/ccs-front-hugo/VERSION "$B/"
+D=/opt/ccs-bash/contrib/docker/backend; cp -a "$D/.env" "$B/"
 git -C /opt/ccs-bash rev-parse HEAD > "$B/commit"
 git -C /opt/ccs-bash fetch -q --tags && git -C /opt/ccs-bash checkout -q <ccs-bash's commit>
-sed -i -e "s|^CCS_BASH_IMAGE=.*|CCS_BASH_IMAGE=$IDB|" -e "s|^CCS_FRONT_IMAGE=.*|CCS_FRONT_IMAGE=$IDF|" "$D/.env"
+sed -i "s|^CCS_BASH_IMAGE=.*|CCS_BASH_IMAGE=$IDB|" "$D/.env"
 cd "$D" && docker compose config -q && docker compose up -d
 ```
-
-**5a. A new design**, in the same pause:
-
-```
-mv /opt/ccs-front-hugo/public /opt/ccs-front-hugo/public.<old release>
-mv /opt/ccs-front-hugo/public.new /opt/ccs-front-hugo/public
-echo "<release> $ZIP" > /opt/ccs-front-hugo/VERSION
-```
-
-`front` mounts `/opt/ccs-front-hugo`, so it sees the renamed `public`; nothing else restarts.
-A design and a ccs-front-bash that need each other (a new `{{slot}}`) switch together; the
-gate of step 3 must already know the slot.
 
 ## Check it worked
 
@@ -182,8 +157,7 @@ hears too).
 ## Going back
 
 - **The backend:** between runs, the `.env` and checkout from `$B`
-  (`git -C /opt/ccs-bash checkout -q $(cat $B/commit)`), and the old `public` back in place
-  (`public.<old release>`). Then `docker compose up -d`.
+  (`git -C /opt/ccs-bash checkout -q $(cat $B/commit)`). Then `docker compose up -d`.
 - **The web server:** the `.env` from `$B`, then init and `up -d`; a new design moved out of
   `/etc/ccs-gate/design/`.
 

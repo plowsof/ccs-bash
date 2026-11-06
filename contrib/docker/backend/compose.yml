@@ -1,8 +1,8 @@
 # The backend in Docker (docs/docker.md): the update of docs/handover.md, step 9, as one service
 # a stage (contrib/docker/backend/step), each with only its own user, network and folders, and
 # monero-wallet-rpc. No service has the Docker socket: they take turns through the run folder.
-# The images by ID, never pulled: ccs-bash's and ccs-front-bash's as their releases and ccs-sigs
-# attest them, the wallet's as built here (wallet-rpc/Dockerfile). The host's accounts,
+# The images by ID, never pulled: ccs-bash's as its release and ccs-sigs attest it, the wallet's
+# as built here (wallet-rpc/Dockerfile). The host's accounts,
 # folders, config and keys: docs/setup.md.
 # Its settings: .env beside this file (env.example). A host whose monerod listens on its
 # 127.0.0.1 only: compose.host.yml as well.
@@ -32,7 +32,7 @@ x-hardened: &hardened
       tag: ccs
 
 x-run: &run
-  # the run folder: each stage's "done", "status", "at", pipes, and the push's lock
+  # the run folder: each stage's "done", "status", "at", pipes
   type: bind
   source: ${CCS_RUN_DIR:-/var/lib/ccs/run}
   target: /run/ccs
@@ -55,7 +55,7 @@ networks:
   default: {}
 
 services:
-  # once, as root: the run folder, a folder for each stage owned by its user, the push's lock
+  # once, as root: the run folder, a folder for each stage owned by its user
   init:
     image: ${CCS_BASH_IMAGE:?the attested ccs-bash image ID}
     pull_policy: never
@@ -67,7 +67,7 @@ services:
     user: "0:0"
     entrypoint: [*step, "init"]
     environment:
-      CCS_UIDS: "pull=${GIT_UID:?} ccs-bash=${CCS_UID:?} backup=${SEND_UID:?} front=${FRONT_UID:?} push=${PUSH_UID:?} watch=${WATCH_UID:?}"
+      CCS_UIDS: "pull=${GIT_UID:?} ccs-bash=${CCS_UID:?} backup=${SEND_UID:?} push=${PUSH_UID:?} watch=${WATCH_UID:?}"
       CCS_NOW_GID: ${WALLET_UID:?}
       CCS_WATCH_GID: ${WATCH_UID}
     volumes: [*run]
@@ -179,36 +179,10 @@ services:
       - ${CCS_BACKUP_KEYS:-/etc/ccs/backup}:/etc/ccs/backup:ro
       - *run
 
-  front:
-    <<: *hardened
-    image: ${CCS_FRONT_IMAGE:?the attested ccs-front-bash image ID}
-    network_mode: none
-    user: "${FRONT_UID}"
-    # the stage runner from ccs-bash's checkout at its attested commit (the image has bash)
-    entrypoint: ["/step", "front", "/design/public", "/data", "/proposals", "/www/site", "/subaddresses/subaddresses.txt"]
-    environment:
-      <<: *every
-      # the site's onion address, for the footer's onion line (none: no line); the web server's
-      # gate accepts only the one in its own /etc/ccs-gate/onion
-      CCS_ONION: ${CCS_ONION:-}
-      # the feed's links (feed.xml): the site's address, as the web server's alert.conf SITE_URL
-      CCS_SITE_URL: ${CCS_SITE_URL:-}
-    healthcheck: {<<: *health, test: ["CMD", "/step", "health", "front"]}
-    volumes:
-      - ${CCS_BASH_DIR:-/opt/ccs-bash}/contrib/docker/backend/step:/step:ro
-      # the folder above the design: an upgrade renames public (public.old, public.new), and
-      # a mount of public itself would keep the old one
-      - ${CCS_DESIGN_DIR:-/opt/ccs-front-hugo}:/design:ro
-      - /var/lib/ccs/out:/data:ro
-      - /var/lib/ccs/proposals:/proposals:ro
-      - /var/lib/ccs/www:/www
-      - /etc/ccs-front:/subaddresses:ro
-      - *run
-
   push:
     <<: *hardened
     image: ${CCS_BASH_IMAGE}
-    # its own user (its key, the copy of what was pushed, each run's result); out over ssh
+    # its own user (its key, each run's result); out over ssh
     user: "${PUSH_UID}"
     entrypoint: [*step, "push"]
     environment:
@@ -220,10 +194,8 @@ services:
       - /etc/passwd:/etc/passwd:ro
       # the push key and the web server's host key (id_ed25519, known_hosts; ccs-push, 600)
       - ${CCS_PUSH_KEYS:-/etc/ccs/push}:/etc/ccs/push:ro
-      # the folder above the site: ccs-front-bash replaces www/site each run, and a mount of it
-      # would keep the one replaced (empty, once deleted)
-      - /var/lib/ccs/www:/var/lib/ccs/www:ro
-      - /var/lib/ccs/pushed:/var/lib/ccs/pushed
+      # site-data.json (ccs-bash's), what is pushed
+      - /var/lib/ccs/out:/var/lib/ccs/out:ro
       - *run
 
   # ccs-watch: after each run, and between pushes at random times (out to the web server, and
@@ -242,9 +214,10 @@ services:
     healthcheck: {<<: *health, test: ["CMD", *step, "health", "watch"]}
     volumes:
       - ${CCS_ALERT_CONF:-/etc/ccs/alert.conf}:/etc/ccs/alert.conf:ro
-      # alert.conf's SUBADDRESSES
+      # the signed list and its QR codes (alert.conf's SUBADDRESSES), what the live pages'
+      # addresses are checked against, with ccs-bash's projects.json (each proposal's own)
       - /etc/ccs-front:/etc/ccs-front:ro
-      - /var/lib/ccs/pushed:/var/lib/ccs/pushed:ro
+      - /var/lib/ccs/out:/var/lib/ccs/out:ro
       # forge-ok, read; its own state, written (ccs-watch's)
       - /var/lib/ccs/state:/var/lib/ccs/state:ro
       - ${CCS_WATCH_DIR:-/var/lib/ccs/watch}:/var/lib/ccs/watch
