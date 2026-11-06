@@ -51,8 +51,9 @@ var (
 	named = map[string]int{"amp": 38, "lt": 60, "gt": 62, "quot": 34, "apos": 39, "AMP": 38, "LT": 60, "GT": 62, "QUOT": 34}
 )
 
-// char: an entity's character: printable ASCII as itself, a space as one, anything else \x01
-// (read both ways). A < or > written as an entity is text a browser shows, never markup: read as
+// char: an entity's character: printable ASCII as itself, a space as one, one drawn as an ASCII
+// letter or digit as that (addr.Lookalike: &#x430; is a Cyrillic a), anything else \x01 (read
+// both ways). A < or > written as an entity is text a browser shows, never markup: read as
 // punctuation, an address's groups either side of it are one (review 11's M-1)
 func char(n int) string {
 	if n == '<' || n == '>' {
@@ -63,6 +64,9 @@ func char(n int) string {
 	}
 	if n == 9 || n == 10 || n == 12 || n == 13 || n == 32 {
 		return " "
+	}
+	if l := addr.Lookalike(rune(n)); l != 0 {
+		return string(rune(l))
 	}
 	return "\x01"
 }
@@ -80,23 +84,52 @@ func number(digits string, base int) int {
 	return int(n)
 }
 
-func entity(e string) string {
+// code: an entity's character, -1 for none (a name not in named, a number too large)
+func code(e string) int {
 	e = strings.TrimSuffix(e, ";")
 	switch {
 	case strings.HasPrefix(e, "&#x") || strings.HasPrefix(e, "&#X"):
-		return char(number(e[3:], 16))
+		return number(e[3:], 16)
 	case strings.HasPrefix(e, "&#"):
-		return char(number(e[2:], 10))
+		return number(e[2:], 10)
 	}
 	if n, ok := named[e[1:]]; ok {
+		return n
+	}
+	return -1
+}
+
+func entity(e string) string {
+	if n := code(e); n >= 0 {
 		return char(n)
 	}
 	return "\x01"
 }
 
+// Bidi: why a file with a bidi control fails, as itself or as an entity: a browser shows the text
+// after it in another order than it is written, so an address written backwards, in groups,
+// reads the right way round where the checks read it backwards (review 12's M-1)
+const Bidi = "!a bidi control (U+202A-202E or U+2066-2069): text shown in another order than it is written"
+
+// bidi: raw has a bidi control as itself (UTF-8), or d (raw as latin-1, its entities still in it)
+// as an entity
+func bidi(raw []byte, d string) bool {
+	if bytes.ContainsFunc(raw, addr.Bidi) {
+		return true
+	}
+	for _, e := range entities.FindAllString(d, -1) {
+		if addr.Bidi(rune(code(e))) {
+			return true
+		}
+	}
+	return false
+}
+
 // Pages: a page, feed or JSON as text, read as bytes: it must start as a page or JSON
-// does (<, [ or {), or a browser shows it as an image; a byte that isn't ASCII, or a control
-// character, read twice (dropped, and as a space); entities as a browser reads them (&#56; is 8)
+// does (<, [ or {), or a browser shows it as an image, and have no bidi control; a byte that isn't
+// ASCII, or a control character, read twice (dropped, and as a space); entities as a browser
+// reads them (&#56; is 8); and, with a character drawn as an ASCII letter or digit (a Cyrillic а,
+// a full-width Ａ), read a third time as a reader copying it by eye does (addr.Lookalikes)
 func Pages(files []string, w io.Writer) error {
 	c, max := addr.New(), Max()
 	for _, f := range files {
@@ -125,13 +158,26 @@ func Pages(files []string, w io.Writer) error {
 		if !starts.MatchString(d) {
 			out["!not text that starts as a page or JSON does (<, [ or {): a browser would show it as an image"] = true
 		}
-		d = entities.ReplaceAllStringFunc(controls.ReplaceAllString(d, "\x01"), entity)
-		for _, m := range qrs.FindAllString(d, -1) {
-			fmt.Fprintf(w, "%s\t?qr\t%s\n", f, m)
+		if bidi(raw, d) {
+			out[Bidi] = true
 		}
-		d = qrs.ReplaceAllString(d, " ")
-		if err := both(c, d, out); err != nil {
-			out["!"+err.Error()] = true
+		readings := []string{d}
+		if t, drawn := addr.Lookalikes(string(raw)); drawn {
+			readings = append(readings, t)
+		}
+		c.Start()
+		for i, t := range readings {
+			t = entities.ReplaceAllStringFunc(controls.ReplaceAllString(t, "\x01"), entity)
+			if i == 0 {
+				for _, m := range qrs.FindAllString(t, -1) {
+					fmt.Fprintf(w, "%s\t?qr\t%s\n", f, m)
+				}
+			}
+			t = qrs.ReplaceAllString(t, " ")
+			if err := both(c, t, out); err != nil {
+				out["!"+err.Error()] = true
+				break
+			}
 		}
 		emit(w, f, out)
 	}
@@ -143,7 +189,6 @@ func Pages(files []string, w io.Writer) error {
 // labels or a tag and its count, is one run there), by checksum only. ErrTooMany keeps what was
 // found before it
 func both(c *addr.Checker, t string, out map[string]bool) error {
-	c.Start()
 	for _, v := range []string{strings.ReplaceAll(t, "\x01", ""), strings.ReplaceAll(t, "\x01", " ")} {
 		if err := c.Runs(v, out); err != nil {
 			return err
@@ -171,7 +216,8 @@ func emit(w io.Writer, f string, out map[string]bool) {
 
 // JSON: each JSON file's strings as a reader of it gets them (\u escapes read, every key
 // and value, a key twice both), their addresses read as the pages' text is: a character that
-// isn't ASCII dropped, and again as a space. Its first 16 MB.
+// isn't ASCII dropped, and again as a space, and as a reader copying it by eye reads it
+// (addr.Lookalikes); a bidi control fails it, as a page's. Its first 16 MB.
 func JSON(files []string, w io.Writer) error {
 	c := addr.New()
 	for _, f := range files {
@@ -184,6 +230,9 @@ func JSON(files []string, w io.Writer) error {
 		c.Start()
 		var tooMany error
 		for _, s := range strs {
+			if strings.ContainsFunc(s, addr.Bidi) {
+				out[Bidi] = true
+			}
 			s = strings.Map(func(r rune) rune {
 				switch {
 				case r == '\t' || r == '\n' || r == '\f' || r == '\r':
@@ -195,13 +244,19 @@ func JSON(files []string, w io.Writer) error {
 				}
 				return r
 			}, s)
+			readings := []string{}
 			for _, repl := range []rune{-1, ' '} {
-				t := strings.Map(func(r rune) rune {
+				readings = append(readings, strings.Map(func(r rune) rune {
 					if r > 0x7f {
 						return repl
 					}
 					return r
-				}, s)
+				}, s))
+			}
+			if t, drawn := addr.Lookalikes(s); drawn {
+				readings = append(readings, t)
+			}
+			for _, t := range readings {
 				if tooMany = c.Runs(t, out); tooMany != nil {
 					break
 				}

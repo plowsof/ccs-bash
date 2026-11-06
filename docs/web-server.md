@@ -15,13 +15,18 @@ setting it up: [the web server in Docker](docker.md#the-web-server-in-docker).
 
 ## What it guarantees, and what not
 
-Every address on the site, as text or link, however written, split or disguised, is one of the
-signed list's (the wallet's 15,000 subaddresses, signed by a Core Team member) or in `allowed`
-(the General Fund); every page is the design's, filled by the gate itself; a proposal's text,
-milestones, payouts, images and merge request are what the proposals repository has (the gate
-fetches it itself: [why](reviewing.md)); a donation box's address is the list's line of the index
-the backend gave, its proposal's own, and its QR code the list's own file of that address. A file
-that fails is taken off the site, and the gate tells IRC.
+Every address on the site, as text or link, however written or split (entities, groups, markup),
+with letters drawn as an address's (the Cyrillic, Greek, full-width and mathematical ones:
+`addr/lookalike.go`), is one of the signed list's (the wallet's 15,000 subaddresses, signed by a
+Core Team member) or in `allowed` (the General Fund), and no page has a bidi control that could
+show one in another order than it is written; every page is the design's, filled by the gate
+itself; a proposal's text, milestones, payouts, images and merge request are what the proposals
+repository has (the gate fetches it itself: [why](reviewing.md)); a donation box's address is the
+list's line of the index the backend gave when the proposal first went live (the gate's pins: no
+push changes it, nor hides the proposal to), and its QR code the list's own file of that address.
+The site is built from `site-data.json` as the gate's check read it, written again, never from the
+bytes pushed. A file that fails is taken off the site, and the gate tells IRC, as it does of any
+page leaving; more than three leaving within a day wait for a person.
 
 **The proposals repository is trusted as reviewed.** What a merged proposal says, links to and
 shows is that repository's review's to vouch for: the gate makes a page from its file, and scans
@@ -91,13 +96,13 @@ About 3,900 lines, this repository's own and the ccs-front-bash release it vendo
 
 | File | Lines | What it is |
 |---|---|---|
-| [`contrib/ccs-receive`](../contrib/ccs-receive) | 322 | the gate: takes only `receive`, receives `site-data.json` alone, fetches the proposals repository, checks the data (`ccs-check data`), builds the site (`ccs-gate-build`), runs `ccs-check gate` on it, copies it live but what failed, alerts; the heartbeat |
-| [`contrib/ccs-check/`](../contrib/ccs-check) (Go, tests aside) | 1,481 | `data` (`sitedata/sitedata.go`: `site-data.json`, each value of its kind, each index the list's and its proposal's), `gate` (`gate/gate.go`: which built files go live), `receive` and `copy` (`push/push.go`: the push's tar, plain files only, at clean paths, within limits), `scan` (`scan/scan.go`, `addr/addr.go`: every address, by Monero's checksum) |
+| [`contrib/ccs-receive`](../contrib/ccs-receive) | 354 | the gate: takes only `receive`, receives `site-data.json` alone, fetches the proposals repository, checks the data (`ccs-check data`, which writes what the site is built from), builds the site (`ccs-gate-build`), runs `ccs-check gate` on it, copies it live but what failed, alerts (each page leaving too); the pins and the day's removals; the heartbeat |
+| [`contrib/ccs-check/`](../contrib/ccs-check) (Go, tests aside) | 1,785 | `data` (`sitedata/sitedata.go`: `site-data.json`, each key exactly as ccs-bash writes it, each value of its kind, each index the list's and its proposal's, the pins), `gate` (`gate/gate.go`: which built files go live), `receive` and `copy` (`push/push.go`: the push's tar, plain files only, at clean paths, within limits), `scan` (`scan/scan.go`, `addr/addr.go`, `addr/lookalike.go`: every address, by Monero's checksum, in look-alike letters too; no bidi control) |
 | `contrib/ccs-check/build.sh` | 71 | how it is built and tested (StageX's Go, no network) |
 | [`container/gate.Dockerfile`](../container/gate.Dockerfile) | 132 | what goes in the image, Tor built from its source among it |
 | [`contrib/docker/web/`](../contrib/docker/web) (`compose.yml`, `sshd_config`, `init`, `env.example`, `Caddyfile`, `torrc`) | 353 | how it runs: one user each, the forced command, read-only, sshd's three capabilities, limits; what Caddy serves and how, the onion |
 | `container/build.sh`, `verify-images.sh`, `fetch.sh`, `verify.sh` | 206 | the build: the pins' signatures and sums checked |
-| [`contrib/gate-build`](../contrib/gate-build), with ccs-bash's [`lib/site-data.sh`](../lib/site-data.sh), [`site.jq`](../lib/site.jq), [`proposals.sh`](../lib/proposals.sh), [`images.sh`](../lib/images.sh), [`common.sh`](../lib/common.sh), [`frontmatter.awk`](../lib/frontmatter.awk) | 563 | the site built here, with ccs-bash's own steps: the proposals' front matter and images from the repository fetched here, each one's merge request from its merge commits (`merge_requests`), each address the signed list's line of its index |
+| [`contrib/gate-build`](../contrib/gate-build), with ccs-bash's [`lib/site-data.sh`](../lib/site-data.sh), [`site.jq`](../lib/site.jq), [`proposals.sh`](../lib/proposals.sh), [`images.sh`](../lib/images.sh), [`common.sh`](../lib/common.sh), [`frontmatter.awk`](../lib/frontmatter.awk) | 580 | the site built here, with ccs-bash's own steps: the proposals' front matter and images from the repository fetched here, each one's merge request from its merge commits (`merge_requests`), each address the signed list's line of its index |
 | [`vendor/ccs-front-bash/`](../vendor/ccs-front-bash) | 817 | the ccs-front-bash release that fills the design (`lib/markdown.awk`: a proposal's text, escaped first; `RELEASE`: its tag and commit; CI checks the copy is that commit's, `contrib/vendor-front-bash --check`) |
 
 And what the site is built with, from the other repository: ccs-front-hugo's **design** (its

@@ -5,15 +5,16 @@ ccs-bash is bash, awk and jq, except in one place: the web server's gate,
 it goes live, and of the site the web server builds from it. Its checks are one static Go binary, [`ccs-check`](../contrib/ccs-check), built
 reproducibly by StageX's Go; nothing on the servers runs Python (the gate's checks were Python
 until they were ported). Some test scripts use Python; they run in CI and on a developer's
-machine.
+machine. The backend's image has it too, for ccs-watch, which reads the live pages' addresses
+with its `scan` (as the gate reads them).
 
 ## What it does
 
 | Subcommand | What it checks |
 |---|---|
-| `data` | the push, `site-data.json` (`sitedata/sitedata.go`): every key once and no other, each value of its kind; each index the signed list's, never 0, one proposal's only, and the one the live site has for it (its `projects.json`); amounts and dates as ccs-bash writes them; an idea's name and author plain text, its link a merge request of the proposals repository |
+| `data` | the push, `site-data.json` (`sitedata/sitedata.go`): every key once, byte for byte as ccs-bash writes it, and no other, each value of its kind; each index the signed list's, never 0, one proposal's only, and for a proposal the live site has given an address that one, never none (the gate's pins, `/var/lib/ccs-gate/pins`, and its `projects.json`); amounts and dates as ccs-bash writes them; an idea's name and author plain text with no address in it, its link a merge request of the proposals repository. Writes what it read again (`Clean`): what the site is built from |
 | `gate` | which files of the site built here go live (`gate/gate.go`): the scans below over every page, JSON file and the feed (no address in the feed), and every QR code `qr/<address>.png` the signed list's own file (its sum in `.qr.sha256`; never decoded); a file it can't read fails |
-| `scan`, `json`, `nul` | every address in the pages, JSON and feed, also spaced out, split (between elements too) or drawn with look-alikes (Monero's base58 and Keccak checksum), is the wallet's or allowed; `projects.json` reads as JSON; no NUL byte |
+| `scan`, `json`, `nul` | every address in the pages, JSON and feed, also spaced out, split (between elements too) or drawn with look-alikes (`addr/lookalike.go`: Cyrillic, Greek, full-width, mathematical; Monero's base58 and Keccak checksum), is the wallet's or allowed; no bidi control (U+202A-202E, U+2066-2069, as itself or an entity); `projects.json` reads as JSON; no NUL byte |
 | `receive` | receives the push, a tar of the files that changed (`contrib/ccs-push`): plain files only (a folder only as a file needs it: a folder entry makes nothing), at clean paths under staging, each written beside and renamed into place, within its limits; anything else refuses the whole push (in place of rsync, which the gate no longer has) |
 | `copy` | the site built into the live site (rsync -a's quick check, each file renamed into place, 644/755; `--delete`: what the build no longer has goes) |
 
@@ -34,7 +35,7 @@ matcher `match.go`, `front.go`, `projects.go`: about 1,800 lines), and the feed'
 
 - **Go:** StageX's (`container/images`, `go`), by digest, its signatures checked
   ([image.md](image.md)); `CGO_ENABLED=0`, `-trimpath`, no network: `contrib/ccs-check/build.sh`
-  and the gate's image make the same bytes (attesters sign the gate image).
+  and the two images make the same bytes (attesters sign them).
 - **No module**: Go's standard library and our own code only (`addr`: base58 and Keccak;
   `push`: the push's tar, read with `archive/tar`).
   `go.mod` requires nothing, so there is nothing to fetch, pin or patch.
