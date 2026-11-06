@@ -29,6 +29,12 @@ t=$(mktemp -d)
 trap 'rm -rf "$t"' EXIT
 mkdir -p "$t/proposals" "$t/data" "$t/work" "$t/list"
 git -C "$GIT" archive refs/heads/ccs | tar -x -C "$t/proposals"
+# the proposals' text without bidi controls (ccs-check nobidi), which would show what follows them
+# in another order than written (review 12's M-1); 36c3.md has one, pasted with a number
+shopt -s nullglob
+md=("$t"/proposals/*.md)
+((${#md[@]} == 0)) || "${CCS_CHECK:-ccs-check}" nobidi "${md[@]}" > /dev/null
+shopt -u nullglob
 PROPOSALS_DIR=$t/proposals OUTPUT_DIR=$t/data WORK=$t/work
 links=''
 if [[ ${MRS:-} ]]; then links=$t/links.json && merge_requests "$GIT" "$MRS" "${MR_REPOS:-}" > "$links"; fi

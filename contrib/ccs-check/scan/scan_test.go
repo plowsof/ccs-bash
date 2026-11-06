@@ -109,3 +109,19 @@ func TestJSON(t *testing.T) {
 		}
 	}
 }
+
+// review 12's M-1: the proposals' text without bidi controls, raw or as entities; the rest as it
+// was (36c3.md's "&#x202D;505.96" pasted from a spreadsheet: the number, as a reader sees it)
+func TestNobidi(t *testing.T) {
+	for in, want := range map[string]string{
+		"leading to ‭505.963136971449 XMR": "leading to 505.963136971449 XMR",
+		"a &#x202E;b&#X202c; c &#8238;d":   "a b c d",
+		"&#x2067;x&#8294;":                 "x",
+		"no bidi: é, &amp;, &#x41;, ‏":     "no bidi: é, &amp;, &#x41;, ‏",
+		"bad \xff bytes ‮ kept":            "bad \xff bytes  kept",
+	} {
+		if got := string(Nobidi([]byte(in))); got != want {
+			t.Errorf("%q: %q", in, got)
+		}
+	}
+}

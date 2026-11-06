@@ -18,7 +18,7 @@ func main() {
 		os.Exit(0) // it runs: the gate's image test (tests/gate-image.sh)
 	}
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: ccs-check scan|json|nul FILE... | data FILE LIST PROPOSALS HOSTS LIVE | gate KEY=VALUE... | receive DIR < tar | copy [--delete] SRC DST (--check: it runs)")
+		fmt.Fprintln(os.Stderr, "usage: ccs-check scan|json|nul|nobidi FILE... | data FILE LIST PROPOSALS HOSTS LIVE PINS OUT | gate KEY=VALUE... | receive DIR < tar | copy [--delete] SRC DST (--check: it runs)")
 		os.Exit(2)
 	}
 	run, ok := commands[os.Args[1]]
