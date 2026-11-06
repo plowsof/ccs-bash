@@ -1,7 +1,7 @@
 # The busybox applets in the gate's image (gate.Dockerfile), in place of GNU's coreutils,
 # findutils, grep, sed, gawk, diffutils, tar and util-linux's flock: what contrib/ccs-receive,
 # contrib/ccs-backup-receive, contrib/docker/web/init and the web compose's healthchecks run
-# (awk: markdown.awk, frontmatter.awk and feed.awk on the same awk the backend runs them on), plus
+# (awk: frontmatter.awk and ccs-front-bash's markdown.awk on the same awk the backend runs them on), plus
 # chown, cp, install and ls for tests/gate.sh, so it runs against exactly what ships; readlink, diff, ln and sync for
 # the site built here (contrib/gate-build, ccs-front-bash, lib/images.sh and common.sh). Nothing else
 # is compiled into busybox.

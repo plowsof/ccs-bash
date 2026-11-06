@@ -93,20 +93,17 @@ release needed is still in `container/sources/` (a download cache, not in git); 
 
 ## 3. The web server
 
-**3a. A new design:** fetch it, check its sha256, unpack it beside the old ones, and add its
-files to `design.sha256`. Nothing restarts.
+**3a. A new design:** fetch it, check its sha256, and unpack it beside the old ones. The gate
+builds with the newest release in `design/` from its next push on: install it with the gate
+whose ccs-front-bash fills it (the handover's releases table). Nothing restarts.
 
 ```
-cp -a /etc/ccs-gate/design.sha256 "$B/"
 curl -fsSLo /tmp/d.zip https://github.com/plowsof/ccs-front-hugo/releases/download/<release>/ccs-front-hugo-<release>.zip
 echo "$ZIP  /tmp/d.zip" | sha256sum -c -
-unzip -q /tmp/d.zip -d /etc/ccs-gate/design/<release>
-(cd /etc/ccs-gate/design/<release> && find . -type f ! -name '*.html' -exec sha256sum {} +) > /tmp/lines
-flock /var/lib/ccs-gate/lock sh -c 'cat /tmp/lines >> /etc/ccs-gate/design.sha256'
+unzip -q /tmp/d.zip -d /etc/ccs-gate/design/<release>.new && mv /etc/ccs-gate/design/<release>.new /etc/ccs-gate/design/<release>
 ```
 
-The old designs stay: the gate takes a page of any of them, so the backend can switch later.
-A changed `markdown.awk` goes beside the old one as `/etc/ccs-gate/markdown-<release>.awk`.
+The old designs can stay (going back: move the new one out).
 
 **3b. A new gate:**
 
@@ -163,14 +160,13 @@ gate of step 3 must already know the slot.
 ```
 cd /opt/ccs-bash/contrib/docker/web && docker compose ps     # healthy (the gate's check runs every 5 minutes)
 tail -n 5 /var/log/ccs-web/ccs-gate.log
-ls /var/lib/ccs-gate/quarantine                                   # none: nothing was taken off the site
 curl -sSo /dev/null -w '%{http_code}\n' https://<the site>/        # 200
 ```
 
-The log's first push after a new gate, design or `markdown.awk` checks every page:
-`checking 328 of 328 pages and JSON files (all of them: …)`. The push after it checks `0 of
-328`, which only happens once the full check has passed and recorded what it checked against.
-`held back …` lines name what didn't pass (IRC hears too).
+The log's first push after a new gate or design builds the site: `built the site from
+site-data.json (the design v0.1.29, the proposals at 1a2b3c4): live`. `took … off the site` lines
+name a page that didn't pass, `held back` or `could not build` a build that didn't go live (IRC
+hears too).
 
 **The backend:**
 - the next run: every stage `ok` and the push `pushed` (`ccs status`);
@@ -188,7 +184,7 @@ The log's first push after a new gate, design or `markdown.awk` checks every pag
 - **The backend:** between runs, the `.env` and checkout from `$B`
   (`git -C /opt/ccs-bash checkout -q $(cat $B/commit)`), and the old `public` back in place
   (`public.<old release>`). Then `docker compose up -d`.
-- **The web server:** the `.env` from `$B`, then init and `up -d`. Its `design.sha256` can keep
-  the new lines.
+- **The web server:** the `.env` from `$B`, then init and `up -d`; a new design moved out of
+  `/etc/ccs-gate/design/`.
 
 The old images are still there, kept by their keep containers.
