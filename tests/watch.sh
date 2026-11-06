@@ -35,7 +35,7 @@ printf '[{"filename":"a b.md","state":"FUNDING-REQUIRED","address":"%s"},{"filen
 mkdir -p "$tmp/remote/proposals" "$tmp/remote/funding-required" "$tmp/remote/donate" "$tmp/remote/verify" "$tmp/remote/qr"
 echo "<p>home</p><p class=\"address\">$(addr 3 8)</p>" > "$tmp/remote/index.html"
 for d in funding-required donate verify; do echo "$d" > "$tmp/remote/$d/index.html"; done
-echo "<a href=\"../index.html\">home</a><details class=\"contribute\"><a class=\"qr\" href=\"monero:$(addr 1)\"><img src=\"../qr/$(addr 1).png\"></a><div class=\"address\">$(addr 1)</div></details><p class=\"address\">$(addr 3 8)</p>" > "$tmp/remote/proposals/a b.html"
+echo "<a href=\"../index.html\">home</a><!-- ccs:donate --><details class=\"contribute\"><a class=\"qr\" href=\"monero:$(addr 1)\"><img src=\"../qr/$(addr 1).png\"></a><div class=\"address\">$(addr 1)</div></details><!-- /ccs:donate --><p class=\"address\">$(addr 3 8)</p><img src=\"../assets/fund-qr.png\">" > "$tmp/remote/proposals/a b.html"
 echo "<p>the General Fund in the footer, no box</p><p class=\"address\">$(addr 3 8)</p>" > "$tmp/remote/proposals/done.html"
 echo '[{"filename":"a b.md"}]' > "$tmp/remote/projects"
 cp "$tmp/list.txt.qr/$(addr 1).png" "$tmp/remote/qr/"
@@ -133,8 +133,11 @@ watch || true
 if [[ $(alerts) == 2 ]]; then ok "changed, put back, changed again within a day: the first run that sees it again alerts"; else cat "$tmp/log"; fail "a page changed every other run"; fi
 cp "$tmp/page.good" "$page"; rm -f "$tmp/state"/differs-*
 # Another of the list's addresses in the box (another proposal's): not its own, an alert on the
-# second run; the list's QR code of another address in it, likewise
-for c in "box|s/monero:$(addr 1)/monero:$(addr 2)/|the donation box isn't its proposal's address" "qr|qr|the donation box's QR code isn't the signed list's of its address"; do
+# second run; the list's QR code of another address in it, likewise; and (review 12's L-2) another
+# image in the box, in place of its QR code or beside it
+for c in "box|s/monero:$(addr 1)/monero:$(addr 2)/|the donation box isn't its proposal's address" "qr|qr|the donation box's QR code isn't the signed list's of its address" \
+    "img|s#src=\"../qr/$(addr 1).png\"#src=\"../images/x.png\"#|the donation box shows another image than its address's QR code" \
+    "two|s#</details>#<img src=\"../images/x.png\"></details>#|the donation box shows another image than its address's QR code"; do
     IFS='|' read -r what how why <<<"$c"
     : > "$tmp/bot.txt"; rm -f "$tmp/state"/alert-* "$tmp/state"/differs-*
     if [[ $what == qr ]]; then cp "$tmp/list.txt.qr/$(addr 2).png" "$tmp/remote/qr/$(addr 1).png"; else sed -i "$how" "$page"; fi
@@ -151,6 +154,20 @@ if [[ $(alerts) == 1 ]] && grep -qF "donation address $(addr 7 B | sed -E 's/^(.
     ok "a foreign address on a page without a box (seen when it is among the sampled ones): an alert"
 else cat "$tmp/log" "$tmp/bot.txt"; fail "a foreign address in a page's text"; fi
 sed -i '$d' "$tmp/remote/proposals/done.html"; : > "$tmp/bot.txt"; rm -f "$tmp/state"/alert-* "$tmp/state"/differs-*
+# with the gate's scan (ccs-check, in the ccs-bash image), review 12's L-2: an address in groups,
+# or written as entities, found as the gate finds it (a real one: groups are kept by checksum)
+if [[ ${CCS_WATCH_IMAGE:-} ]] || command -v ccs-check > /dev/null; then
+    real=9uH2Z776LeJ4gku967Y3o8VrBueTqSoQhDXVftRkU2Jt81du8DDNV4eAFmPaojQV4mhrgDBvzUfRX7EoHp245dNf9wimfPf
+    for c in "in groups|$(for ((i = 0; i < 95; i += 4)); do printf '%s ' "${real:i:4}"; done)" "as entities|$(for ((i = 0; i < 95; i++)); do printf '&#%d;' "'${real:i:1}"; done)"; do
+        IFS='|' read -r what text <<<"$c"
+        echo "<p>or send to $text</p>" >> "$tmp/remote/proposals/done.html"
+        for _ in $(seq 20); do watch || true; [[ $(alerts) == 0 ]] || break; done
+        if [[ $(alerts) == 1 ]] && grep -qF "donation address ${real:0:6}…${real: -4} does not match the CCS wallet" "$tmp/bot.txt"; then
+            ok "a foreign address $what on a page: found as the gate finds it, an alert"
+        else cat "$tmp/log" "$tmp/bot.txt"; fail "a foreign address $what"; fi
+        sed -i '$d' "$tmp/remote/proposals/done.html"; : > "$tmp/bot.txt"; rm -f "$tmp/state"/alert-* "$tmp/state"/differs-*
+    done
+fi
 
 # Changed for a moment only (a push landing): put back before the recheck, never alerts.
 rm -f "$tmp/state"/alert-*; base=$(alerts)
@@ -313,7 +330,8 @@ mkdir -p "$tmp/e/site/proposals" "$tmp/e/out"
 echo '<p>not here</p>' > "$tmp/e/site/404.html"; echo '<p>home</p>' > "$tmp/e/site/index.html"
 printf '[{"filename":"p.md","state":"FUNDING-REQUIRED","address":"%s"}]\n' "$(addr 1)" > "$tmp/e/out/projects.json"
 for d in funding-required donate verify; do mkdir -p "$tmp/e/site/$d" && echo "$d" > "$tmp/e/site/$d/index.html"; done; echo '[]' > "$tmp/e/site/projects"
-echo "<details class=\"contribute\"><a href=\"monero:$(addr 1)\"></a><div class=\"address\">$(addr 1)</div></details>" > "$tmp/e/site/proposals/p.html"
+mkdir -p "$tmp/e/site/qr" && cp "$tmp/list.txt.qr/$(addr 1).png" "$tmp/e/site/qr/"
+echo "<!-- ccs:donate --><details class=\"contribute\"><a href=\"monero:$(addr 1)\"><img src=\"../qr/$(addr 1).png\"></a><div class=\"address\">$(addr 1)</div></details><!-- /ccs:donate -->" > "$tmp/e/site/proposals/p.html"
 sed "s/$(addr 1)/$(addr 7 B)/g" "$tmp/e/site/proposals/p.html" > "$tmp/e/evil.html"
 ep=$(port)
 python3 -c '

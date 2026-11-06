@@ -77,9 +77,10 @@ one proposal's only and the one the live site has for it; IRC told of one that f
 (`vendor/ccs-front-bash`), the newest design release, the signed list and its QR codes, and the
 proposals repository it fetches itself (each proposal's text, images and front matter, and its
 merge request, read from the merge commit that added it). Then it checks what it built: every
-address on every page, however split or disguised, the wallet's or allowed (the backstop for an
-address in a proposal's own text), every donation QR code the signed list's file. A page that
-fails is taken off the site and IRC is told; more than three at once, none of the new site goes
+address on every page, however split (in groups, by markup), in letters drawn as an address's or
+reordered by a bidi control, the wallet's or allowed (the backstop for an address in a proposal's
+own text), every donation QR code the signed list's file. A page that fails is taken off the site
+and IRC is told, as of any page leaving; more than three within a day, none of the new site goes
 live ([details](two-machines.md#the-gate-the-web-server-builds-the-site-itself); what to review
 there: [the web server](web-server.md)). Nothing else of the CCS runs there but the gate's
 heartbeat (an alert when pushes stop).

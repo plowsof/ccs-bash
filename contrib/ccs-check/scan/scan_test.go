@@ -55,6 +55,17 @@ func TestPages(t *testing.T) {
 		"split by &AMP":    {"<h1>" + fund[:47] + "&AMP" + fund[47:] + "</h1>", fund + "\n"},
 		"&notin is &not":   {"<h1>" + fund[:47] + "&notin" + fund[47:] + "</h1>", ""},
 		"&shyx not a name": {"<h1>" + fund[:47] + "&shyx;" + fund[47:] + "</h1>", fund + "\n"},
+		// review 12's M-1: a bidi control (an address written backwards shown the right way round),
+		// as itself or as an entity; an address with letters drawn as its own (Cyrillic, full-width)
+		"U+202E":                {"<p>Send to \u202e" + reverse(grouped(fund, 5)) + "\u202c</p>", Bidi + "\n"},
+		"&#x202E;":              {"<p>Send to &#x202E;" + reverse(grouped(fund, 5)) + "&#x202C;</p>", Bidi + "\n"},
+		"&#8238;":               {"<p>&#8238;x</p>", Bidi + "\n"},
+		"&#x2067; (an isolate)": {"<p>&#X02067;x</p>", Bidi + "\n"},
+		"a Cyrillic а":          {"<p>" + strings.Replace(fund, "a", "а", 1) + "</p>", fund + "\n"},
+		"a Cyrillic а, grouped": {"<p>" + strings.Replace(grouped(fund, 4), "a", "а", 1) + "</p>", fund + "\n"},
+		"&#x430;, grouped":      {"<p>" + strings.Replace(grouped(fund, 4), "a", "&#x430;", 1) + "</p>", fund + "\n"},
+		"full-width":            {"<p>" + strings.Replace(fund, "A", "Ａ", 2) + "</p>", fund + "\n"},
+		"Cyrillic words":        {"<p>Привет, мир: это предложение.</p>", ""},
 	} {
 		if got := run(t, pages, c.in); got != c.want {
 			t.Errorf("%s: %q", name, got)
@@ -62,17 +73,36 @@ func TestPages(t *testing.T) {
 	}
 }
 
+// grouped: a in groups of n, space-separated (the last group as long as is left)
+func grouped(a string, n int) string {
+	var g []string
+	for len(a) > n {
+		g, a = append(g, a[:n]), a[n:]
+	}
+	return strings.Join(append(g, a), " ")
+}
+
+func reverse(s string) string {
+	r := []rune(s)
+	for i, j := 0, len(r)-1; i < j; i, j = i+1, j-1 {
+		r[i], r[j] = r[j], r[i]
+	}
+	return string(r)
+}
+
 func TestJSON(t *testing.T) {
 	for name, c := range map[string]struct{ in, want string }{
-		"a key twice":      {`{"a": "x", "a": "` + fund + `"}`, fund + "\n"},
-		"split by <":       {`["` + fund[:47] + ` < ` + fund[47:] + `"]`, fund + "\n"},
-		"split by \\u003e": {`["` + fund[:47] + `\u003e` + fund[47:] + `"]`, fund + "\n"},
-		"escaped":          {`["` + strings.Join(strings.Split(fund, ""), `\u0000`) + `"]`, fund + "\n"},
-		"not JSON":         {`{"a": 1,}`, "!not JSON (UTF-8) that reads\n"},
-		"empty":            {``, "!not JSON (UTF-8) that reads\n"},
-		"two values":       {`{} {}`, "!not JSON (UTF-8) that reads\n"},
-		"not UTF-8":        {"[\"\xff\"]", "!not JSON (UTF-8) that reads\n"},
-		"large number":     {`[1e400]`, ""},
+		"a bidi control":        {`["a\u202eb"]`, Bidi + "\n"},
+		"a Cyrillic а, grouped": {`["` + strings.Replace(grouped(fund, 4), "a", "а", 1) + `"]`, fund + "\n"},
+		"a key twice":           {`{"a": "x", "a": "` + fund + `"}`, fund + "\n"},
+		"split by <":            {`["` + fund[:47] + ` < ` + fund[47:] + `"]`, fund + "\n"},
+		"split by \\u003e":      {`["` + fund[:47] + `\u003e` + fund[47:] + `"]`, fund + "\n"},
+		"escaped":               {`["` + strings.Join(strings.Split(fund, ""), `\u0000`) + `"]`, fund + "\n"},
+		"not JSON":              {`{"a": 1,}`, "!not JSON (UTF-8) that reads\n"},
+		"empty":                 {``, "!not JSON (UTF-8) that reads\n"},
+		"two values":            {`{} {}`, "!not JSON (UTF-8) that reads\n"},
+		"not UTF-8":             {"[\"\xff\"]", "!not JSON (UTF-8) that reads\n"},
+		"large number":          {`[1e400]`, ""},
 	} {
 		if got := run(t, jsons, c.in); got != c.want {
 			t.Errorf("%s: %q", name, got)

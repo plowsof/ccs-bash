@@ -152,17 +152,28 @@ repository it fetches, the design and the signed list installed here. Each push,
    and merged, never from the backend; and its **merge request**, read from GitLab's merge commits
    ("See merge request monero-project/ccs-proposals!522": the one that added the proposal's
    file), linked under `MERGE_REQUESTS`, and only to the repository itself (its own address or
-   `LINK_HOSTS`': a message naming another project on the forge, anyone's, gives no link);
-3. checks **`site-data.json`** (`ccs-check data`): every key once and no other, each value of its
-   kind; each index one the signed list has, never 0 (the wallet's main address), one
-   proposal's only, and the one the live site has for the proposal (a push can't give a proposal
-   another address, nor one another proposal has, while the proposal is in the repository: a
-   renamed one's goes with it); amounts and dates as ccs-bash writes them; an idea's name and
+   `LINK_HOSTS`': a message naming another project on the forge, anyone's, gives no link). A
+   proposal's own `gitlab_url` (its front matter) is its link only if it is a merge request of
+   the repository itself, and then it wins (a file added twice: the oldest merge commit isn't
+   always the proposal's);
+3. checks **`site-data.json`** (`ccs-check data`): every key once, byte for byte as ccs-bash
+   writes it (Go's decoder would read `STATE` or `Subaddr_Index` as the key, where jq, which
+   builds the site, reads only the exact one), and no other; each value of its kind; each index
+   one the signed list has, never 0 (the wallet's main address), one proposal's only, and, for a
+   proposal the live site has given an address, that one: the gate keeps its own record of them,
+   `/var/lib/ccs-gate/pins`, each written as the proposal first goes live with it, never changed
+   by a push, so no index, or no state at all, is held back too (a push can't hide a proposal to
+   give it another address next time, nor give its address to another proposal, while the
+   proposal is in the repository: a renamed one's goes with it; a person lets one go:
+   [troubleshooting](troubleshooting.md#a-proposals-page-isnt-updating-old-text-old-totals)); amounts and dates as ccs-bash writes them; an idea's name and
    author plain text (escaped, 1000 characters at most, no bidi controls, no run of 90 characters
    each base58 or not ASCII: no address, padded, split by invisible characters or drawn with
-   look-alikes), its link a merge request of the proposals repository itself (its address, host
-   and path, and `LINK_HOSTS`: not another repository on its forge, which anyone can make). One
-   that fails is held back: the live site stays as it is, and IRC is told;
+   look-alikes, and no address in groups either, read as step 5 reads one), its link a merge
+   request of the proposals repository itself (its address, host and path, and `LINK_HOSTS`: not
+   another repository on its forge, which anyone can make). One that fails is held back: the live
+   site stays as it is, and IRC is told. One that passes is written again as it was read, and
+   the site is built from that copy, never from the bytes pushed (the live site's
+   `site-data.json` is that copy too);
 4. **builds the site** (`ccs-gate-build`): ccs-bash's own steps for the site's JSON (`site.jq`,
    each address the signed list's line of its index) and the ccs-front-bash release the image
    vendors, with the newest design release; each QR code the signed list's own file of its address
@@ -170,10 +181,14 @@ repository it fetches, the design and the signed list installed here. Each push,
    `markdown.awk`. A build that fails: the live site stays as it is, and IRC is told;
 5. checks **what it built** (`ccs-check gate`): every address (95 or 106 base58 characters) in its
    pages, JSON and feed against the signed list and `allowed`, as written (tags and attributes
-   too, entities decoded, a non-ASCII character read both as nothing and as a space; one in groups
+   too, entities decoded, a non-ASCII character read both as nothing and as a space, and a letter
+   drawn as an address's, Cyrillic, Greek, full-width or mathematical, read a third time as that
+   letter; one in groups
    split by up to three spaces or punctuation, `4A9b - xZq3`, `4A9b/xZq3`, or split between two
    elements a browser lays side by side, where its checksum says it is one), the JSON as JSON
-   too; none in the feed; no `data:` image, no NUL byte. A file that needs more than 3000
+   too; none in the feed; no `data:` image, no NUL byte, no bidi control (U+202A-202E,
+   U+2066-2069, as itself or an entity: it shows the text after it in another order than it is
+   written, an address written backwards the right way round). A file that needs more than 3000
    checksums or 20 s fails alone ("too many runs that could be addresses"). And every QR code,
    `qr/<address>.png`, exactly the signed list's file of that address (its sum in
    `subaddresses.txt.qr.sha256`, which the `.pin`'s `qr` line pins). This is the backstop for an
@@ -181,11 +196,13 @@ repository it fetches, the design and the signed list installed here. Each push,
 6. copies the site live (`ccs-check copy --delete`: each file written beside its live copy and
    renamed over it, 644; what the build no longer has, a proposal taken out of the repository,
    goes). A file that failed step 5 is left out, so its live copy goes too, and IRC is told: one bad
-   page doesn't stop the rest. But more than 3 pages leaving at once (`CCS_GATE_REMOVE`: failed,
-   or their proposals gone: a branch emptied, a forge answering wrong, a backend hiding Funding
-   Required proposals by their index): none of the new site goes live, and IRC is told; a person
-   decides (`/var/lib/ccs-gate/allow-remove` lets them go, for one build:
-   [troubleshooting](troubleshooting.md#what-irc-says));
+   page doesn't stop the rest. IRC is told of any page leaving the site, failed or not. But more
+   than 3 pages leaving within a day (`CCS_GATE_REMOVE`, counted over the last 24 hours,
+   `/var/lib/ccs-gate/removed`: failed, or their proposals gone: a branch emptied, a forge
+   answering wrong, a backend hiding them a few at a time): none of the build that would add to
+   them goes live, and IRC is told; a person decides (`/var/lib/ccs-gate/allow-remove` lets them
+   go, for one build, and starts the count again: [troubleshooting](troubleshooting.md#what-irc-says)).
+   A copy that fails part-way is said and alerted, not left for the next push;
 7. refuses every push without its pinned list (or with one of no addresses), the QR codes' sums
    the `.pin` names, the QR codes, a design release (`design/vX.Y.Z/`), `proposals.conf`,
    `ccs-check`, `ccs-gate-build` or `git`.
@@ -246,15 +263,19 @@ way around it, each case named in its output:
   a proposal edited (its link still the merge request that added it); built again when what it's
   built from changes, or a day later; not again for the same data;
 - **held back:** a `site-data.json` with an index the list hasn't, 0, another than the live
-  site's, a key more, markup or an address in an idea, a link out of the repository, a proposal the
-  repository hasn't;
+  site's, none where the live site has one, a key more, a key in another case or twice, markup or
+  an address in an idea (in groups, a letter Cyrillic), a link out of the repository, a proposal
+  the repository hasn't;
 - **off the site:** a proposal's page with an address that isn't the wallet's (as written, in
-  groups, split by markup), back once mended; a QR code that isn't the list's; a proposal taken
-  out of the repository; four at once held (`allow-remove` lets them go);
+  groups, split by markup, a letter Cyrillic, written backwards after a bidi override), back
+  once mended; a QR code that isn't the list's; a proposal taken out of the repository (IRC
+  told); four at once held, and four one a push within a day (`allow-remove` lets them go); a
+  front matter `gitlab_url` out of the repository doesn't replace the merge request link;
 - **refused, every push:** a page or anything else pushed; no design release, no QR codes, a list
-  that isn't the pinned one, QR codes' sums that aren't, an empty list; a tar no backend makes;
+  that isn't the pinned one, QR codes' sums that aren't, an empty list; a tar no backend makes; a
+  push of 20,000 files (saying why);
 - **through:** the repository down (one alert after 6 hours); two pushes at once; a backend that
-  hangs up mid-build.
+  hangs up mid-build; no `alert.conf` (it is optional).
 
 **What it can't see:** what only the backend knows: a total, count or percentage that is wrong but
 a number; an idea that is no merge request (still escaped text linking to the repository); which
