@@ -3,7 +3,7 @@
 # Nothing else is compiled into busybox.
 # chown, sha256sum and timeout: the backend compose (contrib/docker/backend/step)
 # basename, cmp, comm, find, head, paste, shuf, sort and stat: ccs-watch, its watch stage
-# tar (to make one, of the files that changed), cp, dirname, xargs: contrib/ccs-push, the push stage
+# cp, dirname, xargs: the stages
 awk
 base64
 basename
@@ -39,7 +39,6 @@ sleep
 sort
 stat
 sync
-tar
 timeout
 touch
 tr

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # In the image (the CI's image job, no network): the tools the backend compose's stages run, as
 # the image has them (only git and its https transport of git's, only ssh of openssh): a pull,
-# git's https transport there, ssh, busybox's tar (the push: contrib/ccs-push), openssl's Keccak
+# git's https transport there, ssh, the push (contrib/ccs-push), openssl's Keccak
 # (ccs-bash), ccs-watch's applets.
 set -uo pipefail
 status=0
@@ -20,17 +20,14 @@ if [[ $out == *"unable to access"* ]]; then ok "git: its https transport (no net
 # (ssh -V as a user /etc/passwd hasn't: "No user exists", it runs all the same; compose.yml
 # mounts the host's for the push and the backup)
 out=$(ssh -V 2>&1)
-mkdir -p "$t/site/p" && echo x > "$t/site/p/a b.html" && printf './p/a b.html\n' > "$t/list"
-if [[ $out == *OpenSSH* || $out == *"No user exists for uid"* ]] && (cd "$t/site" && tar -c -f - -T "$t/list") | tar -t -f - | grep -qx './p/a b.html'; then
-    ok "ssh, and busybox's tar (a tar of the files listed)"
-else fail "ssh or tar: $out"; fi
-# ccs-push with busybox's tools: a first push (site-data.json), then one with nothing changed (an
-# empty tar, two zero blocks); ssh a stand-in that reads the tar and answers as the gate does
+if [[ $out == *OpenSSH* || $out == *"No user exists for uid"* ]]; then ok "ssh"; else fail "ssh: $out"; fi
+# ccs-push with busybox's tools: a first push (site-data.json as it is), then one with nothing
+# changed (nothing sent: the heartbeat); ssh a stand-in that keeps what it is sent
 here=$(dirname "$(readlink -f "$0")")
 # (a function, exported: /tmp here is noexec)
 echo '{"state": {}, "funds": {}, "ideas": []}' > "$t/site-data.json"
 # shellcheck disable=SC2317,SC2329  # (exported: ccs-push calls it)
-ssh() { tar -x -O -f - > "$T/got"; }
+ssh() { cat > "$T/got"; }
 export -f ssh
 export T=$t
 r1=0; bash "$here/../contrib/ccs-push" "$t/site-data.json" "$t/state" host > "$t/p1" 2>&1 || r1=$?
@@ -47,7 +44,7 @@ if ((r3 == 0)) && cmp -s "$here/../contrib/docker/backend/compose.yml" "$t/3/got
     ok "ccs-push: a file another user owns ($(id -u) pushing $(stat -c %u "$here/../contrib/docker/backend/compose.yml")'s)"
 else cat "$t/p3"; fail "ccs-push of another user's file (exit $r3)"; fi
 if ((r1 == 0 && r2 == 0)) && cmp -s "$t/site-data.json" "$t/got1" && [[ $empty == yes ]] && grep -q 'sending site-data.json' "$t/p1"; then
-    ok "ccs-push: the first push site-data.json, the next (unchanged) an empty tar"
+    ok "ccs-push: the first push site-data.json, the next (unchanged) nothing"
 else cat "$t/p1" "$t/p2"; fail "ccs-push with busybox (exits $r1 $r2)"; fi
 if [[ $(printf '' | openssl dgst -keccak-256 -r) == c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470* ]]; then ok "openssl's Keccak-256"; else fail "openssl's Keccak-256"; fi
 # retire-wallet, run by hand in the compose (docs/handover.md, "Retiring a wallet"): the
