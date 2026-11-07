@@ -20,7 +20,7 @@ alerts after 15 minutes without a push.
 
 | Changed | Web server | Backend |
 |---|---|---|
-| the design only (ccs-front-hugo) | steps 1, 3a | — |
+| the design only (ccs-front-hugo) | steps 1, 3a | its sums, first (3a) |
 | ccs-bash (any code: the gate, the backend, the vendored ccs-front-bash) | steps 1, 2, 3b | steps 1, 2, 4 |
 | a design and a ccs-front-bash that need each other (a new `{{slot}}`) | 3b, then 3a at once | — |
 
@@ -101,6 +101,20 @@ unzip -q /tmp/d.zip -d /etc/ccs-gate/design/<release>.new && mv /etc/ccs-gate/de
 ```
 
 The old designs can stay (going back: move the new one out).
+
+**First, on the backend:** the same zip's sums beside the old ones, which ccs-watch checks the
+pages' images against (its design files, byte for byte), so that the old pages and the new both
+pass while the gate moves over. Then the web server's steps above.
+
+```
+curl -fsSLo /tmp/d.zip https://github.com/plowsof/ccs-front-hugo/releases/download/<release>/ccs-front-hugo-<release>.zip
+echo "$ZIP  /tmp/d.zip" | sha256sum -c - && rm -rf /tmp/d && unzip -q /tmp/d.zip -d /tmp/d
+cp -a /etc/ccs-front/design.sha256 "$B/" 2> /dev/null || true
+(cd /tmp/d && find . -type f | sort | xargs -d '\n' sha256sum) >> /etc/ccs-front/design.sha256 && rm -rf /tmp/d /tmp/d.zip
+```
+
+Once the old design is gone from the web server, its lines can go: the file made again from the
+new zip alone.
 
 **3b. A new gate:**
 

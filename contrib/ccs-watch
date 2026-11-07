@@ -38,6 +38,11 @@
 #                                                         codes in subaddresses.txt.qr/ beside it
 #   WATCH_ALLOWED=888tNk...                               the other addresses a page may show,
 #                                                         space-separated (default: the General Fund)
+#   WATCH_DESIGN_SUMS=/etc/ccs-front/design.sha256        the design release's files' sums
+#                                                         (sha256sum's lines, ./assets/...): what
+#                                                         the pages' images under assets/ must be
+#   WATCH_PROPOSALS=/var/lib/ccs/proposals                the proposals checkout: what a
+#                                                         proposal's image (images/...) must be
 #   FORGE_HOURS=6                                         optional: how long GitLab or Forgejo may
 #                                                         be down before --run alerts (default 6)
 #   ALERT_PREFIX=[CCS-watch]                              optional: how messages start
@@ -68,8 +73,9 @@ fi
 site_url=${1:?SITE_URL} out=${2:?OUT} conf=${3:-/etc/ccs/alert.conf}
 state=${CCS_WATCH_STATE:-/var/lib/ccs/state/watch}
 ALERT_URL='' WATCH_PROXY='' WATCH_THEMES='' SUBADDRESSES='' ALERT_PREFIX='' ALERT_TARGET='' ALERT_PASSWORD='' ALERT_PLAIN='' FORGE_HOURS=''
+WATCH_DESIGN_SUMS='' WATCH_PROPOSALS=''
 WATCH_FIREFOX_ESR='' WATCH_FIREFOX='' WATCH_CHROME='' WATCH_ALLOWED='' WATCH_SAMPLE=${WATCH_SAMPLE:-}
-keys='ALERT_URL|WATCH_PROXY|WATCH_THEMES|SUBADDRESSES|ALERT_PREFIX|ALERT_TARGET|ALERT_PASSWORD|ALERT_PLAIN|FORGE_HOURS|WATCH_FIREFOX_ESR|WATCH_FIREFOX|WATCH_CHROME|WATCH_ALLOWED|WATCH_SAMPLE'
+keys='ALERT_URL|WATCH_PROXY|WATCH_THEMES|SUBADDRESSES|ALERT_PREFIX|ALERT_TARGET|ALERT_PASSWORD|ALERT_PLAIN|FORGE_HOURS|WATCH_FIREFOX_ESR|WATCH_FIREFOX|WATCH_CHROME|WATCH_ALLOWED|WATCH_SAMPLE|WATCH_DESIGN_SUMS|WATCH_PROPOSALS'
 if [[ -f $conf ]]; then
     # only these keys, KEY=value lines; nothing in it is run
     while IFS='=' read -r k v; do
@@ -230,6 +236,12 @@ list=${SUBADDRESSES:-/etc/ccs-front/subaddresses.txt}
 WATCH_ALLOWED=${WATCH_ALLOWED:-888tNkZrPN6JsEgekjMnABU4TBzc2Dt29EPAvkRxbANsAnjyPbb3iQ1YBRk1UXcdRsiKc9dhwMVgN5S9cQUiyoogDavup3H}
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
+mkdir "$tmp/img"
+# what the pages' images are checked against, byte for byte (images): the design release's sums,
+# the proposals checkout; one not here: those images not checked, said once a run
+sums=${WATCH_DESIGN_SUMS:-/etc/ccs-front/design.sha256} props=${WATCH_PROPOSALS:-/var/lib/ccs/proposals}
+[[ -r $sums ]] || { log "no $sums (the design's sums): the pages' images under assets/ not checked"; sums=''; }
+[[ -d $props/images ]] || props=''
 { awk 'NF >= 2 { print $2 }' "$list"; tr ' ' '\n' <<<"$WATCH_ALLOWED"; } | grep . | sort -u > "$tmp/ok"
 # each proposal page's name, its address (funding required: its donation box's; "" for none)
 jq -r '.[] | select(.filename | type == "string") | [(.filename | sub("\\.md$"; "")), (if .state == "FUNDING-REQUIRED" then .address // "" else "" end)] | @tsv' \
@@ -264,8 +276,83 @@ short() { sed -E 's/^(.{6}).*(.{4})$/\1…\2/' | paste -sd ' '; }
 # the gate's scan (ccs-check: in the ccs-bash image; CCS_CHECK, another), or none
 scanner=${CCS_CHECK-$(command -v ccs-check || true)}
 
-# wrong FILE WANT: "" if every address on the page FILE (as text or a link, read as the gate reads
-# it: scanner) is the list's or allowed and, WANT not "-", its donation box (a monero: link), if
+# norm PATH: PATH without its . and .. steps; fails for one that steps out of the site
+norm() {
+    local s out=()
+    IFS=/ read -ra parts <<<"$1"
+    for s in "${parts[@]}"; do
+        case $s in
+            '' | .) ;;
+            ..) ((${#out[@]})) || return 1; unset 'out[${#out[@]}-1]' ;;
+            *) out+=("$s") ;;
+        esac
+    done
+    (IFS=/; printf '%s' "${out[*]}")
+}
+
+# image_ok PATH FILE: "" if the site's image PATH, fetched into FILE, is one the watcher knows
+# byte for byte; else what is wrong. Not answered: nothing known, ""
+image_ok() {
+    local p=$1 f=$2 a sum
+    case $p in
+        qr/*.png)
+            a=${p#qr/} a=${a%.png}
+            [[ $a =~ ^[1-9A-HJ-NP-Za-km-z]{95}$ && -f $list.qr/$a.png ]] || { echo "an image that isn't one of the signed list's QR codes ($p)"; return; }
+            fetch "$(urlof "$p")" "$f" || return 0
+            cmp -s "$f" "$list.qr/$a.png" || echo "a QR code that isn't the signed list's file of its address ($p)" ;;
+        images/*)
+            [[ $props ]] || return 0
+            [[ -f $props/$p && ! -L $props/$p ]] || { echo "an image no proposal has ($p)"; return; }
+            fetch "$(urlof "$p")" "$f" || return 0
+            cmp -s "$f" "$props/$p" || echo "an image that isn't its proposal's, as the proposals repository has it ($p)" ;;
+        *)
+            [[ $sums ]] || return 0
+            sum=$(awk -v p="./$p" '$2 == p { print $1; exit }' "$sums")
+            [[ $sum ]] || { echo "an image that isn't the design's ($p)"; return; }
+            fetch "$(urlof "$p")" "$f" || return 0
+            [[ $(sha256sum < "$f" | cut -d' ' -f1) == "$sum" ]] || echo "an image that isn't the design's file ($p)" ;;
+    esac
+}
+
+# images FILE PAGE: "" if every image the page FILE (PAGE, its path on the site) shows (<img>,
+# its src and srcset) is a design file (its sum the design release's), a QR code of the signed
+# list's, or a proposal's image as the proposals repository has it, each compared byte for byte;
+# else what is wrong. Nothing here reads what an image shows: a picture of another address's QR
+# code, anywhere on a page, is a file none of those has (review 12's L-2). Each fetched once a run.
+images() {
+    local src p f why dir='' base
+    [[ $2 == */* ]] && dir=${2%/*}
+    # (a <base href>, as a browser takes it: the site's 404 page has <base href="&#47;">)
+    base=$(grep -oiE '<base[^>]*href="[^"]*"' "$1" | head -n 1 | sed -E 's/.*href="//; s/"$//; s/&#0*47;|&#[xX]0*2[fF];/\//g' || true)
+    case $base in
+        "$origin"/*) dir=${base#"$origin"/} dir=${dir%/} ;;
+        /*) dir=${base#/} dir=${dir%/} ;;
+        '') ;;
+        *) dir=${dir:+$dir/}${base%/} ;;
+    esac
+    while IFS= read -r src; do
+        [[ $src ]] || continue
+        case $src in
+            "$origin"/*) p=${src#"$origin"/} ;;
+            //* | *://* | data:*) echo "an image from elsewhere ($src)"; return ;;
+            /*) p=${src#/} ;;
+            *) p=${dir:+$dir/}$src ;;
+        esac
+        p=${p%%[?#]*}
+        p=$(norm "$p") || { echo "an image out of the site ($src)"; return; }
+        p=${p#dark/} p=${p#light/}
+        f=$tmp/img/${p//\//_}
+        [[ ! -e $f.ok ]] || continue
+        [[ ! -e $f.bad ]] || { cat "$f.bad"; return; }
+        why=$(image_ok "$p" "$f")
+        if [[ $why ]]; then printf '%s\n' "$why" > "$f.bad"; printf '%s\n' "$why"; return; fi
+        [[ ! -s $f ]] || : > "$f.ok"
+    done < <(grep -oiE '<img[^>]*>' "$1" | grep -oiE '(src|srcset)="[^"]*"' | sed -E 's/^[A-Za-z]+="//; s/"$//' | tr ',' '\n' | awk '{ print $1 }')
+}
+
+# wrong FILE WANT [PAGE]: "" if every address on the page FILE (as text or a link, read as the gate
+# reads it: scanner) is the list's or allowed, every image it shows one known byte for byte
+# (images; PAGE, its path on the site) and, WANT not "-", its donation box (a monero: link), if
 # it shows one, WANT's alone, its one image the QR code qr/WANT.png, the list's file of it; else what is wrong
 wrong() {
     local found foreign box region imgs lines why first='' mode=scan
@@ -285,6 +372,16 @@ wrong() {
     fi
     foreign=$(comm -23 <(printf '%s\n' "$found" | grep .) "$tmp/ok" | head -n 3 || true)
     [[ ! $foreign ]] || { echo "donation address $red$(short <<<"$foreign")$off does not match the CCS wallet"; return; }
+    why=$(boxed "$1" "$2")
+    [[ ! $why ]] || { echo "$why"; return; }
+    [[ ! ${3:-} ]] || images "$1" "$3"
+}
+
+# boxed FILE WANT: "" if WANT is "-", or if the page FILE's donation box (a monero: link), if it
+# shows one, is WANT's alone, its one image the QR code qr/WANT.png, the list's file of it; else
+# what is wrong
+boxed() {
+    local box region imgs
     [[ $2 != - ]] || return 0
     box=$(grep -oE 'monero:[1-9A-HJ-NP-Za-km-z]{95}' "$1" | sort -u | grep -vxF "monero:${WATCH_ALLOWED// /$'\n'monero:}" || true)
     # no box at all (a proposal at its goal: the design's "Funded" in its place): no address there
@@ -330,7 +427,7 @@ missing() {
     rc=0; fetch "$(urlof "$name")" "$tmp/page" || rc=$?
     ((rc == 1)) && return   # nothing answered: nothing known
     local why=''
-    if ((rc == 3)) && [[ $code == 404 ]]; then why=$(wrong "$tmp/page" -); [[ $why ]] || return 0; fi
+    if ((rc == 3)) && [[ $code == 404 ]]; then why=$(wrong "$tmp/page" - "$name"); [[ $why ]] || return 0; fi
     bad=$((bad + 1))
     if ! sighted "$state/differs-missing"; then
         log "$(urlof "$name") (no such page) answers HTTP $code${why:+: $why}, not a 404; alerting if it does again within a day"
@@ -379,14 +476,15 @@ for c in "${checks[@]}"; do
         continue
     fi
     rm -f "$other"
-    why=$(wrong "$tmp/page" "$want")
+    why=$(wrong "$tmp/page" "$want" "$remote")
     [[ $why ]] || continue
     # wrong: on two more whole fetches, 10s and 30s later (a build may be landing), or a recheck
     # not answered (a web server refusing the watcher's second ask mustn't hide what the first saw)
     for wait in ${CCS_WATCH_WAITS:-10 30}; do   # (tests make them shorter)
         sleep "$wait"
         fetch "$url" "$tmp/again" || continue
-        why=$(wrong "$tmp/again" "$want")
+        rm -f "$tmp"/img/*   # (the images fetched again too)
+        why=$(wrong "$tmp/again" "$want" "$remote")
         [[ $why ]] || break
     done
     [[ $why ]] || continue
