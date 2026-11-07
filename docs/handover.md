@@ -363,7 +363,7 @@ agreeing, answering) and changes nothing.
 | | `REPOSITORY_URL` | `https://repo.getmonero.org/api/v4/projects/54` | 2 |
 | | `MIN_CONFIRMATIONS` | `10` | 2 |
 | the proposals checkout | its remote | `https://repo.getmonero.org/monero-project/ccs-proposals.git` | 2 |
-| `/etc/ccs-front/` | `subaddresses.txt` and its `.asc`, `.key.asc`, `.pin`, `.qr.sha256`, `.qr/` | made by a Core Team member, signed with their own key (binaryFate's or luigi1111's), checked with `tools/verify-subaddresses.sh`; what ccs-watch checks the live pages against | 4 |
+| `/etc/ccs-front/` | `subaddresses.txt` and its `.asc`, `.key.asc`, `.pin`, `.qr.sha256`, `.qr/`; `design.sha256` | the list made by a Core Team member, signed with their own key (binaryFate's or luigi1111's), checked with `tools/verify-subaddresses.sh`; the design release's sums, made from its zip (its sha256 checked: [deploying](deploying.md), 3a); what ccs-watch checks the live pages and their images against | 4 |
 | | `list-signers` | `81AC591FE9C4B65C5806AFC3F0AF4D462A0BDF92  # binaryFate` and `8777AB8F778EE89487A2F8E7F4ACA0183641E010  # luigi1111`, from the Monero repository's `utils/gpg_keys/` | 4 |
 | | `subaddresses.txt.viewkey` | as in step 4 | 4 |
 | `/etc/ccs/push/` | `id_ed25519` (the push key), `known_hosts` | the web server's host key: its gate's (`/etc/ccs-gate/ssh/ssh_host_ed25519_key.pub` there, as `[<web server>]:2223 ssh-ed25519 …`); `ccs-push`, 600 | 6 |

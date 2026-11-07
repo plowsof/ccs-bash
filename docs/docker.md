@@ -145,8 +145,8 @@ follows every stage; `docker compose logs -f <service>` one. A stage that fails 
 - **Retiring a wallet** ([the handover](handover.md#retiring-a-wallet)): `retire-wallet` runs in
   ccs-bash's container (`docker compose run`), paused as above; the old wallet's copy, for
   `--again`, is the `retired-wallet-rpc` service (`--profile retired`).
-- **A design upgrade** is the web server's alone ([deploying](deploying.md), 3a): the backend
-  has no design.
+- **A design upgrade** is the web server's, and the backend's sums of it for ccs-watch
+  (`/etc/ccs-front/design.sha256`: [deploying](deploying.md), 3a).
 - **The proposals checkout replaced** ([another forge](troubleshooting.md#move-the-proposals-to-another-forge)):
   `docker compose up -d --force-recreate pull ccs-bash` after (a mount of a folder keeps the one
   it was given).
