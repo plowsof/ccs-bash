@@ -11,7 +11,9 @@ of it; the gate takes that one file. The new gate still takes an older backend's
 empty tar) but refuses its tar of data; the old gate refuses the new backend's file. So **the web
 server first, then the backend at once**: until the backend's turn, a push with new data is
 refused (`the web server refused a push it could not take: not site-data.json`, alerted once),
-and the next push after it sends it again. Nothing else to do.
+and the next push after it sends it again. The new backend also counts a push as taken only when
+the gate says so (`took <sha256>`, which only the new gate says: review 12's I-3), so with the old
+gate every run's push would fail. Nothing else to do.
 
 ## ccs-bash v0.2.53: the backend sends only site-data.json; the web server builds the site
 

@@ -24,7 +24,9 @@
 # build that would add to them goes live, and IRC is told: a person decides (troubleshooting.md:
 # the file /var/lib/ccs-gate/allow-remove lets them go, for one build). A site-data.json that fails, a
 # build that fails, or a list, QR codes' sums, design or repository missing: nothing goes live,
-# the live site stays. The backend is told on stderr; exit 0, or 1. Needs bash, busybox's applets
+# the live site stays. The backend is told on stderr; exit 0, or 1, and, when the site-data.json it
+# sent is the live site's (built from it, or already), "took <its sha256>" on stdout, which
+# ccs-push keeps as its record (review 12's I-3: not exit 0 alone). Needs bash, busybox's applets
 # (container/gate-busybox-applets), curl, git, jq, ccs-gate-build and ccs-check (contrib/ccs-check:
 # the checks in Go, one static binary: it also receives the push, and copies the site live).
 # Root-owned, 755.
@@ -200,8 +202,11 @@ if ! why=$(timeout 300 ccs-check receive "$staging/push" 2>&1); then
 fi
 touch "$state/last-push" 2> /dev/null || true   # the backend's heartbeat (--heartbeat)
 # (none sent: it didn't change, and the live site's is built from)
-data=$staging/push/site-data.json
-[[ -f $data ]] || data=$live/site-data.json
+data=$staging/push/site-data.json took_sum=''
+if [[ -f $data ]]; then took_sum=$(sha256sum < "$data" | cut -c1-64); else data=$live/site-data.json; fi
+# took: the backend told the site-data.json it sent is the live site's (a subshell: it may have
+# hung up, as say's stderr)
+took() { [[ ! $took_sum ]] || (printf 'took %s\n' "$took_sum") 2> /dev/null || true; }
 
 # the list and its pin, as ccs-front-bash has them (tools/sign-subaddresses.sh: "sha256 <hex>")
 list=$conf/subaddresses.txt
@@ -257,7 +262,7 @@ inputs=$( {
     cat -- "$(command -v ccs-check)"
 } | sha256sum | cut -c1-64)
 if [[ $inputs == "$(cat "$state/built-with" 2> /dev/null)" && $(find "$state/built-with" -mmin -1440 2> /dev/null) ]]; then
-    exit 0
+    took; exit 0
 fi
 
 # the site, built here (ccs-gate-build: lib/site-data.sh's site_from_data and the vendored
@@ -348,3 +353,4 @@ fi
 } | awk 'NF == 2 && !seen[$1]++' > "$pins.new" && mv -f "$pins.new" "$pins"
 say "built the site from site-data.json (the design ${design##*/}, the proposals at $(git -C "$git" rev-parse --short refs/heads/ccs)): live"
 printf '%s\n' "$inputs" > "$state/built-with"
+took

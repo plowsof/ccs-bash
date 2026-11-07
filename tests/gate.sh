@@ -180,6 +180,9 @@ if out=$(push) && [[ $(livepage) == *"$(addr 1)"* && $(livefile proposals/w.html
     && on web "cmp -s /var/lib/ccs-data/qr/$(addr 1).png /etc/ccs-gate/subaddresses.txt.qr/$(addr 1).png"; then
     ok "a push of site-data.json: the site built here and live (p's box its index's address, its QR code the list's file)"
 else echo "$out"; logtail 8; fail "a good push"; fi
+if [[ $(on backend 'cat /state/accepted') == "$(on backend 'sha256sum < /out/site-data.json | cut -c1-64')" ]]; then
+    ok "review 12 (I-3): the gate said what it took (took <sha256>), and that is the backend's record"
+else echo "$out"; on backend 'cat /state/accepted' || true; fail "the gate's took"; fi
 if [[ $(livepage) == *'href="https://repo.test/monero-project/ccs-proposals/-/merge_requests/5"'* \
     && $(livefile proposals/w.html) == *'merge_requests/6"'* ]]; then
     ok "each proposal links to the merge request that added it, read from the repository's merge commits"

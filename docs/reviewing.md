@@ -149,7 +149,8 @@ list, writes the site.
 
 - [`contrib/ccs-push`](../contrib/ccs-push), the push (`push`, as `ccs-push`): `site-data.json`
   when its sum isn't `accepted`'s, what the gate last took (and once a day, `full`), as it is on
-  ssh's stdin to the web server's key, which runs only the gate; else nothing, the heartbeat. `accepted` written only when the gate took it (exit 0).
+  ssh's stdin to the web server's key, which runs only the gate; else nothing, the heartbeat. `accepted` written only when the gate says it took that file (`took <its sha256>`, not
+  exit 0 alone: an answer without it fails the push, and it is sent again).
 - [`contrib/ccs-watch`](../contrib/ccs-watch) (`watch`, as `ccs-watch`): the live pages' addresses,
   as one of three browsers through a random proxy (what it fetches, and why:
   [two machines](two-machines.md#watching-the-web-server-the-backend-raises-the-alarm)): `wrong`,

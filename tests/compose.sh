@@ -11,7 +11,7 @@ here=$(dirname "$(readlink -f "$0")")
 step=$here/../contrib/docker/backend/step
 t=$(mktemp -d)
 pids=()
-# shellcheck disable=SC2317  # (the trap calls it)
+# shellcheck disable=SC2317,SC2329  # (the trap calls it)
 cleanup() { for p in "${pids[@]}"; do kill "$p" 2> /dev/null; done; wait 2> /dev/null; rm -rf "$t"; }
 trap cleanup EXIT
 status=0
@@ -42,7 +42,11 @@ echo pulled >> "$T/pulls"
 EOF
 cat > "$t/bin/ssh" <<'EOF'
 #!/usr/bin/env bash
-if [[ ${*: -1} == receive ]]; then echo push >> "$T/pushes"; c=''; IFS= read -r -n 1 c || true; [[ $c != '{' ]] || echo site-data.json >> "$T/pushed-files"; cat > /dev/null; exit 0; fi
+if [[ ${*: -1} == receive ]]; then
+    echo push >> "$T/pushes"; cat > "$T/body"; c=''; IFS= read -r -n 1 c < "$T/body" || true
+    [[ $c != '{' ]] || { echo site-data.json >> "$T/pushed-files"; echo "took $(sha256sum < "$T/body" | cut -d' ' -f1)"; }
+    exit 0
+fi
 cat >> "$T/sent"
 EOF
 cat > "$t/bin/ccs-watch" <<'EOF'
@@ -73,6 +77,7 @@ start
 until_pushed() { local i; for ((i = 0; i < 90; i++)); do (($(cat "$t/run/push/done" 2> /dev/null || echo 0) >= $1)) && return 0; sleep 1; done; return 1; }
 line() { local l; IFS= read -r -t 30 l <&3 && printf '%s\n' "$l"; }
 
+# shellcheck disable=SC2333  # (not always false: each $(line) reads the next line)
 if until_pushed 2 && [[ $(line) == "1 pushed ok" && $(line) == "2 pushed ok" ]] \
     && [[ $(grep -c '^== run ' "$t/out-pull") -ge 2 && $(wc -l < "$t/pushes") -ge 2 && $(wc -l < "$t/pulls") -ge 2 ]] \
     && grep -qx 'site-data.json' "$t/pushed-files"; then
