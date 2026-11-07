@@ -157,7 +157,10 @@ list, writes the site.
   every address on a page, as the gate's `ccs-check scan` reads it (in the image; without it,
   every 95- or 106-character base58 run), the signed list's or `WATCH_ALLOWED`'s, a
   funding-required proposal's box its own address (ccs-bash's `projects.json`) and its one image
-  (the design's `ccs:donate` part) its QR code, the list's file of it; it refetches before it counts, `sighted` keeps the day's sightings.
+  (the design's `ccs:donate` part) its QR code, the list's file of it; every image on a page
+  (`images`) a design file (its sum in `/etc/ccs-front/design.sha256`, the release's), a QR
+  code of the list's, or a proposal's image as the backend's proposals checkout has it, each
+  byte for byte: none is read for what it shows; it refetches before it counts, `sighted` keeps the day's sightings.
   After each push and between pushes at random times (the `watch` stage). A wrong page (three
   fetches over 40 s, or a recheck not answered) alerts the second time it is seen within a day;
   so does a page answering anything but 200 three checks in a row; `--run`, three failed runs.

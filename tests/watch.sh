@@ -39,11 +39,18 @@ echo "<a href=\"../index.html\">home</a><!-- ccs:donate --><details class=\"cont
 echo "<p>the General Fund in the footer, no box</p><p class=\"address\">$(addr 3 8)</p>" > "$tmp/remote/proposals/done.html"
 echo '[{"filename":"a b.md"}]' > "$tmp/remote/projects"
 cp "$tmp/list.txt.qr/$(addr 1).png" "$tmp/remote/qr/"
+# the images: the design's (its sums, as the release has them), and a proposal's (as the
+# proposals checkout has it), on the page without a box
+mkdir -p "$tmp/remote/assets" "$tmp/remote/images/done" "$tmp/props/images/done"
+echo "the General Fund's QR code" > "$tmp/remote/assets/fund-qr.png"
+(cd "$tmp/remote" && sha256sum ./assets/fund-qr.png) > "$tmp/design.sha256"
+echo "a chart" > "$tmp/props/images/done/chart.png" && cp "$tmp/props/images/done/chart.png" "$tmp/remote/images/done/"
+sed -i 's#</p>$#</p><img src="../images/done/chart.png" alt="">#' "$tmp/remote/proposals/done.html"
 echo '<p>not here</p>' > "$tmp/remote/404.html"
 # /dark/ and /light/: the same pages (the web server's theme lines)
 for t in dark light; do
     mkdir -p "$tmp/remote/$t"
-    for f in index.html funding-required donate verify proposals qr projects; do ln -s "../$f" "$tmp/remote/$t/$f"; done
+    for f in index.html funding-required donate verify proposals qr projects assets images; do ln -s "../$f" "$tmp/remote/$t/$f"; done
 done
 
 web=$(port) bot=$(port)
@@ -75,7 +82,7 @@ class H(http.server.BaseHTTPRequestHandler):
     def log_message(self, *a): pass
 http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()' "$bot" "$tmp/bot.txt" & pids+=($!)
 sleep 1
-printf 'ALERT_URL=http://127.0.0.1:%s/simple?channel=%%23ccs\nSUBADDRESSES=%s\nWATCH_ALLOWED=%s\nALERT_PLAIN=1\nWATCH_THEMES=1\n' "$bot" "$tmp/list.txt" "$(addr 3 8)" > "$tmp/alert.conf"
+printf 'ALERT_URL=http://127.0.0.1:%s/simple?channel=%%23ccs\nSUBADDRESSES=%s\nWATCH_ALLOWED=%s\nALERT_PLAIN=1\nWATCH_THEMES=1\nWATCH_DESIGN_SUMS=%s\nWATCH_PROPOSALS=%s\n' "$bot" "$tmp/list.txt" "$(addr 3 8)" "$tmp/design.sha256" "$tmp/props" > "$tmp/alert.conf"
 watch() { CCS_WATCH_STATE=$tmp/state ccs_watch "http://127.0.0.1:$web" "$tmp/out" "$tmp/alert.conf" 2> "$tmp/log"; }
 alerts() { [[ -f $tmp/bot.txt ]] && wc -l < "$tmp/bot.txt" || echo 0; }
 
@@ -153,6 +160,23 @@ watch || true; watch || true
 if [[ $(alerts) == 0 ]]; then ok "a proposal at its goal (Funded, no box): no alert"; else cat "$tmp/log" "$tmp/bot.txt"; fail "a funded proposal's page"; fi
 cp "$tmp/page.good" "$page"
 : > "$tmp/bot.txt"; rm -f "$tmp/state"/alert-* "$tmp/state"/differs-*
+# review 12's L-2: every image a page shows, compared byte for byte (nothing reads what an image
+# shows): one the design hasn't, the design's QR code of the General Fund changed, a proposal's
+# image changed, a QR code that isn't one of the list's: each an alert on the second run
+done=$tmp/remote/proposals/done.html
+cp "$done" "$tmp/done.good"; cp "$tmp/remote/assets/fund-qr.png" "$tmp/fund.good"
+for c in "an image the design hasn't, outside a box|sed -i 's#alt=\"\">#alt=\"\"><img src=\"../assets/x.png\">#' '$done'; echo x > '$tmp/remote/assets/x.png'|an image that isn't the design's (assets/x.png)" \
+    "the General Fund's QR code changed|echo 'another address' > '$tmp/remote/assets/fund-qr.png'|an image that isn't the design's file (assets/fund-qr.png)" \
+    "a proposal's image changed|echo 'a QR code' > '$tmp/remote/images/done/chart.png'|an image that isn't its proposal's, as the proposals repository has it (images/done/chart.png)" \
+    "a QR code that isn't one of the list's|echo x > '$tmp/remote/qr/x.png'; sed -i 's#alt=\"\">#alt=\"\"><img src=\"../qr/x.png\">#' '$done'|an image that isn't one of the signed list's QR codes (qr/x.png)"; do
+    IFS='|' read -r what how why <<<"$c"
+    eval "$how"
+    for _ in $(seq 6); do watch || true; [[ $(alerts) == 0 ]] || break; done
+    if [[ $(alerts) == 1 ]] && grep -qF "$why" "$tmp/bot.txt"; then ok "review 12 (L-2): $what: an alert"; else cat "$tmp/log" "$tmp/bot.txt"; fail "review 12 (L-2): $what"; fi
+    cp "$tmp/page.good" "$page"; cp "$tmp/done.good" "$done"; cp "$tmp/fund.good" "$tmp/remote/assets/fund-qr.png"
+    cp "$tmp/props/images/done/chart.png" "$tmp/remote/images/done/"; rm -f "$tmp/remote/assets/x.png" "$tmp/remote/qr/x.png"
+    : > "$tmp/bot.txt"; rm -f "$tmp/state"/alert-* "$tmp/state"/differs-*
+done
 # An address on a page that isn't a box's (a proposal's text, the footer): any one not the list's
 # nor allowed alerts too
 echo "<p>or send to $(addr 7 B)</p>" >> "$tmp/remote/proposals/done.html"

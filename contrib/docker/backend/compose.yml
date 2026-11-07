@@ -215,9 +215,11 @@ services:
     volumes:
       - ${CCS_ALERT_CONF:-/etc/ccs/alert.conf}:/etc/ccs/alert.conf:ro
       # the signed list and its QR codes (alert.conf's SUBADDRESSES), what the live pages'
-      # addresses are checked against, with ccs-bash's projects.json (each proposal's own)
+      # addresses are checked against, with ccs-bash's projects.json (each proposal's own); the
+      # design's sums (design.sha256) and the proposals checkout, what their images are
       - /etc/ccs-front:/etc/ccs-front:ro
       - /var/lib/ccs/out:/var/lib/ccs/out:ro
+      - /var/lib/ccs/proposals:/var/lib/ccs/proposals:ro
       # forge-ok, read; its own state, written (ccs-watch's)
       - /var/lib/ccs/state:/var/lib/ccs/state:ro
       - ${CCS_WATCH_DIR:-/var/lib/ccs/watch}:/var/lib/ccs/watch

@@ -312,7 +312,11 @@ other proposals' pages at random (any page could get a donation box) and `/proje
 their addresses: every address on them (95 or 106 base58 characters, as text or link) the signed
 list's or `WATCH_ALLOWED`'s (the General Fund, and what the gate's `allowed` has); each
 funding-required proposal's donation box its own address, as ccs-bash gave it (`projects.json`),
-and its QR code the list's own file of it. The web server builds the pages itself, so they aren't
+and its QR code the list's own file of it; and every image on a page one it knows byte for byte
+(a file of the design release, its sums in `/etc/ccs-front/design.sha256`; a QR code of the
+list's; a proposal's image as the backend's proposals checkout has it), so a picture of another
+address's QR code, put anywhere on a page, alerts too, though nothing reads what an image shows.
+The web server builds the pages itself, so they aren't
 compared with anything the backend made: what this sees is a web server serving a visitor an
 address that isn't the wallet's. A wrong page alerts the second time it is seen within a day
 (runs that see the right page in between or not), naming any address not on the list; a recheck

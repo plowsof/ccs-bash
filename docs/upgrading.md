@@ -4,6 +4,15 @@ Steps a release needs **once**, on top of [deploying a set](deploying.md).
 Newest first. Upgrading across several releases: do each step listed between the running release
 and the new one, oldest first. A release not listed needs none.
 
+## ccs-bash v0.2.56: ccs-watch checks every image on the live pages
+
+ccs-watch compares each image a page shows, byte for byte, with the design release's files, the
+signed list's QR codes or the proposals checkout (mounted into its stage by the compose). Before
+the backend's step 4: the design's sums on the backend, made from the release the web server
+runs (its zip, its sha256 checked), as [deploying](deploying.md) 3a does
+(`/etc/ccs-front/design.sha256`). Without the file, ccs-watch says so once a run and leaves the
+design's images unchecked; nothing alerts.
+
 ## ccs-bash v0.2.55: the push is site-data.json as it is, not a tar
 
 The backend sends `site-data.json` as it is on ssh's stdin (nothing for the heartbeat), not a tar
