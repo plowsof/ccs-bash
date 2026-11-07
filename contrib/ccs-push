@@ -1,33 +1,28 @@
 #!/usr/bin/env bash
 # ccs-push DATA STATE SSH_ARG...: site-data.json (DATA, ccs-bash's) to the web server's gate
-# (docs/two-machines.md), as a tar on ssh's stdin: `ssh SSH_ARG... receive < tar`, the last
-# SSH_ARG the push account (ccs-data@<web server>). The gate reads the tar with Go (ccs-check
-# receive), checks the data and builds the site from it; it exits 0, or 1 (refused or held back).
+# (docs/two-machines.md), as it is on ssh's stdin: `ssh SSH_ARG... receive < site-data.json`, the
+# last SSH_ARG the push account (ccs-data@<web server>). The gate takes it (ccs-check receive),
+# checks the data and builds the site from it; it exits 0, or 1 (refused or held back).
 #   - STATE/accepted: the sum of the site-data.json the gate last took. The same one isn't sent
-#     again (the push is then an empty tar: still the heartbeat), but once a day (STATE/full: a
-#     day at most to mend whatever the gate has that this doesn't know).
-# Exits as the push did (ssh's: 255 when it couldn't connect). Needs bash, sha256sum, tar
-# (busybox's or GNU), and ssh.
+#     again (the push is then nothing: still the heartbeat), but once a day (STATE/full: a day at
+#     most to mend whatever the gate has that this doesn't know).
+# Exits as the push did (ssh's: 255 when it couldn't connect). Needs bash, sha256sum and ssh.
 set -euo pipefail
 export LC_ALL=C
 data=${1:?DATA} state=${2:?STATE}
 shift 2
 (($#)) || { echo "ccs-push: no ssh destination" >&2; exit 2; }
-tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$state"
 sum=$(sha256sum < "$data" | cut -d' ' -f1)
 full=''
 [[ $(find "$state/full" -mmin -1440 2> /dev/null) ]] || full=1
+send=/dev/null
 if [[ $full || $sum != "$(cat "$state/accepted" 2> /dev/null)" ]]; then
-    cp "$data" "$tmp/site-data.json"
-    (cd "$tmp" && tar -c -f - site-data.json) > "$tmp/push.tar"
+    send=$data
     echo "ccs-push: sending site-data.json${full:+ (once a day)}" >&2
-else
-    printf '%01024d' 0 | tr 0 '\000' > "$tmp/push.tar"   # (an empty tar; busybox's head has no -c here)
 fi
 rc=0
-ssh "$@" receive < "$tmp/push.tar" || rc=$?
+ssh "$@" receive < "$send" || rc=$?
 if ((rc == 0)); then
     printf '%s\n' "$sum" > "$state/accepted"
     [[ ! $full ]] || touch "$state/full"

@@ -1,8 +1,6 @@
 package push
 
 import (
-	"archive/tar"
-	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,159 +9,51 @@ import (
 	"time"
 )
 
-type entry struct {
-	name, body, link string
-	typ              byte
-	format           tar.Format
-}
+const data = `{"state": {}, "funds": {}, "ideas": []}`
 
-func stream(t testing.TB, es ...entry) []byte {
-	var b bytes.Buffer
-	w := tar.NewWriter(&b)
-	for _, e := range es {
-		h := &tar.Header{Name: e.name, Typeflag: e.typ, Mode: 0o600, Linkname: e.link, ModTime: time.Unix(1, 0), Format: e.format}
-		if e.typ == 0 {
-			h.Typeflag = tar.TypeReg
-		}
-		if h.Typeflag == tar.TypeReg {
-			h.Size = int64(len(e.body))
-		}
-		if err := w.WriteHeader(h); err != nil {
-			t.Fatal(err)
-		}
-		if h.Size > 0 {
-			w.Write([]byte(e.body))
-		}
-	}
-	w.Close()
-	return b.Bytes()
-}
-
-func file(n, b string) entry { return entry{name: n, body: b} }
-
-func TestReceive(t *testing.T) {
-	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "old.html"), []byte("old"), 0o644)
-	long := strings.Repeat("d/", 60) + "page.html" // over 100 bytes: a GNU or PAX long name
-	files, err := Receive(bytes.NewReader(stream(t,
-		file("./index.html", "<p>home"),
-		entry{name: "proposals/", typ: tar.TypeDir},
-		file("proposals/a b.html", "<p>a"),
-		file("images/p/x.png", "PNG"),
-		file("old.html", "new"),
-		entry{name: long, body: "deep", format: tar.FormatGNU},
-		entry{name: "pax/" + long, body: "deep", format: tar.FormatPAX},
-	)), dir, Default)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(files) != 6 {
-		t.Fatalf("files %v", files)
-	}
-	for n, want := range map[string]string{"index.html": "<p>home", "proposals/a b.html": "<p>a", "images/p/x.png": "PNG", "old.html": "new", long: "deep", "pax/" + long: "deep"} {
-		b, err := os.ReadFile(filepath.Join(dir, n))
-		if err != nil || string(b) != want {
-			t.Errorf("%s: %q %v", n, b, err)
-		}
-		st, _ := os.Stat(filepath.Join(dir, n))
-		if st.Mode().Perm() != 0o644 {
-			t.Errorf("%s: mode %v", n, st.Mode())
-		}
-	}
-	if st, _ := os.Stat(filepath.Join(dir, "images/p")); st.Mode().Perm() != 0o755 {
-		t.Errorf("folder mode %v", st.Mode())
-	}
-	// an empty push (no change): two zero blocks
-	if f, err := Receive(bytes.NewReader(make([]byte, 1024)), dir, Default); err != nil || len(f) != 0 {
-		t.Errorf("empty push: %v %v", f, err)
-	}
-}
-
-// each refused whole, nothing written outside dir
-func TestRefusals(t *testing.T) {
-	small := Limits{Total: 100, File: 50, Entries: 3}
-	cases := map[string]struct {
-		s   []byte
-		lim Limits
+// the push: site-data.json, or nothing (the heartbeat); anything else, or too much, refused
+func TestData(t *testing.T) {
+	for name, c := range map[string]struct {
+		in   string
+		got  bool
+		fail bool
 	}{
-		"symlink":           {stream(t, entry{name: "a.html", typ: tar.TypeSymlink, link: "/etc/passwd"}), Default},
-		"hardlink":          {stream(t, file("a", "x"), entry{name: "b.html", typ: tar.TypeLink, link: "a"}), Default},
-		"char device":       {stream(t, entry{name: "a", typ: tar.TypeChar}), Default},
-		"fifo":              {stream(t, entry{name: "a", typ: tar.TypeFifo}), Default},
-		"dotdot":            {stream(t, file("../escaped", "x")), Default},
-		"dotdot inside":     {stream(t, file("a/../../escaped", "x")), Default},
-		"absolute":          {stream(t, file("/tmp/escaped", "x")), Default},
-		"dot step":          {stream(t, file("a/./b", "x")), Default},
-		"empty step":        {stream(t, file("a//b", "x")), Default},
-		"only a dot":        {stream(t, entry{name: "./", typ: tar.TypeDir}), Default},
-		"newline":           {stream(t, file("a\nb.html", "x")), Default},
-		"backslash":         {stream(t, file(`a\..\b`, "x")), Default},
-		"twice":             {stream(t, file("a", "x"), file("a", "y")), Default},
-		"twice, ./ and not": {stream(t, file("a", "x"), file("./a", "y")), Default},
-		"file then its dir": {stream(t, file("a", "x"), file("a/b", "y")), Default},
-		"dir then its file": {stream(t, file("a/b", "x"), file("a", "y")), Default},
-		"a file too big":    {stream(t, file("a", strings.Repeat("x", 51))), small},
-		"too big in all":    {stream(t, file("a", strings.Repeat("x", 50)), file("b", strings.Repeat("x", 50)), file("c", "x")), small},
-		"too many entries":  {stream(t, file("a", ""), file("b", ""), file("c", ""), file("d", "")), small},
-		"cut short":         {stream(t, file("a", strings.Repeat("x", 600)))[:700], Default},
-		"not tar":           {[]byte("<html>not a tar</html>" + strings.Repeat(" ", 600)), Default},
-		"a name over 255":   {stream(t, entry{name: strings.Repeat("x", 256), body: "x", format: tar.FormatPAX}), Default},
-	}
-	for name, c := range cases {
-		t.Run(name, func(t *testing.T) {
-			root := t.TempDir()
-			dir := filepath.Join(root, "staging")
-			os.Mkdir(dir, 0o755)
-			if _, err := Receive(bytes.NewReader(c.s), dir, c.lim); err == nil {
-				t.Errorf("accepted")
-			}
-			filepath.Walk(root, func(p string, i os.FileInfo, err error) error {
-				if p != root && !strings.HasPrefix(p, dir+string(filepath.Separator)) && p != dir {
-					t.Errorf("written outside: %s", p)
-				}
-				if i != nil && i.Mode()&os.ModeSymlink != 0 {
-					t.Errorf("a symlink: %s", p)
-				}
-				return nil
-			})
-		})
-	}
-}
-
-// a symlink already in the folder (none should be: the gate's copy makes none) is never followed
-func TestNoFollow(t *testing.T) {
-	root := t.TempDir()
-	dir, out := filepath.Join(root, "staging"), filepath.Join(root, "out")
-	os.Mkdir(dir, 0o755)
-	os.Mkdir(out, 0o755)
-	os.Symlink(out, filepath.Join(dir, "link"))
-	os.WriteFile(filepath.Join(out, "f"), []byte("keep"), 0o644)
-	os.Symlink(filepath.Join(out, "f"), filepath.Join(dir, "f"))
-	for _, s := range [][]byte{stream(t, file("link/x", "y")), stream(t, file("f", "y"))} {
-		if _, err := Receive(bytes.NewReader(s), dir, Default); err == nil {
-			t.Errorf("accepted a push through a symlink")
+		"site-data.json":               {data, true, false},
+		"spaces before it":             {"\n  " + data, true, false},
+		"nothing (the heartbeat)":      {"", false, false},
+		"an older backend's empty tar": {strings.Repeat("\x00", 1024), false, false},
+		"an older backend's tar":       {"site-data.json\x00\x00\x00" + strings.Repeat("\x00", 1000), false, true},
+		"a page":                       {"<p>Donate here</p>", false, true},
+		"over the limit":               {"{" + strings.Repeat(" ", 3000), false, true},
+	} {
+		dir := t.TempDir()
+		got, err := Data(strings.NewReader(c.in), dir, 2048)
+		if got != c.got || (err != nil) != c.fail {
+			t.Errorf("%s: %v %v", name, got, err)
+		}
+		b, rerr := os.ReadFile(filepath.Join(dir, "site-data.json"))
+		if c.got && (rerr != nil || string(b) != c.in) || !c.got && rerr == nil {
+			t.Errorf("%s: written %q %v", name, b, rerr)
 		}
 	}
-	if es, _ := os.ReadDir(out); len(es) != 1 {
-		t.Errorf("written through a symlink: %v", es)
-	}
-	if b, _ := os.ReadFile(filepath.Join(out, "f")); string(b) != "keep" {
-		t.Errorf("a file written through a symlink: %q", b)
-	}
 }
 
-// a file another folder shares (a hard link) is replaced, never written through
-func TestNewInode(t *testing.T) {
+// what staging holds at site-data.json, a link or a file another folder shares, is replaced, never
+// written through
+func TestDataNoFollow(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "staging")
 	os.Mkdir(dir, 0o755)
-	os.WriteFile(filepath.Join(root, "live"), []byte("live"), 0o644)
-	os.Link(filepath.Join(root, "live"), filepath.Join(dir, "a"))
-	if _, err := Receive(bytes.NewReader(stream(t, file("a", "pushed"))), dir, Default); err != nil {
+	os.WriteFile(filepath.Join(root, "passwd"), []byte("keep"), 0o644)
+	os.Symlink(filepath.Join(root, "passwd"), filepath.Join(dir, "site-data.json"))
+	if _, err := Data(strings.NewReader(data), dir, 1<<20); err != nil {
 		t.Fatal(err)
 	}
-	if b, _ := os.ReadFile(filepath.Join(root, "live")); string(b) != "live" {
-		t.Errorf("the other copy changed: %q", b)
+	if b, _ := os.ReadFile(filepath.Join(root, "passwd")); string(b) != "keep" {
+		t.Errorf("written through a link: %q", b)
+	}
+	if st, _ := os.Lstat(filepath.Join(dir, "site-data.json")); st == nil || !st.Mode().IsRegular() {
+		t.Errorf("site-data.json not a plain file")
 	}
 }
 
@@ -229,37 +119,28 @@ func TestCopy(t *testing.T) {
 
 // review 10's M-1: a folder entry makes nothing; a file takes an empty folder's place (in the
 // push and in the copy to the live site), a folder with something in it still refuses
+// review 10's M-1: an empty folder an older gate left live where a page goes gives way to it
 func TestFoldersOnlyForFiles(t *testing.T) {
 	root := t.TempDir()
 	live, staging := filepath.Join(root, "live"), filepath.Join(root, "staging")
-	os.MkdirAll(filepath.Join(live, "proposals", "next.html"), 0o755) // left live by an older gate
+	os.MkdirAll(filepath.Join(live, "proposals", "next.html"), 0o755)
 	os.MkdirAll(filepath.Join(live, "proposals", "full.html"), 0o755)
 	os.WriteFile(filepath.Join(live, "proposals", "full.html", "x"), []byte("x"), 0o644)
-	if err := Copy(live, staging, true); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := Receive(bytes.NewReader(stream(t, entry{name: "explore/tag/x/", typ: tar.TypeDir})), staging, Default); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(filepath.Join(staging, "explore")); err == nil {
-		t.Errorf("a folder entry made a folder")
-	}
-	if _, err := Receive(bytes.NewReader(stream(t, file("proposals/next.html", "<p>new"))), staging, Default); err != nil {
-		t.Fatalf("a page where an empty folder was: %v", err)
-	}
+	os.MkdirAll(filepath.Join(staging, "proposals"), 0o755)
+	os.WriteFile(filepath.Join(staging, "proposals", "next.html"), []byte("<p>new"), 0o644)
 	if err := Copy(staging, live, false); err != nil {
 		t.Fatalf("copied live: %v", err)
 	}
 	if b, err := os.ReadFile(filepath.Join(live, "proposals", "next.html")); err != nil || string(b) != "<p>new" {
 		t.Errorf("the page isn't live: %q %v", b, err)
 	}
-	if _, err := Receive(bytes.NewReader(stream(t, file("proposals/full.html", "<p>"))), staging, Default); err == nil {
+	os.WriteFile(filepath.Join(staging, "proposals", "full.html"), []byte("<p>"), 0o644)
+	if err := Copy(staging, live, false); err == nil {
 		t.Errorf("a file put where a folder holds something")
 	}
 }
 
-// review 10's L-3: a temp file a killed copy left is removed by the next, never copied, and no
-// push may name one
+// review 10's L-3: a temp file a killed copy left is removed by the next, never copied
 func TestTempLeftOver(t *testing.T) {
 	root := t.TempDir()
 	src, dst := filepath.Join(root, "src"), filepath.Join(root, "dst")
@@ -275,8 +156,5 @@ func TestTempLeftOver(t *testing.T) {
 		if _, err := os.Lstat(filepath.Join(dst, "p", n)); err == nil {
 			t.Errorf("%s left in the copy", n)
 		}
-	}
-	if _, err := Receive(bytes.NewReader(stream(t, file("p/.ccs-push-9", "x"))), dst, Default); err == nil {
-		t.Errorf("a push named a temp file")
 	}
 }

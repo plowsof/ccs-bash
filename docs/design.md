@@ -62,8 +62,8 @@ machine and the IRC bot; ccs-watch through Tor and a proxy; a mirror to the site
   result into [ccs-sigs](https://github.com/plowsof/ccs-sigs), as Feather Wallet does; a release is
   verified against those signatures before it is installed ([contrib/release](../contrib/release/README.md)).
 - **The push:** `site-data.json` to the web server when it changed since what the gate last took
-  (`contrib/ccs-push`: its sum against its record; once a day whatever), as a tar over ssh; an
-  empty one otherwise, the heartbeat. Nothing else: no page, no stylesheet, no image.
+  (`contrib/ccs-push`: its sum against its record; once a day whatever), as it is over ssh;
+  nothing otherwise, the heartbeat. Nothing else: no page, no stylesheet, no image.
 
 **Web server:** Caddy (StageX's) serving `/var/lib/ccs-data` over HTTPS, its certificates its
 own, and Tor (built from its signed source) serving it as an onion, both in the gate's image;
@@ -114,7 +114,7 @@ What the watching doesn't cover is one flaw that opens both at once:
   key check opens them all. [Admin access](admin-access.md) puts it behind a VPN or an allowlist.
 - **The same packages on both sides** (StageX's ssh, curl, OpenSSL in both images):
   reachable from outside only through what each machine exposes, but also by each machine from
-  the other: the web server answers the backend's push (ssh, as a client; the tar is read in Go) and
+  the other: the web server answers the backend's push (ssh, as a client; the file is taken in Go) and
   ccs-watch's fetches (curl). Each runs in a container of its own, as its own user, so a flaw
   there reaches that one stage, not the state or the wallet. But the watch's curl is the
   watching: a flaw in it can silence the watch itself, whose alarm is then only the Verify page's

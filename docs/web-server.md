@@ -50,7 +50,7 @@ view-only copy of the wallet) are what's left.
 
 | Part | From | Reviewed as |
 |---|---|---|
-| **the gate** (sshd on 2223, the push key's forced command `ccs-receive`: the push is `site-data.json` as a tar, read in Go; the site built from it) and **the heartbeat** | the gate's image, `contrib/docker/web/compose.yml` | this page: its code, its image's parts |
+| **the gate** (sshd on 2223, the push key's forced command `ccs-receive`: the push is `site-data.json` as it is, taken in Go; the site built from it) and **the heartbeat** | the gate's image, `contrib/docker/web/compose.yml` | this page: its code, its image's parts |
 | **the site**: Caddy (`www`: serves `/var/lib/ccs-data`, the live site, read-only, over HTTPS, its certificates its own; the security headers) and Tor (`tor`: the onion) | the gate's image; their config, [`Caddyfile`](../contrib/docker/web/Caddyfile) and [`torrc`](../contrib/docker/web/torrc), in it | this page: their config, their image's parts |
 | Docker, the OS | the host's Debian or Ubuntu packages, `unattended-upgrades` | not reviewed here: the distribution's |
 | your own ssh | [admin access](admin-access.md) | yours |
@@ -70,7 +70,7 @@ builds.
 
 | Package | Version | Why it is there |
 |---|---|---|
-| openssh (`sshd`, `ssh-keygen` only) | 10.5p1 | the push's channel: runs only the forced command, the tar on its stdin (no C program reads the tar: `ccs-check receive` does) |
+| openssh (`sshd`, `ssh-keygen` only) | 10.5p1 | the push's channel: runs only the forced command, `site-data.json` on its stdin (no C program reads it: `ccs-check receive` takes it) |
 | git | 2.55.0 | fetches the proposals repository itself (https) |
 | curl, openssl, ca-certificates | 8.22.0, 3.6.4 | the gate's IRC alerts; git's https |
 | jq | 1.8.2 | the site built here (`site.jq` and ccs-front-bash), reading only JSON `ccs-check data` passed and the gate's own |
@@ -96,8 +96,8 @@ About 3,900 lines, this repository's own and the ccs-front-bash release it vendo
 
 | File | Lines | What it is |
 |---|---|---|
-| [`contrib/ccs-receive`](../contrib/ccs-receive) | 354 | the gate: takes only `receive`, receives `site-data.json` alone, fetches the proposals repository, checks the data (`ccs-check data`, which writes what the site is built from), builds the site (`ccs-gate-build`), runs `ccs-check gate` on it, copies it live but what failed, alerts (each page leaving too); the pins and the day's removals; the heartbeat |
-| [`contrib/ccs-check/`](../contrib/ccs-check) (Go, tests aside) | 1,785 | `data` (`sitedata/sitedata.go`: `site-data.json`, each key exactly as ccs-bash writes it, each value of its kind, each index the list's and its proposal's, the pins), `gate` (`gate/gate.go`: which built files go live), `receive` and `copy` (`push/push.go`: the push's tar, plain files only, at clean paths, within limits), `scan` (`scan/scan.go`, `addr/addr.go`, `addr/lookalike.go`: every address, by Monero's checksum, in look-alike letters too; no bidi control) |
+| [`contrib/ccs-receive`](../contrib/ccs-receive) | 350 | the gate: takes only `receive`, receives `site-data.json` alone, fetches the proposals repository, checks the data (`ccs-check data`, which writes what the site is built from), builds the site (`ccs-gate-build`), runs `ccs-check gate` on it, copies it live but what failed, alerts (each page leaving too); the pins and the day's removals; the heartbeat |
+| [`contrib/ccs-check/`](../contrib/ccs-check) (Go, tests aside) | 1,730 | `data` (`sitedata/sitedata.go`: `site-data.json`, each key exactly as ccs-bash writes it, each value of its kind, each index the list's and its proposal's, the pins), `gate` (`gate/gate.go`: which built files go live), `receive` and `copy` (`push/push.go`: the push's one file, 4 MB at most; the copy into the live site), `scan` (`scan/scan.go`, `addr/addr.go`, `addr/lookalike.go`: every address, by Monero's checksum, in look-alike letters too; no bidi control) |
 | `contrib/ccs-check/build.sh` | 71 | how it is built and tested (StageX's Go, no network) |
 | [`container/gate.Dockerfile`](../container/gate.Dockerfile) | 132 | what goes in the image, Tor built from its source among it |
 | [`contrib/docker/web/`](../contrib/docker/web) (`compose.yml`, `sshd_config`, `init`, `env.example`, `Caddyfile`, `torrc`) | 353 | how it runs: one user each, the forced command, read-only, sshd's three capabilities, limits; what Caddy serves and how, the onion |
@@ -109,10 +109,10 @@ And what the site is built with, from the other repository: ccs-front-hugo's **d
 release zip: the pages, the parts they are filled with, the stylesheets and images; installed by
 its sha256).
 
-The tests show each way around it, by name: `tests/gate.sh` (every check, hostile tars, with
+The tests show each way around it, by name: `tests/gate.sh` (every check, hostile pushes, with
 this image as the web server and the design's real release), `tests/gate-image.sh`, `tests/web.sh` (its sshd,
-attacked), `contrib/ccs-check/build.sh test` and `fuzz` (the receiver: nothing written outside
-its folder, whatever the stream). [Reviewing](reviewing.md) walks each function.
+attacked), `contrib/ccs-check/build.sh test` and `fuzz` (the scan and the data check, whatever they are
+given). [Reviewing](reviewing.md) walks each function.
 
 ## What is installed by hand
 

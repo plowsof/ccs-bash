@@ -148,9 +148,8 @@ list, writes the site.
 ### Push, watcher, backup
 
 - [`contrib/ccs-push`](../contrib/ccs-push), the push (`push`, as `ccs-push`): `site-data.json`
-  when its sum isn't `accepted`'s, what the gate last took (and once a day, `full`), as a tar
-  (busybox's) on ssh's stdin to the web server's key, which runs only the gate; else an empty
-  tar, the heartbeat. `accepted` written only when the gate took it (exit 0).
+  when its sum isn't `accepted`'s, what the gate last took (and once a day, `full`), as it is on
+  ssh's stdin to the web server's key, which runs only the gate; else nothing, the heartbeat. `accepted` written only when the gate took it (exit 0).
 - [`contrib/ccs-watch`](../contrib/ccs-watch) (`watch`, as `ccs-watch`): the live pages' addresses,
   as one of three browsers through a random proxy (what it fetches, and why:
   [two machines](two-machines.md#watching-the-web-server-the-backend-raises-the-alarm)): `wrong`,
@@ -177,9 +176,9 @@ list, writes the site.
 
 - [`contrib/ccs-receive`](../contrib/ccs-receive), the push key's forced command, as `ccs-data`,
   one push at a time (`flock`); only `receive` asked (anything else refused); staging emptied, the
-  push's tar read into it (`ccs-check receive`, contrib/ccs-check/push: plain files at clean paths,
-  written beside and renamed, within its limits, else the whole push refused and IRC told;
-  refused before it without `ccs-check`); any file but `site-data.json` refuses it. Then it
+  push taken into it (`ccs-check receive`, contrib/ccs-check/push: `site-data.json` alone, 4 MB at
+  most, a JSON object, written beside and renamed, else refused and IRC told; refused before it
+  without `ccs-check`). Then it
   refuses every push without its pinned list (or with one of no addresses), QR codes' sums
   (`.qr.sha256`, the `.pin`'s `qr` line) and QR codes, `git`, `ccs-gate-build`, a design release
   or `proposals.conf`. Built again only when what it's built from changed (`built-with`, a sum

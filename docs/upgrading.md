@@ -4,6 +4,15 @@ Steps a release needs **once**, on top of [deploying a set](deploying.md).
 Newest first. Upgrading across several releases: do each step listed between the running release
 and the new one, oldest first. A release not listed needs none.
 
+## ccs-bash v0.2.55: the push is site-data.json as it is, not a tar
+
+The backend sends `site-data.json` as it is on ssh's stdin (nothing for the heartbeat), not a tar
+of it; the gate takes that one file. The new gate still takes an older backend's heartbeat (its
+empty tar) but refuses its tar of data; the old gate refuses the new backend's file. So **the web
+server first, then the backend at once**: until the backend's turn, a push with new data is
+refused (`the web server refused a push it could not take: not site-data.json`, alerted once),
+and the next push after it sends it again. Nothing else to do.
+
 ## ccs-bash v0.2.53: the backend sends only site-data.json; the web server builds the site
 
 The backend no longer runs ccs-front-bash (no `front` service) and pushes `site-data.json` alone;
