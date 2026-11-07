@@ -17,8 +17,6 @@ source "$CCS_LIB/gitlab.sh"
 source "$CCS_LIB/wallet.sh"
 # shellcheck source=lib/mirror.sh
 source "$CCS_LIB/mirror.sh"
-# shellcheck source=lib/images.sh
-source "$CCS_LIB/images.sh"
 # shellcheck source=lib/site-data.sh
 source "$CCS_LIB/site-data.sh"
 
@@ -175,7 +173,6 @@ main() {
         log "warning: could not fetch ideas from GitLab, keeping the previous list"
         previous_ideas > "$WORK/ideas.json"
     fi
-    proposal_images || log "warning: could not update the proposals' images, keeping the ones there"
     build_site
 }
 

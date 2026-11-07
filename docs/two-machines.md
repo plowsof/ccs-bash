@@ -16,17 +16,16 @@ install -d -m 755 /etc/ssh/authorized_keys                # root-owned, outside 
 from="<backend IP>",command="/usr/local/bin/ccs-receive",restrict ssh-ed25519 AAAA... ccs-bash
 ```
 
-The push is a tar of `site-data.json` when it changed (the backend's [`contrib/ccs-push`](../contrib/ccs-push),
-over this key, asking for `receive`), read by the gate's own Go code (`ccs-check receive`), never
+The push is `site-data.json` as it is, when it changed (the backend's [`contrib/ccs-push`](../contrib/ccs-push),
+over this key, asking for `receive`), taken by the gate's own Go code (`ccs-check receive`), never
 by rsync or any other C program, into its staging folder, so:
 
 | If the key is stolen, this stops | |
 |---|---|
 | `restrict` | shells, forwarding, a terminal |
 | `command=` the gate, which takes `receive` only | any other command (a shell, scp, rsync, reading back) |
-| `ccs-check receive`: plain files, at clean paths under the folder | writing outside it (`..`, an absolute path), links of either kind, devices, a name twice: any of them refuses the whole push |
-| the gate: `site-data.json` alone | any other file (a page, a stylesheet): refuses the whole push |
-| its limits: 512 MB a push, 64 MB a file, 100,000 files, 5 minutes | filling the disk, holding the gate |
+| `ccs-check receive`: one file, `site-data.json`, at its own name in the folder | writing anything else, anywhere else: there is no name in the push to say where |
+| its limits: 4 MB, a JSON object, 5 minutes | filling the disk, holding the gate, a page or anything else as the push |
 | `from=` | use from another machine |
 | key file root-owned, outside its home | loosening the key line, adding a key |
 | own filesystem / quota | filling the disk |
@@ -122,17 +121,15 @@ runuser -u ccs-push -- ssh-keygen -t ed25519 -N '' -f /etc/ccs/push/id_ed25519
 echo "[<web server>]:2223 ssh-ed25519 AAAA..." > /etc/ccs/push/known_hosts
 ```
 
-The push (a tar of `site-data.json` when it changed since what the gate last took, else an empty
-one, the heartbeat: `contrib/ccs-push`) goes
+The push (`site-data.json` when it changed since what the gate last took, else nothing, the
+heartbeat: `contrib/ccs-push`) goes
 to `CCS_PUSH_PORT` (2223) of the compose's `.env`. The web server needs 2223 open to the backend only (the backup machine: 2224)
 and 80/443 to everyone, in its firewall *and* a cloud provider's (an Oracle security list, an AWS
 security group). The admins' own ssh: [admin access](admin-access.md).
 
-`tests/gate.sh` sends each of those as a tar from the backend's key (a symlink, a hard link, a
-device, `..`, an absolute path, a name twice, a page beside `site-data.json`, no tar at all):
-each refuses the whole push, nothing live changes, nothing is written outside; `tests/web.sh`
-tries other commands, forwarding and another machine; `contrib/ccs-check/build.sh test` and
-`fuzz` the receiver itself. A taken-over backend can still send a false `site-data.json`: the
+`tests/gate.sh` sends a page, an older backend's tar and 5 MB from the backend's key: each is
+refused, nothing live changes; `tests/web.sh` tries other commands, forwarding and another
+machine; `contrib/ccs-check/build.sh test` the receiver itself. A taken-over backend can still send a false `site-data.json`: the
 gate is for that.
 
 ## The gate: the web server builds the site itself
@@ -142,9 +139,8 @@ gate is for that.
 and funds, and the ideas). The web server builds every page itself, from that, the proposals
 repository it fetches, the design and the signed list installed here. Each push, one at a time, it
 
-1. receives the push into an empty staging folder (`ccs-check receive`: a tar of plain files, as
-   above); any file but `site-data.json` refuses all of it. No `site-data.json` (it didn't
-   change): the live site's is built from. Built again only when what the site is built from
+1. receives the push into an empty staging folder (`ccs-check receive`: `site-data.json`, as
+   above). None (it didn't change): the live site's is built from. Built again only when what the site is built from
    changed (`site-data.json`, the list, its QR codes, `allowed`, the design, the proposals commit
    fetched, `proposals.conf`, the gate), and once a day whatever happens;
 2. fetches the **proposals repository** (`proposals.conf`), all its history (about 3 MB; the last
@@ -275,8 +271,8 @@ way around it, each case named in its output:
   told); four at once held, and four one a push within a day (`allow-remove` lets them go); a
   front matter `gitlab_url` out of the repository doesn't replace the merge request link;
 - **refused, every push:** a page or anything else pushed; no design release, no QR codes, a list
-  that isn't the pinned one, QR codes' sums that aren't, an empty list; a tar no backend makes; a
-  push of 20,000 files (saying why);
+  that isn't the pinned one, QR codes' sums that aren't, an empty list; an older backend's tar,
+  a push over 4 MB (saying why);
 - **through:** the repository down (one alert after 6 hours); two pushes at once; a backend that
   hangs up mid-build; no `alert.conf` (it is optional).
 

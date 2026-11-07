@@ -1,7 +1,7 @@
 #!/bin/bash
 # ccs-receive: the web server's gate (docs/two-machines.md, "The gate"). The backend's push key runs
-# only this (command= in authorized_keys). The push is site-data.json alone (contrib/ccs-push: a
-# tar, read by Go, ccs-check receive): what only the backend knows, each proposal's subaddress
+# only this (command= in authorized_keys). The push is site-data.json alone (contrib/ccs-push: the
+# file on ssh's stdin, taken by Go, ccs-check receive): what only the backend knows, each proposal's subaddress
 # index, dates and funds, and the ideas. The gate checks it (ccs-check data: every value of its
 # kind, each index the signed list's and the one the live site has for its proposal), then builds
 # the site itself (ccs-gate-build: ccs-bash's site.jq and the vendored ccs-front-bash) from it,
@@ -189,9 +189,9 @@ fi
 # staging empty each time: the push in push/, the site built in site/
 find "$staging" -mindepth 1 -delete
 mkdir "$staging/push"
-# the push: a tar of plain files and folders, read by Go (ccs-check receive, contrib/ccs-check/push):
-# a link, a device, a path out of staging, a name twice, or past its limits (512 MB, 64 MB a file,
-# 100,000 files) refuses all of it, and so does one not received in 5 minutes
+# the push: site-data.json on stdin, or nothing (the heartbeat), taken by Go (ccs-check receive,
+# contrib/ccs-check/push): over 4 MB, or not a JSON object, is refused, and so is one not received
+# in 5 minutes
 if ! why=$(timeout 300 ccs-check receive "$staging/push" 2>&1); then
     why=${why#ccs-check receive: refused: }
     say "refused the push: ${why:-it was not received in time}"
@@ -199,11 +199,7 @@ if ! why=$(timeout 300 ccs-check receive "$staging/push" 2>&1); then
     exit 1
 fi
 touch "$state/last-push" 2> /dev/null || true   # the backend's heartbeat (--heartbeat)
-# site-data.json alone (none: it didn't change, and the live site's is built from). (find || true:
-# head stops reading after 3, and a find with more to say dies of SIGPIPE, which would end the
-# gate with no word)
-other=$(cd "$staging/push" && { find . -type f ! -path ./site-data.json || true; } | head -n 3)
-[[ ! $other ]] || refuse "it sent other files than site-data.json (${other//$'\n'/, })" push "a push with other files than site-data.json"
+# (none sent: it didn't change, and the live site's is built from)
 data=$staging/push/site-data.json
 [[ -f $data ]] || data=$live/site-data.json
 

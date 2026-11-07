@@ -7,8 +7,8 @@ push and backup make most of it):
   jq, ca-certificates, git, openssh (ssh only) and their libraries. StageX builds everything from source from a tiny
   bootstrap; two or more maintainers reproduce and sign each release, which every build checks.
 - **busybox, built here** from upstream source pinned by sha256 in `container/sources.lock`
-  (StageX's sum), with only the applets in `container/busybox-applets` (no shell, `nc`, `wget`...;
-  its `tar` makes the push, `contrib/ccs-push`).
+  (StageX's sum), with only the applets in `container/busybox-applets` (no shell, `nc`, `wget`,
+  `tar`...).
 - **Built by StageX's BuildKit** (and runc), pinned and checked like the rest, not by the
   host Docker's.
 

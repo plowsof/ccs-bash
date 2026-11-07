@@ -35,7 +35,7 @@ sha256sum -c --status <<<"$design_sha  $zip" || { echo "$zip: sha256 is not $des
 mkdir "$files/design" && (cd "$files/design" && unzip -q "$zip")
 
 # The backend: Debian 12, with ssh, qrencode (the list's QR codes, as make-qr.sh makes them) and
-# python3 (the test's own helpers: hostile tars, the IRC bot; the gate's image has no Python)
+# python3 (the test's own IRC bot; the gate's image has no Python)
 docker buildx build -q --load -t "$name" - > /dev/null <<IMG
 FROM debian@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
 RUN apt-get update -q && apt-get install -y -q --no-install-recommends openssh-client python3 qrencode \
@@ -68,27 +68,6 @@ docker cp "$files/qr" "$name-web:/tmp/qr" && docker cp "$files/qr.sha256" "$name
 docker cp "$files/design" "$name-web:/tmp/design"
 key=$(on backend 'cat ~/.ssh/id_ed25519.pub')
 docker cp "$here/../contrib/ccs-push" "$name-backend:/ccs-push"
-# hostile.py KIND: a tar no backend's push makes, to stdout (python's tarfile writes what it's told)
-cat > "$files/hostile.py" <<'PY'
-import io, sys, tarfile
-out = tarfile.open(fileobj=sys.stdout.buffer, mode="w|", format=tarfile.GNU_FORMAT)
-def add(name, body=b"x", typ=tarfile.REGTYPE, link=""):
-    t = tarfile.TarInfo(name); t.type = typ; t.linkname = link; t.mode = 0o644
-    if typ == tarfile.REGTYPE: t.size = len(body); out.addfile(t, io.BytesIO(body))
-    else: out.addfile(t)
-k = sys.argv[1]
-if k == "symlink": add("site-data.json", typ=tarfile.SYMTYPE, link="/etc/passwd")
-if k == "hardlink": add("a.txt"); add("site-data.json", typ=tarfile.LNKTYPE, link="a.txt")
-if k == "device": add("site-data.json", typ=tarfile.CHRTYPE)
-if k == "dotdot": add("../../../tmp/escaped")
-if k == "absolute": add("/tmp/escaped")
-if k == "twice": add("site-data.json", b"{}"); add("./site-data.json", b"{}")
-if k == "address": add("pay/" + sys.argv[2] + "/../x.json")
-if k == "page": add("site-data.json", b"{}"); add("index.html", b"<p>Donate here</p>")
-if k == "many": [add("f%05d.txt" % i) for i in range(20000)]
-out.close()
-PY
-docker cp "$files/hostile.py" "$name-backend:/hostile.py"
 
 # the proposals repository, as GitLab merges: each proposal its branch, merged with "See merge
 # request monero-project/ccs-proposals!N" (its link on the site, MERGE_REQUESTS'); p Funding
@@ -186,8 +165,8 @@ data() {
 put() { docker exec -i "$name-backend" sh -c "mkdir -p \"\$(dirname '/out/$1')\" && cat > '/out/$1'"; }
 # push: as the backend pushes (contrib/ccs-push): what changed, a tar over ssh
 push() { on backend "/ccs-push /out/site-data.json /state -T -o BatchMode=yes -o StrictHostKeyChecking=yes ccs-data@$web 2>&1"; }
-# hostile KIND: hostile.py's tar sent as a push; its exit
-hostile() { on backend "python3 /hostile.py $1 ${2:-} | ssh -T -o BatchMode=yes ccs-data@$web receive > /dev/null 2>&1"; }
+# sendraw < BYTES: BYTES sent as a push, as no ccs-push sends them; its exit
+sendraw() { docker exec -i "$name-backend" ssh -T -o BatchMode=yes "ccs-data@$web" receive > /dev/null 2>&1; }
 livefile() { on web "cat '/var/lib/ccs-data/$1' 2> /dev/null || true"; }
 livepage() { livefile proposals/p.html; }
 built() { on web "grep -c 'built the site from site-data.json' /var/log/ccs-gate.log || true"; }
@@ -236,12 +215,12 @@ if push > /dev/null && [[ $(livepage) == *'merge_requests/77"'* ]]; then
 else livepage | grep -o 'href="[^"]*merge[^"]*"' || true; fail "a front matter merge request"; fi
 repo front p
 
-# the push is site-data.json alone: a page, or anything else, refuses all of it
-rc=0; hostile page || rc=$?
-if ((rc == 1)) && [[ $(livefile index.html) != *"Donate here"* ]] && on web "grep -q 'other files than site-data.json (./index.html)' /var/log/ccs-gate.log" \
-    && bot | grep -qF "the web server refuses every push: a push with other files than site-data.json"; then
-    ok "a push with a page in it: refused whole, IRC told"
-else echo "exit $rc"; logtail 2; fail "a push with a page"; fi
+# the push is site-data.json alone: a page, or anything else, refused
+rc=0; printf '<p>Donate here</p>' | sendraw || rc=$?
+if ((rc == 1)) && [[ $(livefile index.html) != *"Donate here"* ]] && on web "grep -q 'refused the push: not site-data.json' /var/log/ccs-gate.log" \
+    && bot | grep -qF "the web server refused a push it could not take: not site-data.json"; then
+    ok "a push of a page: refused, IRC told"
+else echo "exit $rc"; logtail 2; fail "a push of a page"; fi
 
 # site-data.json that fails (ccs-check data): held back, the live site as it was, IRC told
 before=$(raised)
@@ -427,22 +406,18 @@ on web "cp /tmp/subaddresses.txt.qr.sha256 /etc/ccs-gate/ && : > /etc/ccs-gate/s
 refused "review 11 (I-1): an empty list, pinned" ".*subaddresses.txt has no addresses"
 on web 'cp /tmp/subaddresses.txt /tmp/subaddresses.txt.pin /etc/ccs-gate/'
 
-# a tar no backend makes (a link, a device, a path out, a name twice): refused whole, nothing
-# live changed, nothing outside, IRC told
-for k in symlink hardlink device dotdot absolute twice; do
+# what no ccs-push sends: an older backend's tar, over 4 MB: refused, nothing live changed
+for c in "an older backend's tar|tar" "over 4 MB|big"; do
+    IFS='|' read -r what how <<<"$c"
     before=$(on web 'find /var/lib/ccs-data -type f | sort | xargs sha256sum | sha256sum')
-    rc=0; hostile "$k" || rc=$?
+    rc=0
+    if [[ $how == tar ]]; then on backend 'cd /out && tar -c -f - site-data.json' | sendraw || rc=$?
+    else { printf '{'; head -c 5000000 /dev/zero | tr '\0' ' '; } | sendraw || rc=$?; fi
     if ((rc == 1)) && [[ $(on web 'find /var/lib/ccs-data -type f | sort | xargs sha256sum | sha256sum') == "$before" ]] \
-        && on web '! test -e /tmp/escaped && ! test -e /var/lib/escaped && ! find /var/lib/ccs-data /var/lib/ccs-staging -type l | grep -q .'; then
-        ok "refused whole: a push with a $k entry"
-    else echo "exit $rc"; logtail 2; fail "a push with a $k entry"; fi
+        && on web 'tail -n 2 /var/log/ccs-gate.log | grep -q "refused the push: \(not site-data.json\|over 4 MB\)"'; then
+        ok "refused, saying why: $what"
+    else echo "exit $rc"; logtail 2; fail "$what"; fi
 done
-if bot | grep -qF "the web server refused a push it could not take"; then ok "... and IRC is told"; else bot | tail -n 3; fail "no alert for a refused tar"; fi
-# review 10's L-1: IRC is told why, but never a whole address the backend chose (a name quoting one)
-on web 'rm -f /var/lib/ccs-gate/alert-receive'
-hostile address "$fake" || true
-if bot | grep -qF "${fake:0:6}…${fake: -4}" && ! bot | grep -qF "$fake"; then ok "review 10 (L-1): a refused push's reason in IRC with its address shortened"; else bot | tail -n 2; fail "review 10 (L-1): a whole address in an alert"; fi
-if [[ $(on backend "printf 'not a tar' | ssh -T -o BatchMode=yes ccs-data@$web receive > /dev/null 2>&1; echo \$?") == 1 ]]; then ok "refused: a push that isn't a tar"; else fail "a push that isn't a tar"; fi
 # the key still runs nothing but the gate
 if ! grep -q root <<<"$(on backend "ssh -o BatchMode=yes ccs-data@$web 'cat /etc/passwd' 2>&1")"; then ok "the key runs nothing else"; else fail "the key ran a command"; fi
 
@@ -463,16 +438,11 @@ for _ in $(seq 300); do on web 'for p in /proc/[0-9]*/cmdline; do { tr "\0" " " 
 if (($(bot | grep -c . || true) > alerts)) && [[ $(raised) == 41 ]]; then ok "a backend that hangs up mid-build: the gate still builds, and alerts"; else logtail 3; fail "a backend that hangs up mid-build"; fi
 repo edit w 'Back to work.'
 
-# review 12's L-1: no alert.conf (optional): the gate still builds; thousands of files: refused,
-# with its reason (not a silent SIGPIPE)
+# review 12's L-1: no alert.conf (optional): the gate still builds
 on web 'mv /etc/ccs-gate/alert.conf /tmp/alert.conf'
 data 42.0000 | put site-data.json
 if push > /dev/null && [[ $(raised) == 42 ]]; then ok "review 12 (L-1): no alert.conf: built, live"; else logtail; fail "no alert.conf"; fi
 on web 'mv /tmp/alert.conf /etc/ccs-gate/alert.conf'
-rc=0; hostile many || rc=$?
-if ((rc == 1)) && on web "tail -n 1 /var/log/ccs-gate.log | grep -q 'other files than site-data.json (./f'"; then
-    ok "review 12 (L-1): a push of 20,000 files: refused, saying why"
-else echo "exit $rc"; logtail 2; fail "a push of many files"; fi
 
 # the heartbeat: pushes are the backend's; the web server's timer alerts when none arrive
 hb() { docker exec -u "$data" "$name-web" /usr/local/bin/ccs-receive --heartbeat; }
