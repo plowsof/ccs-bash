@@ -46,6 +46,18 @@ its front matter's, read from the repository by the gate itself
 backend fetching the site as a visitor) and the Verify page (visitors checking an address in a
 view-only copy of the wallet) are what's left.
 
+**One account builds and serves the site's files.** The gate and everything its build runs (bash,
+busybox, jq, awk and git on the fetched repository; ccs-front-bash on its text) run as `ccs-data`,
+which owns the live site (`/var/lib/ccs-data`), staging and the gate's own state in
+`/var/lib/ccs-gate` (the pins, the day's removals, `built-with`, `allow-remove`). So a bug that
+runs code during a push or a build (in jq, say, reading a hostile proposal) can write the live
+site directly, and rewrite the pins: the gate's checks come before that, not after. What it can't
+touch is root's and mounted read-only: `/etc/ccs-gate` (the signed list, its QR codes and their
+sums, the design, `allowed`, `proposals.conf`), so the checks of the next build still hold.
+ccs-watch is what would see it (review 12's I-4). Building
+as a second account, one that can't write the live site, would separate the two; the gate's
+container can't switch accounts (no capability for it), so that is a change of its own, not done.
+
 ## What runs on it
 
 | Part | From | Reviewed as |

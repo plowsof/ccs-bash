@@ -614,9 +614,12 @@ img=$(mktemp -d)
     printf '\x89PNG\r\n\x1a\nother' > "$P/images/other/x.png"
     printf -- '---\nlayout: fr\n---\n![a](images/my-proposal/chart.png "t") ![b](images/my-proposal/fake.png) ![c](images/my-proposal/big.gif)\n![d](images/other/x.png) ![e](https://elsewhere.example/e.png) ![f](images/my-proposal/missing.png)\n' > "$P/my-proposal.md"
     printf -- '---\nlayout: fr\n---\n![g](images/spaced name/x.png)\n' > "$P/spaced name.md"
+    # review 12's I-1: a proposal's image folder committed as a link to one outside the repository
+    mkdir -p "$img/outside" && printf '\x89PNG\r\n\x1a\nnot the repository' > "$img/outside/x.png" && ln -s "$img/outside" "$P/images/linked"
+    printf -- '---\nlayout: fr\n---\n![h](images/linked/x.png)\n' > "$P/linked.md"
     printf 'from v0.2.10' > "$img/out/images/0c1d2e3f-1111-2222-3333-444455556666.png"
     PROPOSALS_DIR=$P OUTPUT_DIR=$img/out WORK=$img IMAGE_MAX_BYTES=2000
-    echo '[{"file": "my-proposal.md"}, {"file": "spaced name.md"}]' > "$WORK/props.json"
+    echo '[{"file": "my-proposal.md"}, {"file": "spaced name.md"}, {"file": "linked.md"}]' > "$WORK/props.json"
     proposal_images 2> "$img/log"
     jq -c . "$img/out/images.json" > "$img/map1"
     (cd "$img/out/images" && echo */*) > "$img/files1"
@@ -640,7 +643,8 @@ img=$(mktemp -d)
 if [[ $(cat "$img/map1" 2> /dev/null) == '{"images/my-proposal/chart.png":"my-proposal/chart.png"}' \
     && $(cat "$img/files1") == my-proposal/chart.png && $(cat "$img/time" 2> /dev/null) == same-time ]] \
     && grep -q "fake.png is not a PNG, JPEG or GIF" "$img/log" && grep -q "big.gif is over 2000 bytes" "$img/log" \
-    && grep -q "missing.png, which isn't in the repository" "$img/log" && [[ $(cat "$img/files2") == '*/*' ]]; then
+    && grep -q "missing.png, which isn't in the repository" "$img/log" && [[ $(cat "$img/files2") == '*/*' ]] \
+    && grep -q "linked/x.png, which isn't in the repository" "$img/log"; then
     echo "ok   images: only images/<proposal>/ files its .md shows, real and small enough, copied once; the rest stay links"
 else
     cat "$img/map1" "$img/files1" "$img/time" "$img/log" "$img/files2" 2> /dev/null; echo "FAIL images"; status=1
