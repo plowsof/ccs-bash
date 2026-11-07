@@ -26,8 +26,9 @@ if [[ $out == *OpenSSH* || $out == *"No user exists for uid"* ]]; then ok "ssh";
 here=$(dirname "$(readlink -f "$0")")
 # (a function, exported: /tmp here is noexec)
 echo '{"state": {}, "funds": {}, "ideas": []}' > "$t/site-data.json"
+# (the gate's answer: "took <sha256>" of what it was sent, if anything; with $T/mute, none)
 # shellcheck disable=SC2317,SC2329  # (exported: ccs-push calls it)
-ssh() { cat > "$T/got"; }
+ssh() { cat > "$T/got"; [[ -f $T/mute || ! -s $T/got ]] || echo "took $(sha256sum < "$T/got" | cut -d' ' -f1)"; }
 export -f ssh
 export T=$t
 r1=0; bash "$here/../contrib/ccs-push" "$t/site-data.json" "$t/state" host > "$t/p1" 2>&1 || r1=$?
@@ -39,7 +40,14 @@ empty=$(test -s "$t/got" && echo no || echo yes)
 # root-only success hides there)
 mkdir -p "$t/3"
 r3=0; T=$t/3 bash "$here/../contrib/ccs-push" "$here/../contrib/docker/backend/compose.yml" "$t/state3" host > "$t/p3" 2>&1 || r3=$?
+# review 12's I-3: a gate answering 0 without saying it took it: the push failed, no record
+echo '{"state": {}, "funds": {}, "ideas": [1]}' > "$t/site-data2.json" && touch "$t/mute"
+r4=0; bash "$here/../contrib/ccs-push" "$t/site-data2.json" "$t/state" host > "$t/p4" 2>&1 || r4=$?
+rm -f "$t/mute"
 unset -f ssh
+if ((r4 == 1)) && [[ $(cat "$t/state/accepted") == "$(sha256sum < "$t/site-data.json" | cut -d' ' -f1)" ]] && grep -q "didn't say it took" "$t/p4"; then
+    ok "ccs-push: a gate answering 0 without saying it took the data: the push failed, the record as it was"
+else cat "$t/p4"; fail "ccs-push trusted exit 0 (exit $r4)"; fi
 if ((r3 == 0)) && cmp -s "$here/../contrib/docker/backend/compose.yml" "$t/3/got"; then
     ok "ccs-push: a file another user owns ($(id -u) pushing $(stat -c %u "$here/../contrib/docker/backend/compose.yml")'s)"
 else cat "$t/p3"; fail "ccs-push of another user's file (exit $r3)"; fi

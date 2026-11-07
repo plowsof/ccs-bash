@@ -36,10 +36,11 @@ image_type() {
 # Copy the images the proposals show into OUTPUT_DIR/images/, drop the ones none shows any more,
 # and write images.json.
 proposal_images() {
-    local dir=$OUTPUT_DIR/images map=$OUTPUT_DIR/images.json f stem a src dst
+    local dir=$OUTPUT_DIR/images map=$OUTPUT_DIR/images.json f stem a src dst root
     local -A keep=()
     IMAGE_MAX_BYTES=${IMAGE_MAX_BYTES:-2097152}
     mkdir -p "$dir" || return 1
+    root=$(readlink -f "$PROPOSALS_DIR") || return 1
     while IFS= read -r f; do
         stem=${f%.md}
         [[ $stem =~ ^[A-Za-z0-9._-]+$ ]] || continue   # images need a plain proposal name
@@ -47,7 +48,9 @@ proposal_images() {
             [[ $a =~ ^images/$stem/[A-Za-z0-9._-]+\.(png|jpg|jpeg|gif)$ ]] || continue
             [[ -z ${keep[$a]:-} ]] || continue
             src=$PROPOSALS_DIR/$a
-            if [[ ! -f $src || -L $src ]]; then log "warning: $f shows $a, which isn't in the repository"; continue; fi
+            # (each step of its path, not only the last: a folder committed as a link, images/p ->
+            # /etc/..., would bring in a file from outside: review 12's I-1)
+            if [[ ! -f $src || -L $src || $(readlink -f "$src") != "$root/$a" ]]; then log "warning: $f shows $a, which isn't in the repository"; continue; fi
             if (($(wc -c < "$src") > IMAGE_MAX_BYTES)); then log "warning: $a is over $IMAGE_MAX_BYTES bytes, left a link"; continue; fi
             if ! image_type "$src" > /dev/null; then log "warning: $a is not a PNG, JPEG or GIF, left a link"; continue; fi
             dst=$dir/${a#images/}
