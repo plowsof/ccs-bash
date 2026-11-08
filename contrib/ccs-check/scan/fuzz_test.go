@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// each line: the file, then an address of 95 or 106 letters and digits, a reason, or a data:
+// Each line: the file, then an address of 95 or 106 letters and digits, a reason, or a data:
 // image for the QR reader
 var lineRx = regexp.MustCompile(`^(?:[1-9A-HJ-NP-Za-km-z]{95}|[1-9A-HJ-NP-Za-km-z]{106}|[0-9A-Za-z]{95}|[0-9A-Za-z]{106}|![^\t\n]+|\?qr\t[A-Za-z0-9+/]+=*)$`)
 

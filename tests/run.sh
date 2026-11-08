@@ -44,8 +44,9 @@ if ! grep -q "main address is not WALLET_ADDRESS" "$TEST_TMP/log-wrong-wallet" \
 fi
 rm -r "$TEST_TMP/out-before"
 wrong_wallet="ok   a different wallet stops the run"
-# A lost state file must stop the run instead of handing out new addresses: missing, or
-# emptied while donations sit at subaddresses it used to know. Nothing may be created or written.
+# A lost state file must stop the run instead of handing out new addresses. Covers a missing
+# file, and one emptied while donations sit at subaddresses it used to know.
+# Nothing may be created or written.
 lost_state() {
     local name=$1 d=$TEST_TMP/lost-$1 before
     mkdir -p "$d"
@@ -70,8 +71,8 @@ lost=
 lost_state missing
 lost_state emptied
 
-# A wallet that hands out a subaddress already in use must stop the run: a fresh copy of the
-# fixture state, so there are new proposals to give addresses to.
+# A wallet that hands out a subaddress already in use must stop the run.
+# Uses a fresh copy of the fixture state, so there are new proposals to give addresses to.
 d=$TEST_TMP/reuse
 mkdir -p "$d/state" "$d/out"
 cp "$FIXTURES/state.csv" "$d/state/proposals.csv"
@@ -82,14 +83,14 @@ if TEST_REUSE_INDEX=1 bash -c 'source "$1/../ccs-back.sh" && source "$1/stubs.sh
     echo "FAIL a reused subaddress did not stop the run"; exit 1
 fi
 grep -q "already goes up to" "$d/log" || { cat "$d/log"; echo "FAIL reused subaddress: wrong reason"; exit 1; }
-# (the new proposals do get recorded, just not with an address)
+# The new proposals are still recorded, just without an address
 [[ $(grep -c "$(printf '8%094d' 1)" "$d/state/proposals.csv") == 1 ]] || { echo "FAIL reused subaddress: given out twice"; exit 1; }
 reuse="ok   a wallet handing out a used subaddress stops the run"
 
-# A state with a huge subaddress index (damaged, or forged): the run stops before creating any
+# A state with a huge subaddress index (damaged or forged): the run stops before creating any
 d=$TEST_TMP/huge
 mkdir -p "$d/state" "$d/out"
-# (its first row with an address given index 100001; bash only: the image's sed is busybox's)
+# Set the first row with an address to index 100001. Bash only: the image's sed is busybox's.
 huge_re=',[0-9]+,"8[0-9]{94}"' first=1
 while IFS= read -r line; do
     if [[ $first && $line =~ $huge_re ]]; then line=${line/"${BASH_REMATCH[0]}"/,100001,\"8$(printf '%094d' 100001)\"}; first=''; fi
@@ -103,14 +104,15 @@ if ! bash -c 'source "$1/../ccs-back.sh" && source "$1/stubs.sh" && main "$2"' _
     huge="ok   a state with a huge subaddress index: the run stops before creating any"
 else cat "$d/log"; echo "FAIL a huge subaddress index"; exit 1; fi
 
-# Dust sent to the list's last address makes the wallet count every subaddress up to it as created
-# (wallet2 expands to the highest one received at): the new proposals still get the ones just after
-# the state's highest, not create_address's next, after the dust's (which would use the list up)
+# Dust sent to the list's last address makes the wallet treat every subaddress up to it as
+# created (wallet2 expands to the highest one that received anything). New proposals must still
+# get the indices just after the state's highest, not create_address's next one after the dust
+# (which would use up the list).
 d=$TEST_TMP/dust
 mkdir -p "$d/state" "$d/out"
 cp "$FIXTURES/state.csv" "$d/state/proposals.csv"
 sed "s|$TEST_TMP/state|$d/state|; s|$TEST_TMP/out|$d/out|" "$TEST_TMP/ccs.conf" > "$d/ccs.conf" && chmod 444 "$d/ccs.conf"
-# (the indices in a proposals.csv, highest last; bash only: the image has no sort or tail)
+# The indices in a proposals.csv, highest last. Bash only: the image has no sort or tail.
 indices() { local re=',([0-9]+),"8[0-9]{94}"' line; local -a i=(); while IFS= read -r line; do [[ $line =~ $re ]] && i[BASH_REMATCH[1]]=$((${i[BASH_REMATCH[1]]:-0} + 1)); done < "$1"; for line in "${!i[@]}"; do printf '%s %s\n' "$line" "${i[$line]}"; done; }
 had_max=$(indices "$d/state/proposals.csv" | { m=0; while read -r i _; do m=$i; done; echo "$m"; })
 count_had=$(cat "$TEST_TMP/wallet-count"); echo 15000 > "$TEST_TMP/wallet-count"; cp "$TEST_TMP/wallet-labels" "$TEST_TMP/wallet-labels.dust" 2> /dev/null || true; : > "$TEST_TMP/wallet-labels"
@@ -166,8 +168,8 @@ money to_atomic 0.000000000001 1
 money to_atomic 1.0000000000019 1000000000001  # more than 12 decimals: cut
 money to_atomic 085 85000000000000
 
-# Odd entries in the proposals repo are skipped, never stop or hang the run: a directory
-# and a symlink named like a proposal, a backslash and invalid UTF-8 in a name.
+# Odd entries in the proposals repo are skipped and never stop or hang the run: a directory
+# and a symlink named like a proposal, and a backslash or invalid UTF-8 in a name.
 # shellcheck source=lib/proposals.sh
 source "$here/../lib/proposals.sh"
 CCS_LIB=$here/../lib
@@ -184,8 +186,9 @@ if [[ $got == good.md && $(grep -c skipping "$odd.log") == 5 ]]; then
 else
     cat "$odd.log"; echo "FAIL odd proposal files: read $got"; status=1
 fi
-# Frontmatter that YAML (so Jekyll) reads differently from a simple key: value: read the way
-# YAML does, or skipped. Each case: expected title (or "skip") and the lines after "layout: cp".
+# Frontmatter that YAML (and so Jekyll) reads differently from a simple key: value must be read
+# as YAML reads it, or skipped. Each case: the expected title (or "skip") and the lines after
+# "layout: cp".
 yaml=$(mktemp -d)
 yaml_cases=(
     "Talks|title: Talks #2: April"
@@ -224,8 +227,8 @@ for c in "${yaml_cases[@]}"; do
 done
 [[ $(awk -f "$CCS_LIB/frontmatter.awk" "$yaml/zero.md" | cut -f8,9) == $'1\t1' ]] || { echo "FAIL a list at column 0"; yaml_ok=0; }
 [[ $(awk -f "$CCS_LIB/frontmatter.awk" "$yaml/bom.md" 2>&1) == *"no frontmatter"* ]] || { echo "FAIL a BOM file was read"; yaml_ok=0; }
-# tags: a list (or one on the line), at most 5 of up to 40 bytes; a tags: we can't read
-# drops the tags with a log line, never the proposal. Each case: tags wanted (| between) and
+# tags: a list (or one on the same line), at most 5, each up to 40 bytes. Unreadable tags are
+# dropped with a log line, never the proposal. Each case: the expected tags (| between) and
 # the lines after the milestones.
 tag_cases=(
     "A|B|tags:|  - A|  - 'B' # note|  - A"
@@ -246,7 +249,7 @@ for c in "${tag_cases[@]}"; do
     got=$(awk -f "$CCS_LIB/frontmatter.awk" "$yaml/tag$i.md" 2> /dev/null | cut -f3,10 | tr '\037' '|')
     [[ $got == "T"$'\t'"$want" ]] || { echo "FAIL tags case $i ($c): got '$got'"; yaml_ok=0; }
 done
-# a bad line is quoted in the log: without its terminal escapes
+# A bad line is quoted in the log without its terminal escapes
 printf -- '---\nlayout: cp\ntitle: T\n\033[2Jgone\a\nauthor: a\ndate: 2021-06-25\namount: 1\nmilestones:\n  - name: m\n---\n' > "$yaml/esc.md"
 esc=$(awk -f "$CCS_LIB/frontmatter.awk" "$yaml/esc.md" 2>&1; log $'x\x1b[2Jy' 2>&1)
 [[ $esc == *"?[2Jgone?"*"x?[2Jy" && $esc != *$'\x1b'* ]] || { echo "FAIL control characters reach the log: ${esc//$'\x1b'/^[}"; yaml_ok=0; }
@@ -268,8 +271,8 @@ rm -rf "$yaml"
 if [[ $(read_proposals "$(mktemp -d)" 2> /dev/null) == '[]' ]]; then echo "ok   no proposals at all is an empty list"; else echo "FAIL no proposals"; status=1; fi
 rm -rf "$odd" "$odd.log"
 
-# The forge down: one failed lookup a run, not one per new proposal (a fresh install has hundreds,
-# each waiting for curl's timeout); all of them tried again next run
+# Forge down: only one failed lookup per run, not one per new proposal (a fresh install has
+# hundreds, each waiting for curl's timeout). All are tried again next run.
 got=$(
     # shellcheck source=ccs-back.sh
     source "$here/../ccs-back.sh"
@@ -283,9 +286,9 @@ got=$(
 )
 if [[ $got == '1 1 0' ]]; then echo "ok   the forge down: one failed lookup a run, the other new proposals wait for the next"; else echo "FAIL the forge down: '$got' (lookups, the log line, state rows)"; status=1; fi
 
-# Fully funded (the feed's): a Funding Required proposal at 100% gets funded_date, once; not one
-# short of its goal, not one past Funding Required, not one with no state row yet; kept in
-# proposals.csv (a 6th column, only on the rows that have one) and read back
+# Fully funded (for the feed): a Funding Required proposal at 100% gets funded_date, once.
+# Not one short of its goal, not one past Funding Required, not one with no state row yet.
+# Stored in proposals.csv (a 6th column, only on rows that have one) and read back.
 got=$(
     # shellcheck source=ccs-back.sh
     source "$here/../ccs-back.sh"
@@ -306,8 +309,8 @@ got=$(
 )
 if [[ $got == 'a.md once 5:2 6:1 ' ]]; then echo "ok   fully funded: a Funding Required proposal at its goal gets funded_date, once, kept in proposals.csv and read back"; else echo "FAIL fully funded: '$got'"; status=1; fi
 
-# The merged MRs' files kept between runs (MR_CACHE): one MR that can't be read is passed over, the
-# others still found; the next run doesn't fetch again what one already read
+# The merged MRs' files are cached between runs (MR_CACHE). An MR that can't be read is skipped
+# and the others still found. The next run doesn't fetch again what one already read.
 got=$(
     # shellcheck source=lib/common.sh
     source "$here/../lib/common.sh"
@@ -327,8 +330,8 @@ if [[ $got == "https://example.org/mr/8 https://example.org/mr/8 0 failed" ]]; t
     echo "ok   merged MRs' files kept between runs: one that can't be read passed over, read once; not found with one unread: tried again"
 else echo "FAIL the merged MRs' cache: '$got'"; status=1; fi
 
-# STATE_DIR/forge-ok (ccs-watch --run's "GitLab/Forgejo hasn't answered"): touched by a run whose
-# ideas came, left as it was by one whose didn't (the previous ideas kept)
+# STATE_DIR/forge-ok (for ccs-watch --run's "GitLab/Forgejo hasn't answered"): touched by a run
+# that got the ideas, left alone by one that didn't (which keeps the previous ideas).
 d=$TEST_TMP/forge && mkdir -p "$d" && cp -r "$TEST_TMP/state" "$d/state" && cp -r "$TEST_TMP/out" "$d/out"
 sed "s|$TEST_TMP/state|$d/state|; s|$TEST_TMP/out|$d/out|" "$TEST_TMP/ccs.conf" > "$d/ccs.conf" && chmod 444 "$d/ccs.conf"
 touch -d "@$(($(date +%s) - 25200))" "$d/state/forge-ok"   # 7 hours ago (busybox's touch: no "-7 hours")
@@ -354,8 +357,8 @@ got=$(
     WORK=$(mktemp -d) PROPOSALS_DIR=$FIXTURES/proposals TEST_FAIL_MR=13 ideas 2> /dev/null | jq -r '[.[]."gitlab-url"] | join(" ")'
 )
 if [[ $got == https://example.org/mr/11 ]]; then echo "ok   one unreadable MR leaves only that one out of the ideas"; else echo "FAIL one unreadable MR: ideas were '$got'"; status=1; fi
-# Anyone can open an MR: an address in its title is shortened, also when invisible characters
-# (a left-to-right mark, a zero-width space) split it, and words around it stay
+# Anyone can open an MR, so an address in its title is shortened, also when invisible characters
+# (a left-to-right mark, a zero-width space) split it. Words around it stay.
 addr=44AFFq5kSiGBoZ4NMDwYtN18obc8AemS33DBLWs3H7otXft3XjrpDtQGv7SqSsaBYBb98uNbr2VBBEt7f2wfn3RVGQBEP3A
 fx=$(mktemp -d); cp -r "$FIXTURES/." "$fx"
 jq --arg t "Pay naïve me: ${addr:0:30}"$'\xe2\x80\x8e'"${addr:30:30}"$'\xe2\x80\x8b'"${addr:60}!" 'map(if .iid == 11 then .title = $t else . end)' \
@@ -366,13 +369,16 @@ got=$(
     WORK=$(mktemp -d) FIXTURES=$fx PROPOSALS_DIR=$here/fixtures/proposals ideas 2> /dev/null | jq -r '.[] | select(."gitlab-url" | endswith("/11")) | .name'
 )
 if [[ $got == 'Pay naïve me: 44AFFq…EP3A!' ]]; then echo "ok   an address in an idea's title is shortened, invisible characters in it or not"; else echo "FAIL an address in an idea's title: '$got'"; status=1; fi
-# ... and when drawn with other characters (the web server's gate holds back the same): its halves
-# in bidi embeddings, shown in another order than written; mathematical letters and digits;
-# Cyrillic letters for some of its own; in groups of four, split by spaces or dashes. What is left
-# has no bidi control, and no run of 90 characters each base58 or not ASCII; the groups are
-# shortened (the bidi halves, shown without their controls, read in the wrong order: no address)
+# ... and when written with other characters (the web server's gate holds back the same):
+# - its halves in bidi embeddings, displayed in a different order than written;
+# - mathematical letters and digits;
+# - Cyrillic letters for some of its own;
+# - groups of four, split by spaces or dashes.
+# The result has no bidi control, and no run of 90 characters that are each base58 or non-ASCII.
+# The groups are shortened. (The bidi halves, shown without their controls, read in the wrong
+# order, so they hold no address.)
 for how in bidi math cyrillic groups dashes; do
-    # (jq, not python: the tests also run inside the pinned image, which has none)
+    # jq, not python: the tests also run inside the pinned image, which has no python
     t=$(jq -rn --arg a "$addr" --arg how "$how" '
         if $how == "bidi" then "Moved: \u202b\u202a" + $a[48:] + "\u202c\u202a " + $a[:48] + "\u202c\u202c"
         elif $how == "groups" then "Pay: " + ([range(0; 95; 4) as $i | $a[$i:$i + 4]] | join(" "))
@@ -393,8 +399,8 @@ for how in bidi math cyrillic groups dashes; do
         echo "FAIL an address in an idea's title ($how): '$got'"; status=1
     fi
 done
-# Review 5 (G3 residual): the same groups split by other separators a reader removes as easily:
-# " - ", ", ", " | ", "/" (a synthetic testnet address, valid by its checksum, random keys)
+# The same groups split by other separators a reader removes just as easily: " - ", ", ", " | ",
+# "/". Uses a synthetic testnet address with a valid checksum and random keys.
 taddr=9uH2Z776LeJ4gku967Y3o8VrBueTqSoQhDXVftRkU2Jt81du8DDNV4eAFmPaojQV4mhrgDBvzUfRX7EoHp245dNf9wimfPf
 for sep in ' - ' ', ' ' | ' '/'; do
     t=$(jq -rn --arg a "$taddr" --arg s "$sep" '"Pay: " + ([range(0; 95; 4) as $i | $a[$i:$i + 4]] | join($s))')
@@ -407,10 +413,10 @@ for sep in ' - ' ', ' ' | ' '/'; do
     if [[ $got == *…* ]]; then echo "ok   review 5: an address in groups split by '$sep' in an idea's title is shortened"
     else echo "FAIL review 5: an address in groups split by '$sep' in an idea's title stays whole: '${got:0:60}…'"; status=1; fi
 done
-# Review 5 (cost): anyone can open MRs titled "AAAA AAAA ..." (255 characters): every 95- and
-# 106-character window of the joined run passes is_address's network-byte check, so each costs a
-# bash base58 decode and an openssl process; titles of up to two pages of MRs (200) are scanned
-# every run, not only the IDEAS_MAX looked at. One run's ideas() should stay well under a minute.
+# Cost: anyone can open MRs titled "AAAA AAAA ..." (255 characters). Every 95- and
+# 106-character window of the joined run passes is_address's network-byte check, so each costs
+# a bash base58 decode and an openssl process. Up to two pages of MRs (200) are scanned every
+# run, not only the IDEAS_MAX looked at. One run's ideas() should stay well under a minute.
 if printf '' | openssl dgst -keccak-256 > /dev/null 2>&1; then
     jq --arg t "$(printf 'AAAA %.0s' {1..51})" '[range(0; 100) as $i | .[0] + {iid: (1000 + $i), title: $t}]' "$FIXTURES/gitlab/opened.json" > "$fx/gitlab/opened.json"
     start=${EPOCHREALTIME/./}
@@ -426,9 +432,9 @@ else
     echo "ok   review 5: (skipped the is_address cost case: this openssl has no Keccak; run it in the pinned image)"
 fi
 cp "$FIXTURES/gitlab/opened.json" "$fx/gitlab/opened.json"
-# A long title of plain words, no comma and none of l I O 0, joins like an address in groups but
-# holds none: left as it is with openssl's Keccak (the image's: its checksum says no); without one
-# (openssl before 3.2) shortened, and said so
+# A long title of plain words (no comma, none of l I O 0) joins like an address in groups but
+# holds none. With openssl's Keccak (as in the image) it stays as it is, since the checksum says
+# no. Without Keccak (openssl before 3.2) it is shortened, and logged.
 long="Keep running the monero seed nodes for the next twenty four months starting in March and then a few more years"
 jq --arg t "$long" 'map(if .iid == 11 then .title = $t else . end)' "$FIXTURES/gitlab/opened.json" > "$fx/gitlab/opened.json"
 got=$(
@@ -448,7 +454,7 @@ else
     echo "FAIL a long title of plain words, no Keccak: '$got'"; status=1
 fi
 cp "$FIXTURES/gitlab/opened.json" "$fx/gitlab/opened.json"
-# an idea's file over 1 MB isn't kept, nor read: that idea is left out (13 stays)
+# An idea's file over 1 MB is neither kept nor read, so that idea is left out (13 stays)
 awk 'BEGIN { for (i = 0; i < 1048576; i += 64) printf "%63s\n", "" }' >> "$fx/gitlab/raw/sha-11"
 got=$(
     # shellcheck source=tests/stubs.sh
@@ -458,9 +464,9 @@ got=$(
 )
 if [[ $got == $'1\n13' ]]; then echo "ok   an idea's file over 1 MB leaves that idea out"; else echo "FAIL an idea's file over 1 MB: '$got'"; status=1; fi
 rm -rf "$fx"
-# Ideas are open MRs adding exactly one new .md whose text reads as a proposal: not one that only
-# edits a file (16), adds two (14), adds a proposal already merged (12), or adds junk (15). A file
-# that can't be fetched leaves out only that idea, this run (13 here).
+# Ideas are open MRs adding exactly one new .md whose text reads as a proposal. Not one that
+# only edits a file (16), adds two (14), adds a proposal already merged (12), or adds junk (15).
+# A file that can't be fetched leaves out only that idea, for this run (13 here).
 for fail in "" 13; do
     got=$(
         # shellcheck source=tests/stubs.sh
@@ -476,10 +482,10 @@ for fail in "" 13; do
     fi
 done
 
-# Anyone can open MRs: what an MR adds at a commit, and whether its file reads, is kept
-# (IDEAS_CACHE), so a second run fetches no proposal's text again (only what an MR whose file is
-# already merged adds: 12 here, never kept) and gives the same ideas; and only the IDEAS_MAX most
-# recently updated open MRs are looked at.
+# Anyone can open MRs, so what an MR adds at a commit, and whether its file reads, is cached
+# (IDEAS_CACHE). A second run fetches no proposal text again and gives the same ideas. (Only an
+# MR whose file is already merged is fetched again: 12 here, never cached.)
+# Only the IDEAS_MAX most recently updated open MRs are looked at.
 got=$(
     # shellcheck source=tests/stubs.sh
     source "$here/stubs.sh"
@@ -506,7 +512,7 @@ if atomic_write "$aw/f" echo new && [[ $(cat "$aw/f") == new ]]; then echo "ok  
 rm -rf "$aw"
 
 # A wallet that answers with something other than numbers must stop the run, never have it
-# evaluated: bash arithmetic would run a command hidden in an array subscript.
+# evaluated. Bash arithmetic would run a command hidden in an array subscript.
 evil=$(mktemp -d)
 (
     MIN_CONFIRMATIONS=10
@@ -516,8 +522,8 @@ evil=$(mktemp -d)
 if [[ -e $evil/ran ]]; then echo "FAIL a command in the wallet's answer was run"; status=1; else echo "ok   a command in the wallet's answer is not run"; fi
 rm -rf "$evil"
 
-# verify-images.sh: a signature file counts for one maintainer at most. One holding the same
-# signature twice (gpg then reports it twice) must not count, nor a key not trusted.
+# verify-images.sh: a signature file counts for one maintainer at most. A file holding the same
+# signature twice (gpg then reports it twice) must not count, nor one by an untrusted key.
 if command -v gpg > /dev/null; then
     sig=$(
         # shellcheck source=container/verify-images.sh
@@ -547,8 +553,8 @@ if command -v gpg > /dev/null; then
     else
         echo "FAIL signature check: $sig"; status=1
     fi
-    # a maintainer's key that expires: a signature we verified while it was valid (sigs-verified)
-    # still counts, one we never did doesn't; a revoked key's never does, recorded or not
+    # A maintainer's key expires: a signature verified while it was valid (sigs-verified) still
+    # counts, one never verified doesn't. A revoked key's never counts, recorded or not.
     sig=$(
         # shellcheck source=container/verify-images.sh
         source "$here/../container/verify-images.sh"
@@ -581,9 +587,9 @@ elif [[ ${CI:-} == true ]]; then
     echo "FAIL gpg not installed"; status=1
 fi
 
-# The same proposals and MRs on Forgejo (git.disroot.org, codeberg.org...): REPOSITORY_URL
-# .../api/v1/repos/<owner>/<repo>, the stubs answer as Forgejo does (pull requests, times with
-# an offset, a closed PR that was not merged). The JSON and the state must be the GitLab run's.
+# The same proposals and MRs on Forgejo (git.disroot.org, codeberg.org...), with REPOSITORY_URL
+# .../api/v1/repos/<owner>/<repo>. The stubs answer as Forgejo does (pull requests, times with an
+# offset, a closed PR that was not merged). The JSON and the state must match the GitLab run's.
 fj=$TEST_TMP/forgejo
 mkdir -p "$fj/state" && cp "$FIXTURES/state.csv" "$fj/state/proposals.csv" && echo 1 > "$fj/wallet-count"
 sed "s|^REPOSITORY_URL=.*|REPOSITORY_URL=https://forgejo.invalid/api/v1/repos/monero/ccs-proposals|; s|$TEST_TMP/state|$fj/state|; s|$TEST_TMP/out|$fj/out|" \
@@ -599,8 +605,8 @@ for f in proposals.json completed-proposals.json projects.json proposals.csv; do
     diff -u "$here/expected/$f" "$fj/out/$f" || fj_ok=0
 done
 if ((fj_ok)); then echo "ok   Forgejo: the same JSON and state as GitLab"; else echo "FAIL Forgejo"; status=1; fi
-# Images: a proposal's images are files in images/<proposal>/ in the repository; the ones its .md
-# shows are copied (once, keeping their time) and listed; anything else stays a link.
+# Images: a proposal's images are files in images/<proposal>/ in the repository. The ones its .md
+# shows are copied (once, keeping their time) and listed. Anything else stays a link.
 img=$(mktemp -d)
 (
     set -e
@@ -614,7 +620,7 @@ img=$(mktemp -d)
     printf '\x89PNG\r\n\x1a\nother' > "$P/images/other/x.png"
     printf -- '---\nlayout: fr\n---\n![a](images/my-proposal/chart.png "t") ![b](images/my-proposal/fake.png) ![c](images/my-proposal/big.gif)\n![d](images/other/x.png) ![e](https://elsewhere.example/e.png) ![f](images/my-proposal/missing.png)\n' > "$P/my-proposal.md"
     printf -- '---\nlayout: fr\n---\n![g](images/spaced name/x.png)\n' > "$P/spaced name.md"
-    # review 12's I-1: a proposal's image folder committed as a link to one outside the repository
+    # A proposal's image folder committed as a symlink to a folder outside the repository
     mkdir -p "$img/outside" && printf '\x89PNG\r\n\x1a\nnot the repository' > "$img/outside/x.png" && ln -s "$img/outside" "$P/images/linked"
     printf -- '---\nlayout: fr\n---\n![h](images/linked/x.png)\n' > "$P/linked.md"
     printf 'from v0.2.10' > "$img/out/images/0c1d2e3f-1111-2222-3333-444455556666.png"
@@ -625,14 +631,14 @@ img=$(mktemp -d)
     (cd "$img/out/images" && echo */*) > "$img/files1"
     [[ -e $img/out/images/0c1d2e3f-1111-2222-3333-444455556666.png ]] && echo leftover >> "$img/files1"
     src=$P/images/my-proposal/chart.png dst=$img/out/images/my-proposal/chart.png
-    # the same time, to the second (rsync compares seconds)
+    # The same time, to the second (rsync compares seconds)
     [[ $(date -r "$src" +%s) == "$(date -r "$dst" +%s)" ]] && echo same-time > "$img/time"
     proposal_images 2>> "$img/log"   # again: nothing to copy
     printf -- '---\nlayout: fr\n---\nNo images now.\n' > "$P/my-proposal.md"
     proposal_images 2>> "$img/log"
     (cd "$img/out/images" && echo */*) > "$img/files2"
-    # Ideas: one new .md and its images, inside images/<its name>/; anything else isn't an idea
-    # (GitLab's /diffs, a page of 100: a full one, more files than it shows, is no proposal)
+    # Ideas: one new .md and its images in images/<its name>/. Anything else isn't an idea.
+    # (GitLab's /diffs returns a page of 100; a full page means more files, so no proposal.)
     gitlab_get() { jq -n --argjson f "$TEST_FILES" '$f | map({new_file: true, new_path: .})'; }
     for set in '["pics.md", "images/pics/a.png", "images/pics/b.jpeg"]' '["pics.md", "images/pics/notes.txt"]' \
         '["pics.md", "images/other/a.png"]' '["pics.md", "a.png"]' '["pics.md", "more.md"]' \
@@ -656,12 +662,13 @@ else
 fi
 rm -rf "$img"
 
-# A mirror (MIRROR_URL, lib/mirror.sh): a fresh state, each address the other site's feed gives
-# (matched by title and author), never one of its own; totals from this wallet, an earlier
-# wallet's retired record, and the feed only for a proposal in neither; a title the feed has twice,
-# or not at all, kept off the site while it has no address; an address that changes in the feed
-# stops the run.
-# (the wallet's labels as they were, after: these runs label what the feed gives)
+# Mirror mode (MIRROR_URL, lib/mirror.sh), from a fresh state:
+# - each address is the one the other site's feed gives (matched by title and author), never our own;
+# - totals come from this wallet and an earlier wallet's retired record, and from the feed only
+#   for a proposal in neither;
+# - a title the feed has twice, or not at all, stays off the site while it has no address;
+# - an address that changes in the feed stops the run.
+# Afterwards the wallet's labels are restored, since these runs label what the feed gives.
 cp "$TEST_TMP/wallet-labels" "$TEST_TMP/wallet-labels.mirror"
 d=$TEST_TMP/mirror
 mkdir -p "$d/state/retired" "$d/out" && : > "$d/state/proposals.csv"
@@ -686,7 +693,7 @@ printf 'MIRROR_URL=file://%s/feed.json\n' "$d" >> "$d/ccs.conf" && chmod 444 "$d
 had=$(cat "$TEST_TMP/wallet-count")
 mrun() { bash -c 'source "$1/../ccs-back.sh" && source "$1/stubs.sh" && main "$2"' _ "$here" "$d/ccs.conf" 2> "$d/log"; }
 p() { jq -r --arg f "$1" '.[] | select(.filename == $f) | "\(.raised_amount) \(.contributions)"' "$d/out/projects.json"; }
-# (created up to the feed's highest, subaddress 9, to be labelled: none past it, none handed out of its own)
+# Created up to the feed's highest, subaddress 9, to be labelled. None past it, none of its own handed out.
 if mrun && (($(cat "$TEST_TMP/wallet-count") <= (had > 10 ? had : 10))) \
     && grep -q '^"new-fund.md",[^,]*,7,' "$d/state/proposals.csv" && grep -q '^"a-fund.md",[^,]*,1,' "$d/state/proposals.csv" \
     && [[ $(p "c done, (old).md") == "12.5 4" && $(p "b-wip.md") == "2 1" && $(p "dots-end.md") == "0.25 1" ]] \
@@ -703,11 +710,13 @@ else
 fi
 echo "$had" > "$TEST_TMP/wallet-count"
 
-# A mirror whose feed has one proposal of a title and author that two here have (a second of the
-# same name merged here before the other site lists it): the feed's address to the one of its date
-# only, never to both. The wallet's main address (index 0: payout change lands there, and it
-# counts for no proposal) never given. An address the wallet scans for but hasn't created yet (the
-# other site's newest): created, then labelled (the wallet labels only those it has created).
+# A mirror whose feed has one proposal with a title and author that two proposals here share
+# (a second one merged here before the other site lists it): the feed's address goes only to the
+# one with its date, never to both.
+# The wallet's main address (index 0: payout change lands there and counts for no proposal) is
+# never given.
+# An address the wallet scans for but hasn't created yet (the other site's newest) is created,
+# then labelled (the wallet can only label ones it has created).
 m7=$TEST_TMP/mirror7
 mirror7() {   # mirror7 FEED-ADDRESS-INDEX: a fresh state, the fixtures and dave-2.md ("Brand new", dave, again)
     rm -rf "$m7" && mkdir -p "$m7/state" "$m7/out" && : > "$m7/state/proposals.csv"
@@ -735,8 +744,8 @@ if mirror7 $((had + 5)) && grep -q "^\"new-fund.md\",[^,]*,$((had + 5))," "$m7/s
 else
     echo "FAIL mirror: an address not created yet"; tail -n 3 "$m7/log"; cat "$m7/state/proposals.csv"; status=1
 fi
-# a feed that isn't a list of projects: no new addresses this run, its log quoting jq (busybox's
-# head has no -c)
+# A feed that isn't a list of projects: no new addresses this run, and the log quotes jq
+# (busybox's head has no -c)
 mirror7 1 > /dev/null || true
 printf '{"data": 5}\n' > "$m7/feed.json"
 bash -c 'source "$1/../ccs-back.sh" && source "$1/stubs.sh" && main "$2"' _ "$here" "$m7/ccs.conf" 2> "$m7/log" || true
@@ -746,9 +755,9 @@ if grep -q "MIRROR_URL's answer isn't a list of projects: .*not a list of projec
 else
     echo "FAIL mirror: a feed that isn't a list of projects"; tail -n 3 "$m7/log"; status=1
 fi
-# The feed writes "&" as "&amp;" (ccs.getmonero.org's does), the front matter as "&": the same
-# proposal. Two in the feed of one title, author and day: each given the one whose subaddress the
-# wallet labels with its file (an earlier mirror's labels), not neither.
+# The feed writes "&" as "&amp;" (ccs.getmonero.org's does) and the front matter as "&": still
+# the same proposal. Two in the feed with the same title, author and day: each gets the one whose
+# subaddress the wallet labels with its file (an earlier mirror's labels), rather than neither.
 rm -rf "$m7" && mkdir -p "$m7/state" "$m7/out" "$m7/proposals" && : > "$m7/state/proposals.csv"
 fr() { printf -- '---\nlayout: fr\ntitle: %s\nauthor: %s\ndate: %s\namount: 10\nmilestones:\n  - name: Only\n    done:\n---\n' "$1" "$2" "$3"; }
 fr 'Tools & docs' ann '1 November 2026' > "$m7/proposals/amp.md"
@@ -769,7 +778,7 @@ else
 fi
 echo "$had" > "$TEST_TMP/wallet-count"; mv "$TEST_TMP/wallet-labels.mirror" "$TEST_TMP/wallet-labels"
 
-# TARGET_BRANCH: only the merge requests to it (GitLab's target_branch; Forgejo's base.ref)
+# TARGET_BRANCH: only MRs to that branch (GitLab's target_branch, Forgejo's base.ref)
 # shellcheck disable=SC2016
 tb=$(bash -c 'source "$1/../lib/common.sh" && source "$1/../lib/gitlab.sh"; calls=$2
     gitlab_get() { echo "$1" >> "$calls"; echo "[]"; }
@@ -781,9 +790,9 @@ if [[ $(sed -n 1p "$TEST_TMP/tb.calls") == *"&target_branch=master" && $(sed -n 
     echo "ok   TARGET_BRANCH: only the merge requests to it, on GitLab and Forgejo; without it, all"
 else echo "FAIL TARGET_BRANCH: $(cat "$TEST_TMP/tb.calls" 2> /dev/null) / $tb"; status=1; fi
 
-# Security review 2026-10-25 (fails until fixed): anyone can send a little to a subaddress no
-# proposal has (the signed list publishes 15,000 of them); the wallet then knows it, and a run that
-# stops on it stops the site updating for as long as that donation is there, which is for good.
+# Anyone can send a little to a subaddress no proposal has (the signed list publishes 15,000).
+# The wallet then knows it. A run that stopped on it would stop the site updating for good,
+# since that donation never goes away.
 d=$TEST_TMP/stranger
 mkdir -p "$d/state" "$d/out"
 cp -r "$FIXTURES" "$d/fx" && cp "$TEST_TMP/state/proposals.csv" "$d/state/"
@@ -799,10 +808,10 @@ else
 fi
 echo "$had" > "$TEST_TMP/wallet-count"
 
-# deposits.csv: deposits 30+ blocks deep are kept, and a run asks the wallet only for what came
-# after them; the totals are the same either way. A wallet below the file's height (rescanning)
-# stops the run; so does, at the daily full recount, a wallet that lacks a kept deposit, while one
-# it knows that the file lacks is added.
+# deposits.csv: deposits 30+ blocks deep are cached, and a run asks the wallet only for newer
+# ones. The totals are the same either way. A wallet below the file's height (rescanning) stops
+# the run. At the daily full recount, a wallet missing a cached deposit stops the run, and a
+# deposit the wallet has but the file lacks is added.
 dep() {   # dep NAME [ENV...]: a run on a copy of the state, its own deposits.csv; its log in $d/log
     local name=$1; shift
     d=$TEST_TMP/dep-$name; mkdir -p "$d/state" "$d/out"
@@ -826,8 +835,8 @@ else cat "$TEST_TMP/dep-a/log"; cat "$TEST_TMP/dep-a/state/deposits.csv" 2> /dev
 if ! dep a TEST_HEIGHT=3000000 && grep -q 'the wallet is at height 3000000, below the 3099970' "$TEST_TMP/dep-a/log"; then
     echo "ok   deposits.csv: a wallet below the kept deposits' height (rescanning) stops the run"
 else cat "$TEST_TMP/dep-a/log"; echo "FAIL deposits.csv: a rescanning wallet"; deposits_ok=0; fi
-# the daily recount: a wallet without a kept deposit (t1's) stops the run; one with a deposit the
-# file lacks (taken out of it here) adds it
+# The daily recount: a wallet missing a cached deposit (t1's) stops the run. A deposit the file
+# lacks (removed from it here) is added.
 sed -i '1s/checked [0-9]*/checked 0/' "$TEST_TMP/dep-a/state/deposits.csv"
 jq '.in |= map(select(.txid | startswith("7431") | not))' "$FIXTURES/rpc/get_transfers.json" > "$TEST_TMP/without-t1.json"
 if ! dep a TEST_TRANSFERS="$TEST_TMP/without-t1.json" && grep -q 'the wallet lacks 1 of the deposits kept' "$TEST_TMP/dep-a/log"; then
@@ -838,8 +847,8 @@ if dep a && grep -q 'the wallet knows 1 deposit(s) below height 3099970' "$TEST_
     && grep -q '^3099950,' "$TEST_TMP/dep-a/state/deposits.csv" && [[ $(jq -c . "$TEST_TMP/dep-a/out/projects.json") == "$first" ]]; then
     echo "ok   deposits.csv: the daily recount, a deposit the wallet knows and the file lacked: added, the same totals"
 else cat "$TEST_TMP/dep-a/log"; echo "FAIL deposits.csv: a deposit the file lacked"; deposits_ok=0; fi
-# a "checked" time in the future (a forged file, a clock gone wrong) doesn't skip the recount: a
-# forged deposit in it stops the run, not counted every run after
+# A "checked" time in the future (forged file, bad clock) doesn't skip the recount. A forged
+# deposit in the file then stops the run, instead of being counted every run after.
 cp "$TEST_TMP/dep-a/state/deposits.csv" "$TEST_TMP/deposits.good"
 { sed '1s/checked [0-9]*/checked 99999999999/' "$TEST_TMP/deposits.good"; printf '3099960,%064d,1,1000000000000000,0\n' 9; } > "$TEST_TMP/dep-a/state/deposits.csv"
 if ! dep a && grep -q 'checked in the future' "$TEST_TMP/dep-a/log" && grep -q 'the wallet lacks 1 of the deposits kept' "$TEST_TMP/dep-a/log"; then
@@ -848,12 +857,12 @@ else cat "$TEST_TMP/dep-a/log"; echo "FAIL deposits.csv: checked in the future";
 cp "$TEST_TMP/deposits.good" "$TEST_TMP/dep-a/state/deposits.csv"
 ((deposits_ok)) || status=1
 
-# Retiring a wallet (contrib/retire-wallet): its donations recorded by proposal, the state cleared of
-# its subaddresses, then a new wallet with none yet: every total and count the same as before
+# Retiring a wallet (contrib/retire-wallet): its donations are recorded by proposal and its
+# subaddresses cleared from the state. With a new, empty wallet, every total and count stays the same.
 rw=$TEST_TMP/dep-retire; rm -rf "$rw"; had=$(cat "$TEST_TMP/wallet-count")
 cp "$TEST_TMP/wallet-labels" "$TEST_TMP/wallet-labels.had"
-# (a wallet still receiving: the fixture has a deposit under MIN_CONFIRMATIONS and one in the
-# pool. Recorded all the same, without those two, named for --again: the switch needn't wait)
+# A wallet still receiving: the fixture has a deposit under MIN_CONFIRMATIONS and one in the pool.
+# It is recorded anyway without those two, which are listed for --again, so the switch needn't wait.
 if dep retire && bash -c 'source "$1/../contrib/retire-wallet" && source "$1/stubs.sh" && retire_main old "$2"' _ "$here" "$rw/ccs.conf" > "$rw/retire.out" 2>&1 \
     && grep -q '2 deposit(s) in the pool or under 10 confirmations, not recorded yet: retire-wallet --again old' "$rw/retire.out" \
     && [[ -f $rw/state/retired/old.csv ]] && ! grep -qE ',743[36]0' "$rw/state/retired/old.csv"; then
@@ -868,7 +877,7 @@ if dep retire TEST_TRANSFERS="$TEST_TMP/quiet.json" && cp "$rw/out/projects.json
         && ! grep -qE '[0-9A-Za-z]{95}' <(awk 'NR > 1' "$r") \
         && ! grep -qE ',[0-9]+,"[0-9A-Za-z]{95}",' "$rw/state/proposals.csv" \
         && [[ -f $rw/state/deposits.csv.retired-old && ! -e $rw/state/deposits.csv ]]; then
-        # the new wallet: nothing received yet, subaddresses from 1 again
+        # The new wallet: nothing received yet, subaddresses start from 1 again
         echo '{"in": [], "pool": []}' > "$TEST_TMP/no-transfers.json"; echo 1 > "$TEST_TMP/wallet-count"; : > "$TEST_TMP/wallet-labels"
         if dep retire TEST_TRANSFERS="$TEST_TMP/no-transfers.json" \
             && [[ $(jq -c 'map({filename, raised_amount, contributions})' "$rw/out/projects.json") == "$before" ]] \
@@ -876,8 +885,8 @@ if dep retire TEST_TRANSFERS="$TEST_TMP/quiet.json" && cp "$rw/out/projects.json
             echo "ok   retire-wallet: its donations kept by proposal (no addresses), the state cleared; a new wallet shows the same totals"
         else echo "FAIL retire-wallet: the totals after"; diff <(jq -c '.[] | {filename, raised_amount, contributions, address}' "$TEST_TMP/retire-before.json") <(jq -c '.[] | {filename, raised_amount, contributions, address}' "$rw/out/projects.json") | head; grep -E "error|warning" "$rw/log" | head -5; status=1; fi
     else echo "FAIL retire-wallet: what it wrote"; cat "$rw/retire.out"; status=1; fi
-    # a retired wallet's record gone: the totals would go down, so the run stops and the site keeps
-    # its last; with STATE_DIR/allow-lower, once
+    # A retired wallet's record is gone: the totals would drop, so the run stops and the site
+    # keeps its last totals. With STATE_DIR/allow-lower, the drop is allowed once.
     mv "$r" "$rw/old.csv.aside"
     if ! dep retire TEST_TRANSFERS="$TEST_TMP/no-transfers.json" && grep -q 'would show less raised than before' "$rw/log" \
         && [[ $(jq -c 'map({filename, raised_amount})' "$rw/out/projects.json") == "$(jq -c 'map({filename, raised_amount})' "$TEST_TMP/retire-before.json")" ]]; then
@@ -887,28 +896,28 @@ if dep retire TEST_TRANSFERS="$TEST_TMP/quiet.json" && cp "$rw/out/projects.json
         else echo "FAIL never lower: allow-lower"; cat "$rw/log"; status=1; fi
     else echo "FAIL never lower: a missing retired record"; diff <(jq -c ".[] | {filename, raised_amount}" "$rw/out/projects.json") <(jq -c ".[] | {filename, raised_amount}" "$TEST_TMP/retire-before.json") | head -6; status=1; fi
     mv "$rw/old.csv.aside" "$r"
-    # allow-lower not needed (no total goes down): removed all the same, so a later drop isn't let through
+    # allow-lower not needed (no total drops): removed anyway, so a later drop isn't let through
     touch "$rw/state/allow-lower"
     if dep retire TEST_TRANSFERS="$TEST_TMP/no-transfers.json" && grep -q 'allow-lower: no total went down, removed' "$rw/log" && [[ ! -e $rw/state/allow-lower ]]; then
         echo "ok   never lower: an allow-lower a run didn't need is removed (it can't let a later drop through)"
     else echo "FAIL never lower: an unneeded allow-lower"; tail -n 3 "$rw/log"; status=1; fi
-    # a number with a leading zero (bash reads 010 as octal 8) stops the run, as any damaged line
+    # A number with a leading zero (bash reads 010 as octal 8) stops the run, like any damaged line
     cp "$r" "$rw/old.csv.good"
     printf '1,%064d,1,010,0,x.md\n' 6 >> "$r"
     if ! dep retire TEST_TRANSFERS="$TEST_TMP/no-transfers.json" && grep -q "a line that isn't a deposit" "$rw/log"; then
         echo "ok   retire-wallet: a retired file's number with a leading zero stops the run (not read as octal)"
     else echo "FAIL retired file: a leading zero"; status=1; fi
     cp "$rw/old.csv.good" "$r"
-    # a retired file with a line that isn't a deposit stops the run (it is state: restore it)
+    # A retired file with a line that isn't a deposit stops the run (it is state: restore it)
     printf '1,%064d,1,BASH_VERSINFO[$(touch${IFS}%s)],0,x.md\n' 5 "$TEST_TMP/pwned-r" >> "$r"
     if ! dep retire TEST_TRANSFERS="$TEST_TMP/no-transfers.json" && grep -q "a line that isn't a deposit" "$rw/log" && [[ ! -e $TEST_TMP/pwned-r ]]; then
         echo "ok   retire-wallet: a damaged retired file stops the run, nothing in it run"
     else echo "FAIL retire-wallet: a damaged retired file"; status=1; fi
     cp "$rw/old.csv.good" "$r"
-    # --again: what came to the retired wallet since (the young deposit confirmed, a late one to
-    # subaddress 1), from its own wallet-rpc (not the live one), in old-2.csv; once more: nothing
-    # new; the new wallet's run adds them to that proposal, the rest the same. A deposit in two
-    # records counts once.
+    # --again: records what reached the retired wallet since (the young deposit now confirmed, a
+    # late one to subaddress 1), from its own wallet-rpc (not the live one), in old-2.csv.
+    # Run again: nothing new. The new wallet's run adds them to that proposal; the rest is the same.
+    # A deposit in two records counts once.
     jq '.pool = [] | .in |= map(if .txid | startswith("7433") then .confirmations = 20 else . end)
         | .in += [{txid: ("7499" + "0" * 60), amount: 3000000000000, confirmations: 15, unlock_time: 0, subaddr_index: {major: 0, minor: 1}, height: 3099995}]' \
         "$FIXTURES/rpc/get_transfers.json" > "$TEST_TMP/late.json"
@@ -941,14 +950,14 @@ fi
 echo "$had" > "$TEST_TMP/wallet-count"; cp "$TEST_TMP/wallet-labels.had" "$TEST_TMP/wallet-labels"
 
 # contrib/migrate/retire-from-ccs-back: a proposal whose address no wallet here has (an older
-# wallet's, its view key gone), recorded from ccs-back's deposits table, so its total stays
+# wallet whose view key is lost) is recorded from ccs-back's deposits table, so its total stays
 d=$TEST_TMP/dep-db; rm -rf "$d"; mkdir -p "$d/state" "$d/export"
 far=8$(printf '%094d' 0 | tr 0 Z)   # not this wallet's
 sed 's/^"c done, (old).md","https:\/\/example.org\/mr\/3","",""/"c done, (old).md","https:\/\/example.org\/mr\/3",900,"'"$far"'"/' "$TEST_TMP/state/proposals.csv" > "$d/state/proposals.csv"
 printf '"c done, (old).md","",900,"%s",""\n"a-fund.md","",1,"%s",""\n' "$far" "$(printf '8%094d' 1)" > "$d/export/proposals.csv"
 printf '%064d\t900\t1000000000000\t3000000\n%064d\t900\t2500000000000\t3000010\n%064d\t1\t5\t3000000\n' 1 2 3 > "$d/export/ccs-back-deposits.tsv"
 dep db > /dev/null 2>&1 || true   # (the config; this run stops: the address isn't the wallet's)
-# (wallet-rpc down, or not answering about an address: refused, not taken as "no wallet's")
+# wallet-rpc down, or not answering about an address: refused, not taken as "no wallet's"
 for m in get_address get_address_index; do
     if TEST_RPC_DOWN=$m bash -c 'source "$1/../contrib/migrate/retire-from-ccs-back" && source "$1/stubs.sh" && retire_db_main old0 "$2" "$3"' _ "$here" "$d/ccs.conf" "$d/export" > "$d/db.out" 2>&1 \
         || [[ -e $d/state/retired/old0.csv ]]; then
@@ -959,7 +968,7 @@ if bash -c 'source "$1/../contrib/migrate/retire-from-ccs-back" && source "$1/st
     && [[ $(awk 'NR == 1' "$d/state/retired/old0.csv") =~ ^#\ retired\ old0\ wallet\ ccs-back-database\  ]] \
     && [[ $(awk 'NR > 1' "$d/state/retired/old0.csv" | wc -l) == 2 ]] \
     && dep db && [[ $(jq -r '.[] | select(.filename == "c done, (old).md") | "\(.raised_amount) \(.contributions)"' "$d/out/projects.json") == "3.5 2" ]]; then
-    # an index two of ccs-back's proposals share: refused, its deposits can't be told apart
+    # An index shared by two of ccs-back's proposals: refused, since its deposits can't be split
     printf '"b-wip.md","",900,"%s",""\n' "$(printf '8%094d' 2)" >> "$d/export/proposals.csv"
     cp "$d/state/proposals.csv.before-retire-old0" "$d/state/proposals.csv"
     if ! bash -c 'source "$1/../contrib/migrate/retire-from-ccs-back" && source "$1/stubs.sh" && retire_db_main old1 "$2" "$3"' _ "$here" "$d/ccs.conf" "$d/export" > "$d/db.out" 2>&1 \
@@ -967,8 +976,8 @@ if bash -c 'source "$1/../contrib/migrate/retire-from-ccs-back" && source "$1/st
         echo "ok   retire-from-ccs-back: an unclaimed address's donations recorded from ccs-back's table (the total kept); a shared index refused"
     else echo "FAIL retire-from-ccs-back: a shared index"; cat "$d/db.out"; status=1; fi
 else echo "FAIL retire-from-ccs-back"; cat "$d/db.out" "$d/log" 2> /dev/null | tail -n 5; status=1; fi
-# a proposal file name a run would refuse (an address-long run in it): nothing written, not a
-# record that stops every run after it
+# A proposal file name a run would refuse (with an address-long run in it): nothing is written,
+# rather than a record that stops every run after it
 cp "$d/state/proposals.csv.before-retire-old0" "$d/state/proposals.csv"
 odd=x$(printf '%090d' 0 | tr 0 Z).md far2=8$(printf '%094d' 0 | tr 0 Y)
 printf '"%s","",902,"%s",""\n' "$odd" "$far2" >> "$d/state/proposals.csv"
@@ -979,10 +988,10 @@ if ! bash -c 'source "$1/../contrib/migrate/retire-from-ccs-back" && source "$1/
     echo "ok   retire-from-ccs-back: a file name a run would refuse: nothing written (the writers read it back as a run does)"
 else echo "FAIL retire-from-ccs-back: a name a run refuses"; cat "$d/db.out"; status=1; fi
 
-# ccs-backup-receive (the backup machine): proposals.csv, every version kept; deposits.csv, one
-# copy, replaced only by one that has all its deposits (not one checked in the future); anything
-# else refused
-# (a host script: not in the image, which has no du, head, comm or sort; skipped there)
+# ccs-backup-receive (the backup machine): every version of proposals.csv is kept. deposits.csv
+# has one copy, replaced only by one with all its deposits (and not checked in the future).
+# Anything else is refused.
+# A host script: not in the image, which has no du, head, comm or sort. Skipped there.
 if ! type -P du head comm sort > /dev/null; then
     echo "ok   backup receiver: skipped (a host script, its tools are not in the image)"
 else
@@ -1002,8 +1011,8 @@ else
     else
         cat "$TEST_TMP/recv.out"; ls -la "$bk"; echo "FAIL backup receiver"; status=1
     fi
-    # a retired wallet's file: every version kept, as the state; one with an address in it refused,
-    # and one whose wallet or deposits differ from the first version (a forged newest)
+    # A retired wallet's file: every version kept, like the state. Refused: one with an address
+    # in it, and one whose wallet or deposits differ from the first version (a forged newest).
     rf=$TEST_TMP/dep-retire/state/retired/old.csv
     if [[ -f $rf ]] && head -n 2 "$rf" | recv && [[ $(find "$bk" -name 'retired-old-*.csv' | wc -l) == 1 ]] \
         && head -n 2 "$rf" | recv && grep -q 'retired old unchanged' "$TEST_TMP/recv.out" \
@@ -1019,7 +1028,7 @@ else
     fi
 fi
 
-# contrib/ccs: the backend looked at by ccs-back's artisan names (a host script: runuser, sort)
+# contrib/ccs: inspecting the backend with ccs-back's artisan names (a host script: runuser, sort)
 if command -v sort > /dev/null && command -v runuser > /dev/null; then
     c=$TEST_TMP/ccs; mkdir -p "$c/state/retired" "$c/out"
     printf 'STATE_DIR=%s\nOUTPUT_DIR=%s\n' "$c/state" "$c/out" > "$c/ccs.conf"
@@ -1038,8 +1047,8 @@ if command -v sort > /dev/null && command -v runuser > /dev/null; then
         && st=$(cc status 2> /dev/null) && grep -q '^the last run (ended): 2026-10-28 10:02:00 UTC, this run failed (the push), 1 in a row' <<<"$st"; then
         echo "ok   ccs: deposit:list (ccs-back's names; the live wallet's and the retired ones'), wallet:notify (ccs-back's lines), generate:addresses, log (the last runs, each message once, its troubleshooting line, the files left out), status"
     else echo "FAIL ccs"; cc deposit:list; cc wallet:notify 5; cc generate:addresses; cc log 1; cc status; status=1; fi
-    # config:check against contrib/examples/backend: as shipped, every <placeholder> a failure
-    # (its key named, not its value); filled in, with the files setup adds, nothing fails
+    # config:check against contrib/examples/backend. As shipped, every <placeholder> fails (its
+    # key is named, not its value). Filled in, with the files setup adds, nothing fails.
     r=$TEST_TMP/check; cp -a "$here/../contrib/examples/backend" "$r"
     ck() { CCS_AS=none CCS_CHECK_ROOT=$r CCS_CHECK_OFFLINE=1 CCS_CONFIG=$r/etc/ccs/ccs.conf "$here/../contrib/ccs" config:check; }
     chmod 640 "$r"/etc/ccs/ccs.conf "$r"/etc/ccs/alert.conf "$r"/etc/ccs-wallet/wallet-rpc.conf
@@ -1062,7 +1071,7 @@ if command -v sort > /dev/null && command -v runuser > /dev/null; then
         if out=$(ck) && ! grep -q '^FAIL' <<<"$out" && grep -q '^ok   RPC_URL: wallet-rpc, on the compose' <<<"$out"; then
             echo "ok   ccs config:check: the examples as shipped fail at each placeholder (its key named, not its value); filled in, nothing fails"
         else echo "FAIL ccs config:check, filled in"; echo "$out"; status=1; fi
-        # no WALLET_PORT in .env: the compose's default, 18082, so right for a wallet on 18082 and
+        # No WALLET_PORT in .env means the compose's default, 18082: right for a wallet on 18082,
         # wrong for one on 18182 (whose healthcheck would then wait forever)
         sed -i '/^WALLET_PORT=/d' "$r"/opt/ccs-bash/contrib/docker/backend/.env
         a=$(ck | grep "WALLET_PORT" || true)
@@ -1077,10 +1086,10 @@ else
 fi
 
 # contrib/migrate/compare-deposits: ccs-back's deposits table against the first run's deposits.csv.
-# The same deposits: OK. One ccs-back has and the wallet doesn't, or another amount: NOT OK (exit 1).
-# One only the wallet has (time-locked: ccs-back skipped it) is listed with why. Blocks past the
-# file's height, the pool and subaddress 0 aren't compared.
-# (a host script, like ccs-backup-receive: skipped in the image, which lacks its tools)
+# Same deposits: OK. One ccs-back has but the wallet doesn't, or a different amount: NOT OK (exit 1).
+# One only the wallet has (time-locked, so ccs-back skipped it) is listed with the reason.
+# Blocks past the file's height, the pool and subaddress 0 aren't compared.
+# A host script, like ccs-backup-receive: skipped in the image, which lacks its tools.
 if ! type -P sort comm join head tail > /dev/null; then
     echo "ok   compare-deposits: skipped (a host script, its tools are not in the image)"
 else
@@ -1097,7 +1106,7 @@ else
             echo "ok   compare-deposits: ccs-back's deposits are the wallet's: OK; one it lacks, or another amount: NOT OK"
         else cat "$TEST_TMP/cmp.out"; echo "FAIL compare-deposits: differences"; status=1; fi
     else cat "$TEST_TMP/cmp.out"; echo "FAIL compare-deposits: the same deposits"; status=1; fi
-    # a deposits.csv line hiding a command in a field (it runs as root): refused, nothing run
+    # A deposits.csv line hiding a command in a field (it runs as root): refused, nothing run
     bad=$TEST_TMP/deposits-bad.csv
     { head -n 1 "$dep"; printf '3099901,%064d,1,BASH_VERSINFO[$(touch${IFS}%s)],0\n' 7 "$TEST_TMP/pwned"; } > "$bad"
     if ! "$cmpd" "$TEST_TMP/ccs-back.tsv" "$bad" > "$TEST_TMP/cmp.out" 2>&1 && [[ ! -e $TEST_TMP/pwned ]] \
@@ -1106,7 +1115,7 @@ else
     else cat "$TEST_TMP/cmp.out"; echo "FAIL compare-deposits: a hostile deposits.csv line"; status=1; fi
 fi
 
-# reactions that can't be read: the idea stays, without counts
+# Reactions that can't be read: the idea stays, without counts
 got=$(
     # shellcheck source=tests/stubs.sh
     source "$here/stubs.sh"
@@ -1114,8 +1123,8 @@ got=$(
         ideas 2> /dev/null | jq -c 'map([.upvotes, .downvotes])'
 )
 if [[ $got == '[[1,0],[null,null]]' ]]; then echo "ok   unreadable reactions leave the idea, without counts"; else echo "FAIL unreadable reactions: $got"; status=1; fi
-# GitLab: each idea's votes from the MR read on its own (gitlab.com's list has none); one that
-# can't be read: the idea stays, without counts
+# GitLab: each idea's votes come from reading its MR (gitlab.com's list has none).
+# If that read fails, the idea stays, without counts.
 got=$(
     # shellcheck source=tests/stubs.sh
     source "$here/stubs.sh"
@@ -1124,8 +1133,9 @@ got=$(
     done | tr '\n' ' '
 )
 if [[ $got == '[[1,0],[5,2]] [[1,0],[null,null]] ' ]]; then echo "ok   GitLab: each idea's votes read from its MR; unreadable ones leave the idea, without counts"; else echo "FAIL GitLab votes: $got"; status=1; fi
-# votes that can't be read this run: the last run's kept (a slow GitLab drops some reads every
-# run), from proposals.json's ideas, by the number the link ends in; GitLab's and Forgejo's
+# Votes that can't be read this run keep the last run's (a slow GitLab drops some reads every run).
+# They come from proposals.json's ideas, matched by the MR number at the end of the link.
+# Tested for GitLab and Forgejo.
 got=$(
     # shellcheck source=tests/stubs.sh
     source "$here/stubs.sh"
@@ -1139,8 +1149,8 @@ got=$(
 )
 if [[ $got == '[[1,0],[4,1]] [[1,0],[4,1]] ' ]]; then echo "ok   votes that can't be read this run: the last run's kept"; else echo "FAIL the last run's votes: $got"; status=1; fi
 
-# release/verify: only TRUSTED_KEYS' attesters count; without it nothing does, unless --any-key
-# (anyone can send ccs-sigs a key). A ccs-sigs of one release attested by one test key.
+# release/verify: only attesters in TRUSTED_KEYS count. Without it nothing counts, unless
+# --any-key (anyone can send ccs-sigs a key). Uses a ccs-sigs of one release attested by one test key.
 if command -v gpg > /dev/null && command -v gpgconf > /dev/null; then
     sigs=$TEST_TMP/sigs k=$TEST_TMP/gpg
     mkdir -p "$sigs/builder-keys" "$sigs/ccs-bash-v9.9.9/alice" && mkdir -m 700 "$k"
@@ -1160,10 +1170,10 @@ if command -v gpg > /dev/null && command -v gpgconf > /dev/null; then
     else
         cat "$TEST_TMP/v.out"; echo "FAIL release/verify and TRUSTED_KEYS"; status=1
     fi
-    # Signers who count must agree on the whole line, the commit too, and only they are compared:
-    # one not in TRUSTED_KEYS (aaa, read first) can't change the commit printed, nor stop them
+    # Signers who count must agree on the whole line, commit included, and only they are compared.
+    # One not in TRUSTED_KEYS (aaa, read first) can't change the commit printed or stop them
     # agreeing. A set's manifests must list exactly its releases (an old set copied under a new
-    # name doesn't), and a revoked key doesn't count.
+    # name doesn't). A revoked key doesn't count.
     key() { # NAME: a test key, its builder-keys/NAME.asc; prints its fingerprint
         GNUPGHOME=$k gpg --batch --quiet --passphrase '' --quick-gen-key "$1 <$1@test>" ed25519 sign 1d 2> /dev/null
         GNUPGHOME=$k gpg --with-colons -k "$1@test" 2> /dev/null | awk -F: '$1 == "fpr" { print $10; exit }'
@@ -1190,14 +1200,14 @@ if command -v gpg > /dev/null && command -v gpgconf > /dev/null; then
     front=$(printf '%064d  ccs-front-bash-v9.9.9-%040d.image-id' 4 5)
     attest "$set2" alice "$good" "$front"; attest "$set2" bob "$good" "$front"; attest "$set2" aaa "$evil" "$front"
     if ! { v2 "$set2" && grep -q "$set2: 2 signer(s) agree" "$TEST_TMP/v.out" && grep -qF "    $front" "$TEST_TMP/v.out"; }; then cat "$TEST_TMP/v.out"; echo "FAIL release/verify: a set, an untrusted signer read first"; vok=''; fi
-    # (gpg keeps a revocation for each key it makes, its first line's ":" stopping a careless import)
+    # gpg keeps a revocation for each key it makes; its first line's ":" stops a careless import
     sed 's/^:-----BEGIN/-----BEGIN/' "$k/openpgp-revocs.d/$bob.rev" | GNUPGHOME=$k gpg --batch --quiet --import 2> /dev/null
     GNUPGHOME=$k gpg --batch --armor --export "$bob" > "$sigs/builder-keys/bob.asc"
     if ! { ! v2 ccs-bash-v9.9.9 && grep -q "bob/all.SHA256SUMS' is not signed .*or that key is revoked" "$TEST_TMP/v.out" && grep -q '(1 signer(s) agree)' "$TEST_TMP/v.out"; }; then cat "$TEST_TMP/v.out"; echo "FAIL release/verify: a revoked key"; vok=''; fi
-    # Review 5: a signer not in TRUSTED_KEYS can't stop the others agreeing, even with a broken
-    # signature or two lines; a name that is only the start of a release's (ccs-bash-v9.9 of
-    # ccs-bash-v9.9.9) is none; a line without its commit, or with a CRLF, is no line; a release
-    # named that no one attested is a failure, not a warning
+    # A signer not in TRUSTED_KEYS can't stop the others agreeing, even with a broken signature
+    # or two lines. A name that is only the start of a release's (ccs-bash-v9.9 of
+    # ccs-bash-v9.9.9) matches nothing. A line without its commit, or with a CRLF, doesn't count.
+    # A named release no one attested is a failure, not a warning.
     rm -rf "$sigs"/*/bob   # (revoked above)
     attest ccs-bash-v9.9.9 aaa "$good" "$good"
     if ! { v2 --min-signers 1 ccs-bash-v9.9.9 && grep -q '(1 signer(s) agree)' "$TEST_TMP/v.out"; }; then cat "$TEST_TMP/v.out"; echo "FAIL release/verify: an untrusted signer's two lines stop the trusted ones"; vok=''; fi
@@ -1211,8 +1221,8 @@ if command -v gpg > /dev/null && command -v gpgconf > /dev/null; then
     attest ccs-bash-v9.9.8 alice "$(printf '%064d  ccs-bash-v9.9.8-%040d.image-id\r' 1 2)"
     if ! { ! v2 --min-signers 1 ccs-bash-v9.9.8 && grep -q "has no line for ccs-bash-v9.9.8" "$TEST_TMP/v.out"; }; then cat "$TEST_TMP/v.out"; echo "FAIL release/verify: a CRLF line"; vok=''; fi
     rm -rf "$sigs/ccs-bash-v9.9.8"
-    # the gate's image, attested as a second line of ccs-bash's: verify ccs-gate-v9.9.6 finds it in
-    # ccs-bash-v9.9.6's sets, and a set with it still lists exactly its releases
+    # The gate's image, attested as a second line of ccs-bash's: verify ccs-gate-v9.9.6 finds it
+    # in ccs-bash-v9.9.6's sets, and a set with it still lists exactly its releases
     gset=ccs-bash-v9.9.6+ccs-front-bash-v9.9.6+ccs-front-hugo-v9.9.6
     mkdir -p "$sigs/$gset"
     attest "$gset" alice "$(printf '%064d  ccs-bash-v9.9.6-%040d.image-id' 6 2)" "$(printf '%064d  ccs-gate-v9.9.6-%040d.image-id' 7 2)" \
@@ -1236,18 +1246,18 @@ source "$here/review5.sh"
 for f in proposals.json completed-proposals.json projects.json site-data.json proposals.csv log; do
     if diff -u "$here/expected/$f" "$TEST_TMP/out/$f"; then echo "ok   $f"; else echo "FAIL $f"; status=1; fi
 done
-# /projects: the amounts numbers, as ccs-back's are (its readers add them up)
+# /projects: amounts are numbers, as in ccs-back (its readers add them up)
 if jq -e 'length > 0 and all(.[]; (.raised_amount | type) == "number" and (.target_amount | type) == "number")' "$TEST_TMP/out/projects.json" > /dev/null; then
     echo "ok   /projects: raised_amount and target_amount are numbers, as ccs-back's"
 else echo "FAIL /projects: an amount that isn't a number"; status=1; fi
-# the site's JSON from site-data.json (lib/site-data.sh, as the web server is to build it)
-# is the run's own, byte for byte; the list here the run's own addresses by index
+# The site's JSON built from site-data.json (lib/site-data.sh, as the web server builds it) must
+# match the run's own byte for byte. The list here holds the run's own addresses by index.
 sd=$TEST_TMP/from-data
 rm -rf "$sd" && mkdir -p "$sd/out" "$sd/work"
 jq -rn --slurpfile d "$TEST_TMP/out/site-data.json" --slurpfile p "$TEST_TMP/out/projects.json" '
     ($p[0] | map({key: .filename, value: .address}) | from_entries) as $a
     | $d[0].state | to_entries[] | select(.value.subaddr_index != null and $a[.key] != null) | "\(.value.subaddr_index) \($a[.key])"' > "$sd/list"
-# (the web server's images too: the backend makes none, since it sends site-data.json alone)
+# The web server's images too: the backend makes none, since it sends only site-data.json
 if bash -c 'source "$1/../ccs-back.sh" && source "$1/../lib/images.sh" && PROPOSALS_DIR=$2 OUTPUT_DIR=$3/out WORK=$3/work && site_from_data "$4" "$3/list"' \
     _ "$here" "$FIXTURES/proposals" "$sd" "$TEST_TMP/out/site-data.json" 2> "$sd/log"; then
     same=1
@@ -1257,10 +1267,10 @@ if bash -c 'source "$1/../ccs-back.sh" && source "$1/../lib/images.sh" && PROPOS
     if ((same)); then echo "ok   the site's JSON from site-data.json is the run's own (proposals, completed, projects)"
     else echo "FAIL the site's JSON from site-data.json differs from the run's"; status=1; fi
 else echo "FAIL site_from_data failed"; cat "$sd/log"; status=1; fi
-# each proposal's merge request, from the repository's merge commits (lib/site-data.sh's
-# merge_requests): the one that added the file, not a later one that changed it; none for a file a
-# plain commit added, nor for one whose merge commit names another project or a path with ..; a
-# name with a space, as the repository has one
+# Each proposal's MR link comes from the repository's merge commits (lib/site-data.sh's
+# merge_requests): the MR that added the file, not a later one that changed it.
+# No link for a file added by a plain commit, or whose merge commit names another project or a
+# path with "..". A file name with a space works, since the repository has one.
 mr=$TEST_TMP/mr
 g() { git -C "$mr" -c user.name=t -c user.email=t@t "$@"; }
 merge() {   # merge BRANCH N FILE TEXT: FILE written on BRANCH, merged as GitLab merges !N

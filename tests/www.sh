@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# The web server compose's www (contrib/docker/web/Caddyfile) in the gate's image, as it serves a
-# site: every answer nginx gave before it (docs/two-machines.md): the security headers, no server
-# name, the cache rules, gzip, /projects, the theme's /dark/ and /light/ copies and redirects (none
-# to another site), the 404 page, and the onion's socket. GATE_IMAGE: the image (ccs-gate);
-# CADDYFILE: a Caddyfile to try instead of the image's (contrib/docker/web/Caddyfile, say).
+# The web server compose's www (contrib/docker/web/Caddyfile) in the gate's image, serving a site.
+# It must give every answer nginx gave before it (docs/two-machines.md): the security headers, no
+# server name, the cache rules, gzip, /projects, the theme's /dark/ and /light/ copies and
+# redirects (never to another site), the 404 page, and the onion's socket.
+# GATE_IMAGE: the image (ccs-gate). CADDYFILE: a Caddyfile to try instead of the image's
+# (contrib/docker/web/Caddyfile, say).
 set -euo pipefail
 image=${GATE_IMAGE:-ccs-gate}
 status=0
@@ -34,7 +35,7 @@ docker run -d --name "$name" --network none --read-only --tmpfs /tmp --cap-drop 
     ${CADDYFILE:+-v "$(readlink -f "$CADDYFILE"):/etc/caddy/Caddyfile:ro"} \
     --entrypoint /usr/bin/caddy "$image" run --config /etc/caddy/Caddyfile --adapter caddyfile > /dev/null
 for _ in $(seq 50); do docker exec "$name" test -S /run/ccs-www/onion.sock 2> /dev/null && break; sleep 0.2; done
-# get [CURL ARGS] PATH: the response's headers (lower-cased names) and, after a blank line, its body
+# get [CURL ARGS] PATH: print the response headers (lower-cased names), a blank line, then the body
 get() { docker exec "$name" curl -sS -D - "${@:1:$#-1}" "http://127.0.0.1:18080${!#}" | tr -d '\r'; }
 onion_get() { docker exec "$name" curl -sS -D - --unix-socket /run/ccs-www/onion.sock "http://$onion$1" | tr -d '\r'; }
 hdr() { sed -n '/^$/q; p' <<<"$1" | grep -i "^$2:" | head -n 1 | cut -d' ' -f2-; }

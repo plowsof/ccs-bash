@@ -20,7 +20,7 @@ func write(t *testing.T, p, s string) {
 	}
 }
 
-// two real addresses (by Monero's checksum, as the scan reads them): the list's, and another
+// Two real addresses (valid by Monero's checksum, as the scan reads them): the list's, and another
 const (
 	fund    = "44AFFq5kSiGBoZ4NMDwYtN18obc8AemS33DBLWs3H7otXft3XjrpDtQGv7SqSsaBYBb98uNbr2VBBEt7f2wfn3RVGQBEP3A"
 	foreign = "8BG2dKUw7eWT2u7g7z9Em4UhXF8H6Rdmm65TjzFKJ3afB7vhzb5Dev379oNQTnK7WoFzfLovEuNr45BwR114jKCW3QK3uRw"
@@ -28,7 +28,7 @@ const (
 
 func hexsum(s string) string { h := sha256.Sum256([]byte(s)); return hex.EncodeToString(h[:]) }
 
-// a built site and the config (list, its QR codes' sums, allowed)
+// A built site and the config (list, its QR codes' sums, allowed)
 func setup(t *testing.T) (Config, string) {
 	d := t.TempDir()
 	c := Config{Site: d + "/site", List: d + "/conf/subaddresses.txt", Allowed: d + "/conf/allowed"}
@@ -54,7 +54,7 @@ func verdicts(t *testing.T, c Config) map[string]string {
 	return m
 }
 
-// the QR codes by their sums; a page's address the list's, the feed none; a file that isn't plain
+// QR codes checked by their sums; a page's address must be the list's; the feed has none; a file that isn't plain
 func TestRun(t *testing.T) {
 	c, addr := setup(t)
 	other := foreign
@@ -78,7 +78,7 @@ func TestRun(t *testing.T) {
 			t.Errorf("%s: held %v (%q)", rel, h, got[rel])
 		}
 	}
-	// an address neither the list's nor allowed, then allowed
+	// An address neither on the list nor allowed, then allowed
 	write(t, filepath.Join(c.Site, "index.html"), "<p>"+other+"</p>\n")
 	if got := verdicts(t, c); got["index.html"] != other {
 		t.Errorf("a foreign address: %q", got["index.html"])
@@ -89,7 +89,7 @@ func TestRun(t *testing.T) {
 	}
 }
 
-// a list with no address: an error, never a gate that passes every address
+// A list with no address is an error, never a gate that passes every address
 func TestEmptyList(t *testing.T) {
 	c, _ := setup(t)
 	write(t, c.List, "\n")

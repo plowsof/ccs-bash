@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# The web server compose (contrib/docker/web), attacked from the backend's keys: its gate and
-# backup sshd run from the gate's image (CCS_GATE_IMAGE, default ccs-gate) as compose.yml runs
-# them (its capabilities, read-only, no-new-privileges, command: read from docker compose config),
-# on a test network instead of the host's, beside a backend and another machine with a copy of its
-# keys. The push key runs only the gate, the backup key only the backup receiver, each from the
-# backend only; no shell, terminal or forwarding; nothing but keys. Needs docker and network.
+# The web server compose (contrib/docker/web), attacked using the backend's keys.
+# Its gate and backup sshd run from the gate's image (CCS_GATE_IMAGE, default ccs-gate) exactly as
+# compose.yml runs them (capabilities, read-only, no-new-privileges, command: all read from docker
+# compose config). They run on a test network instead of the host's, beside a backend and another
+# machine holding a copy of its keys.
+# Checked: the push key runs only the gate, the backup key only the backup receiver, each only from
+# the backend; no shell, terminal or forwarding; keys only. Needs docker and network.
 set -uo pipefail
 here=$(dirname "$(readlink -f "$0")")
 img=${CCS_GATE_IMAGE:-ccs-gate}
@@ -27,11 +28,11 @@ cleanup
 # each service's settings, as compose.yml has them
 env=$(mktemp)
 printf 'CCS_GATE_IMAGE=%s\nCCS_DATA_UID=997:997\nCCS_BACKUP_UID=998:998\n' "$img" > "$env"
-# (www and tor: tests/www.sh; the compose needs their settings all the same)
+# www and tor are tested in tests/www.sh, but the compose still needs their settings
 printf 'CCS_WWW_UID=995:995\nCCS_TOR_UID=994:994\nCCS_SITE_HOST=ccs.test\nCCS_ONION=x.onion\nCCS_ACME_EMAIL=x@ccs.test\n' >> "$env"
 conf=$(docker compose -f "$here/../contrib/docker/web/compose.yml" --env-file "$env" --profile backup config --format json) || { echo "FAIL compose config"; exit 1; }
 rm -f "$env"
-# flags SERVICE: its docker run options (those that harden it) and command
+# flags SERVICE: print its hardening docker run options and its command
 flags() {
     jq -r --arg s "$1" '.services[$s] | ((.cap_drop // [])[] | "--cap-drop=\(.)"), ((.cap_add // [])[] | "--cap-add=\(.)"),
         (if .read_only then "--read-only" else empty end), ((.security_opt // [])[] | "--security-opt=\(.)"),
@@ -44,8 +45,8 @@ for v in keys ak backups; do docker volume create "$name-$v" > /dev/null; done
 # init, as compose.yml's: the host key and passwd in the keys folder
 docker run --rm --network none -u 0:0 -e CCS_DATA_UID=997:997 -e CCS_BACKUP_UID=998:998 -v "$name-keys:/etc/ccs-ssh/keys" \
     --entrypoint /usr/local/bin/ccs-web-init "$img" > /dev/null || { echo "FAIL init"; exit 1; }
-# their home a folder they can't write, with nothing in it (bash, git and curl read config from a
-# home: the live site, ccs-data's, was its home once)
+# Their home is an empty folder they can't write (bash, git and curl read config from home, and
+# the live site used to be ccs-data's home)
 homes=$(docker run --rm --network none -v "$name-keys:/k:ro" --entrypoint bash "$img" -c \
     'grep -E "^ccs-(data|backup):" /k/passwd | cut -d: -f6 | sort -u; stat -c "%u %a" /var/empty; ls -A /var/empty | wc -l')
 if [[ $homes == $'/var/empty\n0 755\n0' || $homes == $'/var/empty\n0 711\n0' ]]; then ok "init: ccs-data's and ccs-backup's home /var/empty, root's and empty"; else fail "the accounts' homes: $homes"; fi
@@ -61,7 +62,7 @@ on() { local h=$1; shift; docker exec "$name-$h" bash -c "$@"; }
 on backend 'mkdir -p ~/.ssh && ssh-keygen -q -t ed25519 -N "" -f ~/.ssh/push && ssh-keygen -q -t ed25519 -N "" -f ~/.ssh/backup'
 docker exec "$name-backend" tar -C /root -c .ssh | docker exec -i "$name-other" tar -C /root -x
 push=$(on backend 'cat ~/.ssh/push.pub') backup=$(on backend 'cat ~/.ssh/backup.pub')
-# the key files as the host has them (root's), and a backup folder of ccs-backup's
+# The key files as on the host (root's), and a backup folder owned by ccs-backup
 docker run --rm --network none -u 0:0 -v "$name-ak:/ak" -v "$name-backups:/b" --entrypoint bash "$img" -c "
     echo 'from=\"$backend\",command=\"/usr/local/bin/ccs-receive\",restrict $push' > /ak/ccs-data
     echo 'from=\"$backend\",restrict,command=\"/usr/local/bin/ccs-backup-receive\" $backup' > /ak/ccs-backup
@@ -87,7 +88,7 @@ out=$(on backend "printf '\"a.md\",\"\",\"\",\"\",\"\"\n' | timeout 30 ssh -o Ba
 kept=$(docker run --rm --network none -u 998:998 -v "$name-backups:/b:ro" --entrypoint bash "$img" -c 'ls /b | grep -c "^proposals-"')
 if [[ $out == *"kept proposals-"* && $kept == 1 ]]; then ok "the backup key: its file kept by ccs-backup-receive"; else fail "the backup push: $out ($kept kept)"; fi
 
-# the push key runs the gate whatever is asked (it refuses: no design, no list here), never a shell
+# The push key runs the gate whatever is asked (which refuses: no design or list here), never a shell
 out=$(s backend push 2223 "ccs-data@$web id")
 if [[ $out != *uid=* && $out == *ccs-gate* ]]; then ok "the push key: only the gate runs, whatever command is asked (no shell)"; else fail "the push key ran: $out"; fi
 out=$(s backend push 2223 "-tt ccs-data@$web /bin/bash -i < /dev/null")
@@ -100,7 +101,7 @@ f1=$(s backend push 2223 "-W 127.0.0.1:2224 ccs-data@$web < /dev/null")
 f2=$(s backend backup 2224 "-W 127.0.0.1:2223 ccs-backup@$web < /dev/null")
 if [[ $f1 != *SSH-2.0* && $f2 != *SSH-2.0* ]]; then ok "no forwarding (-W) through either"; else fail "forwarding: $f1 / $f2"; fi
 
-# each key for its own account and port only; nothing but keys; root nowhere
+# Each key works only for its own account and port; keys only; no root login
 a=$(s backend push 2224 "ccs-backup@$web true < /dev/null") b=$(s backend backup 2223 "ccs-data@$web true < /dev/null")
 c=$(s backend push 2223 "root@$web true < /dev/null") d=$(on backend "timeout 30 ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o PubkeyAuthentication=no -p 2223 ccs-data@$web true 2>&1")
 if [[ $a == *"Permission denied"* && $b == *"Permission denied"* && $c == *"Permission denied"* && $d == *"Permission denied (publickey)"* ]]; then
@@ -111,9 +112,9 @@ else fail "accounts: $a / $b / $c / $d"; fi
 a=$(s other push 2223 "ccs-data@$web true < /dev/null") b=$(on other "printf 'x\n' | timeout 30 ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes -i ~/.ssh/backup -p 2224 ccs-backup@$web 2>&1")
 if [[ $a == *"Permission denied"* && $b == *"Permission denied"* ]]; then ok "from=: the keys don't work from another machine"; else fail "from another machine: $a / $b"; fi
 
-# what sshd says, in docker's log (journald's, in compose.yml)
-# (the whole log first: grep -q, done at the first match, would cut docker logs short, which
-# pipefail counts as a failure)
+# What sshd logs, in docker's log (journald in compose.yml).
+# Read the whole log first: grep -q stops at the first match, cutting docker logs short, which
+# pipefail counts as a failure.
 log=$(docker logs "$name-gate" 2>&1)
 if grep -q "Accepted publickey for ccs-data from $backend" <<<"$log"; then ok "sshd logs to docker (journald in compose.yml)"; else fail "sshd's log"; fi
 exit "$status"
