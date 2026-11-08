@@ -11,7 +11,7 @@ import (
 
 const data = `{"state": {}, "funds": {}, "ideas": []}`
 
-// the push: site-data.json, or nothing (the heartbeat); anything else, or too much, refused
+// The push is site-data.json or nothing (the heartbeat). Anything else, or too much, is refused.
 func TestData(t *testing.T) {
 	for name, c := range map[string]struct {
 		in   string
@@ -38,8 +38,8 @@ func TestData(t *testing.T) {
 	}
 }
 
-// what staging holds at site-data.json, a link or a file another folder shares, is replaced, never
-// written through
+// Whatever staging holds at site-data.json (a symlink, or a file shared with another folder) is
+// replaced, never written through
 func TestDataNoFollow(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "staging")
@@ -68,14 +68,14 @@ func TestCopy(t *testing.T) {
 		os.Chtimes(p, time.Unix(mt, 0), time.Unix(mt, 0))
 	}
 	put(filepath.Join(src, "same"), "aaa", 100)
-	put(filepath.Join(dst, "same"), "bbb", 100) // the same size and time: left as it is (rsync's quick check)
+	put(filepath.Join(dst, "same"), "bbb", 100) // same size and time: left as it is (rsync's quick check)
 	put(filepath.Join(src, "changed"), "new", 200)
 	put(filepath.Join(dst, "changed"), "old", 100)
 	put(filepath.Join(src, "p", "new"), "n", 300)
 	put(filepath.Join(src, "swap"), "file now", 400)
 	put(filepath.Join(dst, "swap", "in"), "a folder with something in it", 1)
 	put(filepath.Join(dst, "extra"), "x", 1)
-	put(filepath.Join(src, "resent"), "same bytes", 500) // sent again, another time: not rewritten
+	put(filepath.Join(src, "resent"), "same bytes", 500) // same bytes sent again with another time: not rewritten
 	put(filepath.Join(dst, "resent"), "same bytes", 100)
 	ino := func(p string) uint64 { st, _ := os.Stat(p); return st.Sys().(*syscall.Stat_t).Ino }
 	before := ino(filepath.Join(dst, "resent"))
@@ -117,9 +117,9 @@ func TestCopy(t *testing.T) {
 	}
 }
 
-// review 10's M-1: a folder entry makes nothing; a file takes an empty folder's place (in the
-// push and in the copy to the live site), a folder with something in it still refuses
-// review 10's M-1: an empty folder an older gate left live where a page goes gives way to it
+// A folder entry creates nothing. A file replaces an empty folder (in the push and in the copy to
+// the live site); a folder with something in it still refuses.
+// An empty folder that an older gate left live where a page belongs gives way to the page.
 func TestFoldersOnlyForFiles(t *testing.T) {
 	root := t.TempDir()
 	live, staging := filepath.Join(root, "live"), filepath.Join(root, "staging")
@@ -140,7 +140,7 @@ func TestFoldersOnlyForFiles(t *testing.T) {
 	}
 }
 
-// review 10's L-3: a temp file a killed copy left is removed by the next, never copied
+// A temp file left by a killed copy is removed by the next copy, never copied
 func TestTempLeftOver(t *testing.T) {
 	root := t.TempDir()
 	src, dst := filepath.Join(root, "src"), filepath.Join(root, "dst")

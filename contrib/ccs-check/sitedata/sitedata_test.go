@@ -13,8 +13,8 @@ var (
 	addrC = "4" + strings.Repeat("C", 94)
 )
 
-// site-data.json as ccs-bash writes it, for setup's proposals (p and q live with addrA and
-// addrB, indexes 1 and 2 of the list; r new)
+// site-data.json as ccs-bash writes it, for setup's proposals: p and q are live with addrA and
+// addrB (list indexes 1 and 2); r is new
 const good = `{
     "state": {
         "p.md": {"gitlab_url": "https://repo.example/ccs/-/merge_requests/3", "subaddr_index": 1, "funding_required_date": "2026-10-25T13:00:00Z", "funded_date": null},
@@ -28,8 +28,8 @@ const good = `{
     "ideas": [{"name": "An idea &amp; more", "gitlab-url": "https://repo.example/ccs/-/merge_requests/9", "author": "erin", "date": "October 1, 2026", "upvotes": 5, "downvotes": null}]
 }`
 
-// setup: a list (0, then addrA, addrB, addrC as 1 to 3), the proposals p, q and r, and a live
-// site where p and q have addrA and addrB
+// setup makes a list (0, then addrA, addrB, addrC as 1 to 3), the proposals p, q and r, and a
+// live site where p and q have addrA and addrB
 func setup(t testing.TB) *Checker {
 	d := t.TempDir()
 	list, props, live := filepath.Join(d, "list.txt"), filepath.Join(d, "proposals"), filepath.Join(d, "live")
@@ -79,7 +79,7 @@ func TestCheck(t *testing.T) {
 		"a bidi control in an author":      {r(`"erin"`, "\"er‮in\""), false},
 		"an idea's link out":               {r(`repo.example/ccs/-/merge_requests/9`, `evil.example/ccs/-/merge_requests/9`), false},
 		"an idea's date that isn't one":    {r(`October 1, 2026`, `soon`), false},
-		// review 12's H-1: a key Go would take for another, or twice (jq reads the exact one, the last)
+		// A key Go would read as another, or a duplicate key (jq reads the exact one, the last)
 		"STATE beside state":           {r(`"ideas": [`, `"STATE": {}, "ideas": [`), false},
 		"Subaddr_Index":                {r(`"subaddr_index": 3`, `"Subaddr_Index": 3`), false},
 		"an index twice":               {r(`"subaddr_index": 3`, `"subaddr_index": 3, "subaddr_index": 1`), false},
@@ -89,11 +89,11 @@ func TestCheck(t *testing.T) {
 		"a key escaped as itself":      {r(`"subaddr_index": 3`, `"subaddr_\u0069ndex": 3`), true},
 		"not UTF-8":                    {r(`erin`, "er\xffin"), false},
 		"an object where a value goes": {r(`"subaddr_index": 3`, `"subaddr_index": {"a": 1}`), false},
-		// review 12's M-2: a proposal the live site has given an address keeps it, null or left out
+		// A proposal the live site gave an address keeps it, even if the push has null or leaves it out
 		"p's index null": {r(`"subaddr_index": 1`, `"subaddr_index": null`), false},
 		"p left out":     {r(`"p.md": {"gitlab_url": "https://repo.example/ccs/-/merge_requests/3", "subaddr_index": 1, "funding_required_date": "2026-10-25T13:00:00Z", "funded_date": null},`, ``), false},
 		"r's index null": {r(`"subaddr_index": 3`, `"subaddr_index": null`), true},
-		// review 12's M-1: an address in an idea's name, in groups, or in letters drawn as one
+		// An address in an idea's name, in groups, or in look-alike letters
 		"an address in groups in a name": {r(`An idea &amp; more`, "Send to "+groups(fund, 4, "")), false},
 		"one Cyrillic а, in groups":      {r(`An idea &amp; more`, "Send to "+groups(fund, 4, "а")), false},
 		"full-width, in groups":          {r(`An idea &amp; more`, "Send to "+groups(fund, 4, "Ａ")), false},
@@ -105,11 +105,11 @@ func TestCheck(t *testing.T) {
 	}
 }
 
-// the General Fund, an address by its checksum
+// The General Fund: a valid address by its checksum
 const fund = "44AFFq5kSiGBoZ4NMDwYtN18obc8AemS33DBLWs3H7otXft3XjrpDtQGv7SqSsaBYBb98uNbr2VBBEt7f2wfn3RVGQBEP3A"
 
-// groups: a in groups of n, space-separated; then its first a (for sub "а") or A (for "Ａ")
-// written as sub
+// groups returns a in groups of n, space-separated, with its first a (for sub "а") or A (for "Ａ")
+// replaced by sub
 func groups(a string, n int, sub string) string {
 	var g []string
 	for len(a) > n {
@@ -122,8 +122,8 @@ func groups(a string, n int, sub string) string {
 	return s
 }
 
-// review 12's H-1: what the site is built from is what Check read, written again: exact keys, the
-// last of none twice, nothing else
+// What the site is built from is exactly what Check read, written again: exact keys, no
+// duplicates, nothing else
 func TestClean(t *testing.T) {
 	c := setup(t)
 	out, why := c.Clean([]byte(good))
@@ -140,14 +140,14 @@ func TestClean(t *testing.T) {
 	}
 }
 
-// review 12's M-2: the gate's pins win over projects.json, and keep a proposal hidden from it
+// The gate's pins win over projects.json, and keep the address of a proposal hidden from it
 func TestPins(t *testing.T) {
 	d := t.TempDir()
 	list, props, live, pins := filepath.Join(d, "list.txt"), filepath.Join(d, "proposals"), filepath.Join(d, "live"), filepath.Join(d, "pins")
 	os.WriteFile(list, []byte("1 "+addrA+"\n2 "+addrB+"\n3 "+addrC+"\n"), 0o644)
 	os.WriteFile(props, []byte("p.md\nq.md\nr.md\n"), 0o644)
 	os.Mkdir(live, 0o755)
-	// p hidden from the live site's projects.json for a push; the pins still have it, r's too
+	// p hidden from the live site's projects.json for one push; the pins still have it, and r's too
 	os.WriteFile(filepath.Join(live, "projects.json"), []byte(`[{"filename":"q.md","address":"`+addrB+`"},{"filename":"r.md","address":"`+addrA+`"}]`), 0o644)
 	os.WriteFile(pins, []byte("p.md "+addrA+"\nr.md "+addrC+"\ngone.md 4nothere\n"), 0o644)
 	c, err := New(list, props, "repo.example/ccs", live, pins)
@@ -173,7 +173,7 @@ func TestPins(t *testing.T) {
 	}
 }
 
-// a name of 1000 characters passes, of 1001 not; an entity is one
+// A name of 1000 characters passes, 1001 doesn't; an entity counts as one
 func TestTextLength(t *testing.T) {
 	long := strings.Repeat("ab ", 333) + "a"
 	if !text(long) || text(long+"b") {

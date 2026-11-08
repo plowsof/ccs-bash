@@ -39,24 +39,24 @@ func TestPages(t *testing.T) {
 		"a data: image":           {"<img src=\"data:image/png;base64,QUJD\">", "?qr\tdata:image/png;base64,QUJD\n"},
 		"an SVG data: image":      {"<img src=\"data:image/svg+xml,%3Csvg%3E\">", "?qr\tdata:image/svg+xml,%3Csvg%3E\n"},
 		"a data: image, any case": {"<img src=\"DATA:Image/JPEG;base64,QUJD\">", "?qr\tDATA:Image/JPEG;base64,QUJD\n"},
-		// split between elements a browser lays side by side: two tag labels, a tag and its count
+		// Split between elements a browser lays side by side: two tag labels, or a tag and its count
 		"two labels": {`<p><span class="label tag-0">` + fund[:48] + `</span><span class="label tag-1">` + fund[48:] + `</span></p>`, fund + "\n"},
 		"tag, count": {`<a class="filter" href="x/">` + fund[:89] + `<span class="count">` + fund[89:] + `</span></a>`, fund + "\n"},
 		"not one":    {`<p><span>` + fund[:48] + `</span><span>` + fund[48:94] + `x</span></p>`, ""},
-		// split by a < or > a browser shows (an entity: text, not markup), as by a - (review 11's M-1)
+		// Split by a < or > a browser shows (an entity: text, not markup), as by a -
 		"split by &lt;":        {"<h1>" + fund[:47] + "&lt;" + fund[47:] + "</h1>", fund + "\n"},
 		"split by &gt;":        {"<h1>" + fund[:47] + " &gt; " + fund[47:] + "</h1>", fund + "\n"},
 		"split by &#60;":       {"<h1>" + fund[:47] + "&#60;" + fund[47:] + "</h1>", fund + "\n"},
 		"&lt; then a label":    {`<p><span>` + fund[:48] + `</span><span>&lt;` + fund[48:] + `</span></p>`, fund + "\n"},
 		"&lt;b&gt; is text":    {"<h1>" + fund[:47] + "&lt;b&gt;" + fund[47:] + "</h1>", ""},
 		"&lt; four times, not": {"<h1>" + fund[:47] + "&lt;&lt;&lt;&lt;" + fund[47:] + "</h1>", ""},
-		// a named entity without its ";", as a browser reads it: &shy is an unseen soft hyphen (I-2)
+		// A named entity without its ";", as a browser reads it: &shy is an invisible soft hyphen
 		"split by &shy":    {"<h1>" + fund[:47] + "&shy" + fund[47:] + "</h1>", fund + "\n"},
 		"split by &AMP":    {"<h1>" + fund[:47] + "&AMP" + fund[47:] + "</h1>", fund + "\n"},
 		"&notin is &not":   {"<h1>" + fund[:47] + "&notin" + fund[47:] + "</h1>", ""},
 		"&shyx not a name": {"<h1>" + fund[:47] + "&shyx;" + fund[47:] + "</h1>", fund + "\n"},
-		// review 12's M-1: a bidi control (an address written backwards shown the right way round),
-		// as itself or as an entity; an address with letters drawn as its own (Cyrillic, full-width)
+		// A bidi control (an address written backwards, displayed the right way round), raw or as an
+		// entity; and an address with look-alike letters (Cyrillic, full-width)
 		"U+202E":                {"<p>Send to \u202e" + reverse(grouped(fund, 5)) + "\u202c</p>", Bidi + "\n"},
 		"&#x202E;":              {"<p>Send to &#x202E;" + reverse(grouped(fund, 5)) + "&#x202C;</p>", Bidi + "\n"},
 		"&#8238;":               {"<p>&#8238;x</p>", Bidi + "\n"},
@@ -73,7 +73,7 @@ func TestPages(t *testing.T) {
 	}
 }
 
-// grouped: a in groups of n, space-separated (the last group as long as is left)
+// grouped returns a in groups of n, space-separated (the last group takes what is left)
 func grouped(a string, n int) string {
 	var g []string
 	for len(a) > n {
@@ -110,8 +110,8 @@ func TestJSON(t *testing.T) {
 	}
 }
 
-// review 12's M-1: the proposals' text without bidi controls, raw or as entities; the rest as it
-// was (36c3.md's "&#x202D;505.96" pasted from a spreadsheet: the number, as a reader sees it)
+// The proposals' text loses its bidi controls, raw or as entities; everything else stays.
+// (36c3.md's "&#x202D;505.96", pasted from a spreadsheet, becomes the number a reader sees.)
 func TestNobidi(t *testing.T) {
 	for in, want := range map[string]string{
 		"leading to ‭505.963136971449 XMR": "leading to 505.963136971449 XMR",

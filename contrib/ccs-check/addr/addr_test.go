@@ -7,14 +7,14 @@ import (
 	"testing"
 )
 
-// the Monero General Fund's address: a real checksum
+// The Monero General Fund's address, with a real checksum
 const fund = "44AFFq5kSiGBoZ4NMDwYtN18obc8AemS33DBLWs3H7otXft3XjrpDtQGv7SqSsaBYBb98uNbr2VBBEt7f2wfn3RVGQBEP3A"
 
 func TestKeccak256(t *testing.T) {
 	for in, want := range map[string]string{
 		"":    "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
 		"abc": "4e03657aea45a94fc7d47ba826c8d667c0d1e6e33a64a036ec44f58fa12d6c45",
-		// two blocks (136 bytes and more)
+		// Two blocks (136 bytes and more)
 		strings.Repeat("a", 200): "",
 	} {
 		got := Keccak256([]byte(in))
@@ -64,7 +64,7 @@ func TestGrouped(t *testing.T) {
 			t.Errorf("split by %q: %v %v", sep, out, err)
 		}
 	}
-	for _, sep := range []string{"----", "<", "0", "\x01"} { // (whitespace is one space, however long)
+	for _, sep := range []string{"----", "<", "0", "\x01"} { // whitespace counts as one space, however long
 		out := map[string]bool{}
 		c.Grouped(strings.Join(parts, sep), out)
 		if out[fund] {
@@ -77,7 +77,7 @@ func TestBudget(t *testing.T) {
 	c := New()
 	c.Budget = 2
 	c.Start()
-	// runs that pass the network check, each a checksum: past 2, ErrTooMany, and nothing of it kept
+	// Runs that pass the network check each cost a checksum. Past 2: ErrTooMany, and none are kept
 	text := strings.Repeat("4"+strings.Repeat("A", 94)+" ", 5)
 	out := map[string]bool{}
 	if err := c.Grouped(text+fund, out); !errors.Is(err, ErrTooMany) || len(out) != 0 {

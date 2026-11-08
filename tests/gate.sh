@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# The web server's gate (contrib/ccs-receive, docs/two-machines.md): the gate's image as the web
-# server (GATE_IMAGE: its own ccs-receive, ccs-gate-build and ccs-check, its sshd as compose.yml
-# starts it, its users from its init), set up as documented with the design's real release
-# (ccs-front-hugo's zip, checked by its sha256) and a proposals repository merged as GitLab merges;
-# and a backend pushing site-data.json. A good push builds the site and it goes live; a
-# site-data.json that fails, a proposal's text with an address that is neither the wallet's nor
-# allowed, a list that isn't the pinned one, a push of anything else, leaves the live site as it
-# was and says why. Needs docker, jq and network (the design's zip, once: GATE_CACHE keeps it).
+# The web server's gate (contrib/ccs-receive, docs/two-machines.md).
+# The gate's image plays the web server (GATE_IMAGE: its own ccs-receive, ccs-gate-build and
+# ccs-check, its sshd started as compose.yml does, its users from its init). It is set up as
+# documented, with the design's real release (ccs-front-hugo's zip, checked by its sha256) and a
+# proposals repository merged as GitLab merges. A backend container pushes site-data.json.
+# A good push builds the site and it goes live. These leave the live site as it was and say why:
+# a failing site-data.json, a proposal's text with an address neither the wallet's nor allowed,
+# a list that isn't the pinned one, and a push of anything else.
+# Needs docker, jq and network (the design's zip, once; GATE_CACHE keeps it).
 set -euo pipefail
 here=$(dirname "$(readlink -f "$0")")
 img=${GATE_IMAGE:?GATE_IMAGE: the gate image to test (container/build.sh ccs-gate gate.Dockerfile)}
@@ -25,7 +26,7 @@ cleanup() {
 trap cleanup EXIT
 cleanup; files=$(mktemp -d)
 
-# the design's release zip, as the web server installs it (design/vX.Y.Z/)
+# The design's release zip, installed as on the web server (design/vX.Y.Z/)
 zip=$cache/ccs-front-hugo-$design_v.zip
 mkdir -p "$cache"
 if ! sha256sum -c --status <<<"$design_sha  $zip" 2> /dev/null; then
@@ -34,8 +35,8 @@ fi
 sha256sum -c --status <<<"$design_sha  $zip" || { echo "$zip: sha256 is not $design_sha" >&2; exit 2; }
 mkdir "$files/design" && (cd "$files/design" && unzip -q "$zip")
 
-# The backend: Debian 12, with ssh, qrencode (the list's QR codes, as make-qr.sh makes them) and
-# python3 (the test's own IRC bot; the gate's image has no Python)
+# The backend: Debian 12, with ssh, qrencode (for the list's QR codes, as make-qr.sh makes them)
+# and python3 (for the test's own IRC bot; the gate's image has no Python)
 docker buildx build -q --load -t "$name" - > /dev/null <<IMG
 FROM debian@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
 RUN apt-get update -q && apt-get install -y -q --no-install-recommends openssh-client python3 qrencode \
@@ -44,15 +45,15 @@ IMG
 docker network create --subnet "$net.0/24" "$name" > /dev/null
 docker run -d --name "$name-web" --network "$name" --ip "$web" --tmpfs /etc/ccs-ssh:mode=755 --entrypoint sleep "$img" infinity > /dev/null
 docker exec -e CCS_DATA_UID=997:997 -e CCS_BACKUP_UID=998:998 "$name-web" /usr/local/bin/ccs-web-init > /dev/null
-# (ccs-data by its id for docker exec: the image's passwd is a link Docker doesn't follow)
+# ccs-data by its id for docker exec: the image's passwd is a symlink Docker doesn't follow
 keys=/etc/ccs-ssh/authorized_keys hostkey=/etc/ccs-ssh/keys/ssh_host_ed25519_key.pub data=997:997
 docker run -d --name "$name-backend" --network "$name" --ip "$backend" "$name" sleep infinity > /dev/null
 on() { local h=$1; shift; docker exec "$name-$h" bash -c "$@"; }
 
-# a wallet of four subaddresses (95 base58 characters, no checksum: the scan reads them as none,
-# and every page's box is the list's by construction); the General Fund, the design's footer's,
-# allowed; and two real addresses (by their checksum) the scan finds: a testnet one and the
-# General Fund
+# A wallet of four subaddresses: 95 base58 characters with no valid checksum, so the scan
+# ignores them, and every page's box matches the list by construction. The General Fund (in the
+# design's footer) is allowed. Two real addresses (valid checksums) that the scan finds: a
+# testnet one and the General Fund.
 addr() { printf '%s%094d' "${2:-9}" "$1" | tr 0 z; }
 list=$(for i in 0 1 2 3; do echo "$i $(addr "$i")"; done)
 fund=$(grep -rhoE '[48][1-9A-HJ-NP-Za-km-z]{94}' "$files/design" | sort | uniq -c | sort -rn | awk 'NR == 1 { print $2 }')
@@ -60,7 +61,7 @@ fund=$(grep -rhoE '[48][1-9A-HJ-NP-Za-km-z]{94}' "$files/design" | sort | uniq -
 fake=9uH2Z776LeJ4gku967Y3o8VrBueTqSoQhDXVftRkU2Jt81du8DDNV4eAFmPaojQV4mhrgDBvzUfRX7EoHp245dNf9wimfPf
 
 on backend 'mkdir -p ~/.ssh && ssh-keygen -q -t ed25519 -N "" -f ~/.ssh/id_ed25519'
-# the list's QR codes and their sums, made on the backend (the web server has no qrencode)
+# The list's QR codes and their sums, made on the backend (the web server has no qrencode)
 on backend "mkdir -p /qr && cd /qr && printf '%s\n' '$list' | while read -r _ a; do qrencode -s 10 -o \$a.png monero:\$a; done \
     && printf '%s\n' '$list' | while read -r _ a; do sha256sum \$a.png; done > /qr.sha256"
 docker cp "$name-backend:/qr" "$files/qr" && docker cp "$name-backend:/qr.sha256" "$files/qr.sha256"
@@ -69,9 +70,9 @@ docker cp "$files/design" "$name-web:/tmp/design"
 key=$(on backend 'cat ~/.ssh/id_ed25519.pub')
 docker cp "$here/../contrib/ccs-push" "$name-backend:/ccs-push"
 
-# the proposals repository, as GitLab merges: each proposal its branch, merged with "See merge
-# request monero-project/ccs-proposals!N" (its link on the site, MERGE_REQUESTS'); p Funding
-# Required, w Work in Progress, d Completed, with an image
+# The proposals repository, merged as GitLab merges: each proposal on its own branch, merged with
+# "See merge request monero-project/ccs-proposals!N" (its link on the site, under MERGE_REQUESTS).
+# p is Funding Required, w Work in Progress, d Completed, with an image.
 # propose NAME LAYOUT TITLE MR [TEXT]
 cat > "$files/repo.sh" <<'SH'
 set -e
@@ -84,7 +85,7 @@ propose() {
     g add -A && g commit -q -m "$3"
     g checkout -q master && g merge -q --no-ff "$1" -m "Merge branch '$1' into 'master'" -m "$3" -m "See merge request monero-project/ccs-proposals!$4"
 }
-# edit NAME TEXT: a merge that changes NAME's text (its merge request is still the first one's)
+# edit NAME TEXT: a merge that changes NAME's text (its MR link stays the first one)
 edit() {
     cd /srv/proposals
     g checkout -q -b "edit-$1-$RANDOM" master
@@ -93,7 +94,7 @@ edit() {
     b=$(g branch --show-current); g checkout -q master && g merge -q --no-ff "$b" -m "Merge branch '$b' into 'master'" -m "See merge request monero-project/ccs-proposals!99"
 }
 gone() { cd /srv/proposals && for n in "$@"; do g rm -q "$n.md"; done && g commit -q -m "taken out: $*"; }
-# front NAME [LINE]: a merge that adds LINE to NAME's front matter (none: takes its gitlab_url out)
+# front NAME [LINE]: a merge that adds LINE to NAME's front matter (no LINE: removes its gitlab_url)
 front() {
     cd /srv/proposals
     g checkout -q -b "front-$1-$RANDOM" master
@@ -147,7 +148,7 @@ status=0
 ok() { echo "ok   $1"; }
 fail() { echo "FAIL $1"; status=1; }
 # data RAISED [P_INDEX [W_INDEX]]: site-data.json as ccs-bash writes it (every proposal's state
-# and funds), p's funds RAISED; the proposals beside p and w: $other, each fully funded
+# and funds), with p's raised amount RAISED. The other proposals ($other) are each fully funded.
 other=d
 data() {
     local r=$1 pi=${2:-1} wi=${3:-2} o
@@ -163,9 +164,9 @@ data() {
 }
 # put FILE: stdin as the backend's /out/FILE
 put() { docker exec -i "$name-backend" sh -c "mkdir -p \"\$(dirname '/out/$1')\" && cat > '/out/$1'"; }
-# push: as the backend pushes (contrib/ccs-push): what changed, a tar over ssh
+# push: push as the backend does (contrib/ccs-push): site-data.json over ssh, if it changed
 push() { on backend "/ccs-push /out/site-data.json /state -T -o BatchMode=yes -o StrictHostKeyChecking=yes ccs-data@$web 2>&1"; }
-# sendraw < BYTES: BYTES sent as a push, as no ccs-push sends them; its exit
+# sendraw < BYTES: send BYTES as a push, bypassing ccs-push. Returns its exit status.
 sendraw() { docker exec -i "$name-backend" ssh -T -o BatchMode=yes "ccs-data@$web" receive > /dev/null 2>&1; }
 livefile() { on web "cat '/var/lib/ccs-data/$1' 2> /dev/null || true"; }
 livepage() { livefile proposals/p.html; }
@@ -193,24 +194,24 @@ else on web 'cat /var/lib/ccs-gate/pins' || true; fail "the pins"; fi
 if [[ $(on web "stat -c %a /var/lib/ccs-data/index.html /var/lib/ccs-data/proposals" | tr '\n' ' ') == "644 755 " ]]; then
     ok "the site's files 644, its folders 755"
 else on web "ls -la /var/lib/ccs-data"; fail "file modes"; fi
-# nothing new: nothing built (ccs-push sends nothing; the push is the heartbeat)
+# Nothing new: nothing built (ccs-push sends nothing; the push is just the heartbeat)
 n=$(built); push > /dev/null || true
 if [[ $(built) == "$n" ]]; then ok "the same site-data.json again: nothing built"; else logtail; fail "the same data built again"; fi
 data 2.0000 | put site-data.json
 if push > /dev/null && [[ $(raised) == 2 && $(built) == $((n + 1)) ]]; then ok "a donation (site-data.json changed): the site built again, live"; else logtail; fail "a new site-data.json"; fi
-# a merge that edits a proposal: its link stays the merge request that added it
+# A merge that edits a proposal: its link stays the MR that added it
 repo edit p 'A plain proposal, in 3 parts.'
 if push > /dev/null && [[ $(livepage) == *"in 3 parts."* && $(livepage) == *'merge_requests/5"'* ]]; then
     ok "a proposal edited (a new commit: built again), its link still its own merge request"
 else logtail; fail "an edited proposal"; fi
-# review 12's L-3: a proposal's own gitlab_url (front matter) doesn't override its merge request,
-# and links nowhere but the repository's merge requests
+# A proposal's own gitlab_url (front matter) doesn't override its MR link, and may link only to
+# the repository's own MRs
 repo front p 'gitlab_url: https://evil.test/donate'
 if push > /dev/null && [[ $(livepage) == *'merge_requests/5"'* && $(livepage) != *evil.test* && $(livefile projects.json) != *evil.test* ]]; then
     ok "review 12 (L-3): a gitlab_url in a proposal's front matter: its link is still its merge request"
 else livepage | grep -o 'href="[^"]*"' | grep -v '\.\./' || true; fail "a front matter gitlab_url"; fi
 repo front p
-# one of the repository's own merge requests: the proposer's correction wins (a file added twice:
+# One of the repository's own MRs: the proposer's correction wins (a file added twice:
 # rehrar-defcon-reimburse-2019.md, !67 then !69)
 repo front p 'gitlab_url: https://repo.test/monero-project/ccs-proposals/-/merge_requests/77'
 if push > /dev/null && [[ $(livepage) == *'merge_requests/77"'* ]]; then
@@ -225,7 +226,7 @@ if ((rc == 1)) && [[ $(livefile index.html) != *"Donate here"* ]] && on web "gre
     ok "a push of a page: refused, IRC told"
 else echo "exit $rc"; logtail 2; fail "a push of a page"; fi
 
-# site-data.json that fails (ccs-check data): held back, the live site as it was, IRC told
+# A site-data.json that fails (ccs-check data): held back, live site unchanged, IRC told
 before=$(raised)
 held_data() {   # held_data WHY GREP < site-data.json
     put site-data.json
@@ -242,23 +243,23 @@ data 3.0000 | sed 's#"name": "An idea"#"name": "<b>An</b> idea"#' | held_data "m
 data 3.0000 | sed "s#\"name\": \"An idea\"#\"name\": \"Send to $fake\"#" | held_data "an address-long run in an idea's name" "plain text"
 data 3.0000 | sed 's#repo.test/monero-project/ccs-proposals/-/merge_requests/9#evil.test/x/-/merge_requests/9#' | held_data "an idea's link to another forge" "isn.t a merge request"
 data 3.0000 | sed 's/"d.md"/"x.md"/' | held_data "a proposal the repository hasn't" "no proposal in the proposals repository"
-# review 12's H-1: a key Go's decoder takes for another, or one twice (jq, which builds the site,
-# reads only the exact key): one site-data.json for the check, another for the build
+# A key Go's decoder would read as another, or a duplicate key. jq, which builds the site, reads
+# only the exact key, so one file could mean one thing to the check and another to the build.
 data 3.0000 0 | sed 's/"subaddr_index": 0,/"subaddr_index": 0, "Subaddr_Index": 1,/' | held_data "review 12 (H-1): Subaddr_Index beside subaddr_index" "the key .Subaddr_Index"
 data 3.0000 | sed 's/^{"state": {/{"STATE": {}, "state": {/' | held_data "review 12 (H-1): STATE beside state" "the key .STATE"
 data 3.0000 | sed 's/"name": "An idea"/"name": "An idea", "name": "x"/' | held_data "review 12 (H-1): a key twice" "twice"
-# review 12's M-1: an address in an idea's name in groups, one letter Cyrillic: as the gate's scan
-# reads it, an address
+# An address in an idea's name, in groups, with one Cyrillic letter: the gate's scan reads it as
+# an address
 grouped=$(for ((i = 0; i < 95; i += 4)); do printf '%s ' "${fake:i:4}"; done)
 data 3.0000 | sed "s#\"name\": \"An idea\"#\"name\": \"Send to ${grouped/a/а}\"#" | held_data "review 12 (M-1): an address in groups in an idea's name, a letter Cyrillic" "an address in its name"
-# review 12's M-2: a proposal the live site has given an address (the pins) keeps it: no index
-# (which would hide it for a push, then let any other be given) is held back too
+# A proposal the live site has given an address (the pins) keeps it. A push with no index for it
+# is held back too (that would hide it for one push, then let any other address be given).
 data 3.0000 null | held_data "review 12 (M-2): p's index null, where the live site gave it one" "no subaddress, where the live site has given it one"
 if bot | grep -qF "the web server held back the backend's site-data.json"; then ok "... and IRC is told"; else bot | tail -n 2; fail "no alert for site-data.json"; fi
 data 3.0000 | put site-data.json
 if push > /dev/null && [[ $(raised) == 3 ]]; then ok "the next good site-data.json goes live"; else logtail; fail "after a held site-data.json"; fi
 
-# a new Funding Required proposal without an index yet: kept off the site (no box without an
+# A new Funding Required proposal without an index yet stays off the site (no box without an
 # address)
 repo propose n fr 'A new one' 8
 if push > /dev/null && on web '! test -e /var/lib/ccs-data/proposals/n.html' && [[ $(livepage) == *"$(addr 1)"* ]]; then
@@ -266,8 +267,8 @@ if push > /dev/null && on web '! test -e /var/lib/ccs-data/proposals/n.html' && 
 else logtail; fail "a proposal without an index"; fi
 repo gone n
 
-# an address in a proposal's own text (merged into the repository): that page off the site, IRC
-# told, the rest live; the General Fund's (allowed) goes live
+# An address in a proposal's own text (merged into the repository): that page is taken off the
+# site and IRC told; the rest goes live. The General Fund's address (allowed) goes live.
 repo edit w "Pay $fake here."
 data 4.0000 | put site-data.json
 if push > /dev/null && on web '! test -e /var/lib/ccs-data/proposals/w.html' && [[ $(raised) == 4 ]] \
@@ -277,14 +278,14 @@ if push > /dev/null && on web '! test -e /var/lib/ccs-data/proposals/w.html' && 
 else logtail 5; bot | tail -n 2; fail "an address in a proposal's text"; fi
 repo edit w "Or give to the General Fund, $fund."
 if push > /dev/null && [[ $(livefile proposals/w.html) == *"$fund"* ]]; then ok "an allowed address (the General Fund) in a proposal's text goes live"; else logtail; fail "an allowed address"; fi
-# split, in groups, by markup the proposal's markdown makes: found all the same
+# Split into groups by markup from the proposal's markdown: still found
 repo edit w "Send to $grouped"
 if push > /dev/null && on web '! test -e /var/lib/ccs-data/proposals/w.html'; then ok "an address in groups of four in a proposal's text: found, the page off the site"; else logtail; fail "an address in groups"; fi
 repo edit w "Send to ${fake:0:40}**${fake:40:10}**${fake:50}"
 if push > /dev/null && on web '! test -e /var/lib/ccs-data/proposals/w.html'; then ok "an address split by markup (bold) in a proposal's text: found"; else logtail; fail "an address split by markup"; fi
-# review 12's M-1: written backwards after a bidi override (which would show it the right way
-# round): the override dropped from the text (ccs-check nobidi), so the page shows it as written,
-# backwards, no address; with a letter drawn as an address's (a Cyrillic а): found, the page off
+# An address written backwards after a bidi override (which would display it the right way round).
+# The override is removed from the text (ccs-check nobidi), so the page shows it as written:
+# backwards, no address. With a look-alike letter (a Cyrillic а) it is found, and the page taken off.
 backwards=$(rev <<<"$grouped")
 for c in "written backwards after U+202E (as an entity)|&#x202E;$backwards&#x202C;" "written backwards after a raw U+202E|$(printf '\xe2\x80\xae')$backwards"; do
     IFS='|' read -r what text <<<"$c"
@@ -301,8 +302,8 @@ else logtail; fail "an address in groups, a letter Cyrillic"; fi
 repo edit w 'Back to work.'
 if push > /dev/null && [[ $(livefile proposals/w.html) == *"Back to work."* ]]; then ok "the text mended: the page back"; else logtail; fail "a mended page"; fi
 
-# a proposal taken out of the repository: its page goes; more than 3 pages at once: none of the
-# new site goes live, IRC told
+# A proposal removed from the repository: its page goes. More than 3 pages at once: none of the
+# new site goes live, and IRC is told.
 repo gone d
 other=''
 if push > /dev/null && on web '! test -e /var/lib/ccs-data/proposals/d.html' \
@@ -327,7 +328,7 @@ on web "touch /var/lib/ccs-gate/allow-remove && chown $data /var/lib/ccs-gate/al
 if push > /dev/null && on web '! test -e /var/lib/ccs-data/proposals/x1.html && ! test -e /var/lib/ccs-gate/allow-remove' && [[ $(raised) == 5 ]]; then
     ok "allow-remove: the four go, the new site live, the file used up"
 else logtail 3; fail "allow-remove"; fi
-# review 12's M-2: one at a time, a push each, counts as at once: the fourth within a day held
+# Removing them one per push counts the same as all at once: the fourth within a day is held
 for n in 1 2 3 4; do repo propose "y$n" wip "Extra $n" $((30 + n)); done
 push > /dev/null || true
 for n in 1 2 3; do repo gone "y$n"; push > /dev/null || true; done
@@ -339,8 +340,8 @@ else echo "exit $rc"; logtail 4; fail "pages leaving one at a time"; fi
 on web "touch /var/lib/ccs-gate/allow-remove && chown $data /var/lib/ccs-gate/allow-remove"
 push > /dev/null || true
 
-# the QR codes: only the list's own files, by their sums (ccs-front-bash checks them as it
-# builds; ccs-check gate again after)
+# QR codes: only the list's own files, by their sums (ccs-front-bash checks them while building;
+# ccs-check gate checks again after)
 on web "cp /etc/ccs-gate/subaddresses.txt.qr/$(addr 1).png /tmp/qr1 && cp /etc/ccs-gate/subaddresses.txt.qr/$(addr 2).png /etc/ccs-gate/subaddresses.txt.qr/$(addr 1).png"
 rc=0; push > /dev/null || rc=$?
 if ((rc == 1)) && on web "cmp -s /var/lib/ccs-data/qr/$(addr 1).png /tmp/qr1" && on web "grep -q 'subaddresses.txt.qr/$(addr 1).png is not its sum' /var/log/ccs-gate.log"; then
@@ -356,8 +357,8 @@ on web 'touch -d "@$(($(date +%s) - 25 * 3600))" /var/lib/ccs-gate/built-with'
 n=$(built); push > /dev/null || true
 if [[ $(built) == $((n + 1)) ]]; then ok "a day after the last build: built again"; else logtail; fail "the daily build"; fi
 
-# the repository can't be fetched: built from the last fetch, the site goes on; for FORGE_HOURS
-# (default 6) since the last good fetch, one alert an hour; fetched again, it says so
+# The repository can't be fetched: the site is built from the last fetch and carries on. After
+# FORGE_HOURS (default 6) since the last good fetch, one alert per hour. When fetched again, it says so.
 on web "sed -i 's#=file:///srv/proposals#=file:///nowhere#' /etc/ccs-gate/proposals.conf"
 data 6.0000 | put site-data.json
 if push > /dev/null && [[ $(raised) == 6 ]] && on web "grep -q 'building from the last fetch' /var/log/ccs-gate.log" \
@@ -370,7 +371,7 @@ on web "sed -i 's#=file:///nowhere#=file:///srv/proposals#' /etc/ccs-gate/propos
 data 9.0000 | put site-data.json; push > /dev/null || true
 if [[ $(bot | grep -c 'the web server fetches the proposals repository again @ https://ccs.test' || true) == 1 ]]; then ok "the repository fetched again: says so, once"; else bot; fail "the repository back"; fi
 
-# a build that fails (here the design's proposal part missing): the live site as it was, IRC told
+# A failed build (here the design's proposal part is missing): live site unchanged, IRC told
 on web "mv /etc/ccs-gate/design/$design_v/parts/proposal-wip.html /tmp/"
 data 10.0000 | put site-data.json
 rc=0; push > /dev/null || rc=$?
@@ -381,7 +382,7 @@ on web "mv /tmp/proposal-wip.html /etc/ccs-gate/design/$design_v/parts/"
 push > /dev/null || true
 last=$(raised)
 
-# what the gate needs, missing or not as pinned: every push refused, the live site as it was
+# Something the gate needs is missing or not as pinned: every push refused, live site unchanged
 refused() {   # refused WHY LOG
     rc=0; out=$(push) || rc=$?
     if ((rc == 1)) && [[ $(raised) == "$last" ]] && on web "grep -q 'refused the push: $2' /var/log/ccs-gate.log"; then ok "$1: every push refused"
@@ -409,7 +410,7 @@ on web "cp /tmp/subaddresses.txt.qr.sha256 /etc/ccs-gate/ && : > /etc/ccs-gate/s
 refused "review 11 (I-1): an empty list, pinned" ".*subaddresses.txt has no addresses"
 on web 'cp /tmp/subaddresses.txt /tmp/subaddresses.txt.pin /etc/ccs-gate/'
 
-# what no ccs-push sends: an older backend's tar, over 4 MB: refused, nothing live changed
+# What ccs-push never sends (an older backend's tar, over 4 MB): refused, nothing live changed
 for c in "an older backend's tar|tar" "over 4 MB|big"; do
     IFS='|' read -r what how <<<"$c"
     before=$(on web 'find /var/lib/ccs-data -type f | sort | xargs sha256sum | sha256sum')
@@ -424,11 +425,11 @@ done
 # the key still runs nothing but the gate
 if ! grep -q root <<<"$(on backend "ssh -o BatchMode=yes ccs-data@$web 'cat /etc/passwd' 2>&1")"; then ok "the key runs nothing else"; else fail "the key ran a command"; fi
 
-# two pushes at once: the second waits for the first (one staging folder, one at a time)
+# Two pushes at once: the second waits for the first (one staging folder, one at a time)
 data 40.0000 | put site-data.json
 on backend "(/ccs-push /out/site-data.json /state-a -T -o BatchMode=yes ccs-data@$web > /tmp/a 2>&1; echo \$? >> /tmp/a) & (/ccs-push /out/site-data.json /state-b -T -o BatchMode=yes ccs-data@$web > /tmp/b 2>&1; echo \$? >> /tmp/b) & wait"
 if [[ $(on backend 'tail -n 1 /tmp/a; tail -n 1 /tmp/b') == $'0\n0' && $(raised) == 40 ]]; then ok "two pushes at once both go through, one after the other"; else on backend 'cat /tmp/a /tmp/b'; fail "two pushes at once"; fi
-# a backend that hangs up while the gate builds: the gate still finishes, and alerts what it took off
+# A backend that hangs up while the gate builds: the gate still finishes, and alerts on what it took off
 repo edit w "Pay $fake here."
 data 41.0000 | put site-data.json
 alerts=$(bot | grep -c . || true)
@@ -447,14 +448,14 @@ data 42.0000 | put site-data.json
 if push > /dev/null && [[ $(raised) == 42 ]]; then ok "review 12 (L-1): no alert.conf: built, live"; else logtail; fail "no alert.conf"; fi
 on web 'mv /tmp/alert.conf /etc/ccs-gate/alert.conf'
 
-# the heartbeat: pushes are the backend's; the web server's timer alerts when none arrive
+# The heartbeat: pushes come from the backend; the web server's timer alerts when none arrive
 hb() { docker exec -u "$data" "$name-web" /usr/local/bin/ccs-receive --heartbeat; }
 late() { bot | grep -c 'no push from the backend' || true; }
 push > /dev/null || true
 hb
 if [[ $(late) == 0 ]]; then ok "heartbeat: a recent push, no alert"; else bot; fail "heartbeat after a push"; fi
-# 1 minute, not 15: a CI machine may have been up less than 15 (then the heartbeat waits), and
-# not before it has been up that long either
+# 1 minute, not 15: a CI machine may have been up for less than 15 (and the heartbeat waits until
+# the machine has been up that long)
 on web "echo HEARTBEAT_MINUTES=1 >> /etc/ccs-gate/alert.conf && touch -d @\$((\$(date +%s) - 300)) /var/lib/ccs-gate/last-push"
 on web 'until (($(cut -d. -f1 /proc/uptime) >= 70)); do sleep 5; done'
 hb
