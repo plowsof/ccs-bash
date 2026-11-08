@@ -1,15 +1,16 @@
-# The site, as the web server compose's www serves it (docs/two-machines.md): the files the gate
-# let through (/srv, read-only), over HTTPS at CCS_SITE_HOST, its certificates Caddy's own (ACME,
-# CCS_ACME_EMAIL), and to the onion's Tor through a socket only the two share. No admin API, no
-# server name in a response. The same answers on both: the security headers, the cache rules,
-# /projects, the theme's /dark/ and /light/ copies, the 404 page.
+# The site, served by the web server compose's www (docs/two-machines.md).
+# Serves the files the gate let through (/srv, read-only) over HTTPS at CCS_SITE_HOST, with
+# Caddy's own certificates (ACME, CCS_ACME_EMAIL), and to Tor through a socket only the two share.
+# No admin API, and no server name in responses.
+# Both give the same answers: security headers, cache rules, /projects, the theme's /dark/ and
+# /light/ copies, and the 404 page.
 {
 	admin off
 	email {$CCS_ACME_EMAIL}
 	storage file_system /data
-	# HTTP/1.1 only, headers capped, slow clients cut off (as nginx's defaults): a static site of a
-	# few pages loses nothing, and Go's HTTP/2 server code is never reached (the most of its known
-	# denial-of-service bugs: govulncheck, the vulncheck workflow)
+	# HTTP/1.1 only, headers capped, slow clients cut off (like nginx's defaults). A small static
+	# site loses nothing, and Go's HTTP/2 server code is never reached. That code has most of its
+	# known denial-of-service bugs (see govulncheck, the vulncheck workflow).
 	servers {
 		protocols h1
 		max_header_size 16KB
@@ -20,7 +21,7 @@
 	}
 }
 
-# the security headers, on every answer, the 404 page too; no server name
+# Security headers on every answer, including the 404 page. No server name.
 (ccs-headers) {
 	header {
 		Content-Security-Policy "default-src 'none'; style-src 'self'; img-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'none'"
@@ -36,9 +37,9 @@
 
 (ccs) {
 	root * /srv
-	# a page's address without its /dark or /light, as the browser sent it (still percent-encoded:
-	# a page named with "(" is asked for as %28, and sent back so): where the theme button's ?theme=
-	# sends it. Never one starting // or /\ (another site's address to a browser)
+	# The page's path without /dark or /light, as the browser sent it. It stays percent-encoded
+	# (a page with "(" in its name is requested as %28 and sent back that way). The theme button's
+	# ?theme= redirects there. Never a path starting // or /\, which a browser reads as another site.
 	map {http.request.orig_uri} {ccs_page} {
 		~^/(?:dark|light)(?:\?|$) "/"
 		~^/(?:dark|light)(/(?:[^/?\\][^?]*)?)(?:\?|$) "${1}"
@@ -71,8 +72,8 @@
 	redir @system {ccs_page} 302
 
 	route {
-		# no partial downloads: net/http's Range parsing isn't reached (a denial-of-service bug of
-		# its own), and the site's files are small
+		# No partial downloads: net/http's Range parsing (which had its own denial-of-service bug)
+		# is never reached, and the site's files are small.
 		request_header -Range
 		rewrite /projects /projects.json
 		rewrite /dark/assets/theme.css /assets/theme-dark.css
@@ -82,7 +83,7 @@
 		file_server
 	}
 
-	# nothing there, or a folder without its page: the 404 page, with the same headers
+	# Nothing there, or a folder without its page: serve the 404 page, with the same headers
 	handle_errors 403 404 {
 		import ccs-headers
 		rewrite * /404.html
@@ -100,11 +101,11 @@
 	}
 }
 
-# the onion: Tor (the compose's tor) connects through this socket, in a volume only the two share
+# The onion: the compose's tor connects through this socket, in a volume only the two share
 http:// {
 	bind unix//run/ccs-www/onion.sock|0666
 	import ccs
 }
 
-# sites of this machine's own, if any (another host's ACME challenges, say): one file each
+# This machine's other sites, if any (another host's ACME challenges, say): one file each
 import /etc/ccs-www/sites/*.caddy

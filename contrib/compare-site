@@ -1,10 +1,10 @@
 #!/bin/bash
-# compare-site [OUT [PROPOSALS [LIST]]]: that the web server's build of the site is the backend's.
-# The site's JSON as the web server makes it (lib/site-data.sh: from OUT's
-# site-data.json, the proposals in PROPOSALS and the signed list LIST) must be the backend's own
-# in OUT, byte for byte: then ccs-front-bash builds the same pages from it. Prints "same" or the
-# difference for each file; exits 1 on any difference. Read-only: it writes only to a temporary
-# folder. On the backend, in its image, from the attested checkout:
+# compare-site [OUT [PROPOSALS [LIST]]]: check that the web server builds the same site as the backend.
+# Builds the site's JSON the way the web server does (lib/site-data.sh, from OUT's
+# site-data.json, the proposals in PROPOSALS and the signed list LIST). It must equal the
+# backend's own JSON in OUT byte for byte, so ccs-front-bash builds the same pages from it.
+# Prints "same" or the difference for each file; exits 1 on any difference.
+# Read only: it writes only to a temporary folder. Run on the backend, in its image:
 #   docker run --rm --network none --read-only --tmpfs /tmp -v /var/lib/ccs/out:/var/lib/ccs/out:ro \
 #     -v /var/lib/ccs/proposals:/var/lib/ccs/proposals:ro -v /etc/ccs-front:/etc/ccs-front:ro \
 #     --entrypoint /opt/ccs-bash/contrib/compare-site "$CCS_BASH_IMAGE"
@@ -17,7 +17,7 @@ out=${1:-/var/lib/ccs/out} PROPOSALS_DIR=${2:-/var/lib/ccs/proposals} list=${3:-
 t=$(mktemp -d)
 trap 'rm -rf "$t"' EXIT
 mkdir -p "$t/in" "$t/out" "$t/work"
-# (the backend's files copied first: a run ending meanwhile can't mix two runs' files)
+# Copy the backend's files first, so a run finishing meanwhile can't mix two runs' files
 files=(proposals.json completed-proposals.json projects.json images.json)
 for f in "${files[@]}" site-data.json; do cp "$out/$f" "$t/in/" || exit 1; done
 OUTPUT_DIR=$t/out WORK=$t/work

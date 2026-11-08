@@ -13,9 +13,9 @@ func init() {
 	commands["copy"] = copyCmd
 }
 
-// receive DIR: the backend's push, site-data.json on stdin (contrib/ccs-push), as
-// DIR/site-data.json (the gate's staging folder; nothing sent, the heartbeat: no file); exit 1 and
-// the reason if it refuses it (push.Data)
+// receive DIR: save the backend's push (site-data.json on stdin, from contrib/ccs-push) as
+// DIR/site-data.json, in the gate's staging folder. An empty push (the heartbeat) writes no file.
+// Exits 1 with the reason if refused (push.Data).
 func receiveCmd(args []string) int {
 	if len(args) != 1 {
 		fmt.Fprintln(os.Stderr, "usage: ccs-check receive DIR < site-data.json")
@@ -32,8 +32,8 @@ func receiveCmd(args []string) int {
 	return 0
 }
 
-// copy [--delete] SRC DST: DST made to hold SRC's files (push.Copy), in place of rsync -a
-// [--delete]: staging into the live site after the gate's checks
+// copy [--delete] SRC DST: make DST hold SRC's files (push.Copy), replacing rsync -a [--delete].
+// Copies staging into the live site after the gate's checks.
 func copyCmd(args []string) int {
 	del := len(args) == 3 && args[0] == "--delete"
 	if del {

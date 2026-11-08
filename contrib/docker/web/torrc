@@ -1,8 +1,9 @@
-# The site's onion, as the web server compose's tor runs it (docs/two-machines.md): one onion
-# service, its keys in /var/lib/tor (the host's /var/lib/ccs-tor, the tor account's), its port 80
-# Caddy's socket (www). A single-hop service: the site is public and its address known, so the
-# server's own anonymity buys nothing and three hops fewer make it quicker. No SOCKS port (a
-# single-hop service may not have one), no relaying (built without it).
+# The site's onion, run by the web server compose's tor (docs/two-machines.md).
+# One onion service. Keys in /var/lib/tor (on the host /var/lib/ccs-tor, owned by the tor user).
+# Port 80 goes to Caddy's socket (www).
+# Single-hop: the site is public and its address known, so hiding the server gains nothing,
+# and three fewer hops make it faster. No SOCKS port (a single-hop service may not have one),
+# and no relaying (built without it).
 SocksPort 0
 DataDirectory /var/lib/tor/data
 HiddenServiceDir /var/lib/tor/ccs
