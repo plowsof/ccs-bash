@@ -21,11 +21,12 @@
 #     - Available to pick up
 #   ---                             (or ...)
 #
-# Top-level keys at column 0, once each; others (payouts, ...) are ignored. Jekyll reads the
-# same lines as YAML: anything the two could read differently (multi-line values, block
-# scalars, escapes, anchors, not "key: value") skips the file with the reason. A leading BOM
-# means no frontmatter, for Jekyll too. Tags are only ours (ccs-front ignores them): a tags:
-# we can't read drops the tags, not the file. POSIX awk only (mawk, gawk).
+# Top-level keys start at column 0 and appear once each. Other keys (payouts, ...) are ignored.
+# Jekyll reads the same lines as YAML. Anything the two could read differently skips the file,
+# with the reason: multi-line values, block scalars, escapes, anchors, lines not "key: value".
+# A leading BOM means no frontmatter, as in Jekyll.
+# Tags are ours only (ccs-front ignores them). Unreadable tags drop the tags, not the file.
+# POSIX awk only (mawk, gawk).
 
 BEGIN {
     OFS = "\t"
@@ -123,7 +124,7 @@ function finish(    i, err, amount, name) {
     if (!err && amount !~ /^[0-9]+(\.[0-9]+)?$/) err = "amount is not a number"
     if (!err && milestones == 0) err = "no milestones"
 
-    # it ends up in a link on the site: only plain https links, never javascript: and the like
+    # It becomes a link on the site: only plain https links, never javascript: and the like.
     if (!err && v["gitlab_url"] != "" && v["gitlab_url"] !~ /^https:\/\/[^ "'<>\\]+$/) {
         print "ignoring gitlab_url of " name ": not an https link" > "/dev/stderr"
         v["gitlab_url"] = ""
@@ -133,7 +134,7 @@ function finish(    i, err, amount, name) {
         print "ignoring tags of " name ": " terr > "/dev/stderr"
         tags = ""
     }
-    gsub(/[\001-\037\177]/, "?", err)   # it quotes the file: no terminal escapes in the log
+    gsub(/[\001-\037\177]/, "?", err)   # the message quotes the file: no terminal escapes in the log
     if (err) print "skipping " name ": " err > "/dev/stderr"
     else print name, v["layout"], v["title"], v["author"], ymd(v["date"]), amount, v["gitlab_url"], milestones, done, tags
     file = ""
@@ -149,7 +150,7 @@ FNR == 1 {
 state >= 2 { next }
 { sub(/\r$/, ""); sub(/[ \t]+$/, ""); gsub(/\t/, " ") }
 state == 0 { state = ($0 == "---") ? 1 : 3; next }
-# YAML also ends at "...": stop there too, so nothing after it is read only by ccs-bash.
+# YAML also ends at "...". Stop there too, so ccs-bash never reads lines YAML ignores.
 $0 == "---" || $0 == "..." { state = 2; next }
 
 /^[A-Za-z0-9_-]+:( |$)/ {
@@ -157,9 +158,9 @@ $0 == "---" || $0 == "..." { state = 2; next }
     val = substr($0, index($0, ":") + 1)
     sub(/^ +/, "", val)
     if (key ~ /^(layout|title|author|date|amount|gitlab_url)$/) val = scalar(val)
-    # tags: a list below, or one tag on the line ([] is none; other [a, b] lists aren't read)
+    # tags: a list below, or one tag on the same line. [] means none; other [a, b] lists aren't read.
     else if (key == "tags" && val != "" && val !~ /^\[\]( +#.*)?$/) tag(val)
-    # a key given twice is refused, not "last one wins" (YAML readers disagree on it)
+    # Refuse a key given twice. YAML readers disagree on which one wins.
     if (key in v && dup == "") dup = key
     v[key] = val
     next
@@ -169,9 +170,9 @@ key == "milestones" && /^ *-/ { milestones++ }
 key == "milestones" && /^ *(- )?done: *[^ ]/ { done++ }
 key == "tags" && /^ *- / { s = $0; sub(/^ *- +/, "", s); tag(s); next }
 key == "tags" && /^ / { if (terr == "") terr = "not a list of tags: " substr($0, 1, 40); next }
-# the value of a key we read, continued on the next line: YAML joins the lines
+# A value continued on the next line. YAML joins the lines, so refuse it.
 /^ / && key ~ /^(layout|title|author|date|amount|gitlab_url)$/ { bad("the value of " key " goes on over several lines") }
-# list items at column 0 belong to the key above; anything else isn't "key: value"
+# List items at column 0 belong to the key above. Anything else isn't "key: value".
 /^[^ -]/ || /^-[^ ]/ { bad("line not understood: " substr($0, 1, 40)) }
 
 END { finish() }

@@ -6,13 +6,13 @@ read_proposals() {
     local file i files=() names=() utf8
     for file in "$1"/*.md; do
         [[ -e $file || -L $file ]] || continue # no .md files at all
-        # a directory, fifo or symlink named like a proposal would stop or hang the run
+        # Skip anything that isn't a plain file: a directory, fifo or symlink could hang the run.
         [[ -f $file && ! -L $file ]] || { log "skipping ${file##*/}: not a plain file"; continue; }
         safe_filename "${file##*/}" || { log "skipping ${file##*/}: bad filename"; continue; }
         files+=("$file") names+=("${file##*/}")
     done
-    # Not UTF-8: jq would turn bad bytes into U+FFFD, so two names could become one (and
-    # share an address). Exactly then jq's copy differs from the name.
+    # Skip names that aren't valid UTF-8. jq turns bad bytes into U+FFFD, so two names could
+    # become one and share an address. jq's copy of the name differs exactly in that case.
     if ((${#names[@]})); then
         mapfile -t utf8 < <(printf '%s\n' "${names[@]}" | jq -Rr .)
         for i in "${!names[@]}"; do
@@ -41,18 +41,20 @@ read_proposals() {
         })'
 }
 
-# The state, proposals.csv, one line per proposal seen (as jq's @csv writes it; filenames
-# can have commas), empty = unknown:
+# The state file, proposals.csv, has one line per proposal ever seen, written by jq's @csv
+# (filenames can contain commas). An empty field means unknown.
 #   filename,gitlab_url,subaddr_index,address,funding_required_date[,funded_date]
-# funding_required_date: first seen as fr; funded_date: first seen as fr with its goal raised (the
-# feed's "fully funded"; a row has that column only once it has one); both UTC.
-# During a run it is $WORK/state.json: {"file.md": {gitlab_url, subaddr_index, ...}}.
+# funding_required_date: when first seen in Funding Required (UTC).
+# funded_date: when first seen fully funded (UTC). The column is added only once it is set.
+# During a run the state is $WORK/state.json: {"file.md": {gitlab_url, subaddr_index, ...}}.
 load_state() {
-    # Never recreated: every fr proposal would quietly get a new address. Restore a backup.
+    # Never recreate it: every Funding Required proposal would quietly get a new address.
+    # Restore a backup instead.
     [[ -e $STATE_DIR/proposals.csv ]] \
         || die "no $STATE_DIR/proposals.csv: restore it from a backup, or on a fresh install create it empty"
-    # Match ,field repeatedly on "," + line; a field is "quoted ("" inside)" or up to the
-    # next comma. (The leading comma avoids empty matches, which jq 1.6 and 1.7 differ on.)
+    # Parse CSV: match ",field" repeatedly on "," + line. A field is either quoted ("" for a
+    # quote inside) or runs to the next comma. The leading comma avoids empty matches,
+    # which jq 1.6 and 1.7 handle differently.
     jq -R -s '
         def csvrow: [("," + .) | match(",(\"(?:[^\"]|\"\")*\"|[^,]*)"; "g") | (.captures[0].string // "")
                      | if startswith("\"") then .[1:-1] | gsub("\"\""; "\"") else . end];
