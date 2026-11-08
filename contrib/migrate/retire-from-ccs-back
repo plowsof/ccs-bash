@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# retire-from-ccs-back NAME CONFIG OUT: moving from ccs-back (handover step 2, "Older wallets"),
-# record the donations of proposals whose address no wallet you have claims (an older wallet
-# whose view key is gone), from ccs-back's own deposits table, so their totals don't go down.
+# retire-from-ccs-back NAME CONFIG OUT: when moving from ccs-back (handover step 2, "Older
+# wallets"), record donations to proposals whose address no wallet you have claims (an older
+# wallet whose view key is lost). Uses ccs-back's own deposits table, so their totals don't drop.
 # OUT is export-ccs-back's folder (proposals.csv, ccs-back-deposits.tsv). Run as ccs, after
 # retire-wallet has recorded every wallet you do have, with the update loop paused.
 #   - the proposals: those with an address in ccs-bash's state that CONFIG's wallet doesn't have;
-#   - their deposits: ccs-back's at their subaddress index (an index two of ccs-back's proposals
-#     share can't be told apart: refused, find that wallet's view key instead);
-#   - written as STATE_DIR/retired/NAME.csv, header "wallet ccs-back-database", and those rows'
-#     index and address cleared in proposals.csv (the old file kept beside it).
+#   - their deposits: ccs-back's at their subaddress index. An index shared by two of ccs-back's
+#     proposals can't be split, so it is refused: find that wallet's view key instead;
+#   - writes STATE_DIR/retired/NAME.csv with header "wallet ccs-back-database", and clears those
+#     rows' index and address in proposals.csv (keeping the old file beside it).
 set -euo pipefail
 export LC_ALL=C
 CCS_LIB=$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../../lib" && pwd)
@@ -36,14 +36,14 @@ WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 load_state
 
-# the state's rows with an address the wallet doesn't have: file TAB address. Only the wallet's
-# own answer counts as "not ours": wallet-rpc down, or another wallet open, would otherwise retire
-# the live wallet's subaddresses
+# Print the state's rows whose address the wallet doesn't have: file TAB address.
+# Only the wallet's explicit answer counts as "not ours". Otherwise wallet-rpc being down, or
+# another wallet being open, would retire the live wallet's subaddresses.
 [[ $(rpc get_address '{"account_index": 0}' | jq -r .address) == "$WALLET_ADDRESS" ]] \
     || die "the wallet's main address is not WALLET_ADDRESS from $config (wallet-rpc down, or another wallet?)"
-# a wallet restored from its keys knows only the subaddresses it has made (and its lookahead): a
-# later one of its own would answer "doesn't belong". Made up to the state's highest index first,
-# as every run does (check_wallet_addresses)
+# A wallet restored from keys only knows the subaddresses it has created (plus its lookahead).
+# A later one of its own would answer "doesn't belong". So create them up to the state's
+# highest index first, as every run does (check_wallet_addresses).
 local max have
 max=$(jq '[.[].subaddr_index | numbers] | max // 0' "$WORK/state.json")
 ((max <= 100000)) || die "proposals.csv has subaddress index $max, past any signed list (100000)"
@@ -62,11 +62,11 @@ done < <(jq -r 'to_entries[] | select(.value.address and (.key | endswith(".md")
 n=$(grep -c . "$WORK/unclaimed" || true)
 ((n > 0)) || die "every address in proposals.csv is the wallet's: nothing to record"
 
-# their index in ccs-back's export, and every proposal there at that index
+# Their index in ccs-back's export, and every proposal there at that index
 jq -r -R -s "$csvrows"'
     split("\n") | map(select(. != "") | csvrow) | map(select(.[2] != "" and .[3] != "")) | .[] | [.[2], .[0], .[3]] | @tsv' \
     "$out/proposals.csv" > "$WORK/export"
-# (an index shared with any other export row, the wallet's own or another's, is ambiguous)
+# An index shared with any other export row, this wallet's or another's, is ambiguous
 dup=$(awk -F'\t' 'NR == FNR { want[$2] = 1; next } { n[$1]++; if ($3 in want) mine[$1] = $2 }
     END { for (i in mine) if (n[i] > 1 && shown++ < 3) print " " i ":" mine[i] }' "$WORK/unclaimed" "$WORK/export")
 [[ -z ${dup// /} ]] || die "subaddress index shared by more than one of ccs-back's proposals, its deposits can't be told apart:$dup (that wallet's view key instead: retire-wallet)"
@@ -81,8 +81,8 @@ awk -F'\t' 'NR == FNR { want[$2] = 1; next } ($3 in want) { print $1 "\t" $2 }' 
         ($2 in file) && $4 > 0 { print $4 "," $1 "," $2 "," $3 ",0," file[$2] }
         END { exit bad }' "$WORK/index-file" "$out/ccs-back-deposits.tsv" || die "$out/ccs-back-deposits.tsv: a line that isn't 'tx_id subaddr_index amount block_received'"
 } > "$WORK/retired"
-# read back as a run reads it (lib/wallet.sh retired_totals): a name or number it would refuse
-# would stop every run after this one
+# Read it back the way a run reads it (lib/wallet.sh retired_totals). A name or number it
+# would refuse would stop every run after this one.
 mkdir "$WORK/check" && cp "$WORK/retired" "$WORK/check/$name.csv"
 ( RETIRED_DIR=$WORK/check retired_totals > /dev/null ) 2> "$WORK/check.err" \
     || die "a line a run couldn't read back, nothing written: $(sed 's/ (restore it.*//' "$WORK/check.err")"

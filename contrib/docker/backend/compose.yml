@@ -1,22 +1,23 @@
-# The backend in Docker (docs/docker.md): the update of docs/handover.md, step 9, as one service
-# a stage (contrib/docker/backend/step), each with only its own user, network and folders, and
-# monero-wallet-rpc. No service has the Docker socket: they take turns through the run folder.
-# The images by ID, never pulled: ccs-bash's as its release and ccs-sigs attest it, the wallet's
-# as built here (wallet-rpc/Dockerfile). The host's accounts,
-# folders, config and keys: docs/setup.md.
-# Its settings: .env beside this file (env.example). A host whose monerod listens on its
-# 127.0.0.1 only: compose.host.yml as well.
+# The backend in Docker (docs/docker.md). The update loop of docs/handover.md, step 9, runs as
+# one service per stage (contrib/docker/backend/step), each with only its own user, network and
+# folders, plus monero-wallet-rpc. No service has the Docker socket; they take turns through
+# the run folder.
+# Images are used by ID and never pulled. ccs-bash's must match its release and ccs-sigs.
+# The wallet's is built here (wallet-rpc/Dockerfile).
+# Host accounts, folders, config and keys: docs/setup.md.
+# Settings: .env beside this file (see env.example). If monerod listens on 127.0.0.1 only,
+# add compose.host.yml as well.
 #
 #   docker compose up -d          start (after "docker compose --profile init run --rm init" once)
-#   journalctl -t ccs -f          every stage's output, in order (ccs log: its errors)
+#   journalctl -t ccs -f          every stage's output, in order (ccs log shows the errors)
 #   docker compose ps             each service's health
 #   docker compose down           stop
 
 x-hardened: &hardened
   read_only: true
-  # /tmp is memory: sized, as each container's memory and processes are, so that one fed a huge
-  # answer (the web server's to the watch, a feed's, the forge's) can't take the machine's memory
-  # from monerod and the wallet (each uses tens of MB; the watch's copy of the site, a few)
+  # /tmp is memory. It is limited, like each container's memory and processes, so a container
+  # fed a huge answer (from the web server, a feed or the forge) can't starve monerod and the
+  # wallet. Each stage uses tens of MB; the watch's copy of the site a few.
   tmpfs: ["/tmp:size=256m"]
   mem_limit: 1g
   pids_limit: 256
@@ -25,14 +26,14 @@ x-hardened: &hardened
   restart: unless-stopped
   pull_policy: never
   init: true
-  # each line to journald, under one name: a run's lines in order, whichever stage said them
+  # Every line goes to journald under one name, so a run's lines are in order whatever the stage
   logging:
     driver: journald
     options:
       tag: ccs
 
 x-run: &run
-  # the run folder: each stage's "done", "status", "at", pipes
+  # The run folder: each stage's "done", "status", "at" and pipes
   type: bind
   source: ${CCS_RUN_DIR:-/var/lib/ccs/run}
   target: /run/ccs
@@ -46,16 +47,16 @@ x-health: &health
 x-step: &step /opt/ccs-bash/contrib/docker/backend/step
 
 networks:
-  # ccs-bash and the wallet, and no way out
+  # ccs-bash and the wallet only, with no way out
   wallet:
     internal: true
-  # the wallet's way out: to monerod (wallet-rpc.conf's daemon-address)
+  # The wallet's way out: to monerod (wallet-rpc.conf's daemon-address)
   monerod: {}
-  # the stages' way out: the forge, the web server, the backup machine
+  # The stages' way out: the forge, the web server, the backup machine
   default: {}
 
 services:
-  # once, as root: the run folder, a folder for each stage owned by its user
+  # Run once, as root: creates the run folder and a folder per stage, owned by its user
   init:
     image: ${CCS_BASH_IMAGE:?the attested ccs-bash image ID}
     pull_policy: never
@@ -77,21 +78,21 @@ services:
   wallet-rpc:
     <<: *hardened
     image: ${WALLET_IMAGE:?the wallet-rpc image ID}
-    # (more room: a wallet's cache grows with every payment, and a rescan holds more)
+    # More room: a wallet's cache grows with every payment, and a rescan needs more
     mem_limit: 4g
-    # its RPC on the wallet network only (ccs-bash), its login in wallet-rpc.conf; out to monerod
+    # RPC on the wallet network only (for ccs-bash), login in wallet-rpc.conf; out to monerod
     networks: [wallet, monerod]
-    # a monerod on this machine: daemon-address=host.docker.internal:18089, its restricted RPC
-    # listening where containers reach it (docs/handover.md, 1)
+    # For a monerod on this machine: daemon-address=host.docker.internal:18089, with its
+    # restricted RPC listening where containers can reach it (docs/handover.md, 1)
     extra_hosts: ["host.docker.internal:host-gateway"]
     user: "${WALLET_UID:?}"
     environment:
-      # its shared ring database (~/.shared-ringdb) beside the wallet, the rest is read-only
+      # The shared ring database (~/.shared-ringdb) is writable beside the wallet; the rest is read-only
       HOME: ${WALLET_DIR:-/var/lib/ccs/wallet}
     command: ["--config-file", "/etc/ccs-wallet/wallet-rpc.conf", "--non-interactive",
               "--rpc-bind-ip", "0.0.0.0", "--confirm-external-bind",
               "--tx-notify", "/usr/local/bin/ccs-notify %s"]
-    # answering: its RPC port open (bash's /dev/tcp; the image has no curl)
+    # Healthy when its RPC port is open (bash's /dev/tcp; the image has no curl)
     healthcheck:
       test: ["CMD", "bash", "-c", ": > /dev/tcp/127.0.0.1/${WALLET_PORT:-18082}"]
       interval: 10s
@@ -103,8 +104,8 @@ services:
       - ${WALLET_DIR:-/var/lib/ccs/wallet}:${WALLET_DIR:-/var/lib/ccs/wallet}
       - *run
 
-  # a retired wallet's view-only copy, synced, for retire-wallet --again only (docs/handover.md,
-  # "Retiring a wallet"): its own files and config, no tx-notify; started by hand, never by "up"
+  # A synced view-only copy of a retired wallet, only for retire-wallet --again (docs/handover.md,
+  # "Retiring a wallet"). Own files and config, no tx-notify. Started by hand, never by "up".
   retired-wallet-rpc:
     <<: *hardened
     image: ${WALLET_IMAGE}
@@ -130,7 +131,7 @@ services:
   pull:
     <<: *hardened
     image: ${CCS_BASH_IMAGE}
-    # out to the forge (the default network: out, nothing in; no egress filter)
+    # Out to the forge (the default network: outgoing only; no egress filter)
     user: "${GIT_UID}"
     entrypoint: [*step, "pull"]
     environment: &every
@@ -145,7 +146,7 @@ services:
   ccs-bash:
     <<: *hardened
     image: ${CCS_BASH_IMAGE}
-    # the wallet (ccs.conf's RPC_URL: http://wallet-rpc:18082/json_rpc, its port wallet-rpc.conf's), and out to the forge's API
+    # The wallet (ccs.conf's RPC_URL: http://wallet-rpc:18082/json_rpc, port from wallet-rpc.conf), and out to the forge's API
     networks: [wallet, default]
     user: "${CCS_UID}"
     entrypoint: [*step, "ccs-bash"]
@@ -164,8 +165,8 @@ services:
   backup:
     <<: *hardened
     image: ${CCS_BASH_IMAGE}
-    # its own user (its key, its sums: no other stage's); out over ssh (no egress filter: any
-    # address, like every stage with a way out)
+    # Its own user, so no other stage can read its key or sums. Out over ssh (no egress
+    # filter: any address, like every stage with a way out).
     user: "${SEND_UID}"
     entrypoint: [*step, "backup"]
     environment:
@@ -182,7 +183,7 @@ services:
   push:
     <<: *hardened
     image: ${CCS_BASH_IMAGE}
-    # its own user (its key, each run's result); out over ssh
+    # Its own user, for its key and each run's result. Out over ssh.
     user: "${PUSH_UID}"
     entrypoint: [*step, "push"]
     environment:
@@ -192,20 +193,20 @@ services:
     healthcheck: {<<: *health, test: ["CMD", *step, "health", "push"]}
     volumes:
       - /etc/passwd:/etc/passwd:ro
-      # the push key and the web server's host key (id_ed25519, known_hosts; ccs-push, 600)
+      # The push key and the web server's host key (id_ed25519, known_hosts; owned by ccs-push, 600)
       - ${CCS_PUSH_KEYS:-/etc/ccs/push}:/etc/ccs/push:ro
-      # site-data.json (ccs-bash's), what is pushed
+      # site-data.json from ccs-bash: what is pushed
       - /var/lib/ccs/out:/var/lib/ccs/out:ro
       - *run
 
-  # ccs-watch: after each run, and between pushes at random times (out to the web server, and
-  # to alert.conf's ALERT_URL and WATCH_PROXY)
+  # ccs-watch: after each run, and at random times between pushes. Out to the web server, and
+  # to alert.conf's ALERT_URL and WATCH_PROXY.
   watch:
     <<: *hardened
     image: ${CCS_BASH_IMAGE}
-    # its own user: its state and the results it counts out of the other stages' reach
+    # Its own user, so other stages can't touch its state or the results it counts
     user: "${WATCH_UID}"
-    # a proxy on this machine (Tor, ssh -D): WATCH_PROXY=socks5h://host.docker.internal:9050
+    # For a proxy on this machine (Tor, ssh -D): WATCH_PROXY=socks5h://host.docker.internal:9050
     extra_hosts: ["host.docker.internal:host-gateway"]
     entrypoint: [*step, "watch", "${CCS_SITE_URL:?the site's address, https://...}"]
     environment:
@@ -214,13 +215,13 @@ services:
     healthcheck: {<<: *health, test: ["CMD", *step, "health", "watch"]}
     volumes:
       - ${CCS_ALERT_CONF:-/etc/ccs/alert.conf}:/etc/ccs/alert.conf:ro
-      # the signed list and its QR codes (alert.conf's SUBADDRESSES), what the live pages'
-      # addresses are checked against, with ccs-bash's projects.json (each proposal's own); the
-      # design's sums (design.sha256) and the proposals checkout, what their images are
+      # The signed list and its QR codes (alert.conf's SUBADDRESSES) and ccs-bash's projects.json:
+      # what the live pages' addresses are checked against. The design's sums (design.sha256)
+      # and the proposals checkout: what their images are checked against.
       - /etc/ccs-front:/etc/ccs-front:ro
       - /var/lib/ccs/out:/var/lib/ccs/out:ro
       - /var/lib/ccs/proposals:/var/lib/ccs/proposals:ro
-      # forge-ok, read; its own state, written (ccs-watch's)
+      # forge-ok, read only; its own state, writable
       - /var/lib/ccs/state:/var/lib/ccs/state:ro
       - ${CCS_WATCH_DIR:-/var/lib/ccs/watch}:/var/lib/ccs/watch
       - ${CCS_PULL_OK:-/var/lib/ccs/pull-ok}:/var/lib/ccs/pull-ok:ro

@@ -1,25 +1,26 @@
 #!/usr/bin/env bash
-# compare-deposits CCS_BACK_DEPOSITS DEPOSITS_CSV: moving from ccs-back (handover step 2), are the
-# donations the wallet gives ccs-bash the ones ccs-back recorded? CCS_BACK_DEPOSITS is ccs-back's
-# deposits table, exported as tab-separated "tx_id subaddr_index amount block_received":
+# compare-deposits CCS_BACK_DEPOSITS DEPOSITS_CSV: when moving from ccs-back (handover step 2),
+# check that the donations the wallet gives ccs-bash match what ccs-back recorded.
+# CCS_BACK_DEPOSITS is ccs-back's deposits table, exported as tab-separated
+# "tx_id subaddr_index amount block_received":
 #   mysql -B -N -e "SELECT tx_id, subaddr_index, amount, block_received FROM deposits" <ccs_db> > ccs-back-deposits.tsv
-# DEPOSITS_CSV is ccs-bash's STATE_DIR/deposits.csv after its first run. Only blocks up to its
-# "final" height are compared (newer ones aren't in it yet), subaddresses 1 and up (as ccs-bash
-# counts them). It prints the differences and the totals per subaddress both ways, and exits 1 if
-# ccs-back has a deposit the wallet doesn't, or another amount: the wallet knows less than ccs-back
-# did (restored with a restore height too late, a lookahead too small, not synced), so ccs-bash's
-# totals would be lower. Deposits only the wallet has are listed with their likely reason. Amounts
-# in atomic units, summed in bash (exact).
+# DEPOSITS_CSV is ccs-bash's STATE_DIR/deposits.csv after its first run.
+# Compares only blocks up to its "final" height (newer ones aren't in it yet), and subaddresses
+# 1 and up (as ccs-bash counts them). Prints the differences and the totals per subaddress.
+# Exits 1 if ccs-back has a deposit the wallet doesn't, or a different amount. That means the
+# wallet knows less than ccs-back did (restore height too late, lookahead too small, not
+# synced), and ccs-bash's totals would be lower. Deposits only the wallet has are listed with
+# their likely reason. Amounts are atomic units, summed exactly in bash.
 set -euo pipefail
 export LC_ALL=C
 old=${1:?CCS_BACK_DEPOSITS (tab-separated: tx_id subaddr_index amount block_received)} new=${2:?DEPOSITS_CSV}
-# (numbers as ccs-bash reads them: no leading zero, at most 18 digits; bash wraps past 2^63)
+# Numbers as ccs-bash reads them: no leading zero, at most 18 digits (bash wraps past 2^63)
 n='(0|[1-9][0-9]{0,17})'
 head -n 1 "$new" | grep -qE "^# final $n checked $n\$" || { echo "$new: not a deposits.csv" >&2; exit 2; }
 H=$(head -n 1 "$new" | cut -d' ' -f3)
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-# "txid,subaddress amount block unlock" lines, sorted, of the deposits both sides consider final
+# Print sorted "txid,subaddress amount block unlock" lines for deposits both sides consider final
 awk -F '\t' -v h="$H" -v bad="$tmp/bad" '
     NF != 4 || $1 !~ /^[0-9a-f]+$/ || length($1) != 64 || $2 !~ /^[0-9]+$/ || $3 !~ /^[0-9]+$/ || $4 !~ /^[0-9]+$/ { print NR ": " $0 > bad; next }
     $4 > top { top = $4 }
@@ -28,8 +29,8 @@ awk -F '\t' -v h="$H" -v bad="$tmp/bad" '
     { print $1 "," $2 " " $3 " " $4 " -" }
     END { print zero + 0 > "'"$tmp/zero"'"; print later + 0 > "'"$tmp/later"'"; print top + 0 > "'"$tmp/top"'" }' "$old" | sort > "$tmp/old"
 if [[ -s $tmp/bad ]]; then echo "$old: lines that aren't 'tx_id subaddr_index amount block_received' (tab-separated):" >&2; head -n 5 "$tmp/bad" >&2; exit 2; fi
-# deposits.csv is written by ccs-bash's account, and this runs as root: every line checked before
-# any of it is used (bash arithmetic would run a command hidden in a value like a[$(cmd)])
+# deposits.csv is written by ccs-bash's account and this runs as root, so check every line
+# before using any of it. Bash arithmetic would run a command hidden in a value like a[$(cmd)].
 if grep -qvE "^$n,[0-9a-f]{64},$n,$n,$n\$" < <(tail -n +2 "$new"); then
     echo "$new: a line that isn't 'height,txid,subaddress,amount,unlock_time' (digits, a 64-hex txid):" >&2
     tail -n +2 "$new" | grep -vE "^$n,[0-9a-f]{64},$n,$n,$n\$" | head -n 3 | cut -c1-120 >&2
@@ -58,7 +59,7 @@ if [[ -s $tmp/differ ]]; then
 fi
 if [[ -s $tmp/only-new ]]; then
     echo; echo "$(wc -l < "$tmp/only-new") deposit(s) only the wallet has (block, txid, subaddress, amount, why likely):"
-    # why, by its block against ccs-back's newest recorded deposit (its scan looked from 50 below it)
+    # The likely reason, from its block versus ccs-back's newest deposit (ccs-back scanned from 50 below it)
     join -t' ' -j1 "$tmp/only-new" "$tmp/new" | awk -v top="$(cat "$tmp/top")" '{ split($1, k, ",")
         if ($4 != "0") why = "time-locked: ccs-back skipped it while locked"
         else if ($3 > top) why = "after ccs-back'"'"'s newest recorded deposit (block " top "): it had stopped, or not caught up"
@@ -66,7 +67,7 @@ if [[ -s $tmp/only-new ]]; then
         else { why = "WITHIN ccs-back'"'"'s scan window: it should have seen it, look why"; odd = 1 }
         print "  " $3 " " k[1] " " k[2] " " $2 "  " why }' | sort -n | head -n 20
 fi
-# the totals per subaddress, both ways (bash: exact)
+# Totals per subaddress on both sides (exact, in bash)
 declare -A a=() b=()
 while read -r k amount _; do i=${k#*,}; a[$i]=$((${a[$i]:-0} + amount)); done < "$tmp/old"
 while read -r k amount _; do i=${k#*,}; b[$i]=$((${b[$i]:-0} + amount)); done < "$tmp/new"

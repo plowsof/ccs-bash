@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
-# ccs-push DATA STATE SSH_ARG...: site-data.json (DATA, ccs-bash's) to the web server's gate
-# (docs/two-machines.md), as it is on ssh's stdin: `ssh SSH_ARG... receive < site-data.json`, the
-# last SSH_ARG the push account (ccs-data@<web server>). The gate takes it (ccs-check receive),
-# checks the data and builds the site from it; it exits 0, or 1 (refused or held back), and says
-# "took <sha256>" when the site-data.json sent is the live site's.
-#   - STATE/accepted: the sum of the site-data.json the gate said it took (review 12's I-3: exit 0
-#     alone isn't that: a gate answering 0 without taking it would stop every push but the
-#     day's full one; it fails the push instead, which the run's result shows). The same one isn't sent
-#     again (the push is then nothing: still the heartbeat), but once a day (STATE/full: a day at
-#     most to mend whatever the gate has that this doesn't know).
-# Exits as the push did (ssh's: 255 when it couldn't connect). Needs bash, sha256sum and ssh.
+# ccs-push DATA STATE SSH_ARG...: send site-data.json (DATA) to the web server's gate.
+# See docs/two-machines.md. It runs `ssh SSH_ARG... receive < site-data.json`.
+# The last SSH_ARG is the push account (ccs-data@<web server>).
+# The gate (ccs-check receive) checks the data and builds the site from it. It exits 0, or 1 if
+# it refused or held something back. It prints "took <sha256>" when the file it got is now live.
+#
+# STATE/accepted holds the sum of the last file the gate said it took. Exit 0 alone is not
+# enough: a gate that answers 0 without taking the file fails the push, so the run shows it.
+# An unchanged file is not sent again; the push then sends nothing, which still works as the
+# heartbeat. Once a day the file is sent anyway (STATE/full), to repair anything the gate lost.
+#
+# Exits with ssh's status (255 if it couldn't connect). Needs bash, sha256sum and ssh.
 set -euo pipefail
 export LC_ALL=C
 data=${1:?DATA} state=${2:?STATE}
