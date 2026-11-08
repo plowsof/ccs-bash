@@ -1,63 +1,66 @@
 #!/usr/bin/env bash
-# ccs-watch SITE_URL OUT [CONF]: the backend watching the web server. After each run, and between
-# runs at random times (ccs-watch.timer, docs/handover.md), fetch the pages where donations are
-# asked for (home, Funding Required, Donate, Verify, every funding-required proposal), and some
-# others at random, from SITE_URL as a visitor's browser would, and check their addresses: every
-# address on them (95 or 106 base58 characters, as text or link) is one of the wallet's signed
-# list (SUBADDRESSES) or allowed (WATCH_ALLOWED: the General Fund), read as the gate reads them
-# with ccs-check (in the ccs-bash image: entities, groups, letters drawn as an address's, and a
-# bidi control fails a page; without it, 95 or 106 base58 characters as text or link); each
-# funding-required proposal's donation box is its own address, as ccs-bash gave it
-# (OUT/projects.json), and its one image the QR code of that address, the list's own file
-# (SUBADDRESSES.qr/). A page that fails on three fetches
-# alerts, the second time it is seen within a day. Also a page that doesn't exist (it must answer
-# 404) and, with the themes, the theme button's redirect. The web server builds the pages itself:
-# what they say is its gate's to check; what this sees is a web server serving a visitor an
-# address that isn't the wallet's.
+# ccs-watch SITE_URL OUT [CONF]: the backend checks what the web server actually serves.
+# Runs after each run, and at random times between runs (ccs-watch.timer, docs/handover.md).
+# Fetches from SITE_URL, as a visitor's browser would: the pages that ask for donations (home,
+# Funding Required, Donate, Verify, every Funding Required proposal) and some others at random.
+# Checks on each page:
+# - Every address on it is on the wallet's signed list (SUBADDRESSES) or allowed
+#   (WATCH_ALLOWED: the General Fund). Addresses are found the way the gate finds them, with
+#   ccs-check: entities, groups, look-alike letters; a bidi control fails the page. Without
+#   ccs-check: 95 or 106 base58 characters as text or link.
+# - A Funding Required proposal's donation box shows its own address (OUT/projects.json), and
+#   its only image is that address's QR code from the list (SUBADDRESSES.qr/).
+# - Every image is a file we know byte for byte.
+# A page that fails three fetches in a row alerts the second time this happens within a day.
+# Also checked: a page that doesn't exist must answer 404, and the theme button must redirect
+# correctly. The web server's gate checks what the pages say. This catches a web server that
+# serves visitors an address that isn't the wallet's.
 # CONF (default /etc/ccs/alert.conf, root-owned, not in any repository):
-#   ALERT_URL=https://bot.example/simple?channel=%23ccs   POSTed the message as plain text
+#   ALERT_URL=https://bot.example/simple?channel=%23ccs   POST the message here as plain text
 #                                                         (CptHook's simple module, ntfy, ...)
-#   ALERT_TARGET=#channel  ALERT_PASSWORD=...             instead, wmb's /directedMessage JSON
+#   ALERT_TARGET=#channel  ALERT_PASSWORD=...             or send wmb's /directedMessage JSON
 #                                                         (ALERT_URL=http://127.0.0.1:8081/directedMessage)
-#   WATCH_PROXY=socks5h://127.0.0.1:9050                  recommended: fetch through a proxy, or
-#                                                         several (space-separated), one picked at
-#                                                         random for each fetch: Tor and a clearnet
-#                                                         one elsewhere (ssh -D), so the web server
-#                                                         can't tell the watcher by its address
-#   WATCH_THEMES=1                                        also /dark/ and /light/ (the theme lines
-#                                                         in docs/two-machines.md): each page under
-#                                                         one of the three, at random
-#   WATCH_SAMPLE=10                                       how many of the other proposals' pages to
-#                                                         check too, at random each run (default 10)
+#   WATCH_PROXY=socks5h://127.0.0.1:9050                  recommended: fetch through a proxy.
+#                                                         Several (space-separated) are picked at
+#                                                         random per fetch, e.g. Tor and an ssh -D
+#                                                         elsewhere, so the web server can't tell
+#                                                         the watcher by its IP address
+#   WATCH_THEMES=1                                        also fetch under /dark/ and /light/
+#                                                         (see docs/two-machines.md), one of the
+#                                                         three at random per page
+#   WATCH_SAMPLE=10                                       how many other proposal pages to check,
+#                                                         picked at random each run (default 10)
 #   WATCH_FIREFOX_ESR=140 WATCH_FIREFOX=144 WATCH_CHROME=141
-#                                                         optional: the browsers' current versions
-#                                                         (Tor Browser's Firefox ESR, Firefox,
-#                                                         Chrome): one asked as, at random each
-#                                                         run; a version no one runs is a tell
-#   SUBADDRESSES=/etc/ccs-front/subaddresses.txt          the signed list (the default), its QR
-#                                                         codes in subaddresses.txt.qr/ beside it
-#   WATCH_ALLOWED=888tNk...                               the other addresses a page may show,
+#                                                         optional: current browser versions (Tor
+#                                                         Browser's Firefox ESR, Firefox, Chrome).
+#                                                         Each run poses as one at random. An
+#                                                         outdated version would give the watcher away
+#   SUBADDRESSES=/etc/ccs-front/subaddresses.txt          the signed list (default). Its QR codes
+#                                                         are in subaddresses.txt.qr/ beside it
+#   WATCH_ALLOWED=888tNk...                               other addresses a page may show,
 #                                                         space-separated (default: the General Fund)
-#   WATCH_DESIGN_SUMS=/etc/ccs-front/design.sha256        the design release's files' sums
-#                                                         (sha256sum's lines, ./assets/...): what
-#                                                         the pages' images under assets/ must be
-#   WATCH_PROPOSALS=/var/lib/ccs/proposals                the proposals checkout: what a
-#                                                         proposal's image (images/...) must be
-#   FORGE_HOURS=6                                         optional: how long GitLab or Forgejo may
-#                                                         be down before --run alerts (default 6)
+#   WATCH_DESIGN_SUMS=/etc/ccs-front/design.sha256        sums of the design release's files
+#                                                         (sha256sum lines, ./assets/...). Images
+#                                                         under assets/ must match one
+#   WATCH_PROPOSALS=/var/lib/ccs/proposals                the proposals checkout. A proposal's
+#                                                         image (images/...) must match its file
+#   FORGE_HOURS=6                                         optional: hours GitLab or Forgejo may be
+#                                                         down before --run alerts (default 6)
 #   ALERT_PREFIX=[CCS-watch]                              optional: how messages start
 #   ALERT_PLAIN=1                                         optional: no IRC colours (for ntfy and the like)
-# One alert per problem an hour; "unreachable" after 3 runs in a row. Logs to stderr.
+# At most one alert per problem per hour. "unreachable" alerts after 3 failed runs in a row.
+# Logs to stderr.
 #
-# ccs-watch --run RESULT [CONF]: ccs-bash-update tells it how the whole run went, "ok" or the
-# steps that failed ("ccs-bash", "the push", ...). The page check above only runs after a good
-# push, so it can't see a backend that has stopped: this does. Three failed runs in a row (about
-# six minutes; one or two are a blip) alert, once an hour while it lasts; the first good run
-# after that says so. A GitLab or Forgejo outage isn't a failed run (ccs-bash keeps the old data),
-# but one that lasts alerts: no good pull of the proposals (/var/lib/ccs/pull-ok, which
-# ccs-bash-update touches after one) or no answer from its API (ccs-bash's STATE_DIR/forge-ok) for
-# FORGE_HOURS (CONF, default 6), and new merged proposals and Ideas aren't reaching the site. Once
-# an hour while it lasts, and a line when both answer again.
+# ccs-watch --run RESULT [CONF]: ccs-bash-update reports how a whole run went: "ok", or the steps
+# that failed ("ccs-bash", "the push", ...).
+# The page check only runs after a good push, so it can't notice a backend that has stopped.
+# This does: three failed runs in a row (about six minutes; one or two are a blip) alert,
+# once an hour while it lasts. The first good run after that says so.
+# A GitLab or Forgejo outage is not a failed run, since ccs-bash keeps the old data. But a long
+# one alerts: no good pull of the proposals (/var/lib/ccs/pull-ok, touched by ccs-bash-update)
+# or no answer from the API (ccs-bash's STATE_DIR/forge-ok) for FORGE_HOURS (default 6).
+# Then new merged proposals and ideas aren't reaching the site. It alerts once an hour while it
+# lasts, and says so when both answer again.
 set -euo pipefail
 # ccs-watch --test SITE_URL [CONF]: send one test message, to check ALERT_URL works
 test_only=''
@@ -77,19 +80,19 @@ WATCH_DESIGN_SUMS='' WATCH_PROPOSALS=''
 WATCH_FIREFOX_ESR='' WATCH_FIREFOX='' WATCH_CHROME='' WATCH_ALLOWED='' WATCH_SAMPLE=${WATCH_SAMPLE:-}
 keys='ALERT_URL|WATCH_PROXY|WATCH_THEMES|SUBADDRESSES|ALERT_PREFIX|ALERT_TARGET|ALERT_PASSWORD|ALERT_PLAIN|FORGE_HOURS|WATCH_FIREFOX_ESR|WATCH_FIREFOX|WATCH_CHROME|WATCH_ALLOWED|WATCH_SAMPLE|WATCH_DESIGN_SUMS|WATCH_PROPOSALS'
 if [[ -f $conf ]]; then
-    # only these keys, KEY=value lines; nothing in it is run
+    # Only these keys, as KEY=value lines. Nothing in the file is run.
     while IFS='=' read -r k v; do
         [[ $k =~ ^($keys)$ ]] && printf -v "$k" '%s' "$v"
     done < <(grep -E "^($keys)=" "$conf")
 fi
-# IRC colours as CptHook's GitLab messages have them: the [CCS-watch] tag light blue (12), a
-# bad address red (04); none with ALERT_PLAIN
+# IRC colours like CptHook's GitLab messages: the [CCS-watch] tag light blue (12), a bad
+# address red (04). None with ALERT_PLAIN.
 if [[ $ALERT_PLAIN ]]; then blue='' red='' off=''; else blue=$'\x0312' red=$'\x0304' off=$'\x03'; fi
 ALERT_PREFIX=${ALERT_PREFIX:-"[${blue}CCS-watch${off}]"}
 [[ $test_only ]] || mkdir -p "$state"
 log() { printf '%s ccs-watch: %s\n' "$(date -u '+%F %T')" "$*" | sed 's/\x03[0-9]*//g' >&2; }   # no IRC colours in the log
 
-# alert KEY MESSAGE: post MESSAGE (to the log always), at most once an hour for the same KEY
+# alert KEY MESSAGE: post MESSAGE, at most once an hour per KEY. Always logs it.
 alert() {
     local stamp=$state/alert-${1//[^A-Za-z0-9._-]/_}
     log "ALERT: $2"
@@ -99,8 +102,8 @@ alert() {
     send "$ALERT_PREFIX $2" || log "could not send the alert to ALERT_URL"
 }
 
-# send MESSAGE: to ALERT_URL, as wmb's JSON when ALERT_TARGET is set (the password goes in the
-# body, on stdin: never on a command line), else as plain text
+# send MESSAGE: post to ALERT_URL. As wmb's JSON when ALERT_TARGET is set, else plain text.
+# The password goes in the body, on stdin, never on a command line.
 send() {
     if [[ $ALERT_TARGET ]]; then
         jq -n --arg t "$ALERT_TARGET" --arg m "$1" --arg p "$ALERT_PASSWORD" '{Target: $t, IncomingMessage: {Message: $m, Password: $p}}' \
@@ -110,21 +113,23 @@ send() {
     fi
 }
 
-# fetch URL FILE: only a whole answer counts: HTTP 200, not empty, within 60s (curl also fails a
-# body cut short of its Content-Length). 1 if nothing answered; 3 if the web server answered
-# something else (its status in $code, a redirect's target in $location): a page that keeps doing
-# that is an alert (below), as a web server sending visitors elsewhere would. Never a "differs".
-# Asked for as a visitor's browser asks, one of three for the whole run, at random: Tor Browser
-# (its Firefox ESR), Firefox or Chrome, each with its own user agent and the headers it sends, a
-# page as a page (Sec-Fetch-Dest: document...) and a stylesheet, font or image as one, compressed
-# as it compresses (what this curl can undo of it), through one of the proxies at random: a web
-# server serving the watcher the right pages and visitors others must first tell it apart from
-# them, and a rule for all but one browser is seen too. A page is asked for as a visitor arrives
-# at it, at random: typed in or from a bookmark (Sec-Fetch-Site: none), a click on the site itself
-# (same-origin: from Funding Required, say) or on another (cross-site: getmonero.org's link); never
-# only one way, or a web server could change the page for the others. No Referer: the site's
-# Referrer-Policy (no-referrer) has a browser send none to it either.
-# Its TLS handshake is still curl's, which a web server can tell from a browser's.
+# fetch URL FILE: fetch URL into FILE. Only a complete answer counts: HTTP 200, not empty,
+# within 60s. (curl also fails a body shorter than its Content-Length.)
+# Returns 1 if nothing answered. Returns 3 if the server answered something else, with the
+# status in $code and any redirect target in $location. A page that keeps doing that alerts
+# below, like a server sending visitors elsewhere. It never counts as a wrong page.
+#
+# Requests look like a real visitor's. Each run picks one browser at random: Tor Browser (its
+# Firefox ESR), Firefox or Chrome, with its user agent and headers. Pages are asked for as pages
+# (Sec-Fetch-Dest: document...), stylesheets, fonts and images as those, with the browser's
+# compression (as far as curl can decode it). Each fetch goes through a random proxy.
+# So a server that serves the watcher good pages and visitors bad ones must first tell them
+# apart. A rule that targets all but one browser gets seen too.
+# Each page is reached a random way: typed in or bookmarked (Sec-Fetch-Site: none), a click on
+# the site (same-origin), or a click on another site (cross-site, like getmonero.org's link).
+# Never only one way, or a server could change the page for the others.
+# No Referer: the site's Referrer-Policy (no-referrer) makes browsers send none either.
+# The TLS handshake is still curl's, which a server can tell apart from a browser's.
 read -ra proxies <<<"$WATCH_PROXY"
 v() { [[ $1 =~ ^[1-9][0-9]{1,3}$ ]] && echo "$1" || echo "$2"; }
 esr=$(v "$WATCH_FIREFOX_ESR" 140) firefox=$(v "$WATCH_FIREFOX" 144) chrome=$(v "$WATCH_CHROME" 141)
@@ -161,9 +166,9 @@ fetch() {
                 -H 'Sec-Fetch-Dest: document' -H 'Sec-Fetch-Mode: navigate' -H "Sec-Fetch-Site: ${from[RANDOM % 3]}" -H 'Sec-Fetch-User: ?1' -H 'Priority: u=0, i') ;;
         esac
     fi
-    # (16 MB at most, as received or once decompressed: the site's largest file is a few hundred
-    # KB, and a web server's endless or compressed answer would otherwise fill /tmp, which is memory;
-    # one over that is an answer, but not the page: 3, as a wrong status is)
+    # 16 MB at most, received or decompressed. The site's largest file is a few hundred KB.
+    # An endless or compressed answer would otherwise fill /tmp, which is memory.
+    # A bigger answer returns 3, like a wrong status.
     out=$(curl -sS --max-time 60 --max-filesize "${WATCH_MAX_BYTES:-16777216}" ${proxy:+--proxy "$proxy"} --compressed -A "$ua" -H "Accept-Language: $lang" \
         -H "Accept-Encoding: $enc" "${kind[@]}" -o "$2" -w '%{http_code}\t%{redirect_url}' "$1" 2> /dev/null) || rc=$?
     if ((rc == 63)); then code='with more than 16 MB' location=''; : > "$2"; return 3; fi
@@ -173,9 +178,10 @@ fetch() {
     return 1
 }
 
-# sighted FILE...: 0 if any of these marks a difference seen within the last 24 hours (the second
-# sighting: alert); else 1, the first, marked now. A run that sees no difference doesn't clear it:
-# a web server showing its own page only on every other push is still seen twice.
+# sighted FILE...: return 0 if any of these marks a problem seen in the last 24 hours (the second
+# sighting, so alert). Otherwise mark it now and return 1.
+# A run that sees no problem doesn't clear the mark. So a server that shows a bad page only on
+# every other push is still seen twice.
 sighted() {
     local f now
     now=$(date +%s)
@@ -186,8 +192,8 @@ sighted() {
     return 1
 }
 
-# forge: the proposals' forge down for FORGE_HOURS (above). A file not there yet (before the first
-# good pull or answer) is nothing known, not an outage.
+# forge: alert when the proposals' forge has been down for FORGE_HOURS (see above).
+# A missing file (before the first good pull or answer) means nothing is known, not an outage.
 forge() {
     local hours=6 f path what t down=''
     [[ $FORGE_HOURS =~ ^[1-9][0-9]*$ ]] && hours=$FORGE_HOURS
@@ -229,27 +235,27 @@ if [[ $test_only ]]; then
     exit 0
 fi
 
-# what the pages are checked against: the signed list and its QR codes, the allowed addresses,
-# and each proposal's own address (ccs-bash's projects.json)
+# What the pages are checked against: the signed list and its QR codes, the allowed addresses,
+# and each proposal's own address (ccs-bash's projects.json).
 list=${SUBADDRESSES:-/etc/ccs-front/subaddresses.txt}
 [[ -r $list && -r $out/projects.json ]] || { log "no $list or $out/projects.json: nothing to check the pages against"; exit 1; }
 WATCH_ALLOWED=${WATCH_ALLOWED:-888tNkZrPN6JsEgekjMnABU4TBzc2Dt29EPAvkRxbANsAnjyPbb3iQ1YBRk1UXcdRsiKc9dhwMVgN5S9cQUiyoogDavup3H}
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 mkdir "$tmp/img"
-# what the pages' images are checked against, byte for byte (images): the design release's sums,
-# the proposals checkout; one not here: those images not checked, said once a run
+# What the images are checked against, byte for byte: the design release's sums and the
+# proposals checkout. If one is missing, those images go unchecked and the run logs it once.
 sums=${WATCH_DESIGN_SUMS:-/etc/ccs-front/design.sha256} props=${WATCH_PROPOSALS:-/var/lib/ccs/proposals}
 [[ -r $sums ]] || { log "no $sums (the design's sums): the pages' images under assets/ not checked"; sums=''; }
 [[ -d $props/images ]] || props=''
 { awk 'NF >= 2 { print $2 }' "$list"; tr ' ' '\n' <<<"$WATCH_ALLOWED"; } | grep . | sort -u > "$tmp/ok"
-# each proposal page's name, its address (funding required: its donation box's; "" for none)
+# Each proposal page's name and its donation box address ("" unless Funding Required)
 jq -r '.[] | select(.filename | type == "string") | [(.filename | sub("\\.md$"; "")), (if .state == "FUNDING-REQUIRED" then .address // "" else "" end)] | @tsv' \
     "$out/projects.json" > "$tmp/proposals" || { log "$out/projects.json can't be read"; exit 1; }
 
-# the pages: the fixed ones, every funding-required proposal's, and WATCH_SAMPLE (10) of the other
-# proposals' at random, so that each is seen within a few runs (a web server could add a donation
-# box to any page); /projects, the JSON others read. Each under one of the theme prefixes at random
+# The pages: the fixed ones, every Funding Required proposal, and WATCH_SAMPLE (10) other
+# proposals at random, so each is seen within a few runs (a server could add a donation box to
+# any page). Also /projects, the JSON others read. Each under a random theme prefix.
 prefixes=('')
 [[ $WATCH_THEMES ]] && prefixes+=(dark/ light/)
 pre() { printf '%s' "${prefixes[RANDOM % ${#prefixes[@]}]}"; }
@@ -261,22 +267,22 @@ while IFS=$'\t' read -r name _; do checks+=("$(pre)proposals/$name.html"$'\t'"-"
 checks+=("projects"$'\t'"-")
 pages=$(awk -F '\t' '$2 != ""' "$tmp/proposals" | grep -c . || true); pages=$((pages + 4))
 fetches=${#checks[@]}
-# and, among them at random (no fixed last ask that a web server could switch after): a page that
-# doesn't exist, named like the site's own, which must answer 404; with the themes, the theme
-# button (?theme=dark|light|system) on a page, which must send the visitor to that same page
-# under that prefix (or none), not elsewhere
+# Mixed in at random, so no request is always last (a server could switch after it):
+# - a page that doesn't exist, named like the site's own, which must answer 404
+# - with themes, the theme button (?theme=dark|light|system) on a page, which must redirect
+#   to the same page under that prefix (or none), not elsewhere
 checks+=(missing)
 [[ $WATCH_THEMES ]] && checks+=("theme"$'\t'"$(shuf -n 1 -e '' funding-required/ donate/ verify/)")
-mapfile -t checks < <(printf '%s\n' "${checks[@]}" | grep . | shuf)   # in no fixed order
+mapfile -t checks < <(printf '%s\n' "${checks[@]}" | grep . | shuf)   # random order
 
 bad=0 failed=0 answered=()
 urlof() { printf '%s/%s' "$site_url" "$(jq -rn --arg p "$1" '$p | split("/") | map(@uri) | join("/")')"; }
 short() { sed -E 's/^(.{6}).*(.{4})$/\1…\2/' | paste -sd ' '; }
 
-# the gate's scan (ccs-check: in the ccs-bash image; CCS_CHECK, another), or none
+# The gate's scanner: ccs-check from the ccs-bash image, another via CCS_CHECK, or none
 scanner=${CCS_CHECK-$(command -v ccs-check || true)}
 
-# norm PATH: PATH without its . and .. steps; fails for one that steps out of the site
+# norm PATH: print PATH without . and .. steps. Fails if it steps out of the site.
 norm() {
     local s out=()
     IFS=/ read -ra parts <<<"$1"
@@ -290,8 +296,8 @@ norm() {
     (IFS=/; printf '%s' "${out[*]}")
 }
 
-# image_ok PATH FILE: "" if the site's image PATH, fetched into FILE, is one the watcher knows
-# byte for byte; else what is wrong. Not answered: nothing known, ""
+# image_ok PATH FILE: print "" if the image PATH, fetched into FILE, matches a known file byte
+# for byte. Otherwise print what is wrong. If it didn't answer, nothing is known: print "".
 image_ok() {
     local p=$1 f=$2 a sum
     case $p in
@@ -314,15 +320,16 @@ image_ok() {
     esac
 }
 
-# images FILE PAGE: "" if every image the page FILE (PAGE, its path on the site) shows (<img>,
-# its src and srcset) is a design file (its sum the design release's), a QR code of the signed
-# list's, or a proposal's image as the proposals repository has it, each compared byte for byte;
-# else what is wrong. Nothing here reads what an image shows: a picture of another address's QR
-# code, anywhere on a page, is a file none of those has (review 12's L-2). Each fetched once a run.
+# images FILE PAGE: print "" if every image the page shows (<img> src and srcset) is known,
+# else what is wrong. PAGE is the page's path on the site.
+# Known means byte for byte one of: a design file (by the release's sums), a QR code from the
+# signed list, or a proposal's image from the proposals repository.
+# Nothing reads what an image shows. A picture of another address's QR code, anywhere on a
+# page, simply matches none of these files. Each image is fetched once per run.
 images() {
     local src p f why dir='' base
     [[ $2 == */* ]] && dir=${2%/*}
-    # (a <base href>, as a browser takes it: the site's 404 page has <base href="&#47;">)
+    # Honour <base href> as a browser does. The site's 404 page has <base href="&#47;">.
     base=$(grep -oiE '<base[^>]*href="[^"]*"' "$1" | head -n 1 | sed -E 's/.*href="//; s/"$//; s/&#0*47;|&#[xX]0*2[fF];/\//g' || true)
     case $base in
         "$origin"/*) dir=${base#"$origin"/} dir=${dir%/} ;;
@@ -350,10 +357,10 @@ images() {
     done < <(grep -oiE '<img[^>]*>' "$1" | grep -oiE '(src|srcset)="[^"]*"' | sed -E 's/^[A-Za-z]+="//; s/"$//' | tr ',' '\n' | awk '{ print $1 }')
 }
 
-# wrong FILE WANT [PAGE]: "" if every address on the page FILE (as text or a link, read as the gate
-# reads it: scanner) is the list's or allowed, every image it shows one known byte for byte
-# (images; PAGE, its path on the site) and, WANT not "-", its donation box (a monero: link), if
-# it shows one, WANT's alone, its one image the QR code qr/WANT.png, the list's file of it; else what is wrong
+# wrong FILE WANT [PAGE]: print "" if the page FILE is right, else what is wrong.
+# Right means: every address on it (text or link, found as the gate finds them) is on the list
+# or allowed; every image is known byte for byte (see images; PAGE is its path on the site);
+# and unless WANT is "-", the donation box is right (see boxed).
 wrong() {
     local found foreign box region imgs lines why first='' mode=scan
     if [[ $scanner ]]; then
@@ -362,7 +369,7 @@ wrong() {
         lines=$("$scanner" "$mode" "$1" 2> /dev/null) || { echo "the gate's scan (ccs-check) could not read the page"; return; }
         lines=$(cut -f2- <<<"$lines")
         found=$(grep -v '^[!?]' <<<"$lines" | sort -u || true)
-        # (a page that doesn't start as one: the gate's rule for what goes live, not an address)
+        # Not a page: the gate's rule for what goes live, not an address problem.
         why=$(grep '^[!?]' <<<"$lines" | grep -v '^!not text that starts as a page' | head -n 1 || true)
         [[ $why != \?qr* ]] || why="!a data: image (a QR code that isn't the list's file)"
         [[ ! $why ]] || { echo "the page fails the gate's scan: ${why#!}"; return; }
@@ -377,19 +384,18 @@ wrong() {
     [[ ! ${3:-} ]] || images "$1" "$3"
 }
 
-# boxed FILE WANT: "" if WANT is "-", or if the page FILE's donation box (a monero: link), if it
-# shows one, is WANT's alone, its one image the QR code qr/WANT.png, the list's file of it; else
-# what is wrong
+# boxed FILE WANT: print "" if WANT is "-" or the page's donation box is right, else what is wrong.
+# Right means: the box (a monero: link), if there is one, shows only WANT, and its only image
+# is the QR code qr/WANT.png from the list.
 boxed() {
     local box region imgs
     [[ $2 != - ]] || return 0
     box=$(grep -oE 'monero:[1-9A-HJ-NP-Za-km-z]{95}' "$1" | sort -u | grep -vxF "monero:${WATCH_ALLOWED// /$'\n'monero:}" || true)
-    # no box at all (a proposal at its goal: the design's "Funded" in its place): no address there
-    # to be wrong
+    # No box at all (a funded proposal shows "Funded" instead): no address to be wrong.
     [[ $box ]] || return 0
     [[ $box == "monero:$2" ]] || { echo "the donation box isn't its proposal's address (${2:0:6}…${2: -4})"; return; }
-    # the box, the design's ccs:donate part: one image, qr/WANT.png, and no style that could draw
-    # another (review 12's L-2: a box with the right link and text, and another image, passed)
+    # The box is the design's ccs:donate part. It must have one image, qr/WANT.png, and no style
+    # that could draw another. (A box with the right link and text but another image used to pass.)
     region=$(< "$1")
     if [[ $region == *'<!-- ccs:donate -->'* ]]; then region=${region#*<!-- ccs:donate -->} region=${region%%<!-- /ccs:donate -->*}; else region=''; fi
     imgs=$(grep -oE '<img[^>]*>' <<<"$region" || true)
@@ -397,14 +403,14 @@ boxed() {
         echo "the donation box shows another image than its address's QR code (qr/${2:0:6}…${2: -4}.png)"; return
     fi
     [[ -f $list.qr/$2.png ]] || return 0
-    # (the page's own link, from where it is: ../qr/<address>.png)
+    # The link as written on the page, relative to it: ../qr/<address>.png
     fetch "$(urlof "qr/$2.png")" "$tmp/qr" || return 0
     cmp -s "$tmp/qr" "$list.qr/$2.png" || echo "the donation box's QR code isn't the signed list's of its address"
 }
 
-# missing: a path that doesn't exist, named as the site's own are (a proposal's name with -2, two of
-# them run together, ...), in proposals/ or not, under a theme prefix at random: a web server that
-# answers its own page only where the watcher never asks must not know where that is
+# missing: fetch a path that doesn't exist, named like the site's own (a proposal's name with -2,
+# two names joined, ...), in proposals/ or not, under a random theme prefix. It must answer 404.
+# A server that serves its own page only where the watcher never asks must not know where that is.
 missing() {
     local names=() a b name='' try
     mapfile -t names < <(cut -f1 "$tmp/proposals")
@@ -425,7 +431,7 @@ missing() {
     [[ $name ]] || name=proposals/$(printf '%04x%04x%04x' $RANDOM $RANDOM $RANDOM).html
     name=$(pre)$name
     rc=0; fetch "$(urlof "$name")" "$tmp/page" || rc=$?
-    ((rc == 1)) && return   # nothing answered: nothing known
+    ((rc == 1)) && return   # no answer: nothing known
     local why=''
     if ((rc == 3)) && [[ $code == 404 ]]; then why=$(wrong "$tmp/page" - "$name"); [[ $why ]] || return 0; fi
     bad=$((bad + 1))
@@ -436,8 +442,8 @@ missing() {
     fi
 }
 
-# theme PAGE: the theme button on PAGE, under a prefix at random, as a click on it: HTTP 302 to
-# that page under /dark/ or /light/, or none for system (the theme lines in docs/two-machines.md)
+# theme PAGE: click the theme button on PAGE, under a random prefix. It must answer HTTP 302 to
+# the same page under /dark/ or /light/, or no prefix for system (see docs/two-machines.md).
 theme() {
     local page=$1 t want from rc
     t=$(shuf -n 1 -e dark light system) from=$(pre)
@@ -460,15 +466,15 @@ for c in "${checks[@]}"; do
     esac
     remote=${c%%$'\t'*} want=${c#*$'\t'}
     url=$(urlof "$remote")
-    # seen: by the page, prefix aside (wrong under any prefix, then any other: alert), and by
-    # the address, prefix and all
+    # Marks of a problem seen: one per page ignoring the prefix (wrong under one prefix, then
+    # another, still alerts), and one per exact address.
     p=${remote#dark/} p=${p#light/}
     seen=$state/differs-${p//[^A-Za-z0-9._-]/_} seen_at=$state/differs-at-${remote//[^A-Za-z0-9._-]/_}
     other=$state/answers-${p//[^A-Za-z0-9._-]/_}
     rc=0; fetch "$url" "$tmp/page" || rc=$?
     if ((rc)); then
         failed=$((failed + 1)); log "could not fetch $url${code:+ (HTTP $code)}"
-        # the web server answered, but not with the page: counted, alerted below if it lasts
+        # The server answered, but not with the page. Count it; alert below if it lasts.
         if ((rc == 3)); then
             n=$(($(cat "$other" 2> /dev/null || echo 0) + 1)); echo "$n" > "$other"
             answered+=("$n"$'\t'"$code"$'\t'"$p"$'\t'"$url")
@@ -478,24 +484,25 @@ for c in "${checks[@]}"; do
     rm -f "$other"
     why=$(wrong "$tmp/page" "$want" "$remote")
     [[ $why ]] || continue
-    # wrong: on two more whole fetches, 10s and 30s later (a build may be landing), or a recheck
-    # not answered (a web server refusing the watcher's second ask mustn't hide what the first saw)
-    for wait in ${CCS_WATCH_WAITS:-10 30}; do   # (tests make them shorter)
+    # Wrong: fetch twice more, 10s and 30s later, since a build may be landing.
+    # A recheck that gets no answer keeps the first result: refusing the second fetch must not
+    # hide what the first saw.
+    for wait in ${CCS_WATCH_WAITS:-10 30}; do   # tests make them shorter
         sleep "$wait"
         fetch "$url" "$tmp/again" || continue
-        rm -f "$tmp"/img/*   # (the images fetched again too)
+        rm -f "$tmp"/img/*   # fetch the images again too
         why=$(wrong "$tmp/again" "$want" "$remote")
         [[ $why ]] || break
     done
     [[ $why ]] || continue
-    # The second run within a day that sees it alerts, runs that see the page right in between or
-    # not: no single moment, a build or a glitch, raises an alarm, and neither does showing it only
-    # now and then hide it.
+    # Alert on the second run within a day that sees it, whatever runs saw in between.
+    # A single moment (a build, a glitch) raises no alarm, and showing it only now and then
+    # doesn't hide it.
     bad=$((bad + 1))
     if ! sighted "$seen" "$seen_at"; then
         log "$url: $why; alerting if it does again within a day"; continue
     fi
-    # n1oc's style: "<what> @ <link>"; an address shortened to its first 6 and last 4
+    # n1oc's style: "<what> @ <link>", addresses shortened to their first 6 and last 4
     alert "page-$p" "$why @ $url"
 done
 if ((failed == fetches)); then
@@ -504,7 +511,7 @@ if ((failed == fetches)); then
 else
     rm -f "$state/unreachable"
     # The site answers, but a page keeps answering something else (a redirect, an error,
-    # nothing): three checks in a row alert, as a web server sending visitors elsewhere would
+    # nothing). Three checks in a row alert, as for a server sending visitors elsewhere.
     for a in "${answered[@]}"; do
         IFS=$'\t' read -r n c p url <<<"$a"
         [[ $c == 200 ]] && c='200 with nothing'
