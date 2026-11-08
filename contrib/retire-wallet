@@ -1,25 +1,26 @@
 #!/usr/bin/env bash
 # retire-wallet [--again] NAME CONFIG [RPC_URL]: record a wallet the CCS no longer uses, so its
-# donations keep counting (docs/handover.md, "Retiring a wallet"). Run as ccs, the state's owner (in the compose: ccs-bash's container),
-# with the update loop paused:
+# donations keep counting. See docs/handover.md, "Retiring a wallet".
+# Run as ccs, the state's owner (in the compose: ccs-bash's container), with the update loop paused:
 #   docker compose run --rm --no-deps --entrypoint /opt/ccs-bash/contrib/retire-wallet ccs-bash ccs2 /etc/ccs/ccs.conf
-# The wallet is the one CONFIG's RPC_URL reaches (the live one, when it is the one being retired),
-# or RPC_URL: an old wallet's view-only copy, synced (RETIRE_RPC_USER, RETIRE_RPC_PASSWORD for its
-# login, if it has one). It asks that wallet which of the state's addresses are its own, then:
+# The wallet is the one at CONFIG's RPC_URL (the live one, when retiring it), or at RPC_URL: a
+# synced view-only copy of an old wallet. RETIRE_RPC_USER and RETIRE_RPC_PASSWORD are its login,
+# if any. It asks that wallet which of the state's addresses are its own, then:
 #   - writes STATE_DIR/retired/NAME.csv: every deposit to those subaddresses with MIN_CONFIRMATIONS,
-#     by proposal file, no addresses (lib/wallet.sh, retired_totals, reads it each run); those in
-#     the pool or younger it names, for --again;
-#   - clears those proposals' index and address in proposals.csv (the old file kept beside it, as
-#     proposals.csv.before-retire-NAME), so the next wallet gives a funding-required one a new
-#     subaddress, and none is handed out twice;
-#   - retiring the live wallet: moves deposits.csv (its cache) and assigned.tsv aside.
-# Nothing else changes: a wallet, its config and its signed list are switched by hand, after.
+#     by proposal file, without addresses. lib/wallet.sh's retired_totals reads it each run.
+#     Deposits in the pool or too young are listed, for --again.
+#   - clears those proposals' index and address in proposals.csv, keeping the old file as
+#     proposals.csv.before-retire-NAME. So the next wallet gives a Funding Required proposal a
+#     new subaddress, and none is handed out twice.
+#   - when retiring the live wallet: moves deposits.csv (its cache) and assigned.tsv aside.
+# Nothing else changes. Switch the wallet, its config and its signed list by hand afterwards.
 #
-# --again: the donations that came to the retired wallet NAME since (a saved address, a QR code
-# shared before the switch; deposits that were too young): the same wallet (the one NAME.csv
-# names), its addresses from proposals.csv.before-retire-NAME, every deposit no record of NAME has
-# yet, in STATE_DIR/retired/NAME-2.csv (then -3, ...), each under the proposal's name in NAME's
-# records (renamed there: that name). The state is left as it is. Nothing new: nothing written.
+# --again: record donations that reached the retired wallet NAME later (a saved address, a QR
+# code shared before the switch, deposits that were too young). Uses the same wallet (named in
+# NAME.csv) and its addresses from proposals.csv.before-retire-NAME. Writes every deposit not yet
+# in a record of NAME to STATE_DIR/retired/NAME-2.csv (then -3, ...), under the proposal's name
+# in NAME's records (if renamed there, the new name). The state is not changed.
+# If there is nothing new, nothing is written.
 set -euo pipefail
 export LC_ALL=C
 CCS_LIB=$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../lib" && pwd)
@@ -36,11 +37,11 @@ local again=''
 local name=${1:?NAME (a-z, 0-9, -)} config=${2:?CONFIG} url=${3:-}
 local live_url out label main height live n dup indexes deposits total base before k young f
 [[ $name =~ ^[a-z0-9-]+$ ]] || die "NAME: a-z, 0-9 and - only"
-# (NAME-2, NAME-3...: --again's records of NAME)
+# NAME-2, NAME-3...: the records --again writes for NAME
 [[ $again || ! $name =~ -[0-9]+$ ]] || die "NAME: not ending in -<number> (--again's records of a wallet are named so)"
 load_config "$config"
 live_url=$RPC_URL
-# (RPC_USER and RPC_PASSWORD are what lib/wallet.sh's rpc uses)
+# lib/wallet.sh's rpc uses RPC_USER and RPC_PASSWORD
 # shellcheck disable=SC2034
 if [[ -n $url ]]; then RPC_URL=$url RPC_USER=${RETIRE_RPC_USER:-} RPC_PASSWORD=${RETIRE_RPC_PASSWORD:-}; fi
 base=$STATE_DIR/retired/$name.csv before=$STATE_DIR/proposals.csv.before-retire-$name
@@ -58,7 +59,7 @@ flock -n 9 || die "a run is going: pause the update loop first (systemctl stop c
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 if [[ $again ]]; then
-    # the state as it was when NAME was retired: its addresses
+    # The state as it was when NAME was retired: its addresses
     mkdir "$WORK/before" && cp "$before" "$WORK/before/proposals.csv"
     STATE_DIR=$WORK/before load_state
 else
@@ -75,11 +76,11 @@ if [[ $again ]]; then
 fi
 log "wallet ${main:0:6}…${main: -4} at height $height${live:+ (the live wallet)}"
 
-# which state rows are this wallet's: it says so for an address of its own, at which index. Only
-# the wallet's own answer counts as "not ours" (as retire-from-ccs-back): a timeout would otherwise
-# leave a proposal out of the record, silently, and the record can't be written twice
+# Find which state rows belong to this wallet: it answers with the index for its own addresses.
+# Only the wallet's explicit answer counts as "not ours" (as in retire-from-ccs-back).
+# Otherwise a timeout would silently leave a proposal out, and the record can't be written twice.
 : > "$WORK/mine"
-# (retired-subaddress-N rows too: the old wallet's; their deposits are no proposal's, so not written)
+# retired-subaddress-N rows belong to the old wallet too. Their deposits are no proposal's, so skipped.
 jq -r 'to_entries[] | select(.value.address) | [.key, .value.address] | @tsv' "$WORK/state.json" |
     while IFS=$'\t' read -r file addr; do
         if ! res=$(rpc get_address_index "$(jq -nc --arg a "$addr" '{address: $a}')" 2> "$WORK/err"); then
@@ -95,17 +96,17 @@ n=$(grep -c . "$WORK/mine" || true)
 dup=$(awk -F'\t' 'seen[$1]++ { print $1; exit }' "$WORK/mine")
 [[ -z $dup ]] || die "subaddress $dup is two proposals' in proposals.csv: fix the state first"
 
-# every deposit to those subaddresses (in: confirmed, with a height), checked field by field
+# Every deposit to those subaddresses (incoming, confirmed, with a height), checked field by field
 indexes=$(cut -f1 "$WORK/mine" | jq -R -s -c 'split("\n") | map(select(. != "") | tonumber)')
-# a quiet wallet only: nothing in the pool or under MIN_CONFIRMATIONS, so what is recorded is final
-# (an offline copy can't be asked for the pool: it has none to wait for)
+# Ask for the pool too. An offline copy can't answer for the pool (it has none), so then ask
+# without it.
 if ! RPC_QUOTE=1 rpc get_transfers "{\"in\": true, \"pool\": true, \"account_index\": 0, \"subaddr_indices\": $indexes}" > "$WORK/transfers" 2> /dev/null; then
     RPC_QUOTE=1 rpc get_transfers "{\"in\": true, \"account_index\": 0, \"subaddr_indices\": $indexes}" > "$WORK/transfers" \
         || die "could not read the wallet's transfers"
     log "the wallet doesn't answer for the pool (an offline copy): its deposits only"
 fi
-# what is recorded is final: deposits with MIN_CONFIRMATIONS; those in the pool or younger are
-# left for --again (named below), so the switch needn't wait for the wallet to go quiet
+# Record only final deposits (MIN_CONFIRMATIONS). Those in the pool or younger are left for
+# --again and listed below, so the switch doesn't have to wait for the wallet to go quiet.
 young=$(jq --argjson m "$MIN_CONFIRMATIONS" '[(.pool // [])[], ((.in // [])[] | select((.confirmations // 0) < $m or (.height // 0) == 0))] | length' "$WORK/transfers")
 jq -r --argjson m "$MIN_CONFIRMATIONS" '
     (.in // []) | unique_by([.txid, .subaddr_index.minor]) | sort_by(.height, .txid) | .[] | select((.height // 0) > 0 and (.confirmations // 0) >= $m)
@@ -120,9 +121,9 @@ jq -r --argjson m "$MIN_CONFIRMATIONS" '
         END { exit bad }' "$WORK/mine" FS=' ' "$WORK/in" || die "unexpected transfer from the wallet"
 } > "$WORK/retired"
 if [[ $again ]]; then
-    # only what no record of NAME has (txid and subaddress), each under the name NAME's records
-    # give its subaddress (a proposal renamed since: renamed there too, as the docs say)
-    # (a first line that is no deposit: awk's first file is never empty)
+    # Only deposits no record of NAME has yet (by txid and subaddress), each under the proposal
+    # name NAME's records give its subaddress (renamed there too if renamed, as the docs say).
+    # The first line is not a deposit; it keeps awk's first file from being empty.
     { echo '#'
       for f in "$base" "$STATE_DIR/retired/$name"-[0-9]*.csv; do
           [[ -f $f && $f =~ /$name(-[0-9]+)?\.csv$ ]] && awk 'NR > 1' "$f"
@@ -142,8 +143,8 @@ if [[ $again ]]; then
         return 0
     fi
 fi
-# read back as a run reads it (lib/wallet.sh retired_totals): a name or number it would refuse
-# would stop every run after this one
+# Read it back the way a run reads it (lib/wallet.sh retired_totals). A name or number it
+# would refuse would stop every run after this one.
 mkdir "$WORK/check" && cp "$WORK/retired" "$WORK/check/$label.csv"
 ( RETIRED_DIR=$WORK/check retired_totals > /dev/null ) 2> "$WORK/check.err" \
     || die "a line a run couldn't read back, nothing written: $(sed 's/ (restore it.*//' "$WORK/check.err")"
@@ -158,7 +159,7 @@ if [[ $again ]]; then
     ((young == 0)) || echo "  $young deposit(s) in the pool or under $MIN_CONFIRMATIONS confirmations, not recorded yet: --again later"
     return 0
 fi
-# the state without this wallet's subaddresses (the old one beside it), then the retired file
+# Write the state without this wallet's subaddresses (keeping the old file), then the retired file
 cp -p "$STATE_DIR/proposals.csv" "$STATE_DIR/proposals.csv.before-retire-$name"
 cut -f2 "$WORK/mine" | jq -R -s 'split("\n") | map(select(. != ""))' > "$WORK/files.json"
 jq --slurpfile f "$WORK/files.json" 'with_entries(if (.key | IN($f[0][])) then .value |= del(.subaddr_index, .address) else . end)' \
@@ -168,7 +169,7 @@ atomic_write "$out" cat "$WORK/retired"
 save_state
 if [[ $live ]]; then
     [[ ! -f $STATE_DIR/deposits.csv ]] || mv "$STATE_DIR/deposits.csv" "$STATE_DIR/deposits.csv.retired-$name"
-    # (its subaddresses' hand-out heights: the next wallet's indices are others)
+    # Move assigned.tsv too: its heights are for this wallet's subaddresses, not the next one's.
     [[ ! -f $STATE_DIR/assigned.tsv ]] || mv "$STATE_DIR/assigned.tsv" "$STATE_DIR/assigned.tsv.retired-$name"
 fi
 echo "retired $name: $n proposals' subaddresses, $deposits deposits, $(xmr4 "$total") XMR, in $out"

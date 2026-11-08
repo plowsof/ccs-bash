@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 # check-migration OUT [CONFIG]: after ccs-bash's first run on ccs-back's state (export-ccs-back's
-# OUT), is it safe to switch? As root on the backend; reads, changes nothing. CONFIG is ccs-bash's
-# (default /etc/ccs/ccs.conf). Each check says OK or NOT OK, and it ends with one of them (exit 1):
+# OUT), check whether it is safe to switch. Run as root on the backend. Read only.
+# CONFIG is ccs-bash's (default /etc/ccs/ccs.conf). Each check prints OK or NOT OK, and so does
+# the end result (NOT OK exits 1). The checks:
 #   - the wallet is WALLET_ADDRESS's, and view-only (SPEND_WALLET_OK=1: a testnet's may spend);
 #   - every subaddress ccs-back gave a proposal is the wallet's, at that index;
 #   - ccs-bash's state has every proposal ccs-back had, with the same index and address;
 #   - the log has no donations at an index the export lacks;
 #   - the donations: compare-deposits, ccs-back's deposits against ccs-bash's deposits.csv;
-#   - with ccs-back's JSON in OUT, what each proposal shows, side by side: each difference must be
-#     explained (a donation only the wallet has, compare-deposits lists them; or one of the
-#     handover's step 10 differences), so they are listed, not counted against it.
+#   - with ccs-back's JSON in OUT, what each proposal shows, side by side. Each difference must
+#     be explained (a donation only the wallet has, listed by compare-deposits, or one of the
+#     handover's step 10 differences), so they are listed, not counted as failures.
 set -euo pipefail
 export LC_ALL=C
 here=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
@@ -22,7 +23,7 @@ ok() { echo "OK      $*"; }
 nok() { echo "NOT OK  $*"; status=1; }
 indent() { sed 's/^/          /'; }
 
-# the config's settings, read key by key (as ccs-bash's own: root never runs a file it reads)
+# Read the config key by key, as ccs-bash does: root never runs a file it reads
 setting() { sed -n "s/^$1=//p" "$config_file" | tail -n 1 | sed "s/^[\"']//; s/[\"']\$//"; }
 
 check() {
@@ -30,7 +31,7 @@ check() {
     RPC_URL=$(setting RPC_URL) RPC_USER=$(setting RPC_USER) RPC_PASSWORD=$(setting RPC_PASSWORD)
     WALLET_ADDRESS=$(setting WALLET_ADDRESS) state=$(setting STATE_DIR) MIN_CONFIRMATIONS=10
     [[ -f $out/proposals.csv ]] || { nok "no $out/proposals.csv (export-ccs-back first)"; return; }
-    # the wallet
+    # The wallet
     if ! addrs=$(rpc get_address '{"account_index": 0}' 2> /dev/null); then
         nok "the wallet doesn't answer at $RPC_URL"; return
     fi
@@ -41,12 +42,12 @@ check() {
         if [[ ${SPEND_WALLET_OK:-} ]]; then ok "the wallet can spend (SPEND_WALLET_OK: a testnet's)"
         else nok "the wallet can spend: use a view-only one (handover step 1)"; fi
     else ok "the wallet is view-only"; fi
-    # ccs-back's subaddresses: those this wallet says are its own (older wallets' are recorded by
-    # retire-wallet and cleared in the state: handover step 2, "Older wallets")
+    # ccs-back's subaddresses that this wallet says are its own. Older wallets' are recorded by
+    # retire-wallet and cleared from the state (handover step 2, "Older wallets").
     local all older='' a i f
     all=$(jq -rR -s 'split("\n") | map(select(. != "") | [("," + .) | match(",(\"(?:[^\"]|\"\")*\"|[^,]*)"; "g") | (.captures[0].string // "") | if startswith("\"") then .[1:-1] | gsub("\"\""; "\"") else . end]) | map(select(.[3] != "")) | .[] | "\(.[2])\u001f\(.[3])\u001f\(.[0])"' "$out/proposals.csv")
     want=''
-    # (split on \x1f, not a tab: read drops a leading tab, and an older wallet's row may have no index)
+    # Split on \x1f, not a tab: read drops a leading tab, and an older wallet's row may have no index
     while IFS=$'\x1f' read -r i a f; do
         [[ -n $a ]] || continue
         if rpc get_address_index "$(jq -nc --arg a "$a" '{address: $a}')" 2> /dev/null | jq -e '.index.major == 0' > /dev/null; then
@@ -58,7 +59,7 @@ check() {
     want=${want%$'\n'}
     if [[ -n $older ]]; then
         local kept
-        # those still with an index in ccs-bash's state (a run would stop on them)
+        # Rows still with an index in ccs-bash's state (a run would stop on them)
         kept=$(jq -r -n --rawfile b "$state/proposals.csv" --arg older "$older" '
             def csvrow: [("," + .) | match(",(\"(?:[^\"]|\"\")*\"|[^,]*)"; "g") | (.captures[0].string // "")
                          | if startswith("\"") then .[1:-1] | gsub("\"\""; "\"") else . end];
@@ -77,8 +78,8 @@ check() {
         if [[ -z $bad ]]; then ok "the $n subaddresses ccs-back gave proposals are the wallet's, at those indices"
         else nok "subaddresses that aren't the wallet's at their index:"; printf '%s\n' "$bad" | indent; fi
     fi
-    # ccs-bash's state: every row ccs-back had, the same index and address
-    # (parsed: ccs-back's export quotes the index, ccs-bash writes it bare)
+    # ccs-bash's state: every row ccs-back had, with the same index and address.
+    # Parsed, because ccs-back's export quotes the index and ccs-bash writes it bare.
     csv=$state/proposals.csv
     bad=$(jq -r -n --rawfile a "$out/proposals.csv" --rawfile b "$csv" --arg older "$older" '
         def csvrow: [("," + .) | match(",(\"(?:[^\"]|\"\")*\"|[^,]*)"; "g") | (.captures[0].string // "")
@@ -88,8 +89,8 @@ check() {
         | ($older | split("\n")) as $O
         | ([$A[] | split(" ")[0] | select(. != "") | tonumber] | max // 0) as $top
         | $A | to_entries[] | select(.key | IN($O[]) | not) | select($B[.key] != .value)
-        # one with no subaddress in the export, given one since above every exported index: a
-        # funding-required proposal, at its first run: expected
+        # No subaddress in the export, but one since, above every exported index: a Funding
+        # Required proposal given one at the first run. Expected.
         | if .value == " " and (($B[.key] // "" | split(" ")[0]) as $i | $i != "" and ($i | tonumber) > $top)
           then "new\t\(.key): subaddress \($B[.key] | split(" ")[0])" else "bad\t\(.key): ccs-back \(.value), ccs-bash \($B[.key] // "(missing)")" end')
     local new
@@ -97,7 +98,7 @@ check() {
     if [[ -z $bad ]]; then ok "ccs-bash's state has every proposal ccs-back had, with its index and address"
     else nok "the state differs from ccs-back's:"; printf '%s\n' "$bad" | head -n 10 | indent; fi
     [[ -z $new ]] || { ok "funding-required proposals given a subaddress since the export (above its highest):"; printf '%s\n' "$new" | indent; }
-    # the log: donations at an index the export lacks
+    # The log: donations at an index the export lacks
     local idx top gaps='' newer=''
     idx=$(grep 'which no proposal was given (no label)' "${LOG:-/var/log/ccs-bash.log}" 2> /dev/null | tail -n 1 | grep -o 'subaddress [0-9 ]*' | cut -d' ' -f2- || true)
     top=$(cut -f1 <<<"$want" | sort -n | tail -n 1)
@@ -105,13 +106,13 @@ check() {
     if [[ -z $idx ]]; then ok "no donations at subaddresses the export lacks"; fi
     [[ -n $gaps ]] && nok "donations at subaddresses ccs-back's export lacks, below its highest ($top):$gaps. Find out why; old indices that belong to nothing are recorded as retired (handover step 2), then run again"
     [[ -n $newer ]] && nok "donations at subaddresses above the export's highest ($top):$newer: the export and the wallet weren't taken at the same time (stop ccs-back, then export and copy the wallet)"
-    # the donations
+    # The donations
     if [[ -f $state/deposits.csv ]]; then
         if "$here/compare-deposits" "$out/ccs-back-deposits.tsv" "$state/deposits.csv" > "$out/compare-deposits.txt"; then
             ok "every deposit ccs-back recorded is the wallet's (compare-deposits: $out/compare-deposits.txt)"
         else nok "deposits differ: $out/compare-deposits.txt"; sed -n '/^NOT OK/,/^$/p' "$out/compare-deposits.txt" | head -n 12 | indent; fi
     else nok "no $state/deposits.csv: run ccs-bash once first"; fi
-    # what each proposal shows, side by side (listed, not counted: each to be explained)
+    # What each proposal shows, side by side. Listed, not counted: each must be explained.
     local site
     site=$(setting OUTPUT_DIR)
     if [[ -f $out/ccs-back-proposals.json && -f $site/proposals.json ]]; then
@@ -126,8 +127,8 @@ check() {
               elif $B[$k] == null then "  \($k): only in ccs-back (not on the site now: its file, its front matter)"
               elif ($A[$k] | show) != ($B[$k] | show) then "  \($k): ccs-back \($A[$k] | show)  ccs-bash \($B[$k] | show)  (raised, contributions, address)"
               else empty end' > "$out/shown.txt"
-        # none may show less raised than on ccs-back (beyond ccs-back's own rounding, 0.05): a
-        # wallet, or an older wallet's record, missing (handover step 2, "Older wallets")
+        # None may show less raised than on ccs-back (beyond its rounding, 0.05). Less means a
+        # missing wallet or older wallet record (handover step 2, "Older wallets").
         local lower
         lower=$(jq -r -n --slurpfile a <(jq -s 'map(.[]) | map(.proposals[]?)' "$out"/ccs-back-proposals.json "$out"/ccs-back-completed-proposals.json 2> /dev/null) \
             --slurpfile b <(jq -s 'map(.[]) | map(.proposals[]?)' "$site/proposals.json" "$site/completed-proposals.json") '
