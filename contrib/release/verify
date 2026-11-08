@@ -1,18 +1,19 @@
 #!/usr/bin/env bash
-# verify: check every attestation in a ccs-sigs checkout: each signature against its signer's
-# key in builder-keys/, and every signer's all.SHA256SUMS the same for a release.
+# verify: check every attestation in a ccs-sigs checkout. Each signature must match its signer's
+# key in builder-keys/, and all signers' all.SHA256SUMS must agree for a release.
 # Adapted from Feather Wallet's contrib/guix/guix-verify (tobtoht), itself from Bitcoin Core's
-# (MIT, see contrib/release/README.md). Unlike it, the keys come from builder-keys/ into a
-# keyring of their own, not from yours, and each signature must be by the key of the signer whose
-# folder it is in (builder-keys/<signer>.asc, one key): one key can't sign as several signers, and
-# signers with the same key count once.
+# (MIT, see contrib/release/README.md). Differences: keys come from builder-keys/ into a separate
+# keyring, not yours. Each signature must be by the key of the signer whose folder it is in
+# (builder-keys/<signer>.asc, one key). So one key can't sign as several signers, and signers
+# sharing a key count once.
 #
-#   TRUSTED_KEYS=FILE   only signers whose key's fingerprint is in FILE (one a line, # comments)
-#                       count; the others are shown, not counted. Keep FILE yourself, not in ccs-sigs.
-#                       Needed: without it nothing counts, unless --any-key (anyone can add a key
-#                       to ccs-sigs, so every key there counting is for seeing who agrees, not trust)
-#   --min-signers N     a release needs N signers who agree: 2 by default, so that one stolen or
-#                       careless key isn't enough; 1 relaxes it (a release only you have attested)
+#   TRUSTED_KEYS=FILE   only signers whose key fingerprint is in FILE count (one per line,
+#                       # comments). Others are shown but not counted. Keep FILE yourself, not
+#                       in ccs-sigs. Required: without it nothing counts, unless --any-key.
+#                       (Anyone can add a key to ccs-sigs, so --any-key only shows who agrees;
+#                       it is not trust.)
+#   --min-signers N     a release needs N agreeing signers. Default 2, so one stolen or careless
+#                       key isn't enough. 1 relaxes it (for a release only you have attested).
 export LC_ALL=C
 set -e -o pipefail
 
@@ -69,7 +70,7 @@ fi
 CCS_SIGS_REPO=${CCS_SIGS_REPO:-external/ccs-sigs}
 [ -d "$CCS_SIGS_REPO/builder-keys" ] || { echo "ERR: '$CCS_SIGS_REPO' isn't a ccs-sigs checkout"; exit 1; }
 
-# only the keys in builder-keys/, in a keyring of their own
+# Only the keys in builder-keys/, in a separate keyring
 GNUPGHOME=$(mktemp -d)
 export GNUPGHOME
 trap 'gpgconf --kill all 2> /dev/null || true; rm -rf "$GNUPGHOME"' EXIT
@@ -81,7 +82,7 @@ if [[ -n ${TRUSTED_KEYS:-} ]]; then
     trusted=$(sed 's/#.*//; s/[[:space:]]//g' "$TRUSTED_KEYS" | tr 'a-f' 'A-F' | grep -E '^[0-9A-F]{40}$' || true)
 fi
 
-# key_of SIGNER: the fingerprint of the one primary key in builder-keys/SIGNER.asc
+# key_of SIGNER: print the fingerprint of the single primary key in builder-keys/SIGNER.asc
 key_of() {
     local f="$CCS_SIGS_REPO/builder-keys/$1.asc" fprs
     [ -e "$f" ] || return 1
@@ -89,9 +90,9 @@ key_of() {
         | awk -F: '$1 == "pub" { want = 1; next } want && $1 == "fpr" { print $10; want = 0 }')
     [[ $fprs =~ ^[0-9A-F]{40}$ ]] && echo "$fprs"
 }
-# signed MANIFEST: good signature (.asc) by the key of the signer whose folder it is in, not
-# revoked (gpg still says VALIDSIG for a revoked key's signature); prints that key's fingerprint.
-# An expired key's still counts: its attestations were made before it expired.
+# signed MANIFEST: check for a good signature (.asc) by the key of the signer whose folder it is
+# in, and that the key is not revoked (gpg still says VALIDSIG for a revoked key). Prints the key's
+# fingerprint. An expired key still counts: its attestations were made before it expired.
 signed() {
     local signer key status by
     signer=$(basename "$(dirname "$1")")
@@ -101,16 +102,16 @@ signed() {
     by=$(awk '$2 == "VALIDSIG" { print $NF }' <<<"$status")
     [[ $by == "$key" ]] && echo "$key"
 }
-# counts KEY: it counts, unless TRUSTED_KEYS is set and doesn't have it
+# counts KEY: true unless TRUSTED_KEYS is set and doesn't list KEY
 counts() { [[ -z ${TRUSTED_KEYS:-} ]] || grep -qxF "$1" <<<"$trusted"; }
 
-# a release's name, exactly (a name that is only the start of one, ccs-bash-v9.9 of
-# ccs-bash-v9.9.9, is none), or a set of them joined by +
+# A release name, matched exactly (ccs-bash-v9.9 is not a match for ccs-bash-v9.9.9), or a set
+# of them joined by +
 release_re='(ccs-bash|ccs-front-bash|ccs-front-hugo|ccs-gate)-v[0-9]+\.[0-9]+\.[0-9]+'
 for name in "$@"; do
     [[ $name =~ ^$release_re(\+$release_re)*$ ]] || { echo "ERR: '$name' is not a release (ccs-bash-v1.2.3, ...) or a set of them joined by +"; exit 1; }
 done
-# its line in a manifest, exactly: the hash, two spaces, the name, and the commit (an image) or .zip
+# A release's exact manifest line: the hash, two spaces, the name, then the commit (an image) or .zip
 line_re() { printf '^[0-9a-f]{64}  %s(-[0-9a-f]{12,40}\\.image-id|\\.zip)$' "${1//./\\.}"; }
 named=$#
 if (( $# )); then names=( "$@" ); else
@@ -119,21 +120,22 @@ if (( $# )); then names=( "$@" ); else
     (( ${#names[@]} )) && mapfile -t names < <(printf '%s\n' "${names[@]}" | sort -u)
 fi
 
-# release NAME: one release, in every set (folder) that has it: each signature checked, and its
-# whole line (the hash, and the name with the commit it was built from) the same for every signer
-# who counts, whichever set they attested. Only those who count are compared: one who doesn't
-# can't change what is printed (a folder of theirs with a bad signature, or two lines for a
-# release, still fails the check: look at it, it accepts nothing).
+# release NAME: check one release in every set (folder) that has it. Each signature is checked,
+# and its whole line (hash, name and source commit) must be the same for every signer who counts,
+# whichever set they attested.
+# Only signers who count are compared, so one who doesn't can't change the result. (A folder of
+# theirs with a bad signature, or two lines for one release, still fails: look at it. It never
+# makes anything pass.)
 release() {
     local name=$1 set m line key base='' basefrom='' n=0 seen=0 commit counted=' ' in=$1
-    # (the gate's image is ccs-bash's other: attested in ccs-bash's sets, from the same tag)
+    # The gate's image is ccs-bash's second image, attested in ccs-bash's sets from the same tag
     [[ $name == ccs-gate-* ]] && in=ccs-bash-${name#ccs-gate-}
     for set in "$CCS_SIGS_REPO"/*/; do
         set=$(basename "$set")
         [[ +$set+ == *"+$in+"* ]] || continue
         for m in "$CCS_SIGS_REPO/$set"/*/all.SHA256SUMS; do
-            # a signer who doesn't count is passed over before anything is checked: their folder,
-            # whatever is in it, can't stop the others agreeing
+            # Skip a signer who doesn't count before checking anything, so their folder can't
+            # stop the others from agreeing
             seen=$((seen + 1))
             if ! key=$(key_of "$(basename "$(dirname "$m")")") || ! counts "$key"; then
                 echo "Not counted: '$m' (its signer's key is not in TRUSTED_KEYS)"; continue
@@ -158,7 +160,7 @@ release() {
     echo ""
     if (( n )); then
         echo "$name: ${base%% *} (${n} signer(s) agree)"
-        # the commit it was built from, when the attestation names it (contrib/release/build)
+        # The source commit, when the attestation names it (contrib/release/build)
         commit=${base##*  "$name"-}; commit=${commit%.image-id}
         if [[ $commit =~ ^[0-9a-f]{12,40}$ ]]; then
             echo "$name: from commit $commit (build from this commit, not the tag: a tag can move)"
@@ -179,7 +181,7 @@ release() {
 checked=0
 for name in "${names[@]}"; do
     OUTSIGDIR_BASE="$CCS_SIGS_REPO/$name"
-    if [[ $name != *+* ]]; then   # one release: in every set that has it
+    if [[ $name != *+* ]]; then   # one release, in every set that has it
         echo "--------------------  $name"
         echo ""
         release "$name"
@@ -189,14 +191,14 @@ for name in "${names[@]}"; do
     echo "--------------------  $name  (${#all_all[@]} signer(s))"
     echo ""
     if (( ${#all_all[@]} )); then
-        # SIGNER's manifest first, as the base to compare against (if it counts)
+        # SIGNER's manifest first, as the base to compare against (if SIGNER counts)
         if [[ -n ${SIGNER:-} && -f $OUTSIGDIR_BASE/$SIGNER/all.SHA256SUMS ]]; then
             echo "Using $SIGNER's manifest as the base to compare against"
             all_all=( "$OUTSIGDIR_BASE/$SIGNER/all.SHA256SUMS" "${all_all[@]/"$OUTSIGDIR_BASE/$SIGNER/all.SHA256SUMS"}" )
         fi
-        # as for one release: only signers who count are compared, each key once, TRUSTED_KEYS'
-        # only; and the base must have one line for each release the folder's name lists and no
-        # other (an old set's manifests copied under a new set's name don't)
+        # As for one release: compare only signers who count, each key once, TRUSTED_KEYS only.
+        # The base must have exactly one line per release the folder name lists. (This rejects
+        # an old set's manifests copied under a new set's name.)
         n=0 counted=' ' base=''
         for m in "${all_all[@]}"; do
             [ -n "$m" ] || continue
@@ -212,7 +214,7 @@ for name in "${names[@]}"; do
                 for part in ${name//+/ }; do
                     parts=$((parts + 1))
                     [[ $(grep -cE "$(line_re "$part")" "$m") == 1 ]] || { echo "ERR: '$m' has no line, or several, for $part"; ok=''; }
-                    # ccs-bash's gate image (container/gate.Dockerfile), from the same tag: one more line, or none
+                    # ccs-bash's gate image (container/gate.Dockerfile), same tag: one more line, or none
                     if [[ $part == ccs-bash-* ]]; then
                         case $(grep -cE "$(line_re "ccs-gate-${part#ccs-bash-}")" "$m") in
                             0) ;; 1) parts=$((parts + 1)) ;; *) echo "ERR: '$m' has several lines for ccs-gate-${part#ccs-bash-}"; ok='' ;;

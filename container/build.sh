@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# build.sh [TAG]: check the pins' signatures, download them and the sources, make StageX's
-# BuildKit a builder, build with no network in the steps. NO_CACHE=1 rebuilds everything.
+# build.sh [TAG]: check the pins' signatures, download them and the sources, set up StageX's
+# BuildKit as the builder, and build with no network in the steps. NO_CACHE=1 rebuilds everything.
 set -euo pipefail
 here=$(dirname "$(readlink -f "$0")")
-tag=${1:-ccs-bash} dockerfile=${2:-Dockerfile}   # gate.Dockerfile: the gate's image (contrib/docker/web)
+tag=${1:-ccs-bash} dockerfile=${2:-Dockerfile}   # gate.Dockerfile for the gate's image (contrib/docker/web)
 
-# Image IDs, as the releases and ccs-sigs name them, are the image config's digest: Docker's own
-# image store. Its containerd store (a fresh Docker 29's default) shows and runs images by their
-# manifest's digest instead, an ID no attestation names.
+# Image IDs, as releases and ccs-sigs name them, are the image config's digest, as shown by
+# Docker's own image store. The containerd store (the default in a fresh Docker 29) shows and
+# runs images by their manifest's digest instead, an ID no attestation names.
 if docker info --format '{{json .DriverStatus}}' | grep -q 'io\.containerd\.snapshotter'; then
     echo 'error: Docker keeps images in its containerd store, where an image ID is not the attested one:' \
         'add "features": {"containerd-snapshotter": false} to /etc/docker/daemon.json, restart Docker, build again' >&2
@@ -21,9 +21,9 @@ while read -r name ref; do
 done < <(grep -v '^#' "$here/images")
 "$here/fetch.sh" "$here/sources"
 
-# Only copies, so the host's BuildKit makes it; named by its ID, so new pins get a new builder
-# and the same pins share one, across ccs-bash, ccs-front-bash and ccs-front-hugo (one copy of
-# the downloads and the cache, not three).
+# Only copies, so the host's BuildKit can make it safely. Named by its ID, so new pins get a new
+# builder and the same pins share one across ccs-bash, ccs-front-bash and ccs-front-hugo (one
+# copy of the downloads and cache, not three).
 docker buildx build -q --builder default --network none --pull=false "${contexts[@]}" \
     --build-arg SOURCE_DATE_EPOCH=0 --output type=docker,name=stagex-buildkit,rewrite-timestamp=true \
     -f "$here/builder.Dockerfile" "$here" > /dev/null
@@ -33,8 +33,8 @@ docker tag stagex-buildkit "$builder"
 docker buildx inspect "$builder" > /dev/null 2>&1 \
     || docker buildx create --name "$builder" --driver docker-container --driver-opt image="$builder" > /dev/null
 
-# Every time in the image is the commit's. fix and image never come from the cache: its keys
-# ignore SOURCE_DATE_EPOCH and file times, so another commit's result would bring its times.
+# Every time in the image is the commit's. The fix and image stages never come from the cache:
+# cache keys ignore SOURCE_DATE_EPOCH and file times, so another commit's result would bring its times.
 epoch=$(git -C "$here" log -1 --format=%ct)
 cache=(--no-cache-filter fix --no-cache-filter image)
 [[ ${NO_CACHE:-} ]] && cache=(--no-cache)   # buildx refuses both together

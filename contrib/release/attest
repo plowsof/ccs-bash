@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # attest: sign what contrib/release/build made, into a ccs-sigs checkout, for a pull request there.
 # Adapted from Feather Wallet's contrib/guix/guix-attest (tobtoht), itself from Bitcoin Core's
-# (MIT, see contrib/release/README.md): the same SIGNER, NO_SIGN and layout, so an attester who
-# knows feather-sigs knows this.
+# (MIT, see contrib/release/README.md). Same SIGNER, NO_SIGN and layout, so it works like
+# feather-sigs for anyone who knows that.
 export LC_ALL=C
 set -e -o pipefail
 
@@ -158,13 +158,13 @@ Hint: You may wish to remove the existing attestations and their signatures by
 EOF
 }
 
-# As Feather's one all.SHA256SUMS per version: everything built in this run goes into one file,
-# signed once. The three repositories are versioned apart, so the folder is named after the set:
-# <release>+<release>+.../<signer>/all.SHA256SUMS (verify checks a release in any set it is in).
+# Like Feather's one all.SHA256SUMS per version: everything built in this run goes into one
+# file, signed once. The three repositories have separate versions, so the folder is named after
+# the set: <release>+<release>+.../<signer>/all.SHA256SUMS. (verify checks a release in any set.)
 names=()
 for fragment in "${sha256sum_fragments[@]}"; do names+=( "$(basename "$(dirname "$fragment")")" ); done
 name=$(printf '%s\n' "${names[@]}" | sort -u | paste -sd+)
-# a version of the CCS is the three together: one release of each, never a part of a set
+# A version of the CCS is all three together: one release of each, never part of a set
 if [[ ! $name =~ ^ccs-bash-v[0-9]+\.[0-9]+\.[0-9]+\+ccs-front-bash-v[0-9]+\.[0-9]+\.[0-9]+\+ccs-front-hugo-v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     echo "ERR: a set is one release of each of ccs-bash, ccs-front-bash and ccs-front-hugo, built together"
     echo "     (contrib/release/build with no arguments builds the newest set); in $LOGDIR_BASE: $name"
@@ -228,23 +228,23 @@ if [ ! -e "$CCS_SIGS_REPO/builder-keys/$signer_name.asc" ]; then
     echo "Added your public key: builder-keys/$signer_name.asc"
 fi
 
-title="Add $signer_name $name"   # as feather-sigs' ("Add <signer> <version>")
+title="Add $signer_name $name"   # like feather-sigs ("Add <signer> <version>")
 if [ -n "$NO_COMMIT" ]; then
     echo "Not committed (NO_COMMIT): commit in $CCS_SIGS_REPO yourself, titled \"$title\"."
     exit 0
 fi
 
 cd "$CCS_SIGS_REPO"
-# master or testnet: the one this checkout started from (the newer, if it has both)
+# Base branch, master or testnet: the one this checkout started from (the newer, if both)
 contains() { git rev-parse -q --verify "$1" > /dev/null && git merge-base --is-ancestor "$1" HEAD; }
 base=master
 if contains origin/testnet; then
     if ! contains origin/master || git merge-base --is-ancestor origin/master origin/testnet; then base=testnet; fi
 fi
-# a branch of its own, unless you are already on one
+# Use a new branch, unless already on one
 branch=$(git symbolic-ref -q --short HEAD || true)
 if [ -z "$branch" ] || [ "$branch" = master ] || [ "$branch" = testnet ]; then
-    branch="$signer_name-${name//+/_}"   # no + in it: it goes in a link below
+    branch="$signer_name-${name//+/_}"   # no + in it, since it goes in a link below
     git checkout -q -b "$branch"
 fi
 git add -- "$name/$signer_name" "builder-keys/$signer_name.asc"
@@ -254,7 +254,7 @@ else
     git commit -q -m "$title"
     echo "Committed \"$title\" on the branch $branch, in $CCS_SIGS_REPO."
 fi
-# where it goes: ccs-sigs itself for its owner, otherwise the signer's fork
+# Push to ccs-sigs itself for its owner, otherwise to the signer's fork
 url=$(git remote get-url origin 2> /dev/null || true)
 if [[ $url =~ github\.com[:/]([^/]+)/ccs-sigs(\.git)?$ && ${BASH_REMATCH[1]} == "$signer_name" ]]; then
     remote=origin owner=$signer_name

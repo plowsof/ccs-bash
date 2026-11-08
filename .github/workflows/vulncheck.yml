@@ -1,10 +1,12 @@
 name: vulncheck
-# ccs-check (contrib/ccs-check): the known vulnerabilities (Go's database) in what it calls, of
-# Go's standard library as StageX's pinned Go has it (it has no module); and in the pinned
-# Caddy's binary (the web server's www: its Go and its modules), failing on any not in
-# container/caddy-vulns-accepted (each there with why it doesn't reach the site). Weekly too: a new one is
-# found in code that hasn't changed. A failure: refresh the Go pin (container/update-images.sh),
-# a release (docs/ccs-check.md, Keeping it patched).
+# Known vulnerabilities (Go's database) in:
+#   - what ccs-check (contrib/ccs-check) calls in Go's standard library, as StageX's pinned Go has it
+#     (ccs-check has no modules);
+#   - the pinned Caddy binary (the web server's www: its Go and its modules). Fails on any not in
+#     container/caddy-vulns-accepted, where each has a reason it doesn't reach the site.
+# Also runs weekly, since new vulnerabilities are found in code that hasn't changed.
+# On failure: refresh the Go pin (container/update-images.sh) and release
+# (docs/ccs-check.md, "Keeping it patched").
 on:
   pull_request:
     paths: [contrib/ccs-check/**, container/images, .github/workflows/vulncheck.yml]
