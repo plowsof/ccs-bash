@@ -121,6 +121,7 @@
             "gitlab-url": "https://example.org/mr/13",
             "author": "grace",
             "date": "October 3, 2026",
+            "created-at": "2026-10-03T12:00:00Z",
             "upvotes": 1,
             "downvotes": 0
         },
@@ -129,6 +130,7 @@
             "gitlab-url": "https://example.org/mr/11",
             "author": "erin",
             "date": "October 1, 2026",
+            "created-at": "2026-10-01T12:00:00Z",
             "upvotes": 5,
             "downvotes": 2
         }

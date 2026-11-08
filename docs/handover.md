@@ -408,6 +408,9 @@ confirmed donations while in Funding Required), the 50 newest. ccs-bash records 
 (`proposals.csv`'s `funding_required_date` and `funded_date`), the web server builds the feed
 with them, each item a link to one of the site's proposal pages under its `alert.conf`
 `SITE_URL`. A proposal funded before ccs-bash recorded it has no "fully funded" item.
+The feed also lists the 10 newest ideas as "New idea: <title>", each linking to its merge request.
+It uses the time the merge request was opened (site-data.json's `created-at`). Anyone can open a
+merge request, so the cap keeps ideas from crowding out the funding items.
 
 **The backup machine:** the `ccs-backup` account, with the backend's key in
 `/etc/ssh/authorized_keys/ccs-backup` (step 7).

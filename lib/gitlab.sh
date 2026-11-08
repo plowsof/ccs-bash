@@ -271,6 +271,8 @@ ideas() {
             "gitlab-url": (.web_url | if type == "string" and test("^https://[^\\s\"\\x27<>\\\\]+$") then @html else null end),
             author: (.author.username | noaddress | @html),
             date: (.created_at | sub("\\.[0-9]+"; "") | fromdate | strftime("%B %-d, %Y")),
+            # The exact time, for the "New idea" items of the feed
+            "created-at": (.created_at | sub("\\.[0-9]+"; "") | fromdate | todate),
             ts: (.created_at | sub("\\.[0-9]+"; "") | fromdate),
             upvotes: ($v.upvotes // null | if type == "number" then . else null end),
             downvotes: ($v.downvotes // null | if type == "number" then . else null end)
