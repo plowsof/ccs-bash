@@ -1,26 +1,27 @@
 #!/usr/bin/env bash
-# check-pinned.sh: fail unless two clean builds of this commit from separate clones (other
-# paths, umasks, times) and one on a cache left by another commit all give the same hash.
-# One of those builds alone, printing "id: <image id>": check-pinned.sh clean UMASK | warm (CI
-# runs warm, under umask 077, on a second machine and compares it with its clean build).
-# CHECK_DOCKERFILE=gate.Dockerfile: the gate's image instead (contrib/docker/web).
+# check-pinned.sh: fail unless these builds all give the same hash: two clean builds of this
+# commit from separate clones (different paths, umasks, times), and one on a cache left by
+# another commit.
+# check-pinned.sh clean UMASK | warm: run one of those builds alone, printing "id: <image id>".
+# (CI runs warm under umask 077 on a second machine and compares it with its clean build.)
+# CHECK_DOCKERFILE=gate.Dockerfile: check the gate's image instead (contrib/docker/web).
 set -euo pipefail
-shopt -s inherit_errexit   # (a failed build stops clean and warm, run in $(...))
+shopt -s inherit_errexit   # a failed build stops clean and warm, which run in $(...)
 here=$(dirname "$(readlink -f "$0")")
 repo=$(git -C "$here" rev-parse --show-toplevel)
 name=$(basename "$repo") dockerfile=${CHECK_DOCKERFILE:-Dockerfile}
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"; docker image rm -f "$name:other" "$name:warm" "$name:repro1" "$name:repro2" > /dev/null 2>&1 || true' EXIT
 
-# once; every build gets the same checked files (those already in container/sources, a cache's,
-# kept when their sha256 matches)
+# Fetch once, so every build gets the same checked files (ones already in container/sources
+# are kept when their sha256 matches)
 mkdir -p "$tmp/sources"
 if [[ -d $here/sources ]]; then cp -r "$here/sources/." "$tmp/sources/"; fi
 "$here/fetch.sh" "$tmp/sources"
 
-# clean N UMASK: a build with no cache, from a fresh clone made under UMASK; prints its image ID
-# build DIR TAG: DIR's container/build.sh as TAG, its output kept: shown (its end) if it fails,
-# which fails the check
+# clean N UMASK: build with no cache, from a fresh clone made under UMASK. Prints the image ID.
+# build DIR TAG: run DIR's container/build.sh as TAG, keeping the output. If it fails, show its
+# end; that fails the check.
 build() {
     if ! "$1/container/build.sh" "$2" "$dockerfile" > "$tmp/build.log" 2>&1; then
         echo "error: the build of $2 failed; its last lines:" >&2
@@ -35,7 +36,7 @@ clean() {
     NO_CACHE=1 build "$tmp/clone$1" "$name:repro$1"
     docker image inspect "$name:repro$1" --format '{{.Id}}'
 }
-# warm: a build of another commit (a day older), then this one on the cache it left; prints its ID
+# warm: build another commit (a day older), then this one on the cache it left. Prints the ID.
 warm() {
     local c
     for c in other warm; do
@@ -50,7 +51,7 @@ warm() {
 }
 
 case ${1:-} in
-    # (an assignment: a failed build fails the script, as an echo of it wouldn't)
+    # An assignment, so a failed build fails the script (an echo of it wouldn't)
     clean) i=$(clean 1 "${2:?UMASK}"); echo "id: $i"; exit ;;
     warm) i=$(warm); echo "id: $i"; exit ;;
     "") ;;

@@ -1,25 +1,26 @@
-# The gate's image: the web server's side (contrib/docker/web): sshd, the gate (ccs-receive), the
-# backup receiver (ccs-backup-receive) and what they run; and the site's front: Caddy (HTTPS, its
-# certificates its own) and Tor (the onion), each its own service. Built as the ccs-bash image is
-# (container/build.sh ccs-gate gate.Dockerfile): StageX images by digest (container/images,
-# signatures checked), sources by sha256 (sources.lock), no network in the steps, every file the
-# commit's time, one layer in an empty image. Its userland busybox, built here with only the
-# applets in gate-busybox-applets (as the ccs-bash image's); its checks ccs-check's (contrib/ccs-check: Go, built here), which also
-# receives the push (a tar, read in Go: no rsync), and the site it builds: jq and the vendored
-# ccs-front-bash. No Python, and nothing here reads an image: a proposal's is the proposals
-# repository's, a donation box's QR code the signed list's file, by its sum.
+# The gate's image, for the web server's side (contrib/docker/web). It holds:
+#   - sshd, the gate (ccs-receive), the backup receiver (ccs-backup-receive) and what they run;
+#   - the site's front: Caddy (HTTPS, its own certificates) and Tor (the onion), each its own service.
+# Built like the ccs-bash image (container/build.sh ccs-gate gate.Dockerfile): StageX images by
+# digest (container/images, signatures checked), sources by sha256 (sources.lock), no network in
+# the steps, every file with the commit's time, one layer in an empty image.
+# The userland is busybox, built here with only the applets in gate-busybox-applets.
+# The checks are ccs-check (contrib/ccs-check, Go, built here), which also receives the push
+# (site-data.json, read in Go: no rsync). The site is built with jq and the vendored ccs-front-bash.
+# No Python, and nothing here decodes an image: a proposal's images come from the proposals
+# repository, and a donation box's QR code is the signed list's file, checked by its sum.
 
-# ccs-check, the gate's checks in Go (contrib/ccs-check: Go's standard library alone, no module),
-# as its build.sh builds it: StageX's Go alone (it has no shell: the exec form), as root (a clone
-# made under umask 077 is its owner's alone: StageX's user couldn't read it), with no network, so
-# the same bytes
+# ccs-check, the gate's checks in Go (contrib/ccs-check: standard library only, no modules),
+# built as its build.sh does: StageX's Go only (no shell, so the exec form), with no network,
+# giving the same bytes. As root, because a clone made under umask 077 is readable only by its
+# owner, and StageX's user couldn't read it.
 FROM go AS ccs-check
 USER 0
 ENV HOME=/tmp GOCACHE=/tmp/cache GOPATH=/tmp/go CGO_ENABLED=0 GOFLAGS=-mod=readonly GOPROXY=off GOTOOLCHAIN=local
 RUN --mount=type=bind,source=contrib/ccs-check,target=/src ["/usr/bin/go", "-C", "/src", "build", "-trimpath", "-buildvcs=false", "-ldflags=-buildid=", "-o", "/tmp/ccs-check", "."]
 
-# Tor, from its signed source (sources.lock): a client and onion service only (no relay or
-# directory authority code), with StageX's OpenSSL, zlib and libevent; no compression libraries,
+# Tor, from its signed source (sources.lock): client and onion service only (no relay or
+# directory authority code), with StageX's OpenSSL, zlib and libevent. No compression libraries,
 # seccomp or systemd. The toolchain's cc is clang.
 FROM toolchain AS tor
 COPY --from=bash / /
@@ -38,8 +39,8 @@ RUN --mount=type=bind,source=container,target=/pin \
     && make -j"$(nproc)" > /dev/null \
     && install -D -m 755 src/app/tor /rootfs/usr/bin/tor
 
-# busybox with only the applets in gate-busybox-applets (and their options), as the ccs-bash
-# image builds its own (Dockerfile)
+# busybox with only the applets in gate-busybox-applets (and their options), built the same
+# way as the ccs-bash image's (Dockerfile)
 FROM toolchain AS busybox
 COPY --from=bash / /
 COPY --from=ncurses / /
@@ -86,8 +87,8 @@ COPY --from=caddy /usr/bin/caddy /usr/bin/caddy
 COPY --from=libevent / /
 COPY --from=tor /rootfs/ /
 COPY contrib/ccs-receive contrib/ccs-backup-receive /usr/local/bin/
-# the site, built here (contrib/gate-build): ccs-bash's steps for its JSON (lib/site-data.sh and
-# what it uses), and the vendored ccs-front-bash release (vendor/)
+# For building the site here (contrib/gate-build): ccs-bash's steps for its JSON (lib/site-data.sh
+# and what it uses), and the vendored ccs-front-bash release (vendor/)
 COPY lib/common.sh lib/proposals.sh lib/images.sh lib/site-data.sh lib/site.jq lib/frontmatter.awk /usr/local/lib/ccs-gate/lib/
 COPY vendor/ccs-front-bash /usr/local/lib/ccs-gate/vendor/ccs-front-bash
 COPY contrib/gate-build /usr/local/lib/ccs-gate/contrib/gate-build
@@ -97,12 +98,14 @@ COPY contrib/docker/web/init /usr/local/bin/ccs-web-init
 COPY contrib/docker/web/Caddyfile /etc/caddy/Caddyfile
 COPY contrib/docker/web/torrc /etc/tor/torrc
 
-# Only what the gate, the backup receiver and sshd run: of openssh, sshd (and ssh-keygen, for the
-# host key the first time); of git, git, its https transport and upload-pack (a file:// fetch);
-# of ncurses, the library bash needs. /bin/sh is bash
-# (git runs a file:// fetch's upload-pack through it); /var/log, where compose.yml mounts the gate's log. /etc/passwd and group: links to the ones
-# init writes in the mounted key folder (a mounted file replaced would stay the old one). Headers, static libraries and manuals
-# dropped; every file the commit's time.
+# Keep only what the gate, the backup receiver and sshd run: from openssh, sshd (and ssh-keygen,
+# for the first host key); from git, git, its https transport and upload-pack (for a file://
+# fetch); from ncurses, the library bash needs.
+# /bin/sh is bash, since git runs a file:// fetch's upload-pack through it.
+# /var/log is where compose.yml mounts the gate's log.
+# /etc/passwd and group are links to the files init writes in the mounted key folder (a mounted
+# file that gets replaced would stay the old one).
+# Headers, static libraries and manuals are dropped; every file gets the commit's time.
 FROM toolchain AS fix
 ARG SOURCE_DATE_EPOCH
 COPY --from=tree / /rootfs/
