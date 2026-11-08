@@ -1124,6 +1124,20 @@ got=$(
     done | tr '\n' ' '
 )
 if [[ $got == '[[1,0],[5,2]] [[1,0],[null,null]] ' ]]; then echo "ok   GitLab: each idea's votes read from its MR; unreadable ones leave the idea, without counts"; else echo "FAIL GitLab votes: $got"; status=1; fi
+# votes that can't be read this run: the last run's kept (a slow GitLab drops some reads every
+# run), from proposals.json's ideas, by the number the link ends in; GitLab's and Forgejo's
+got=$(
+    # shellcheck source=tests/stubs.sh
+    source "$here/stubs.sh"
+    out=$(mktemp -d)
+    jq -n '[{proposals: [{"gitlab-url": "https://example.org/mr/11", upvotes: 4, downvotes: 1},
+        {"gitlab-url": "https://example.org/mr/12", upvotes: 9, downvotes: 9}, {"gitlab-url": null}]}]' > "$out/proposals.json"
+    for u in '' https://forgejo.invalid/api/v1/repos/monero/ccs-proposals; do
+        WORK=$(mktemp -d) OUTPUT_DIR=$out REPOSITORY_URL=${u:-${REPOSITORY_URL:-}} PROPOSALS_DIR=$FIXTURES/proposals TEST_FAIL_VOTES=11 \
+            ideas 2> /dev/null | jq -c 'map([.upvotes, .downvotes])'
+    done | tr '\n' ' '
+)
+if [[ $got == '[[1,0],[4,1]] [[1,0],[4,1]] ' ]]; then echo "ok   votes that can't be read this run: the last run's kept"; else echo "FAIL the last run's votes: $got"; status=1; fi
 
 # release/verify: only TRUSTED_KEYS' attesters count; without it nothing does, unless --any-key
 # (anyone can send ccs-sigs a key). A ccs-sigs of one release attested by one test key.
