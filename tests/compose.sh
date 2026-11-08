@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# The backend compose's stages (contrib/docker/backend/step) without Docker: the five run as
-# processes here, ccs-back.sh, ccs-watch, git and ssh stand-ins (the push is
-# contrib/ccs-push itself, its ssh the stand-in), and take
-# turns as the compose's containers do: each run's result on the push's "watch" pipe, the
-# "== run" lines in the pull's output, the backup's sums (a file sent once until it changes), a
-# failed ccs-bash in the run's result, a line on the pull's "now" starting a run at once; the
-# watch stage after each push and between them; the healthcheck.
+# The backend compose's stages (contrib/docker/backend/step) without Docker. The five stages run
+# as processes here, with stand-ins for ccs-back.sh, ccs-watch, git and ssh (the push is
+# contrib/ccs-push itself, with the ssh stand-in). They take turns as the compose's containers do.
+# Checked: each run's result on the push's "watch" pipe; the "== run" lines in the pull's output;
+# the backup's sums (a file is sent once until it changes); a failed ccs-bash in the run's result;
+# a line on the pull's "now" starting a run at once; the watch stage after each push and between
+# pushes; the healthcheck.
 set -uo pipefail
 here=$(dirname "$(readlink -f "$0")")
 step=$here/../contrib/docker/backend/step
@@ -23,14 +23,14 @@ start() { for s in pull ccs-bash backup push; do "$step" "$s" >> "$t/out-$s" 2>&
 mkdir -p "$t/bin" "$t/state/retired" "$t/proposals"
 : > "$t/pull-ok" && : > "$t/watched"
 echo "a.md,1" > "$t/state/proposals.csv"
-# stand-ins: ccs-back.sh fails when $t/fail-bash exists, else writes its JSON; ssh
-# keeps what the backup sent, and counts a push (asked to "receive": site-data.json, or nothing);
-# ccs-watch keeps how it was asked
+# Stand-ins: ccs-back.sh fails when $t/fail-bash exists, else writes its JSON. ssh keeps what the
+# backup sent, and counts each push (a "receive" with site-data.json or nothing). ccs-watch
+# records how it was called.
 cat > "$t/bin/ccs-back" <<'EOF'
 #!/usr/bin/env bash
 [[ ! -e $T/fail-bash ]] || { echo "error: the stand-in fails"; exit 1; }
 [[ ! -e $T/slow ]] || sleep 3
-# a donation pending, when $T/pending exists: proposals.json says so, as ccs-bash's does
+# A pending donation when $T/pending exists: proposals.json says so, as ccs-bash's does
 p=0; [[ -e $T/pending ]] && p=0.5
 mkdir -p "$T/out" && echo "[{\"stage\": \"Funding Required\", \"proposals\": [{\"amount-pending\": $p}]}]" > "$T/out/proposals.json"
 echo '{"state": {}, "funds": {}, "ideas": []}' > "$T/out/site-data.json"
@@ -66,8 +66,8 @@ fi
 if [[ -p $t/run/pull/now && -p $t/run/push/watch && -p $t/run/backup/wake && -d $t/run/watch ]]; then
     ok "init: a folder and pipes for each stage"
 else fail "init's pipes"; fi
-# the two pipes whose lines mean something writable by their one writer's group only; the others
-# by any stage (a line there only has a stage look at the "done" counters again)
+# The two pipes whose lines carry meaning are writable only by their writer's group. The others
+# are writable by any stage (a line there only makes a stage recheck the "done" counters).
 if [[ $(stat -c %a "$t/run/pull/now") == 660 && $(stat -c %a "$t/run/push/watch") == 660 && $(stat -c %a "$t/run/backup/wake") == 622 ]]; then
     ok "init: now and watch 660 (the wallet's group, the watch's), the wake pipes 622"
 else fail "the pipes' modes: $(stat -c '%n %a' "$t/run/pull/now" "$t/run/push/watch" "$t/run/backup/wake" | tr '\n' ' ')"; fi
@@ -91,14 +91,14 @@ if until_pushed $((n + 2)) && grep -q 'a.md,1 changed' "$t/sent"; then ok "backu
 while IFS= read -r -t 1 _ <&3; do :; done
 touch "$t/fail-bash"; n=$(cat "$t/run/push/done")
 if until_pushed $((n + 2)); then
-    # (a run past ccs-bash when the stand-in began failing ends ok: the run after it)
+    # A run already past ccs-bash when the stand-in began failing ends ok; the next run fails
     got=$(line); [[ $got == *" pushed ok" ]] && got=$(line)
     if [[ $got == *" pushed ccs-bash" ]] && grep -q 'error: the stand-in fails' "$t/out-ccs-bash"; then
         ok "a failed ccs-bash: in the run's result ($got), its error in its output"
     else fail "a failed ccs-bash: '$got'"; fi
 else fail "runs after a failure"; fi
 rm -f "$t/fail-bash"
-# a line on "now" starts a run at once, however long CCS_EVERY is: the stages started again with an hour
+# A line on "now" starts a run at once, however long CCS_EVERY is (stages restarted with an hour)
 stop
 while IFS= read -r -t 1 _ <&3; do :; done
 export CCS_EVERY=3600
@@ -107,8 +107,8 @@ n=$(cat "$t/run/push/done"); sleep 1
 printf 'tx\n' 1<> "$t/run/pull/now"
 if until_pushed $((n + 1)); then ok "a line on the pull's now pipe (a new tx): the next run at once"; else fail "the now pipe"; fi
 
-# a line on "now" while a run is going (the wallet sees a transaction mid-run): kept, and the
-# next run starts as soon as this one is pushed, not CCS_EVERY (an hour) later; two lines, one run
+# A line on "now" during a run (the wallet sees a transaction mid-run) is kept. The next run
+# starts as soon as this one is pushed, not CCS_EVERY (an hour) later. Two lines make one run.
 touch "$t/slow"
 n=$(cat "$t/run/push/done") s=$(cat "$t/run/pull/started")
 printf 'tx\n' 1<> "$t/run/pull/now"
@@ -119,9 +119,9 @@ if until_pushed $((n + 2)) && sleep 3 && (($(cat "$t/run/push/done") == n + 2));
     ok "a line on now during a run: the next run right after it (two lines: one run)"
 else fail "now during a run: pushed $(cat "$t/run/push/done"), wanted $((n + 2))"; fi
 
-# a wallet rescanning notifies again for every transaction it has had: 30,000 lines during one
-# run, more than the pipe holds (64 KB). Taken while the run goes (the wallet's notify never
-# blocks), and one run after it for all of them
+# A rescanning wallet notifies again for every transaction it ever had: 30,000 lines during one
+# run, more than the pipe holds (64 KB). They are read during the run (the wallet's notify never
+# blocks), and one run follows for all of them.
 touch "$t/slow"
 n=$(cat "$t/run/push/done") s=$(cat "$t/run/pull/started")
 printf 'tx\n' 1<> "$t/run/pull/now"
@@ -132,8 +132,8 @@ if ((rc == 0)) && until_pushed $((n + 2)) && sleep 3 && (($(cat "$t/run/push/don
     ok "a rescan's flood on now during a run (30,000 lines): taken without blocking, one run after it"
 else fail "a flood on now: writer exit $rc, pushed $(cat "$t/run/push/done"), wanted $((n + 2))"; fi
 
-# the pace: a stream of notifications, runs at least CCS_MIN_GAP apart (3 s here); a donation
-# left pending, the next run CCS_MIN_GAP after (no notification), until nothing is pending
+# The pace: with a stream of notifications, runs stay at least CCS_MIN_GAP apart (3 s here). With
+# a donation pending, the next run comes CCS_MIN_GAP later (no notification) until none is pending.
 stop
 export CCS_MIN_GAP=3
 start
@@ -143,23 +143,23 @@ while (($(date +%s) < t0 + 9)); do printf 'tx\n' 1<> "$t/run/pull/now"; sleep 1;
 flood=$(($(starts) - s0))
 if ((flood >= 2 && flood <= 4)); then ok "pace: 9 s of notifications, $flood runs (at most one per CCS_MIN_GAP)"
 else fail "pace: $flood runs in 9 s of notifications, CCS_MIN_GAP 3"; fi
-# (one run sees it pending, from a notification; the next ones come by themselves)
+# One run sees it pending, from a notification; the next ones come by themselves
 sleep 4; touch "$t/pending"; s1=$(starts); printf 'tx\n' 1<> "$t/run/pull/now"; sleep 12; pend=$(($(starts) - s1))
 rm -f "$t/pending"; sleep 5; s2=$(starts); sleep 8; settled=$(($(starts) - s2))
 if ((pend >= 3 && settled == 0)); then ok "pace: a donation pending, the next run CCS_MIN_GAP after it ($pend in 12 s from one notification); none pending, none until CCS_EVERY"
 else fail "pace: $pend runs while pending, $settled after"; fi
 unset CCS_MIN_GAP
 
-# the healthcheck: every stage finished something within CCS_HEALTH seconds
+# The healthcheck: every stage finished something within CCS_HEALTH seconds
 unhealthy=''
 for s in pull ccs-bash backup push; do "$step" health "$s" > /dev/null || unhealthy+=" $s"; done
 if [[ -z $unhealthy ]] && ! CCS_HEALTH=0 "$step" health pull > /dev/null && ! "$step" health watch > /dev/null; then
     ok "health: each stage that finished a run lately healthy; one that hasn't (watch, not started yet) not"
 else fail "health:$unhealthy"; fi
 
-# the watch stage, once the test no longer reads the pipe: after a push, the pages and the run's
-# result; between pushes, the pages again (CCS_WATCH_EVERY)
-# (no run going: CCS_EVERY is an hour; the lines of the runs before read and dropped first)
+# The watch stage, once the test stops reading the pipe: after a push it checks the pages and the
+# run's result; between pushes it checks the pages again (CCS_WATCH_EVERY).
+# No run is going (CCS_EVERY is an hour); lines from earlier runs are read and dropped first.
 while IFS= read -r -t 1 _ <&3; do :; done
 exec 3<&-
 CCS_WATCH_EVERY=3600 CCS_WATCH_RANDOM=1 "$step" watch https://site.test >> "$t/out-watch" 2>&1 & pids+=($!)
@@ -178,7 +178,7 @@ if (($(grep -cE '^https://site\.test /' "$t/watched") >= 2)) && ! grep -q -- --r
     ok "watch: between pushes, the pages again and again (no run's result); healthy"
 else fail "watch between pushes"; cat "$t/watched"; fi
 
-# no run's result for CCS_WATCH_STALL (2 s here): a failed run, with why, again as long after
+# No run result for CCS_WATCH_STALL (2 s here): a failed run with the reason, and again each such period
 stop
 : > "$t/watched"
 exec 3<> "$t/run/push/watch"; while IFS= read -r -t 1 _ <&3; do :; done; exec 3<&-

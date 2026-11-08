@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# In the image (the CI's image job, no network): the tools the backend compose's stages run, as
-# the image has them (only git and its https transport of git's, only ssh of openssh): a pull,
-# git's https transport there, ssh, the push (contrib/ccs-push), openssl's Keccak
-# (ccs-bash), ccs-watch's applets.
+# Runs inside the image (CI's image job, no network). Tests the tools the backend compose's stages
+# run, as the image has them (from git only git and its https transport, from openssh only ssh):
+# a pull, git's https transport, ssh, the push (contrib/ccs-push), openssl's Keccak (ccs-bash),
+# and ccs-watch's applets.
 set -uo pipefail
 status=0
 ok() { echo "ok   $1"; }
@@ -17,16 +17,16 @@ if git init -q "$t/a" && git -C "$t/a" commit -q --allow-empty -m one && git -C 
 else fail "git: a clone and a pull"; fi
 out=$(git ls-remote https://127.0.0.1:9/x 2>&1)
 if [[ $out == *"unable to access"* ]]; then ok "git: its https transport (no network here: unable to access)"; else fail "git's https transport: $out"; fi
-# (ssh -V as a user /etc/passwd hasn't: "No user exists", it runs all the same; compose.yml
-# mounts the host's for the push and the backup)
+# ssh -V as a user not in /etc/passwd prints "No user exists" but runs anyway. compose.yml mounts
+# the host's passwd for the push and the backup.
 out=$(ssh -V 2>&1)
 if [[ $out == *OpenSSH* || $out == *"No user exists for uid"* ]]; then ok "ssh"; else fail "ssh: $out"; fi
 # ccs-push with busybox's tools: a first push (site-data.json as it is), then one with nothing
-# changed (nothing sent: the heartbeat); ssh a stand-in that keeps what it is sent
+# changed (nothing sent: the heartbeat). ssh is a stand-in that keeps what it is sent.
 here=$(dirname "$(readlink -f "$0")")
 # (a function, exported: /tmp here is noexec)
 echo '{"state": {}, "funds": {}, "ideas": []}' > "$t/site-data.json"
-# (the gate's answer: "took <sha256>" of what it was sent, if anything; with $T/mute, none)
+# The gate's answer: "took <sha256>" of what it was sent, if anything; none with $T/mute
 # shellcheck disable=SC2317,SC2329  # (exported: ccs-push calls it)
 ssh() { cat > "$T/got"; [[ -f $T/mute || ! -s $T/got ]] || echo "took $(sha256sum < "$T/got" | cut -d' ' -f1)"; }
 export -f ssh
@@ -35,12 +35,12 @@ r1=0; bash "$here/../contrib/ccs-push" "$t/site-data.json" "$t/state" host > "$t
 cp "$t/got" "$t/got1"
 r2=0; bash "$here/../contrib/ccs-push" "$t/site-data.json" "$t/state" host > "$t/p2" 2>&1 || r2=$?
 empty=$(test -s "$t/got" && echo no || echo yes)
-# ... and a file another user owns (this checkout's, mounted read-only): as the push stage runs,
-# its own user, not ccs-bash's (CI runs this test as root and as user 10005: review 10's L-4: a
-# root-only success hides there)
+# ... and with a file another user owns (this checkout's, mounted read-only), since the push stage
+# runs as its own user, not ccs-bash's. CI runs this test as root and as user 10005, so a success
+# that only works as root can't hide.
 mkdir -p "$t/3"
 r3=0; T=$t/3 bash "$here/../contrib/ccs-push" "$here/../contrib/docker/backend/compose.yml" "$t/state3" host > "$t/p3" 2>&1 || r3=$?
-# review 12's I-3: a gate answering 0 without saying it took it: the push failed, no record
+# A gate that answers 0 without saying it took the file: the push fails and nothing is recorded
 echo '{"state": {}, "funds": {}, "ideas": [1]}' > "$t/site-data2.json" && touch "$t/mute"
 r4=0; bash "$here/../contrib/ccs-push" "$t/site-data2.json" "$t/state" host > "$t/p4" 2>&1 || r4=$?
 rm -f "$t/mute"
@@ -55,8 +55,8 @@ if ((r1 == 0 && r2 == 0)) && cmp -s "$t/site-data.json" "$t/got1" && [[ $empty =
     ok "ccs-push: the first push site-data.json, the next (unchanged) nothing"
 else cat "$t/p1" "$t/p2"; fail "ccs-push with busybox (exits $r1 $r2)"; fi
 if [[ $(printf '' | openssl dgst -keccak-256 -r) == c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470* ]]; then ok "openssl's Keccak-256"; else fail "openssl's Keccak-256"; fi
-# retire-wallet, run by hand in the compose (docs/handover.md, "Retiring a wallet"): the
-# checkout's, and it starts (tests/run.sh tests what it does, in this image too)
+# retire-wallet, run by hand in the compose (docs/handover.md, "Retiring a wallet"): it is the
+# checkout's and it starts. (tests/run.sh tests what it does, in this image too.)
 r=$(/opt/ccs-bash/contrib/retire-wallet 2>&1) && r="exit 0: $r"
 if cmp -s /opt/ccs-bash/contrib/retire-wallet "$here/../contrib/retire-wallet" && [[ $r == *"NAME (a-z, 0-9, -)"* ]]; then
     ok "retire-wallet: the checkout's, in the image"

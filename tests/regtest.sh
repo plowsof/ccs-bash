@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# tests/regtest.sh: ccs-back.sh and ccs-front-bash against a real monerod (regtest, offline) and
-# real monero-wallet-rpc: a funder wallet sends the donations, ccs-bash reads a view-only copy of
-# a fresh CCS wallet (lookahead 1:1, as docs/handover.md step 1 says), ccs-front-bash makes the
-# site, and what a visitor sees (each proposal's donate box, the Funding Required cards,
-# /projects) is checked against what the test itself sent, in atomic units. Only the forge is a
-# stub (no ideas). Prints an ok/FAIL line a check, exits 1 if any failed.
+# tests/regtest.sh: test ccs-back.sh and ccs-front-bash against a real monerod (regtest, offline)
+# and a real monero-wallet-rpc.
+# A funder wallet sends the donations. ccs-bash reads a view-only copy of a fresh CCS wallet
+# (lookahead 1:1, as in docs/handover.md step 1). ccs-front-bash builds the site.
+# What a visitor sees (each proposal's donate box, the Funding Required cards, /projects) is
+# checked against what the test sent, in atomic units. Only the forge is a stub (no ideas).
+# Prints an ok/FAIL line per check, and exits 1 if any failed.
 #
 #   tests/regtest.sh
 #   KEEP=1            keep the temporary folder (printed at the end)
@@ -13,23 +14,23 @@
 #   FRONT_BASH        a ccs-front-bash checkout (default: ../ccs-front-bash beside this repository)
 #   HUGO_ZIP          ccs-front-hugo's release zip (default: v0.1.24, downloaded and checked)
 #   REGTEST_PORT      first of the 127.0.0.1 ports used (default 38180; up to +20)
-#   OLD_MONERO=0      skip the time-locked scenario (it needs v0.18.3.3's monerod and wallet-rpc:
-#                     since v0.18.3.4 the wallet refuses an unlock_time and the pool rejects one)
+#   OLD_MONERO=0      skip the time-locked scenario. It needs v0.18.3.3's monerod and wallet-rpc:
+#                     since v0.18.3.4 the wallet refuses an unlock_time and the pool rejects one.
 #
-# Needs bash, curl, jq, git, unzip, qrencode (ccs-front-bash), bzip2, sha256sum. No network but
-# the downloads (once, cached); every daemon and wallet listens on 127.0.0.1 only.
+# Needs bash, curl, jq, git, unzip, qrencode (ccs-front-bash), bzip2, sha256sum. No network except
+# the downloads (once, cached). Every daemon and wallet listens on 127.0.0.1 only.
 set -euo pipefail
 export LC_ALL=C TZ=UTC
 here=$(dirname "$(readlink -f "$0")")
 repo=${here%/tests}
 CACHE=${REGTEST_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/ccs-regtest}
 FRONT=${FRONT_BASH:-$repo/../ccs-front-bash}
-# (below 32768: a port in the kernel's range for outgoing connections, 32768-60999, can be one of
-# the test's own connections when a daemon starts, which then fails to bind it)
+# Below 32768: a port in the kernel's range for outgoing connections (32768-60999) may already be
+# used by one of the test's own connections when a daemon starts, which then fails to bind it.
 PORT=${REGTEST_PORT:-28180}
 MONERO_V=v0.18.5.4
 MONERO_SHA=ba2928962c101b609434bf8c1b43ad59ebe96c5525977284ca599d8bf0f02d10
-# (binaryFate's signed hashes.txt for v0.18.3.3, monero-site commit d00169a6d)
+# From binaryFate's signed hashes.txt for v0.18.3.3, monero-site commit d00169a6d
 OLD_V=v0.18.3.3
 OLD_SHA=47c7e6b4b88a57205800a2538065a7874174cd087eedc2526bee1ebcce0cc5e3
 HUGO_V=v0.1.24
@@ -79,7 +80,7 @@ monero_bins() { # monero_bins VERSION SHA DIR: monerod and monero-wallet-rpc int
 
 # ---- RPC ----
 
-# call URL METHOD PARAMS [CURL OPTION...]: the result (jq -e: an error fails)
+# call URL METHOD PARAMS [CURL OPTION...]: print the result (jq -e, so an error fails)
 call() {
     local out
     out=$(curl -fsS --max-time 300 "${@:4}" -H 'Content-Type: application/json' \
@@ -130,9 +131,9 @@ mine() { # mine N: N blocks, the coinbase to the funder
     F refresh > /dev/null
 }
 
-# The environment: monerod, the funder, the keys wallet (a full copy of the CCS wallet, for the
-# published list of its subaddresses) and the CCS wallet: view-only, from its address and view
-# key, with lookahead 1:1, as production.
+# The environment: monerod, the funder, the keys wallet (a full copy of the CCS wallet, to make
+# the published list of its subaddresses) and the CCS wallet: view-only, from its address and
+# view key, with lookahead 1:1, as in production.
 setup_env() { # setup_env BIN FUNDER_BIN DIR
     local bin=$1 fbin=$2 dir=$3 vk
     start_daemon "$bin" "$dir/monerod"
@@ -148,7 +149,7 @@ setup_env() { # setup_env BIN FUNDER_BIN DIR
     K create_wallet '{"filename": "ccs-full", "password": "", "language": "English"}' > /dev/null
     CCS_ADDRESS=$(K get_address | jq -r .address)
     vk=$(K query_key '{"key_type": "view_key"}' | jq -r .key)
-    # the list a Core Team member would sign: subaddresses 0..250 of account 0, and (1, 0)
+    # The list a Core Team member would sign: subaddresses 0..250 of account 0, and (1, 0)
     K create_address '{"account_index": 0, "count": 250}' > /dev/null
     K get_address '{"account_index": 0}' | jq -r '.addresses[] | "\(.address_index) \(.address)"' > "$dir/list"
     K create_account > /dev/null
@@ -201,8 +202,8 @@ EOF
     [[ -e $2/proposals.csv ]] || : > "$2/proposals.csv"
 }
 
-# run_back [CONF]: the wallet refreshed (auto-refresh is off, so a check sees a known height),
-# then ccs-back.sh in its own bash, the forge a stub: no MRs. Its time in LAST_SECONDS.
+# run_back [CONF]: refresh the wallet (auto-refresh is off, so a check sees a known height), then
+# run ccs-back.sh in its own bash, with a stub forge (no MRs). Its run time goes in LAST_SECONDS.
 run_back() {
     local conf=${1:-$CONF} t0 t1 rc=0 wh dh
     C refresh > /dev/null
@@ -248,8 +249,9 @@ project() { # /projects: raised_amount (in ten-thousandths of an XMR: the same w
 
 # ---- the expected numbers, from what was sent ----
 # LEDGER: one line per output sent: txid idx amount before unlock
-#   idx: the subaddress (or acct1, or none); before: 1 if no proposal showed that subaddress when
-#   it was sent (not any proposal's money); unlock: the tx's unlock_time
+#   idx: the subaddress (or acct1, or none)
+#   before: 1 if no proposal showed that subaddress when it was sent (so no proposal's money)
+#   unlock: the tx's unlock_time
 LEDGER=$T/ledger
 : > "$LEDGER"
 SHOWN=" "   # subaddresses some proposal's page shows
@@ -274,10 +276,12 @@ send() { # send [unlock=N] IDX:AMOUNT...: one transfer_split; the txids
     done
 }
 
-# expect IDX MIN: "raised pending count" (atomic units) a proposal at subaddress IDX should show,
-# from the ledger and where each tx is now (monerod): in a block MIN deep, raised; in the pool or
-# less deep, pending; time-locked, nothing until unlocked; gone (a reorg), nothing. A count is a
-# (tx, subaddress), as ccs-back's deposits table: two outputs of one tx to one proposal are one.
+# expect IDX MIN: print "raised pending count" (atomic units) that a proposal at subaddress IDX
+# should show, from the ledger and where each tx is now (monerod):
+#   in a block at least MIN deep: raised; in the pool or less deep: pending;
+#   time-locked: nothing until unlocked; gone (a reorg): nothing.
+# One count per (tx, subaddress), as in ccs-back's deposits table: two outputs of one tx to one
+# proposal count once.
 expect() {
     local idx=$1 min=$2 dh txid i amount before unlock raised=0 pending=0 st h
     local -A seen=() where=() height=()
@@ -309,7 +313,7 @@ trim0() { local x=$1; if [[ $x == *.* ]]; then while [[ $x == *0 ]]; do x=${x%0}
 declare -A TARGET=()   # file -> atomic units
 declare -A IDX=()      # file -> subaddress shown on its page
 
-# shows LABEL FILE [MIN] [OUT] [SITE]: the donate box, the card and /projects against expect
+# shows LABEL FILE [MIN] [OUT] [SITE]: check the donate box, the card and /projects against expect
 shows() {
     local label=$1 f=$2 min=${3:-10} out=${4:-$OUT} site=${5:-$SITE} r p n note want pct
     read -r r p n < <(expect "${IDX[$f]}" "$min")
@@ -330,7 +334,7 @@ shows() {
 
 all_show() { local f; for f in "${!IDX[@]}"; do shows "$1" "$f" "${2:-10}"; done; }
 
-# the subaddress each fr proposal's page shows, checked against the published list
+# Check the subaddress each Funding Required proposal's page shows against the published list
 read_addresses() {
     local f a i
     for f in "${!TARGET[@]}"; do
@@ -394,7 +398,7 @@ update; shows "3. in the pool: pending only" p-alpha.md
 mine 1; update; shows "3. 1 confirmation: pending only" p-alpha.md
 mine 8; update; shows "3. 9 confirmations: pending only" p-alpha.md
 mine 1; update; shows "3. 10 confirmations: raised" p-alpha.md
-# a tx that leaves the pool unmined: its pending note and count go again (documented)
+# A tx that leaves the pool unmined: its pending note and count disappear again (documented)
 tx=$(send "${IDX[p-beta.md]}:777000000000")
 update; shows "3. a second tx in the pool" p-beta.md
 D flush_txpool "{\"txids\": [\"$tx\"]}" > /dev/null
@@ -422,7 +426,7 @@ for ((k = 0; k < 104; k++)); do
     spam+=("${IDX[$to]}:$amount")
 done
 sent_txs=0
-# 40 outputs in one call (several txs), 15 (one tx), then 1 to 6 outputs a tx
+# 40 outputs in one call (several txs), 15 (one tx), then 1 to 6 outputs per tx
 for tx in $(send "${spam[@]:0:40}"); do sent_txs=$((sent_txs + 1)); done
 for tx in $(send "${spam[@]:40:15}"); do sent_txs=$((sent_txs + 1)); done
 k=55
@@ -440,7 +444,7 @@ all_show "5. spam, 10 confirmations"
 mine 30
 update; s_final=$LAST_SECONDS
 all_show "5. spam, 40 confirmations (in deposits.csv)"
-# deposits.csv: one line a (tx, subaddress) at least 30 deep, the amounts summed, none twice
+# deposits.csv: one line per (tx, subaddress) at least 30 deep, amounts summed, none twice
 final=$(sed -n 's/^# final \([0-9]*\) .*/\1/p' "$STATE/deposits.csv")
 want_csv=$(Dother get_transactions "{\"txs_hashes\": $(cut -d' ' -f1 "$LEDGER" | jq -R . | jq -sc unique)}" \
     | jq -r --argjson f "$final" '(.txs // [])[] | select(.in_pool | not) | select(.block_height <= $f) | "\(.tx_hash) \(.block_height)"' \
@@ -481,8 +485,8 @@ mine 10; update
 l3=$(labels) b3=$(cache_bytes)
 note "6. dust to $far (past the scan table): wallet $l3 subaddresses, cache +$((b3 - b2)) bytes, seen by the wallet: $(C get_transfers '{"in": true, "all_accounts": true}' | jq --argjson i "$far" '[.in[] | select(.subaddr_index.minor == $i)] | length')"
 
-# new proposals get the next subaddresses: those with dust from before (the next one, and one
-# past the lookahead, which the wallet didn't count as created) must not show it
+# New proposals get the next subaddresses. Those with dust from before (the next one, and one
+# past the lookahead, which the wallet didn't count as created) must not show it.
 state_max=$(jq -R -s 'split("\n") | map(select(. != "") | split(",")[2] | gsub("\""; "") | select(. != "") | tonumber) | max' "$STATE/proposals.csv")
 note "6. the state's highest subaddress: $state_max; dust sat at $next and $beyond"
 proposal p-delta.md "Delta" "10 XMR"
@@ -493,7 +497,7 @@ update
 read_addresses
 check "6. new proposals get the subaddresses after the state's highest (delta eps zeta)" "$((state_max + 1)) $((state_max + 2)) $((state_max + 3))" "${IDX[p-delta.md]} ${IDX[p-eps.md]} ${IDX[p-zeta.md]}"
 note "6. assigned.tsv after the hand-out (height $(daemon_height)): $(tr '\t\n' ' ;' 2> /dev/null < "$STATE/assigned.tsv" || echo none)"
-# donors who see the new addresses donate at once: mined in the next block
+# Donors who see the new addresses donate at once: mined in the next block
 send "${IDX[p-delta.md]}:2000000000000" "${IDX[p-eps.md]}:3000000000000" > /dev/null
 mine 1; update
 shows "6. delta (dust at its subaddress before its hand-out; a donation in the next block, pending)" p-delta.md
@@ -514,7 +518,7 @@ send $(for ((k = 0; k < 15; k++)); do printf '%s:1000 ' $((g1 + k)); done) > /de
 mine 1; C refresh > /dev/null
 g2=$(labels) gb2=$(cache_bytes)
 note "6. 1 tx with 15 outputs to the next 15: wallet $g1 -> $g2 subaddresses, cache +$((gb2 - gb1)) bytes"
-# 10 txs of dust to one subaddress already handed out (alpha's): cache growth alone
+# 10 txs of dust to one subaddress already handed out (alpha's): only the cache grows
 gb3=$(cache_bytes)
 for ((k = 0; k < 10; k++)); do send "${IDX[p-alpha.md]}:1" > /dev/null; done
 mine 1; C refresh > /dev/null
@@ -531,7 +535,7 @@ mine 10; update
 if diff -q "$T/projects-8.json" "$OUT/projects.json" > /dev/null; then ok "8. to the main address and to account 1: on no proposal"; else fail "8. to the main address or account 1: a proposal changed"; fi
 
 # ---- 7. never lower: a reorg ----
-# a. a block with a deposit popped, its tx gone, a longer chain: raised would go down
+# a. A block with a deposit is popped, its tx gone, on a longer chain: raised would go down
 tx=$(send "${IDX[p-beta.md]}:500000000000")
 mine 10; update; shows "7. before the reorg" p-beta.md
 cp -r "$OUT" "$T/out-7a"; cp -r "$SITE" "$T/site-7a"
@@ -547,7 +551,7 @@ else
 fi
 touch "$STATE/allow-lower"
 update && shows "7. allow-lower: the lower total, once" p-beta.md
-# b. deeper than deposits.csv's 30: kept until the daily recount, which stops
+# b. Deeper than deposits.csv's 30: kept until the daily recount, which stops the run
 tx=$(send "${IDX[p-gamma.md]}:900000000000")
 mine 40; update; shows "7. before a 40-block reorg" p-gamma.md
 shown_before=$(project p-gamma.md)
@@ -576,7 +580,7 @@ cp -r "$OUT" "$T/out-8"
 if run_back; then
     ok "8. a 9008 XMR donation: counted"
     run_front && shows "8. a 9008 XMR donation" p-alpha.md
-    # past its goal in Funding Required: fully funded, the feed's date recorded and published
+    # Past its goal in Funding Required: fully funded, with the feed's date recorded and published
     at=$(jq -r '.[] | .proposals[] | select(."local-url" == "/proposals/p-alpha.html") | ."funded-at"' "$OUT/proposals.json")
     if [[ $at =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z$ ]] && grep -q "^\"p-alpha.md\",.*,\"$at\"\$" "$STATE/proposals.csv"; then
         ok "8. past its goal: fully funded at $at (proposals.csv, proposals.json's funded-at)"
@@ -594,7 +598,7 @@ if [[ ${OLD_MONERO:-1} != 0 ]]; then
     monero_bins "$OLD_V" "$OLD_SHA" "$T/bin-old"
     DPORT=$((PORT + 11)) FPORT=$((PORT + 13)) KPORT=$((PORT + 14)) CPORT=$((PORT + 15))
     LEDGER=$T/ledger4; : > "$LEDGER"; SHOWN=" "
-    # the old monerod and funder; the keys and CCS wallets are $MONERO_V's
+    # The old monerod and funder; the keys and CCS wallets are $MONERO_V's
     start_daemon "$T/bin-old" "$T/lock/monerod"
     start_wallet "$T/bin-old" "$FPORT" "$T/lock/funder"
     start_wallet "$T/bin" "$KPORT" "$T/lock/keys"
@@ -630,7 +634,7 @@ if [[ ${OLD_MONERO:-1} != 0 ]]; then
         fail "4. the $OLD_V wallet would not send with an unlock_time"
     else
         send "${IDX[p-alpha.md]}:200000000000" > /dev/null
-        # locked for good (unlock_time 2^64 - 1) and till 2286 (a time)
+        # Locked forever (unlock_time 2^64 - 1), and until 2286 (a time)
         send unlock=18446744073709551615 "${IDX[p-beta.md]}:300000000000" > /dev/null || note "4. unlock_time 2^64-1 refused by the wallet"
         send unlock=9999999999 "${IDX[p-beta.md]}:400000000000" > /dev/null
         mine 10; update
@@ -640,7 +644,7 @@ if [[ ${OLD_MONERO:-1} != 0 ]]; then
         mine 40; update; all_show "4. 40 blocks on (in deposits.csv): counted once"
         if grep -q ",$((h + 20))\$" "$STATE/deposits.csv"; then ok "4. deposits.csv keeps its unlock_time"; else fail "4. deposits.csv lacks the unlock_time"; fi
         rm "$STATE/deposits.csv"; update; all_show "4. deposits.csv made again: counted once"
-        # time-locked dust to the next subaddress, not handed out yet (alpha 1, beta 2: so 3),
+        # Time-locked dust to the next subaddress, not handed out yet (alpha 1, beta 2, so 3),
         # still locked when it is handed out
         nexti=$(labels) h=$(daemon_height)
         send unlock=$((h + 20)) "$nexti:5000" > /dev/null

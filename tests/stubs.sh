@@ -33,8 +33,8 @@ rpc() {
         get_height) printf '{"height": %d}\n' "${TEST_HEIGHT:-3100000}" ;;
         get_transfers) # (what was asked, for the tests of deposits.csv)
             echo "$2" >> "$TEST_TMP/get_transfers-calls"
-            # like the real one: only the subaddresses asked for; with filter_by_height,
-            # only confirmed ones above min_height (the pool always)
+            # Like the real one: only the subaddresses asked for. With filter_by_height, only
+            # confirmed ones above min_height (plus the pool, always).
             jq --argjson want "$(jq -c '.subaddr_indices // []' <<<"$2")" --argjson p "$2" \
                 'map_values(map(select(.subaddr_index.minor | IN($want[]))))
                  | if $p.filter_by_height then .in |= map(select(.height > $p.min_height)) else . end' "${TEST_TRANSFERS:-$FIXTURES/rpc/get_transfers.json}" ;;
@@ -46,7 +46,7 @@ gitlab_get() {
     local iid
     echo "$1" >> "$TEST_TMP/gitlab-calls"   # what was asked for (the ideas' cache is checked by it)
     case $1 in
-        # as gitlab.com's list without a token: no votes (each MR read on its own has them)
+        # Like gitlab.com's list without a token: no votes (reading the MR itself gives them)
         merge_requests\?state=opened*) jq 'map(.upvotes = 0 | .downvotes = 0)' "$FIXTURES/gitlab/opened.json" ;;
         merge_requests\?state=merged*) cat "$FIXTURES/gitlab/merged.json" ;;
         merge_requests/*/diffs\?*)
@@ -57,8 +57,8 @@ gitlab_get() {
             iid=${1#merge_requests/}
             [[ $iid =~ ^[0-9]+$ && $iid != "${TEST_FAIL_VOTES:-}" ]] || return 1
             jq --argjson i "$iid" '.[] | select(.iid == $i)' "$FIXTURES/gitlab/opened.json" ;;
-        # Forgejo: the same MRs as Forgejo pull requests (times with an offset, a closed PR
-        # that was not merged among the merged ones)
+        # Forgejo: the same MRs as Forgejo pull requests (times with an offset, and a closed
+        # unmerged PR among the merged ones)
         pulls\?state=open*) gitlab_forgejo < "$FIXTURES/gitlab/opened.json" ;;
         pulls\?state=closed*)
             gitlab_forgejo < "$FIXTURES/gitlab/merged.json" | jq 'map(. + {merged: true})
@@ -69,7 +69,7 @@ gitlab_get() {
             [[ $iid != "${TEST_FAIL_VOTES:-}" ]] || return 1   # TEST_FAIL_VOTES=N: its reactions fail
             jq --argjson i "$iid" '.[] | select(.iid == $i) | [range(.upvotes) | {content: "+1"}] + [range(.downvotes) | {content: "-1"}]
                 | if length == 0 then null else . + [{content: "heart"}] end' "$FIXTURES/gitlab/opened.json" ;;
-        # an MR's file at its commit (sha-N: MR N's); TEST_FAIL_RAW=N: that one fails
+        # An MR's file at its commit (sha-N is MR N's). TEST_FAIL_RAW=N makes that one fail.
         repository/files/*/raw\?ref=* | raw/*\?ref=*)
             [[ ${1##*ref=} != "sha-${TEST_FAIL_RAW:-}" ]] || return 1
             cat "$FIXTURES/gitlab/raw/${1##*ref=}" ;;
@@ -82,8 +82,8 @@ gitlab_get() {
     esac
 }
 
-# GitLab MRs -> Forgejo pull requests; Z times become the same moment at +14:00 (the next
-# day in that zone: a wrong conversion shows the wrong date)
+# GitLab MRs -> Forgejo pull requests. Z times become the same moment at +14:00 (the next day in
+# that zone, so a wrong conversion shows the wrong date).
 gitlab_forgejo() {
     jq 'map({number: .iid, html_url: .web_url, title, user: {login: .author.username}, merged: false, head: {sha: .sha},
         created_at: (.created_at | if . == null then null else sub("\\.[0-9]+Z$"; "Z") | fromdate + 50400 | todate | sub("Z$"; "+14:00") end)})'

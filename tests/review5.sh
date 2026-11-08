@@ -1,9 +1,10 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154,SC2034  # (sourced by run.sh: its here, status, TEST_TMP and FIXTURES)
-# Security review 5 (2026-10-27), state and backups: sourced by run.sh before its last comparison.
-# A taken-over backend (or backup machine) keeping false totals past being found: a deposits.csv
-# checked "in the future" by way of bash's 64-bit wrap; retired-record backups that merge
-# proposals, or come under a new name; a state with two proposals' subaddresses swapped.
+# State and backup tests, sourced by run.sh before its last comparison.
+# A taken-over backend (or backup machine) trying to keep false totals unnoticed:
+# - a deposits.csv "checked in the future" via bash's 64-bit wrap;
+# - retired-record backups that merge proposals, or arrive under a new name;
+# - a state with two proposals' subaddresses swapped.
 r5_had=$(cat "$TEST_TMP/wallet-count"); cp "$TEST_TMP/wallet-labels" "$TEST_TMP/wallet-labels.r5" 2> /dev/null || : > "$TEST_TMP/wallet-labels.r5"
 r5_run() {   # r5_run DIR [ENV...]: one ccs-back.sh run on DIR/state, DIR/out; log in DIR/log
     local d=$1; shift
@@ -16,8 +17,8 @@ r5_run() {   # r5_run DIR [ENV...]: one ccs-back.sh run on DIR/state, DIR/out; l
 r5_raised() { jq -r --arg f "$2" '.[] | select(.filename == $f) | "\(.raised_amount) \(.contributions)"' "$1/out/projects.json"; }
 r5_host() { type -P du head comm sort find > /dev/null; }   # (the backup receiver: a host script)
 
-# deposits.csv checked at 2^64 + now: bash would read it as now, never recount in full, and a
-# forged deposit would count every run. Refused by the run and by the backup receiver.
+# deposits.csv checked at 2^64 + now: bash would read it as now and never recount in full, so a
+# forged deposit would count every run. Both the run and the backup receiver refuse it.
 d=$TEST_TMP/r5-1; rm -rf "$d"; mkdir -p "$d/state"; cp "$TEST_TMP/state/proposals.csv" "$d/state/"
 r5_run "$d" > /dev/null 2>&1 || true   # (a first run: deposits.csv made)
 now=$(date +%s) lo=$((3709551616 + now - 100)) hi=1844674407
@@ -28,7 +29,7 @@ mv "$d/state/deposits.new" "$d/state/deposits.csv"; cp "$d/state/deposits.csv" "
 if ! r5_run "$d" && grep -q 'not a deposits file' "$d/log"; then
     echo "ok   review 5: deposits.csv checked at 2^64 + now: the run stops (no number past 18 digits)"
 else echo "FAIL review 5: deposits.csv checked at 2^64 + now: a-fund $(r5_raised "$d" a-fund.md)"; status=1; fi
-# an unlock_time of 2^64 - 1 (anyone can send one): locked for good, not counted as raised
+# An unlock_time of 2^64 - 1 (anyone can send one): locked forever, never counted as raised
 d=$TEST_TMP/r5-1b; rm -rf "$d"; mkdir -p "$d/state"; cp "$TEST_TMP/state/proposals.csv" "$d/state/"
 jq '.in += [{txid: ("e1" + ("0" * 62)), amount: 5000000000000, confirmations: 50, unlock_time: 18446744073709551615, subaddr_index: {major: 0, minor: 1}, height: 3099900}]' \
     "$FIXTURES/rpc/get_transfers.json" > "$TEST_TMP/r5-locked.json"
@@ -42,9 +43,9 @@ if r5_host; then
     else echo "FAIL review 5: the backup receiver keeps deposits.csv checked at 2^64 + now ($(cat "$d/recv.out"))"; status=1; fi
 fi
 
-# Retired records on the backup machine: only names its admin listed; a later version may rename
-# proposals one for one, never put two proposals' deposits under one; a name with "-" is another
-# wallet, never a version of a shorter one.
+# Retired records on the backup machine: only names its admin listed. A later version may rename
+# proposals one for one, but never put two proposals' deposits under one. A name with "-" is a
+# different wallet, never a version of a shorter name.
 if r5_host; then
     bk=$TEST_TMP/r5-backup2; rm -rf "$bk"; mkdir -p "$bk"; printf 'ccs2\nccs2-0\n' > "$bk.names"
     rv() { CCS_BACKUP_DIR=${2:-$bk} CCS_BACKUP_RETIRED=$bk.names "$here/../contrib/ccs-backup-receive" > "$TEST_TMP/r5-recv.out" 2>&1; }
@@ -65,7 +66,7 @@ if r5_host; then
     if rv - "$bk2" < "$TEST_TMP/r5-ccs2.csv" && [[ $(find "$bk2" -name 'retired-ccs2-2*.csv' | wc -l) == 1 ]]; then
         echo "ok   review 5: retired names don't share versions by prefix (ccs2-0 isn't ccs2's first version)"
     else cat "$TEST_TMP/r5-recv.out"; echo "FAIL review 5: ccs2-0 taken as ccs2's first version"; status=1; fi
-    # (a leading zero, which the backend refuses: a restored copy would stop every run)
+    # A leading zero, which the backend refuses: a restored copy would stop every run
     mkdir -p "$TEST_TMP/r5-backup4"
     if ! { printf '# retired ccs2 wallet %s height 0100 time 01700000000\n' "$w"; printf '10,%064d,1,1,0,a-fund.md\n' 1; } | rv - "$TEST_TMP/r5-backup4"; then
         echo "ok   review 5: the backup refuses a retired header with a leading zero"
@@ -73,7 +74,7 @@ if r5_host; then
 fi
 
 # A state with two proposals' subaddresses swapped: each address is the wallet's, but the
-# wallet's labels say which proposal each was given. The run stops.
+# wallet's labels say which proposal each was given to. The run stops.
 d=$TEST_TMP/r5-5; rm -rf "$d"; mkdir -p "$d/state"
 a1=8$(printf '%094d' 1) a2=8$(printf '%094d' 2)
 sed -e "s/^\"a-fund.md\",\"\([^\"]*\)\",\"1\",\"$a1\"/\"a-fund.md\",\"\1\",\"2\",\"$a2\"/" \
@@ -85,9 +86,8 @@ elif ! r5_run "$d" && grep -q "labelled a-fund.md, given to b-wip.md" "$d/log"; 
     echo "ok   review 5: a state with two proposals' subaddresses swapped (against the wallet's labels): the run stops"
 else echo "FAIL review 5: a swapped state runs: $(tail -n 1 "$d/log")"; status=1; fi
 
-# Review 5, low findings.
-# D-5: dust at the next subaddress to be handed out (the state's highest + 1; the list publishes
-# it) before a proposal is given it isn't that proposal's: not on this run, nor any later one.
+# Dust sent to the next subaddress to be handed out (the state's highest + 1, published on the
+# list) before a proposal gets it is not that proposal's, on this run or any later one.
 d=$TEST_TMP/r5-dust; rm -rf "$d"; mkdir -p "$d/state"; cp "$FIXTURES/state.csv" "$d/state/proposals.csv"
 echo 30 > "$TEST_TMP/wallet-count"; printf '1 a-fund.md\n2 b-wip.md\n3 near-funded.md\n' > "$TEST_TMP/wallet-labels"
 jq '.in += [range(25) as $k | {txid: ("d0" + ("0" * 60) + ($k | tostring | if length == 1 then "0" + . else . end)), amount: 1, confirmations: 50, unlock_time: 0, subaddr_index: {major: 0, minor: 4}, height: 3099900}]' \
@@ -99,8 +99,8 @@ if [[ $first == *" 0 0" && $second == "$first" ]] && grep -qE $'^4\t[0-9]+$' "$d
     echo "ok   review 5: dust sent to a subaddress before it was handed out isn't the new proposal's ($first), on later runs either"
 else echo "FAIL review 5: dust before a subaddress was handed out: '$first' then '$second'; assigned: $(cat "$d/state/assigned.tsv" 2>&1)"; status=1; fi
 
-# D-6: retire-wallet, the wallet not answering about one address (a timeout): stops, writes nothing
-# (it used to leave that proposal out of the record, silently)
+# retire-wallet when the wallet doesn't answer about one address (a timeout): it stops and writes
+# nothing, rather than silently leaving that proposal out of the record
 d=$TEST_TMP/r5-retire; rm -rf "$d"; mkdir -p "$d/state"; cp "$TEST_TMP/state/proposals.csv" "$d/state/"
 echo 6 > "$TEST_TMP/wallet-count"; : > "$TEST_TMP/wallet-labels"
 jq --argjson m 10 '.pool = [] | .in |= map(select(.confirmations >= $m))' "$FIXTURES/rpc/get_transfers.json" > "$TEST_TMP/r5-quiet.json"
@@ -115,11 +115,11 @@ if ! R5_FAIL=$a1 TEST_TRANSFERS="$TEST_TMP/r5-quiet.json" bash -c 'source "$1/..
     echo "ok   review 5: retire-wallet stops when the wallet doesn't answer about an address (nothing written)"
 else cat "$d/retire.out"; echo "FAIL review 5: retire-wallet with an address the wallet didn't answer about"; status=1; fi
 
-# D-8: a run that hangs (here: the wallet never answers) is stopped after RUN_SECONDS, and its lock
-# freed: the runs after it would otherwise skip ("still going") for good
+# A run that hangs (here the wallet never answers) is stopped after RUN_SECONDS and its lock freed.
+# Otherwise every later run would skip ("still going") for good.
 d=$TEST_TMP/r5-hang; rm -rf "$d"; mkdir -p "$d/state" "$d/out"; cp "$TEST_TMP/state/proposals.csv" "$d/state/"
 sed "s|$TEST_TMP/state|$d/state|; s|$TEST_TMP/out|$d/out|" "$TEST_TMP/ccs.conf" > "$d/ccs.conf" && chmod 444 "$d/ccs.conf"
-# the lock free within 5 seconds (flock -n: the image's busybox flock has no -w)
+# The lock is free within 5 seconds (flock -n: the image's busybox flock has no -w)
 r5_free() { local i; for i in 1 2 3 4 5; do (exec 8> "$d/state/lock"; flock -n 8) && return 0; sleep 1; done; return 1; }
 start=$SECONDS rc=0
 r5_hang() { RUN_SECONDS=2 bash -c 'source "$1/../ccs-back.sh" && source "$1/stubs.sh"; rpc() { while :; do sleep 1; done; }; main "$2"' _ "$here" "$d/ccs.conf" 2> "$d/log"; }
@@ -130,9 +130,9 @@ if ((rc != 0 && SECONDS - start < 20)) && grep -q "the run took over 2s: stopped
     echo "ok   review 5: a run that hangs is stopped after RUN_SECONDS ($((SECONDS - start))s), its lock freed"
 else echo "FAIL review 5: a hung run: exit $rc after $((SECONDS - start))s; log: $(grep -v "skipping\|ignoring" "$d/log")"; status=1; fi
 
-# D-10: retire-from-ccs-back on a wallet restored from its keys (only subaddress 0 made): it makes
-# them up to the state's highest index before asking which are its own, as every run does (one not
-# made yet would answer "doesn't belong", and the live wallet's proposal would be retired)
+# retire-from-ccs-back on a wallet restored from keys (only subaddress 0 created): it creates
+# subaddresses up to the state's highest index before asking which are its own, as every run does.
+# Otherwise one not created yet would answer "doesn't belong", and a live proposal would be retired.
 d=$TEST_TMP/dep-db
 if [[ -f $d/state/proposals.csv.before-retire-old0 ]]; then
     cp "$d/state/proposals.csv.before-retire-old0" "$d/state/proposals.csv"; rm -f "$d/state/retired/r5.csv"
