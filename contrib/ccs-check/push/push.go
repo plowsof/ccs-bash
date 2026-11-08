@@ -1,6 +1,6 @@
-// Package push: the backend's push, site-data.json alone on ssh's stdin (contrib/ccs-push),
-// received into the gate's staging folder, and the gate's own copies between staging and the live
-// site, in place of rsync: no C parses what the backend sends.
+// Package push receives the backend's push (site-data.json alone, on ssh's stdin, from
+// contrib/ccs-push) into the gate's staging folder. It also copies staging into the live site.
+// It replaces rsync, so no C code parses what the backend sends.
 package push
 
 import (
@@ -15,14 +15,14 @@ import (
 	"time"
 )
 
-// temp: the start of a file's name while it is written (write): never a name of the site's, and
-// one left by a copy that was killed is removed by the next (review 10's L-3)
+// temp is the name prefix for a file being written. No site file has it, and one left behind by
+// a killed copy is removed by the next copy.
 const temp = ".ccs-push-"
 
-// Data: the push, r, as dir/site-data.json (written beside it and renamed over it): true; or
-// nothing sent, the heartbeat (no bytes, or only NULs: an older backend's empty tar): false. Over
-// max bytes, or not JSON's start (an object, "{"): refused. Whether it is site-data.json as
-// ccs-bash writes it is ccs-check data's to say.
+// Data saves the push r as dir/site-data.json (written beside it, then renamed over it) and
+// returns true. For an empty push, the heartbeat (no bytes, or only NULs: an older backend's
+// empty tar), it returns false. Refuses more than max bytes, or anything not starting like a
+// JSON object ("{"). Whether it is valid site-data.json is for ccs-check data to decide.
 func Data(r io.Reader, dir string, max int64) (bool, error) {
 	b, err := io.ReadAll(io.LimitReader(r, max+1))
 	if err != nil {
@@ -40,7 +40,7 @@ func Data(r io.Reader, dir string, max int64) (bool, error) {
 	return true, write(filepath.Join(dir, "site-data.json"), bytes.NewReader(b), int64(len(b)), time.Now())
 }
 
-// write: r's size bytes as the file t, written beside it and renamed over it, 644, its time mt
+// write writes size bytes from r to file t (beside it, then renamed over it), mode 644, time mt
 func write(t string, r io.Reader, size int64, mt time.Time) error {
 	f, err := os.CreateTemp(filepath.Dir(t), temp+"*")
 	if err != nil {
@@ -67,11 +67,12 @@ func write(t string, r io.Reader, size int64, mt time.Time) error {
 	return err
 }
 
-// Copy: dst made to hold src's files, as rsync -a's quick check does: one of the same size and
-// time, or the same bytes, is left as it is (its time made src's), any other written beside it and renamed over it (644, its time kept),
-// folders 755. With del, what dst has and src hasn't goes, and a file in a folder's place or a
-// folder in a file's is replaced; without, that is an error. src holds plain files and folders
-// only (the live site, or staging after the gate's checks): anything else is an error.
+// Copy makes dst hold src's files, like rsync -a's quick check. A file with the same size and
+// time, or the same bytes, is left as it is (taking src's time). Any other is written beside it
+// and renamed over it (644, keeping its time). Folders are 755.
+// With del, anything dst has that src lacks is removed, and a file where a folder should be (or
+// the reverse) is replaced; without del, that is an error.
+// src must hold only plain files and folders (the live site, or staging after the checks).
 func Copy(src, dst string, del bool) error {
 	err := filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -79,7 +80,7 @@ func Copy(src, dst string, del bool) error {
 		}
 		rel, _ := filepath.Rel(src, p)
 		if !d.IsDir() && strings.HasPrefix(d.Name(), temp) {
-			return nil // a copy's left-over, never copied
+			return nil // left over from a killed copy; never copied
 		}
 		t := filepath.Join(dst, rel)
 		st, terr := os.Lstat(t)
@@ -106,7 +107,7 @@ func Copy(src, dst string, del bool) error {
 				return err
 			}
 			if terr == nil && st.Mode().IsRegular() && st.Size() == si.Size() && (st.ModTime().Equal(si.ModTime()) || Same(p, t)) {
-				// (the same bytes, sent again: its time made src's, nothing rewritten)
+				// Same bytes sent again: take src's time, rewrite nothing
 				if err := os.Chtimes(t, si.ModTime(), si.ModTime()); err != nil {
 					return err
 				}
@@ -116,7 +117,7 @@ func Copy(src, dst string, del bool) error {
 				return nil
 			}
 			if terr == nil && !st.Mode().IsRegular() {
-				// an empty folder gives way (one an older gate let go live: review 10's M-1)
+				// An empty folder gives way (an older gate could let one go live)
 				if !del && (!st.IsDir() || os.Remove(t) != nil) {
 					return fmt.Errorf("%s: a file where %s has a folder (or something else)", rel, dst)
 				}
@@ -137,7 +138,7 @@ func Copy(src, dst string, del bool) error {
 	if err != nil {
 		return err
 	}
-	// what dst has and src hasn't: with del, it goes; a copy's left-over temp file always does
+	// What dst has and src lacks: removed with del. A killed copy's temp file is always removed.
 	return filepath.WalkDir(dst, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -166,7 +167,7 @@ func Copy(src, dst string, del bool) error {
 	})
 }
 
-// Same: a and b hold the same bytes
+// Same reports whether a and b hold the same bytes
 func Same(a, b string) bool {
 	fa, err := os.Open(a)
 	if err != nil {

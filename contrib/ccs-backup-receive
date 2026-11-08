@@ -1,28 +1,27 @@
 #!/bin/bash
-# ccs-backup-receive: the backup node's side of ccs-bash's state backup. The backend's key runs
-# only this (command= in authorized_keys). It reads one file on stdin:
-#   - proposals.csv (the state, which nothing can make again): kept as proposals-<UTC time>.csv,
-#     unless it is the same as the newest copy. Never overwritten or deleted, so even a taken-over
-#     backend can only add copies, not destroy the old ones; 1 MB each.
-#   - a retired wallet's file (contrib/retire-wallet, its first line "# retired <name> ..."): state,
-#     kept as retired-<name>-<UTC time>.csv, every version, as proposals.csv; 64 MB each. Only a
-#     name this machine's admin listed in /etc/ccs-backup/retired-names (root's, one a line: each
-#     wallet's name and its follow-up records', NAME-2..., listed by hand), so a taken-over
-#     backend can't add a wallet of its own. A
-#     later version may differ from the first only in its file names, one for one (a proposal
-#     renamed; never two proposals' deposits put under one).
-#   - deposits.csv (a cache of the wallet's deposits, its first line "# final ..."): one copy,
-#     deposits.csv, replaced only by one that has every deposit it has (it only ever grows; a taken-
-#     over backend can add lines, never take one away). 64 MB at most. A real shrink (a reorg deeper
-#     than its depth) is reset here by hand, as root. Not one checked in the future.
-# Every number at most 18 digits, without a leading zero, as ccs-bash reads them (bash wraps
-# past 2^63: a "checked" time of 2^64 + now would read as now).
-# Nothing once the folder holds 256 MB, so it can't fill the disk either. Root-owned, 755. Copies in
-# /var/lib/ccs-backup (the ccs-backup user's, 700).
+# ccs-backup-receive: the backup machine's side of ccs-bash's state backup.
+# The backend's key can run only this (command= in authorized_keys). It reads one file on stdin:
+#   - proposals.csv (the state; nothing can rebuild it): kept as proposals-<UTC time>.csv,
+#     unless identical to the newest copy. Never overwritten or deleted, so even a taken-over
+#     backend can only add copies, not destroy old ones. 1 MB each.
+#   - a retired wallet's file (from contrib/retire-wallet; first line "# retired <name> ..."):
+#     also state, kept as retired-<name>-<UTC time>.csv, every version. 64 MB each.
+#     Only names listed by this machine's admin in /etc/ccs-backup/retired-names (owned by root,
+#     one per line, including follow-up records NAME-2...), so a taken-over backend can't add a
+#     wallet of its own. A later version may differ from the first only by renaming proposals,
+#     one old name to one new name (never merging two proposals' deposits).
+#   - deposits.csv (the wallet's deposit cache; first line "# final ..."): one copy, replaced
+#     only by a file that still has every deposit. It only grows, so a taken-over backend can add
+#     lines but never remove one. 64 MB at most. A real shrink (a reorg deeper than its depth) is
+#     reset here by hand, as root. A "checked" time in the future is refused.
+# Every number must have at most 18 digits and no leading zero, as ccs-bash reads them
+# (bash wraps past 2^63, so a "checked" time of 2^64 + now would read as now).
+# Takes nothing once the folder holds 256 MB, so it can't fill the disk.
+# Owned by root, 755. Copies go to /var/lib/ccs-backup (owned by the ccs-backup user, 700).
 set -euo pipefail
-# (no home of the account's: nothing reads config from there, whatever passwd says)
+# No home for the account, so nothing reads config from there, whatever passwd says
 export HOME=/nonexistent
-dir=${CCS_BACKUP_DIR:-/var/lib/ccs-backup}   # (the tests'; an ssh forced command gets no environment from the client)
+dir=${CCS_BACKUP_DIR:-/var/lib/ccs-backup}   # for tests; an ssh forced command gets no environment from the client
 names=${CCS_BACKUP_RETIRED:-/etc/ccs-backup/retired-names}
 n='(0|[1-9][0-9]{0,17})'
 (($(du -sm "$dir" | cut -f1) < 256)) || { echo "ccs-backup: $dir holds 256 MB already, not kept (look at what is in it)" >&2; exit 1; }
@@ -35,19 +34,19 @@ if [[ $first =~ ^#\ retired\ ([a-z0-9-]+)\ wallet\ ([0-9A-Za-z]{95}|ccs-back-dat
     (($(wc -c < "$tmp") <= 64 << 20)) || { echo "ccs-backup: retired wallet's file over 64 MB, not kept" >&2; exit 1; }
     grep -qxF -- "$name" "$names" 2> /dev/null \
         || { echo "ccs-backup: retired wallet $name isn't in $names (this machine's admin lists each retired wallet), not kept" >&2; exit 1; }
-    # (no address in it either: a run of 90 base58 characters, in a proposal's file name)
+    # No address in it either: no run of 90 base58 characters in a proposal's file name
     if grep -qvE "^$n,[0-9a-f]{64},$n,$n,$n,[^/[:cntrl:]]+\\.md\$" < <(tail -n +2 "$tmp") \
         || grep -qE '[1-9A-HJ-NP-Za-km-z]{90}' < <(tail -n +2 "$tmp"); then
         echo "ccs-backup: not a retired wallet's file, not kept" >&2; exit 1
     fi
-    # this name's versions only: retired-<name>-<UTC time>.csv exactly (names have "-" too: a
-    # wallet named <name>-z is another one, never a newer version of <name>)
+    # Only this name's versions: exactly retired-<name>-<UTC time>.csv. Names can contain "-",
+    # and a wallet named <name>-z is a different one, not a newer version of <name>.
     versions() { find "$dir" -maxdepth 1 -name "retired-$name-*.csv" | { grep -E "/retired-$name-[0-9]{8}T[0-9]{6}Z\.csv\$" || true; } | sort; }
     last=$(versions | tail -n 1)
     if [[ $last ]] && cmp -s "$tmp" "$last"; then echo "ccs-backup: retired $name unchanged"; exit 0; fi
-    # the first version is the record: a later one may rename proposals (the file column), each
-    # old name to one new one and no two to the same, never change the wallet or a deposit (a
-    # taken-over backend can't make a forged one the newest)
+    # The first version is the record. A later one may only rename proposals (the file column),
+    # each old name to one new name, never two to the same. It may never change the wallet or a
+    # deposit, so a taken-over backend can't make a forged version the newest.
     ref=$(versions | head -n 1)
     if [[ $ref ]] && ! { [[ $(head -n 1 "$ref" | cut -d' ' -f3-5) == $(head -n 1 "$tmp" | cut -d' ' -f3-5) ]] \
         && cmp -s <(tail -n +2 "$ref" | cut -d, -f1-5 | sort) <(tail -n +2 "$tmp" | cut -d, -f1-5 | sort) \
@@ -66,11 +65,11 @@ if [[ $first =~ ^#\ retired\ ([a-z0-9-]+)\ wallet\ ([0-9A-Za-z]{95}|ccs-back-dat
 fi
 if [[ $first =~ ^#\ final\ $n\ checked\ $n$ ]]; then
     (($(wc -c < "$tmp") <= 64 << 20)) || { echo "ccs-backup: deposits over 64 MB, not kept" >&2; exit 1; }
-    # (no pipe into grep -q: with pipefail, tail killed early would hide what grep found)
+    # No pipe into grep -q: with pipefail, tail killed early would hide what grep found
     if grep -qvE "^$n,[0-9a-f]{64},$n,$n,$n\$" < <(tail -n +2 "$tmp"); then
         echo "ccs-backup: not a deposits.csv, not kept" >&2; exit 1
     fi
-    # (checked in the future: the backend would never recount it, and keep a forged deposit)
+    # A "checked" time in the future would stop the backend recounting, keeping a forged deposit
     [[ $first =~ checked\ ([0-9]+)$ ]]
     if ((BASH_REMATCH[1] > $(date +%s) + 3600)); then
         echo "ccs-backup: deposits.csv checked in the future, not kept" >&2; exit 1
@@ -85,11 +84,11 @@ if [[ $first =~ ^#\ final\ $n\ checked\ $n$ ]]; then
     echo "ccs-backup: kept deposits.csv ($(($(wc -l < "$old") - 1)) deposits)"
     exit 0
 fi
-# (a first line of either kind it didn't take: no number past 18 digits, no leading zero)
+# A first line of either kind that it didn't accept: numbers past 18 digits or with a leading zero
 [[ $first == "# retired "* ]] && { echo "ccs-backup: not a retired wallet's file, not kept" >&2; exit 1; }
 [[ $first == "# final "* ]] && { echo "ccs-backup: not a deposits.csv, not kept" >&2; exit 1; }
 (($(wc -c < "$tmp") <= 1048576)) || { echo "ccs-backup: over 1 MB, not kept" >&2; exit 1; }
-# proposals.csv's rows: "file","link",index,"address","date"[,"date"] (the index a number, or "")
+# proposals.csv rows: "file","link",index,"address","date"[,"date"] (index is a number or "")
 if [[ ! -s $tmp ]] || ! awk '!/^"[^"]*","[^"]*",(""|0|[1-9][0-9]?[0-9]?[0-9]?[0-9]?[0-9]?),"[^"]*","[^"]*"(,"[^"]*")?$/ { bad = 1 } END { exit bad }' "$tmp"; then
     echo "ccs-backup: not a proposals.csv, not kept" >&2; exit 1
 fi

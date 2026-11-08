@@ -1,7 +1,7 @@
-// Package gate: which files of the site the web server built may go live (ccs-receive's
-// verdict). Its pages, JSON and feed are scanned for addresses (each the signed list's or allowed;
-// the feed's none), NUL bytes and data: images; its QR codes must be the signed list's, by their
-// sums. A file that can't be read for it fails, as one with something against it does.
+// Package gate decides which files of the built site may go live (ccs-receive's verdict).
+// Pages, JSON and the feed are scanned for addresses (each must be on the signed list or
+// allowed; the feed may have none), NUL bytes and data: images. QR codes must match the signed
+// list's by their sums. A file that can't be read fails, like one with a problem.
 package gate
 
 import (
@@ -22,9 +22,9 @@ import (
 	"ccs-check/scan"
 )
 
-// Config: where everything is (ccs-receive's names)
+// Config says where everything is (using ccs-receive's names)
 type Config struct {
-	// the site built, the signed list (its .qr.sha256 beside it), the allowed file
+	// The built site, the signed list (with its .qr.sha256 beside it), the allowed file
 	Site, List, Allowed string
 }
 
@@ -33,9 +33,9 @@ var (
 	sumRx  = regexp.MustCompile(`^([0-9a-f]{64}) [ *](\./)?(.+)$`)
 )
 
-// Run: the files that may not go live, as ccs-receive's lines: "file<TAB>!reason", or
-// "file<TAB>address" for an address that is neither the list's nor allowed (file: its path in
-// Site), sorted, each once; and how many files it read
+// Run returns the files that may not go live, as ccs-receive's lines, sorted, each once:
+// "file<TAB>!reason", or "file<TAB>address" for an address neither on the list nor allowed.
+// file is its path in Site. Also returns how many files it read.
 func Run(c Config, w io.Writer) (int, error) {
 	ok, err := addresses(c.List, c.Allowed)
 	if err != nil {
@@ -81,8 +81,8 @@ func Run(c Config, w io.Writer) (int, error) {
 	return n, bw.Flush()
 }
 
-// addresses: the list's (each line's second word) and the allowed file's (each line's first, # a
-// comment); none in the list is an error: then nothing could be held for an address
+// addresses reads the list's addresses (each line's second word) and the allowed file's (each
+// line's first; # starts a comment). An empty list is an error: nothing could be checked against it.
 func addresses(list, allowed string) (map[string]bool, error) {
 	ok := map[string]bool{}
 	b, err := os.ReadFile(list)
@@ -106,7 +106,7 @@ func addresses(list, allowed string) (map[string]bool, error) {
 	return ok, nil
 }
 
-// sums: a sha256sum file's "sum path" pairs (./ and the binary-mode * dropped)
+// sums reads a sha256sum file's "sum path" pairs (dropping ./ and the binary-mode *)
 func sums(f string) (map[string]bool, error) {
 	b, err := os.ReadFile(f)
 	if err != nil {
@@ -121,7 +121,7 @@ func sums(f string) (map[string]bool, error) {
 	return m, nil
 }
 
-// sum: the file's sha256, as hex ("" if it can't be read)
+// sum returns the file's sha256 as hex ("" if it can't be read)
 func sum(p string) string {
 	f, err := os.Open(p)
 	if err != nil {
@@ -135,8 +135,9 @@ func sum(p string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// scans: ccs-check nul, json and scan over the pages, JSON and feed: a file passes only if they
-// read it, with nothing against it; an address only if the list's or allowed (the feed's: none)
+// scans runs the nul, json and page scans over the pages, JSON and feed. A file passes only if
+// it was read and nothing was found against it. An address passes only if on the list or allowed;
+// the feed may have none.
 func scans(texts []string, ok map[string]bool, feed string) []string {
 	var jsons []string
 	for _, p := range texts {
@@ -173,7 +174,7 @@ func scans(texts []string, ok map[string]bool, feed string) []string {
 	return out
 }
 
-// lines: "file<TAB>rest" lines, by file
+// lines groups "file<TAB>rest" lines by file
 func lines(out []byte) map[string][]string {
 	m := map[string][]string{}
 	for _, l := range strings.Split(string(out), "\n") {

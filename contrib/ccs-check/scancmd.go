@@ -15,7 +15,7 @@ func init() {
 	commands["nul"] = files(scan.NUL)
 }
 
-// files: a check of FILE... writing its lines to stdout; exit 2 if it couldn't read one
+// files: check FILE... and write the result lines to stdout. Exits 2 if a file can't be read.
 func files(check func([]string, io.Writer) error) func([]string) int {
 	return func(args []string) int {
 		w := bufio.NewWriter(os.Stdout)

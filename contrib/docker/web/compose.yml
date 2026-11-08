@@ -1,16 +1,17 @@
-# The web server's side in Docker (docs/docker.md, "The web server in Docker"): the gate
-# (ccs-receive) behind its own sshd on port 2223, the gate's heartbeat; and, for the backup
-# machine, the backup receiver (ccs-backup-receive) behind another sshd on 2224 (the profile
-# "backup": on a machine of its own, not the web server, whose root could rewrite every copy;
-# a test setup may run both on one, COMPOSE_PROFILES=backup); and the site itself: www (Caddy:
-# HTTPS, its certificates its own) and tor (the onion), serving what the gate let into
-# /var/lib/ccs-data (docs/two-machines.md). The image by ID, never pulled
-# (container/gate.Dockerfile, attested as ccs-bash's). The host's folders, users and key files
-# are the host's (docs/two-machines.md, docs/setup.md). Its settings: .env (env.example).
+# The web server's side in Docker (docs/docker.md, "The web server in Docker"):
+#   - the gate (ccs-receive) behind its own sshd on port 2223, and the gate's heartbeat;
+#   - for the backup machine, the backup receiver (ccs-backup-receive) behind another sshd on
+#     2224. The "backup" profile; run it on its own machine, not the web server, whose root could
+#     rewrite every copy. A test setup may run both on one (COMPOSE_PROFILES=backup);
+#   - the site: www (Caddy, HTTPS, its own certificates) and tor (the onion), serving what the
+#     gate let into /var/lib/ccs-data (docs/two-machines.md).
+# The image is used by ID, never pulled (container/gate.Dockerfile, attested with ccs-bash).
+# Folders, users and key files are the host's (docs/two-machines.md, docs/setup.md).
+# Settings: .env (see env.example).
 #
 #   docker compose --profile init run --rm -T init     once: the host key, passwd (and after an upgrade)
 #   docker compose up -d                               start
-#   journalctl -t ccs-web -f                           sshd's, Caddy's and Tor's lines (the gate's own: /var/log/ccs-web/)
+#   journalctl -t ccs-web -f                           sshd's, Caddy's and Tor's lines (the gate's own are in /var/log/ccs-web/)
 
 x-hardened: &hardened
   image: ${CCS_GATE_IMAGE:?the attested ccs-gate image ID}
@@ -21,20 +22,21 @@ x-hardened: &hardened
   security_opt: ["no-new-privileges:true"]
   restart: unless-stopped
   init: true
-  # the host's network: sshd sees the backend's own address, which authorized_keys' from= checks
-  # (www and tor: their own, below)
-  # (published ports would show it Docker's for IPv6)
+  # The host's network, so sshd sees the backend's real address, which authorized_keys' from=
+  # checks. (Published ports would show Docker's address for IPv6.) www and tor have their own, below.
   network_mode: host
   logging:
     driver: journald
     options:
       tag: ccs-web
 
-# sshd runs as root and needs only (tested: without any one of them no login gets past
-# pre-authentication): SETUID and SETGID, to become its sshd user for pre-authentication and
-# ccs-data or ccs-backup for the forced command (setresuid, setgroups); SYS_CHROOT, for that
-# pre-authentication, chrooted in /var/empty. Not DAC_OVERRIDE: what it reads is root's; not
-# NET_BIND_SERVICE: the ports are over 1024; not KILL: its children end on their own.
+# sshd runs as root and needs only these capabilities (tested: without any one, no login gets
+# past pre-authentication):
+#   SETUID, SETGID: to become its sshd user for pre-authentication, then ccs-data or ccs-backup
+#                   for the forced command (setresuid, setgroups)
+#   SYS_CHROOT:     pre-authentication is chrooted in /var/empty
+# Not DAC_OVERRIDE (what it reads is root's), not NET_BIND_SERVICE (ports are over 1024), not
+# KILL (its children end on their own).
 x-sshd-caps: &sshd-caps [SETUID, SETGID, SYS_CHROOT]
 
 x-health: &health
@@ -44,7 +46,7 @@ x-health: &health
   start_period: 30s
 
 services:
-  # once, as root, and after an upgrade: sshd's host key (the first time only) and passwd, group
+  # Run once as root, and after each upgrade: sshd's host key (first time only), passwd and group
   init:
     <<: *hardened
     network_mode: none
@@ -58,12 +60,12 @@ services:
       - ${CCS_SSH_DIR:-/etc/ccs-gate/ssh}:/etc/ccs-ssh/keys
     profiles: [init]
 
-  # the gate: the push account, ccs-data, may run only ccs-receive
+  # The gate: the push account, ccs-data, may run only ccs-receive
   gate:
     <<: *hardened
     user: "0:0"
     cap_add: *sshd-caps
-    # a push checked at a time (the gate's lock); its decoders capped at 1 GB each as well
+    # One push is checked at a time (the gate's lock); its decoders are capped at 1 GB each too
     mem_limit: 2g
     pids_limit: 256
     command: ["-p", "${CCS_GATE_PORT:-2223}", "-o", "AllowUsers=ccs-data", "-o", "ForceCommand=/usr/local/bin/ccs-receive"]
@@ -77,12 +79,12 @@ services:
       - /var/lib/ccs-staging:/var/lib/ccs-staging
       - /var/lib/ccs-data:/var/lib/ccs-data
       - /var/lib/ccs-gate:/var/lib/ccs-gate
-      # the gate's log, /var/log/ccs-gate.log in here (a folder: a rotated file stays the old one)
+      # The gate's log, /var/log/ccs-gate.log in here. A folder, since a mounted file would stay the old one after rotation.
       - ${CCS_WEB_LOG:-/var/log/ccs-web}:/var/log
 
-  # the backup receiver: the backup account, ccs-backup, may run only ccs-backup-receive. Its own
-  # machine: there, "docker compose --profile backup up -d backup" (its own .env: the image,
-  # CCS_BACKUP_UID; the gate and heartbeat not started)
+  # The backup receiver: the backup account, ccs-backup, may run only ccs-backup-receive.
+  # On its own machine run "docker compose --profile backup up -d backup", with its own .env
+  # (the image, CCS_BACKUP_UID). The gate and heartbeat are not started there.
   backup:
     <<: *hardened
     profiles: [backup]
@@ -101,8 +103,8 @@ services:
       - /var/lib/ccs-backup:/var/lib/ccs-backup
       - ${CCS_WEB_LOG:-/var/log/ccs-web}:/var/log
 
-  # the heartbeat (docs/two-machines.md): every 5 minutes, as ccs-data, an alert when no push
-  # has come for HEARTBEAT_MINUTES (alert.conf)
+  # The heartbeat (docs/two-machines.md): every 5 minutes, as ccs-data. Alerts when no push has
+  # come for HEARTBEAT_MINUTES (alert.conf).
   heartbeat:
     <<: *hardened
     user: "${CCS_DATA_UID}"
@@ -113,10 +115,10 @@ services:
       - /var/lib/ccs-gate:/var/lib/ccs-gate
       - ${CCS_WEB_LOG:-/var/log/ccs-web}:/var/log
 
-  # the site: Caddy, as CCS_WWW_UID, serving /var/lib/ccs-data read-only over HTTPS (Caddyfile),
-  # its certificates its own (Let's Encrypt, in CCS_WWW_DIR), and to tor through a socket in
-  # CCS_WWW_DIR/onion. Its own network namespace, so ports 80 and 443 are published, and it may
-  # bind them without a capability (the sysctl is that namespace's alone)
+  # The site: Caddy, as CCS_WWW_UID, serves /var/lib/ccs-data read-only over HTTPS (Caddyfile),
+  # with its own certificates (Let's Encrypt, in CCS_WWW_DIR), and to tor through a socket in
+  # CCS_WWW_DIR/onion. It has its own network namespace, so ports 80 and 443 are published and it
+  # can bind them without a capability (the sysctl applies to that namespace only).
   www:
     <<: *hardened
     network_mode: bridge
@@ -137,11 +139,11 @@ services:
       - /var/lib/ccs-data:/srv:ro
       - ${CCS_WWW_DIR:-/var/lib/ccs-www}/data:/data
       - ${CCS_WWW_DIR:-/var/lib/ccs-www}/onion:/run/ccs-www
-      # this machine's own sites, if any (sites/<name>.caddy; an empty folder otherwise)
+      # This machine's other sites, if any (sites/<name>.caddy; otherwise an empty folder)
       - ${CCS_WWW_DIR:-/var/lib/ccs-www}/sites:/etc/ccs-www/sites:ro
 
-  # the onion: Tor, as CCS_TOR_UID, its keys in CCS_TOR_DIR (the onion's address is its key: keep
-  # a copy), its port 80 www's socket (torrc)
+  # The onion: Tor, as CCS_TOR_UID, with its keys in CCS_TOR_DIR. The onion address is derived
+  # from its key, so keep a copy. Its port 80 goes to www's socket (torrc).
   tor:
     <<: *hardened
     network_mode: bridge
