@@ -1,16 +1,16 @@
 # shellcheck shell=bash
-# A proposal's images: files in the proposals repository, inside an images folder, in a folder
-# named after the proposal: images/<proposal>/<file> (my-proposal.md: images/my-proposal/chart.png),
-# each shown in its .md as ![...](images/<proposal>/<file>), as the proposals CI requires of a
-# merge request. The ones a proposal on the site shows are copied from the checkout into
-# OUTPUT_DIR/images/ and listed in OUTPUT_DIR/images.json, {"images/<proposal>/<file>":
-# "<proposal>/<file>"}, for ccs-front-bash to show from the site itself; any other image stays a
-# link. Only plain files, PNG, JPEG or GIF (told by their first bytes, not the name),
-# IMAGE_MAX_BYTES each (2 MB). No network. A bad image stays a link and is logged; it never stops
-# the run.
+# Proposal images. They live in the proposals repository at images/<proposal>/<file>
+# (my-proposal.md uses images/my-proposal/chart.png), and the .md shows them with
+# markdown like ![...](images/<proposal>/<file>). The proposals CI requires this layout.
+# Images shown by proposals on the site are copied into OUTPUT_DIR/images/ and listed in
+# OUTPUT_DIR/images.json as {"images/<proposal>/<file>": "<proposal>/<file>"}.
+# ccs-front-bash then serves them from the site itself. Any other image stays a link.
+# Only plain PNG, JPEG or GIF files are taken, checked by their first bytes, not the name.
+# Each must be at most IMAGE_MAX_BYTES (2 MB). No network is used.
+# A bad image stays a link and is logged. It never stops the run.
 
-# The images a proposal shows, one address a line: ![alt](address "title"), as ccs-front-bash's
-# markdown.awk finds them, in the text after the front matter.
+# Print the images a proposal shows, one per line: each ![alt](address "title") after the
+# front matter, found the same way as ccs-front-bash's markdown.awk.
 image_addresses() {
     awk 'FNR == 1 { fm = ($0 ~ /^---[ \t\r]*$/); next }
         fm { if ($0 ~ /^(---|\.\.\.)[ \t\r]*$/) fm = 0; next }
@@ -21,7 +21,7 @@ image_addresses() {
           } }' "$1"
 }
 
-# image_type FILE: png, jpg or gif from its first bytes; false for anything else
+# image_type FILE: print png, jpg or gif from the first bytes. Fail for anything else.
 image_type() {
     local m=''
     LC_ALL=C read -r -N 8 m < "$1" || true
@@ -43,19 +43,19 @@ proposal_images() {
     root=$(readlink -f "$PROPOSALS_DIR") || return 1
     while IFS= read -r f; do
         stem=${f%.md}
-        [[ $stem =~ ^[A-Za-z0-9._-]+$ ]] || continue   # images need a plain proposal name
+        [[ $stem =~ ^[A-Za-z0-9._-]+$ ]] || continue   # only proposals with plain names get images
         while IFS= read -r a; do
             [[ $a =~ ^images/$stem/[A-Za-z0-9._-]+\.(png|jpg|jpeg|gif)$ ]] || continue
             [[ -z ${keep[$a]:-} ]] || continue
             src=$PROPOSALS_DIR/$a
-            # (each step of its path, not only the last: a folder committed as a link, images/p ->
-            # /etc/..., would bring in a file from outside: review 12's I-1)
+            # Check every step of the path, not only the last. A folder committed as a symlink
+            # (images/p -> /etc/...) would otherwise bring in a file from outside.
             if [[ ! -f $src || -L $src || $(readlink -f "$src") != "$root/$a" ]]; then log "warning: $f shows $a, which isn't in the repository"; continue; fi
             if (($(wc -c < "$src") > IMAGE_MAX_BYTES)); then log "warning: $a is over $IMAGE_MAX_BYTES bytes, left a link"; continue; fi
             if ! image_type "$src" > /dev/null; then log "warning: $a is not a PNG, JPEG or GIF, left a link"; continue; fi
             dst=$dir/${a#images/}
-            # copied with its time (not cp -p: it would also try to keep the owner, which this
-            # account may not), and only when it changed: the push sends it once
+            # Copy only when changed, keeping the file time, so the push sends it once.
+            # Not cp -p: it also tries to keep the owner, which this account may not be allowed to.
             if ! diff -q "$src" "$dst" > /dev/null 2>&1; then
                 if ! mkdir -p "${dst%/*}" || ! cp "$src" "$dst" || ! touch -r "$src" "$dst" || ! chmod 644 "$dst"; then
                     log "warning: could not copy $a"; continue
@@ -64,8 +64,8 @@ proposal_images() {
             keep[$a]=${a#images/}
         done < <(image_addresses "$PROPOSALS_DIR/$f")
     done < <(jq -r '.[].file' "$WORK/props.json")
-    # what no proposal shows any more goes (an emptied folder stays: harmless, nothing lists it),
-    # and any file directly in images/ (v0.2.10 kept fetched uploads there)
+    # Remove images no proposal shows any more. Empty folders stay; nothing lists them.
+    # Also remove files directly in images/ (v0.2.10 kept fetched uploads there).
     for f in "$dir"/*; do if [[ -f $f ]]; then rm -f -- "$f"; fi; done
     for f in "$dir"/*/*; do
         [[ -e $f ]] || continue
