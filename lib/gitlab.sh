@@ -1,11 +1,11 @@
 # shellcheck shell=bash
-# GitLab API (public, no token): open MRs are "Ideas", merged MRs give each proposal its
-# gitlab-url. Failures return non-zero explicitly: callers use `||`, where set -e is off.
+# GitLab API (public, no token). Open MRs are the "Ideas". Merged MRs give each proposal its link.
+# Failures return non-zero explicitly, because callers use `||`, where set -e is off.
 #
-# Or Forgejo / Gitea (git.disroot.org, codeberg.org...), told apart by REPOSITORY_URL:
-# .../api/v4/projects/<id> is GitLab, .../api/v1/repos/<owner>/<repo> is Forgejo. Its pull
-# requests are turned into GitLab's shape as they arrive (iid, web_url, author.username,
-# created_at in UTC), so everything after this file is the same for both.
+# Forgejo / Gitea (git.disroot.org, codeberg.org...) also works. REPOSITORY_URL tells them apart:
+# .../api/v4/projects/<id> is GitLab, .../api/v1/repos/<owner>/<repo> is Forgejo.
+# Forgejo pull requests are converted to GitLab's shape on arrival (iid, web_url,
+# author.username, created_at in UTC), so the rest of the code is the same for both.
 
 # gitlab_get PATH [CURL OPTION...]
 gitlab_get() {
@@ -14,8 +14,9 @@ gitlab_get() {
 
 forgejo() { [[ ${REPOSITORY_URL:-} =~ /api/v1/repos/[^/]+/[^/]+/?$ ]]; }
 
-# All MRs in state $1 (opened or merged), most recently updated first; with $2, no more pages once
-# there are more than $2 (anyone can open MRs: the ideas look at IDEAS_MAX of them).
+# Print all MRs in state $1 (opened or merged), most recently updated first.
+# With $2, stop fetching pages once there are more than $2. Anyone can open MRs, so the ideas
+# only look at IDEAS_MAX of them.
 gitlab_mrs() {
     local page=1 batch all='[]'
     if forgejo; then
@@ -23,8 +24,8 @@ gitlab_mrs() {
         return
     fi
     while :; do
-        # TARGET_BRANCH (ccs.conf): only the merge requests to it (a repository whose other branches
-        # take others: a test instance's)
+        # TARGET_BRANCH (ccs.conf): only MRs to this branch. For a repository whose other branches
+        # take other MRs, such as a test instance's.
         batch=$(gitlab_get "merge_requests?state=$1&scope=all&order_by=updated_at&per_page=100&page=$page${TARGET_BRANCH:+&target_branch=$TARGET_BRANCH}") || return 1
         all=$(jq -s 'add' <<<"$all $batch") || return 1
         [[ $(jq length <<<"$batch") -eq 100 ]] || break
@@ -34,8 +35,8 @@ gitlab_mrs() {
     printf '%s\n' "$all"
 }
 
-# Forgejo: pull requests open, or merged (closed and merged), as GitLab MRs. At most 50 a
-# page (Forgejo's default limit); a full page means there may be another.
+# Forgejo: print open or merged pull requests as GitLab MRs. "Merged" means closed and merged.
+# At most 50 per page (Forgejo's default limit). A full page means there may be another.
 forgejo_prs() {
     local page=1 batch all='[]' state=open
     [[ $1 == opened ]] || state=closed
@@ -55,9 +56,10 @@ forgejo_prs() {
     printf '%s\n' "$all"
 }
 
-# Print the proposal file MR $1 adds: exactly one new .md in the repo root, and besides it only
-# its images, inside an images folder: images/<its name>/<file>.png|jpg|jpeg|gif. Else nothing.
-# GitLab: /diffs (/changes is deprecated), one page of 100: a full page is more than a proposal.
+# Print the proposal file MR $1 adds, or nothing.
+# A proposal MR adds exactly one new .md in the repo root, plus only its images at
+# images/<its name>/<file>.png|jpg|jpeg|gif.
+# GitLab: uses /diffs (/changes is deprecated), one page of 100. A full page is too big for a proposal.
 mr_proposal_file() {
     local files md f
     if forgejo; then
@@ -73,10 +75,12 @@ mr_proposal_file() {
     printf '%s\n' "$md"
 }
 
-# Print the URL of the merged MR that added file $1, or nothing. The merged MRs fetched once per
-# run; what each adds kept in MR_CACHE ("iid<TAB>file", STATE_DIR/merged-files.cache when ccs-back.sh
-# sets it: a merged MR doesn't change), so a lookup cut short goes on from there next run. One MR
-# that can't be read is passed over (the others still found): 1 at the end if the file wasn't.
+# Print the URL of the merged MR that added file $1, or nothing.
+# The merged MRs are fetched once per run. What each adds is cached in MR_CACHE ("iid<TAB>file",
+# STATE_DIR/merged-files.cache), since a merged MR never changes. A lookup cut short resumes
+# from there next run.
+# An MR that can't be read is skipped and the others still checked. Returns 1 if the file
+# wasn't found.
 merged_mr_url() {
     local iid url file failed='' cache=${MR_CACHE:-$WORK/merged-files.tsv}
     if [[ ! -s $WORK/merged.json ]]; then
@@ -98,10 +102,11 @@ merged_mr_url() {
     [[ ! $failed ]]
 }
 
-# is_address S: S (base58, 95 or 106 characters) is a Monero address, by its checksum: base58 as
-# Monero has it (blocks of 11 characters, 8 bytes; the last, of 7, 5 bytes), Keccak-256 by openssl
-# (3.2 or later). The first byte must be a network's (mainnet, testnet, stagenet; integrated and
-# sub). 2 if openssl can't (then nothing is known).
+# is_address S: true if S (base58, 95 or 106 characters) is a Monero address with a valid checksum.
+# Monero's base58 uses blocks of 11 characters for 8 bytes; the last block is 7 characters for 5.
+# The checksum is Keccak-256, from openssl 3.2 or later.
+# The first byte must be a known network prefix (mainnet, testnet, stagenet; standard,
+# integrated or subaddress). Returns 2 if openssl can't do Keccak (then nothing is known).
 B58=123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz
 is_address() {
     local s=$1 i j b n c hex='' raw='' sum
@@ -109,7 +114,7 @@ is_address() {
     for ((i = 0; i < ${#s}; i += 11)); do
         b=${s:i:11} n=0
         for ((j = 0; j < ${#b}; j++)); do c=${B58%%"${b:j:1}"*}; n=$((n * 58 + ${#c})); done
-        # (an 11-character block can be over 2^64, wrapping: such an address's checksum fails anyway)
+        # An 11-character block can exceed 2^64 and wrap. Such an address fails the checksum anyway.
         if ((${#b} == 11)); then printf -v b '%016x' "$n"; else printf -v b '%010x' "$n"; fi
         hex+=$b
         ((i)) || [[ ${hex:0:2} =~ ^(12|13|18|19|24|2a|35|36|3f)$ ]] || return 1
@@ -119,8 +124,8 @@ is_address() {
     [[ ${sum:0:8} == "${hex: -8}" ]]
 }
 
-# Forgejo: the 👍 and 👎 reactions on pull request $1 as {"upvotes": n, "downvotes": n}
-# (GitLab has both on each MR, read on its own: ideas). 50 a page.
+# Forgejo: print the 👍 and 👎 reactions on pull request $1 as {"upvotes": n, "downvotes": n}.
+# 50 per page. (On GitLab, ideas() reads both counts from the MR itself.)
 forgejo_votes() {
     local page=1 batch all='[]'
     while :; do
@@ -132,10 +137,12 @@ forgejo_votes() {
     jq -c '{upvotes: map(select(.content == "+1")) | length, downvotes: map(select(.content == "-1")) | length}' <<<"$all"
 }
 
-# The proposal file $1 that an MR adds, at its commit $2, read as the site will read it once
-# merged (frontmatter.awk): 0 if it reads; 1 if not, printing why; 2 if it can't be fetched.
-# Anyone can open an MR, and its file lands on this disk: 1 MB at most (a proposal is a few KB).
-# curl 8.4+ stops there even without a Content-Length (exit 63); an older one is caught after.
+# Check that file $1, added by an MR at commit $2, reads as a proposal, the same way the site
+# will read it once merged (frontmatter.awk).
+# Returns 0 if it reads, 1 if not (printing why), 2 if it can't be fetched.
+# Anyone can open an MR, and the file is saved on this disk, so it is limited to 1 MB
+# (a proposal is a few KB). curl 8.4+ stops at the limit even without a Content-Length (exit 63);
+# with older curl the size is checked afterwards.
 idea_file_reads() {
     local dir=$WORK/idea path line max=1048576 rc=0
     rm -rf "$dir" && mkdir -p "$dir" || return 2
@@ -158,14 +165,16 @@ idea_file_reads() {
     return 1
 }
 
-# Print the "Ideas" list for ccs-front: open MRs adding a proposal that is not merged yet, and
-# whose file reads as a proposal, with their 👍/👎 counts (if they couldn't be read, the last
-# run's, from OUTPUT_DIR's proposals.json: a slow GitLab drops some reads most runs; null if there
-# are none either: the idea still shows).
-# Anyone can open MRs, as many as they like: only the IDEAS_MAX (100) most recently updated are
-# looked at, and what an MR at a commit adds, and whether its file reads, is kept in IDEAS_CACHE
-# ("iid<TAB>commit<TAB>file<TAB>0 reads|1 doesn't|- no proposal", when set: ccs-back.sh's main sets
-# it), so each is fetched once, not every run. Unset (the tests): everything is fetched.
+# Print the "Ideas" list for ccs-front: open MRs that add a proposal not merged yet, whose file
+# reads as a proposal, with their 👍/👎 counts.
+# If the counts can't be read, the last run's are kept (from OUTPUT_DIR's proposals.json).
+# A slow GitLab drops some reads most runs. With no earlier counts either, they are null and
+# the idea still shows.
+# Anyone can open as many MRs as they like, so only the IDEAS_MAX (100) most recently updated
+# are looked at.
+# IDEAS_CACHE (set by ccs-back.sh's main) stores what each MR adds at each commit, and whether
+# the file reads: "iid<TAB>commit<TAB>file<TAB>0 reads|1 doesn't|- no proposal".
+# So each MR is fetched once, not every run. When unset (the tests), everything is fetched.
 ideas() {
     local mrs iid file sha why rc keep=() votes='{}' v max=${IDEAS_MAX:-100} cached='' fresh='' hit last
     [[ $max =~ ^[0-9]+$ ]] || max=100
@@ -174,7 +183,7 @@ ideas() {
         log "warning: more than $max open MRs, only the $max most recently updated are looked at for ideas"
     fi
     [[ -n ${IDEAS_CACHE:-} && -f $IDEAS_CACHE ]] && cached=$(cat "$IDEAS_CACHE")
-    # the last run's counts, by the number its link ends in
+    # Last run's vote counts, keyed by MR number (the end of its link).
     last=$(jq -c '[.[0].proposals[] | (."gitlab-url" | strings | capture("/(?<i>[0-9]+)$").i) as $i | {key: $i, value: {upvotes, downvotes}}]
         | from_entries' "${OUTPUT_DIR:-/nonexistent}/proposals.json" 2> /dev/null) && [[ $last ]] || last='{}'
     while IFS=$'\t' read -r iid sha; do
@@ -185,16 +194,16 @@ ideas() {
             fresh+=$hit$'\n'
             [[ $file == - ]] && file=''
         else
-            # an unreadable MR is left out, not the whole list
+            # Leave out an unreadable MR, not the whole list.
             if ! file=$(mr_proposal_file "$iid"); then
                 log "warning: could not read MR !$iid, leaving it out of the ideas this run"
                 continue
             fi
             rc=-
-            # already in the repository (merged): no idea, and not kept, so it is seen again if not
+            # Already merged: not an idea. Not cached either, so it is checked again if it leaves.
             [[ -n $file && -e $PROPOSALS_DIR/$file ]] && continue
             if [[ -n $file ]]; then
-                # its file must read as a proposal, as the site would read it: not just any .md
+                # The file must read as a proposal, as the site would read it. Not just any .md.
                 rc=0; why=$(idea_file_reads "$file" "$sha") || rc=$?
                 if ((rc == 2)); then
                     log "warning: could not fetch $file of MR !$iid, leaving it out of the ideas this run"
@@ -207,8 +216,8 @@ ideas() {
         fi
         [[ -n $file && $rc == 0 && ! -e $PROPOSALS_DIR/$file ]] || continue
         keep+=("$iid")
-        # the votes of each idea shown, read on its own: gitlab.com's MR list, read without a
-        # token, has 0 for every MR (2026-10-28; read on its own, its real counts)
+        # Read each shown idea's votes from the MR itself. gitlab.com's MR list without a token
+        # shows 0 for every MR (seen 2026-10-28); the single MR has the real counts.
         if forgejo; then
             v=$(forgejo_votes "$iid") || { log "warning: could not read the reactions on PR #$iid, the last run's kept"; v=$(jq -c --arg i "$iid" '.[$i]' <<<"$last"); }
         else
@@ -218,23 +227,23 @@ ideas() {
         fi
         votes=$(jq -c --arg i "$iid" --argjson v "$v" '.[$i] = $v' <<<"$votes")
     done < <(jq -r --argjson max "$max" '.[:$max][] | [.iid, (.sha // "")] | @tsv' <<<"$mrs")
-    # the open MRs looked at this run only: a closed one's line goes
+    # Cache only the open MRs looked at this run, so closed ones drop out.
     [[ -z ${IDEAS_CACHE:-} ]] || atomic_write "$IDEAS_CACHE" printf '%s' "${fresh:-$'\n'}" || true
 
-    # Anyone can open one, so a title or name can't hold a whole address (the web server's gate
-    # would hold back every page listing it, as it does with the same rules): a run of 90 or more
-    # characters each base58 or not ASCII (an address padded or split by invisible characters, or
-    # drawn with look-alikes: a mathematical 9, a fullwidth or Cyrillic A; any character that isn't
-    # ASCII, not only letters: jq's Unicode tables miss some) is shortened, as alerts show
-    # addresses, to its first 6 and last 4. So is one split into groups by up to three characters
-    # that can't be in an address (spaces, punctuation: "4A9b xZq3", "4A9b - xZq3", "4A9b/xZq3"; as
-    # the gate reads them) when, read joined, it holds an address (its checksum: is_address);
-    # without openssl's Keccak, every such run (a long title of plain words too), and so is every
-    # run once IDEAS_CHECKS (3000) places have been tried this run (titles made to look like an
-    # address everywhere cost a check a place: they are shortened, not checked for minutes). Only
-    # the ideas shown are looked at. Bidi controls go first (they could show an address's halves,
-    # a space between them, in another order than written), control characters become spaces, and
-    # a run of spaces one, as a browser shows it.
+    # Anyone can open an MR, so an idea's title or author must never show a whole address.
+    # (The web server's gate applies the same rules and would hold back every page listing it.)
+    # Shorten to its first 6 and last 4 characters, as alerts show addresses:
+    # - any run of 90+ characters that are each base58 or non-ASCII. This catches addresses
+    #   padded or split by invisible characters, or drawn with look-alikes (a mathematical 9,
+    #   a fullwidth or Cyrillic A). Any non-ASCII counts, since jq's Unicode tables miss some.
+    # - a run split into groups by up to three non-address characters ("4A9b xZq3",
+    #   "4A9b - xZq3", "4A9b/xZq3") that holds a valid address when joined (is_address).
+    #   Without openssl's Keccak every such run is shortened, even a long title of plain words.
+    #   After IDEAS_CHECKS (3000) checks in one run, the rest are shortened unchecked, so titles
+    #   built to look like addresses everywhere can't make the run take minutes.
+    # Only the ideas shown are checked. First, bidi controls are removed (they can display an
+    # address's halves in a different order), control characters become spaces, and runs of
+    # spaces become one, as a browser shows them.
     local prep='def prep: gsub("[\u202a-\u202e\u2066-\u2069]"; "") | gsub("[\\x00-\\x1F\\x7F]"; " ") | gsub(" +"; " ")
             | gsub("(?<r>(?:[1-9A-HJ-NP-Za-km-z]|[^\\x00-\\x7F]){90,})"; .r | gsub("[^\\x20-\\x7E]"; "") | "\(.[0:6])…\(.[-4:])");
         def groups: "(?:[1-9A-HJ-NP-Za-km-z]|[^\\x00-\\x7F])(?:[\\x20-\\x2F\\x3A\\x3B\\x3D\\x3F\\x40\\x5B-\\x60\\x7B-\\x7E]{0,3}(?:[1-9A-HJ-NP-Za-km-z]|[^\\x00-\\x7F])){89,}";'
@@ -243,7 +252,7 @@ ideas() {
     printf '' | openssl dgst -keccak-256 > /dev/null 2>&1 || keccak=''
     while IFS= read -r run; do
         if [[ -z $keccak ]] || ((tried > budget)); then shorten+=("$run"); continue; fi
-        # shellcheck disable=SC2001  # (by bytes, LC_ALL=C, whatever the locale)
+        # shellcheck disable=SC2001  # by bytes, LC_ALL=C, whatever the locale
         joined=$(LC_ALL=C sed 's/[^1-9A-HJ-NP-Za-km-z]//g' <<<"$run")
         for n in 95 106; do
             for ((w = 0; w + n <= ${#joined}; w++)); do

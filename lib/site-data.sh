@@ -1,12 +1,11 @@
 # shellcheck shell=bash
-# The site's JSON (what ccs-front-bash builds the site from), from site-data.json: as ccs-back.sh's
-# build_site writes it, but each proposal's address the signed list's line of its index. The web
-# server builds the site this way itself, from the proposals repository it
-# fetches and the site-data.json it checked; tests/run.sh and contrib/compare-site check that it
-# gives the same JSON as the backend's own run.
+# Turn site-data.json into the site's JSON, which ccs-front-bash builds the pages from.
+# Each proposal's address comes from the signed list, by its subaddress index.
+# The web server runs this on the proposals repository it fetched and the site-data.json it checked.
+# tests/run.sh and contrib/compare-site check that the result matches the backend's own run.
 
-# site_json: OUTPUT_DIR's proposals.json, completed-proposals.json and projects.json from WORK's
-# props, state, funds and ideas (lib/site.jq)
+# site_json: write proposals.json, completed-proposals.json and projects.json into OUTPUT_DIR.
+# Built from WORK's props, state, funds and ideas by lib/site.jq.
 site_json() {
     local out
     for out in proposals completed-proposals projects; do
@@ -17,13 +16,13 @@ site_json() {
     done
 }
 
-# merge_requests GIT BASE REPOS: {"file.md": link} for each proposal the proposals repository GIT
-# (its refs/heads/ccs) merged: the merge request of the merge commit that added the file (GitLab
-# ends its message "See merge request <project>!N"), as BASE/<project>/-/merge_requests/N, only
-# for a project REPOS names (host/path, space-separated: the proposals repository's own addresses;
-# a commit message naming another project, anyone's on that forge, links nowhere). The oldest
-# one: a later merge request that adds a file of the same name isn't this proposal's. A proposal
-# added by a commit that isn't a merge (moved, renamed) has none.
+# merge_requests GIT BASE REPOS: print {"file.md": link} for proposals merged in GIT (refs/heads/ccs).
+# The link is the MR of the merge commit that added the file. GitLab ends that commit's message
+# with "See merge request <project>!N". The link is BASE/<project>/-/merge_requests/N.
+# Only projects named in REPOS count (host/path, space-separated). Anyone can name another
+# project in a commit message, so those get no link.
+# The oldest MR wins: a later MR adding a file with the same name is a different proposal.
+# A file added without a merge commit (moved, renamed) gets no link.
 merge_requests() {
     git -C "$1" -c core.quotePath=false log --first-parent --merges --diff-merges=first-parent --diff-filter=A \
         --name-only --format='%x01%n%B%x02' refs/heads/ccs \
@@ -33,7 +32,7 @@ merge_requests() {
                 if (match($0, /See merge request [A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)+![0-9]+/)) {
                     s = substr($0, RSTART + 18, RLENGTH - 18); i = index(s, "!"); p = substr(s, 1, i - 1)
                     h = base; sub(/^https:\/\//, "", h)
-                    # (no step out of the path, and one of the repositories named)
+                    # The path must not step out with "..", and must be one of REPOS.
                     if (p !~ /(^|\/)\.\.?(\/|$)/ && index(repos, " " h "/" p " "))
                         mr = base "/" p "/-/merge_requests/" substr(s, i + 1)
                 }
@@ -45,17 +44,16 @@ merge_requests() {
         | jq -R -n '[inputs | split("\t") | {key: .[0], value: .[1]}] | from_entries'
 }
 
-# site_from_data DATA LIST [LINKS [REPOS]]: OUTPUT_DIR's site JSON and images (images.json,
-# images/) from the proposals in PROPOSALS_DIR, DATA (site-data.json) and LIST (the signed list,
-# "index address" lines): the backend's own steps (read_proposals, proposal_images, site_json),
-# its state each address the list's, and each merge request LINKS' (merge_requests' JSON), if
-# given; a Funding Required proposal without an address kept off the site, as the backend keeps
-# it (mirror_hide). With REPOS (the proposals repository's addresses, host/path, space-separated:
-# the web server's build), a proposal's own gitlab_url (its front matter) only if it is one of
-# those repositories' merge requests, else its merge request from LINKS or DATA: a proposal's
-# text can't link its page elsewhere (review 12's L-3). Where it is one, it wins: the proposer's
-# own correction (rehrar-defcon-reimburse-2019.md, added by !67, taken out, added again by !69:
-# the oldest merge commit, LINKS', is !67)
+# site_from_data DATA LIST [LINKS [REPOS]]: write the site JSON and images into OUTPUT_DIR.
+# Inputs: the proposals in PROPOSALS_DIR, DATA (site-data.json) and LIST (the signed list,
+# "index address" lines). It runs the backend's own steps: read_proposals, proposal_images, site_json.
+# Each address comes from LIST. Each MR link comes from LINKS (merge_requests' output), if given.
+# A Funding Required proposal without an address stays off the site, as on the backend (mirror_hide).
+# REPOS is set on the web server: the proposals repository's addresses, host/path, space-separated.
+# Then a proposal's own gitlab_url (front matter) is used only if it points into one of them.
+# Otherwise the link comes from LINKS or DATA, so a proposal can't link its page elsewhere.
+# A valid front matter link wins over LINKS. Example: rehrar-defcon-reimburse-2019.md was added
+# by !67, removed, then added again by !69. LINKS has the oldest, !67; the front matter says !69.
 site_from_data() {
     local data=$1 list=$2 links=${3:-} repos=${4-}
     read_proposals "$PROPOSALS_DIR" > "$WORK/props.json" || return 1
