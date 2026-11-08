@@ -1,9 +1,11 @@
 name: upstream
-# Weekly: what the web server and the images run, against its makers' newest releases. Fails (so
-# GitHub tells the repository's owner) when StageX has a newer release of a pinned image
-# (container/images: then container/update-images.sh, review, a release) or Tor a newer
-# release than sources.lock's (then its tarball's sum from its signed .sha256sum, a release).
-# Nothing is changed here: a pin moves only by a reviewed pull request.
+# Weekly: compare what the web server and the images run with the newest upstream releases.
+# Fails, so GitHub tells the repository's owner, when:
+#   - StageX has a newer release of a pinned image (container/images). Then run
+#     container/update-images.sh, review, and release.
+#   - Tor has a newer release than sources.lock's. Then take its tarball's sum from its signed
+#     .sha256sum, and release.
+# Nothing is changed here: a pin moves only through a reviewed pull request.
 on:
   schedule:
     - cron: '41 6 * * 1'

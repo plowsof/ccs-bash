@@ -1,23 +1,24 @@
 #!/usr/bin/env bash
-# build: make releases' outputs, as the release workflow does, for attesting (contrib/release/attest).
-# In place of Feather Wallet's contrib/guix/guix-build: each repository builds itself with its own
-# pinned StageX container/build.sh, so this only clones the tag and records what came out.
+# build: build releases the way the release workflow does, for attesting (contrib/release/attest).
+# Replaces Feather Wallet's contrib/guix/guix-build. Each repository builds itself with its own
+# pinned StageX container/build.sh, so this only clones the tag and records the result.
 #
-#   contrib/release/build                     by default: the newest release of all three (the
-#                                             newest set), unless you have attested it (below)
+#   contrib/release/build                     default: the newest release of all three (the
+#                                             newest set), unless you already attested it
 #   contrib/release/build ccs-bash v0.2.8 ccs-front-bash v0.1.11 ccs-front-hugo v0.1.9
-#                                             or the releases you name (any of the three)
-#   contrib/release/build ccs-bash            or the newest release of one
+#                                             the releases you name (any of the three)
+#   contrib/release/build ccs-bash            the newest release of one
 #
 # The newest is the highest vX.Y.Z tag in its repository. Writes OUTDIR/<name>/SHA256SUMS.part
-# (OUTDIR default ./output), <name> being the release, like ccs-bash-v0.2.8; attest signs the three
-# together, as one set.
+# (OUTDIR defaults to ./output), where <name> is the release, like ccs-bash-v0.2.8. attest signs
+# the three together as one set.
 # A version of the CCS is the three together, attested in one folder per set in ccs-sigs (as
-# feather-sigs has one per version): after a release of any one, all three are built and signed
-# again. By default nothing is built if your ccs-sigs checkout (CCS_SIGS_REPO, default
-# external/ccs-sigs) already has your attestation of the newest set; you are SIGNER's name, as
-# attest has it (after the =, else gh's login, else the key). Releases you name are always built.
-# Needs git, Docker with buildx, gpg, curl and jq. Every step is shown as it happens.
+# feather-sigs has one per version). After a release of any one, all three are built and signed
+# again.
+# By default nothing is built if your ccs-sigs checkout (CCS_SIGS_REPO, default external/ccs-sigs)
+# already has your attestation of the newest set. Your name is SIGNER's, as attest works it out
+# (after the =, else gh's login, else the key). Releases you name are always built.
+# Needs git, Docker with buildx, gpg, curl and jq. Prints every step as it happens.
 export LC_ALL=C
 set -euo pipefail
 here=$(dirname "$(readlink -f "$0")")
@@ -25,12 +26,12 @@ outdir=$(readlink -f "${OUTDIR:-output}")
 base=${CCS_REPOS:-https://github.com/plowsof}
 
 usage() { sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
-# newest NAME: its highest release tag
+# newest NAME: print its highest release tag
 newest() {
     GIT_TERMINAL_PROMPT=0 git ls-remote --tags --refs "$base/$1" 'v*' 2> /dev/null | sed 's|.*refs/tags/||' \
         | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1
 }
-# signer: your name in ccs-sigs, as attest works it out (empty: unknown, nothing is skipped)
+# signer: print your name in ccs-sigs, as attest works it out (empty if unknown; then nothing is skipped)
 signer() {
     local key name=''
     [[ ${SIGNER:-} ]] && IFS='=' read -r key name <<<"$SIGNER"
@@ -54,7 +55,7 @@ if [[ $# == 0 ]]; then
     exit 0
 fi
 (($# <= 2 || $# % 2 == 0)) || { echo "ERR: name each release with its tag: NAME TAG NAME TAG ..." >&2; exit 2; }
-if (($# > 2)); then   # NAME TAG NAME TAG ...: each, in turn
+if (($# > 2)); then   # NAME TAG NAME TAG ...: each in turn
     while (($#)); do "$0" "$1" "$2"; shift 2; done
     exit 0
 fi
@@ -65,8 +66,8 @@ fi
 [[ $# -ge 2 ]] || usage
 what=$1
 
-# (an older tag's build.sh doesn't check this itself: Docker's containerd image store gives
-# images another ID than the one attested, see container/build.sh)
+# An older tag's build.sh doesn't check this itself. Docker's containerd image store gives
+# images a different ID than the attested one (see container/build.sh).
 if docker info --format '{{json .DriverStatus}}' 2> /dev/null | grep -q 'io\.containerd\.snapshotter'; then
     echo 'ERR: Docker keeps images in its containerd store, where an image ID is not the attested one:' \
         'add "features": {"containerd-snapshotter": false} to /etc/docker/daemon.json and restart Docker' >&2
@@ -75,13 +76,13 @@ fi
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 start=$(date +%s)
-# step TEXT: what is happening now, and how long since the start
+# step TEXT: print what is happening now, and the time since the start
 step() { printf '\n==> [%s] %s\n' "$(date -u -d "@$(($(date +%s) - start))" +%M:%S)" "$*"; }
 
-# published [LABEL]: the value the release notes publish for this release (empty if unreadable,
-# "several" if they name more than one: a release made by hand keeps its text, and CI's notes come
-# after it, so a value written in by hand mustn't be taken for the built one); LABEL: the image's
-# ("Image ID", or ccs-bash's gate image: "Gate image ID")
+# published [LABEL]: print the value the release notes publish for this release. Empty if
+# unreadable, "several" if they name more than one. (A release made by hand keeps its text and
+# CI's notes come after it, so a hand-written value mustn't be taken for the built one.)
+# LABEL: "Image ID", or "Gate image ID" for ccs-bash's gate image.
 published() {
     local body vals label=${1:-Image ID}
     body=$(curl -fsS --max-time 20 "https://api.github.com/repos/plowsof/$what/releases/tags/$tag" 2> /dev/null \
@@ -116,16 +117,16 @@ case $what in
         if [[ $what == ccs-front-hugo ]]; then
             "$tmp/src/container/build.sh" "$tmp/out"
             result=$(sha256sum < "$tmp/out/ccs-front-hugo.zip" | cut -d' ' -f1)
-            line="$result  $name.zip"                             # the release's asset, as named there
+            line="$result  $name.zip"                             # the release asset, as named there
         else
             NO_CACHE=1 "$tmp/src/container/build.sh" "$name-attest"
             id=$(docker image inspect "$name-attest" --format '{{.Id}}')
             docker image rm "$name-attest" > /dev/null
             result=${id#sha256:}
-            line="$result  $name-$commit.image-id"                # the image ID; the commit it came from
+            line="$result  $name-$commit.image-id"                # the image ID and its source commit
         fi
-        # ccs-bash's other image, the gate's (contrib/docker/web), from the same tag: attested on
-        # a line of its own in the same file, ccs-gate-<tag>-<commit>.image-id
+        # ccs-bash's second image, the gate's (contrib/docker/web), from the same tag. Attested on
+        # its own line in the same file: ccs-gate-<tag>-<commit>.image-id
         gate=''
         if [[ $what == ccs-bash && -f $tmp/src/container/gate.Dockerfile ]]; then
             step "Building ccs-bash $tag's gate image (container/gate.Dockerfile)"

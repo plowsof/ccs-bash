@@ -1,8 +1,9 @@
 name: release
-# On a pushed tag v*: build the pinned image, test it, check (check-pinned.sh) builds give the same
-# hash, push it to ghcr.io/<owner>/ccs-bash:<tag> and make a GitHub release with both hashes; the
-# gate's image too (container/gate.Dockerfile, ghcr.io/<owner>/ccs-bash:<tag>-gate), its ID in the
-# notes as "Gate image ID" (contrib/release/build attests both).
+# On a pushed tag v*: build the pinned image, test it, check that builds give the same hash
+# (check-pinned.sh), push it to ghcr.io/<owner>/ccs-bash:<tag>, and make a GitHub release with
+# both hashes. The same for the gate's image (container/gate.Dockerfile,
+# ghcr.io/<owner>/ccs-bash:<tag>-gate), with its ID in the notes as "Gate image ID".
+# contrib/release/build attests both.
 on:
   push:
     tags: ['v*']
@@ -65,7 +66,7 @@ jobs:
           Built yourself: \`container/build.sh ccs-gate gate.Dockerfile\`.
           EOF
           )
-          # a release made by hand on GitHub (which also makes the tag) keeps its text
+          # A release made by hand on GitHub (which also makes the tag) keeps its text
           if gh release view "$TAG" > /dev/null 2>&1; then
               gh release edit "$TAG" --notes "$(gh release view "$TAG" --json body -q .body)"$'\n\n'"$notes"
           else

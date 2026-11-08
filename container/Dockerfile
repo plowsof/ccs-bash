@@ -1,14 +1,14 @@
 # The ccs-bash image. StageX images (container/images, signatures checked) come in from
 # build.sh as named contexts (FROM toolchain, COPY --from=bash). No network in the steps.
-# Same commit, same hash: every file gets the commit's time (SOURCE_DATE_EPOCH) and the
-# result is one layer in an empty image. No user account: it runs as a numeric user.
+# The same commit gives the same hash: every file gets the commit's time (SOURCE_DATE_EPOCH),
+# and the result is one layer in an empty image. No user account: it runs as a numeric user.
 
 # busybox with only the applets in busybox-applets (and their options, like readlink -f).
 # The toolchain's cc is clang.
 FROM toolchain AS busybox
 COPY --from=bash / /
 COPY --from=ncurses / /
-# no build time or date in the binary
+# No build time or date in the binary
 ENV KCONFIG_NOTIMESTAMP=1
 RUN --mount=type=bind,source=container,target=/pin \
     bash /pin/verify.sh /pin/sources.lock /pin/sources \
@@ -30,10 +30,10 @@ RUN --mount=type=bind,source=container,target=/pin \
         ! "/rootfs/usr/bin/$applet" --help 2>&1 | grep -q "applet not found" || { echo "$applet not built" >&2; exit 1; }; \
     done
 
-# ccs-check (contrib/ccs-check), the gate's checks in Go: here for ccs-watch, which reads the live
-# pages' addresses with its scan, as the gate reads them (entities, groups, letters drawn as an
-# address's, a bidi control). Built as gate.Dockerfile builds it: StageX's Go alone (no shell:
-# the exec form), as root, with no network, so the same bytes
+# ccs-check (contrib/ccs-check), the gate's checks in Go. Here for ccs-watch, which finds the live
+# pages' addresses with its scan, the same way the gate does (entities, groups, look-alike
+# letters, bidi controls). Built exactly as in gate.Dockerfile: StageX's Go only (no shell, so
+# the exec form), as root, with no network, giving the same bytes.
 FROM go AS ccs-check
 USER 0
 ENV HOME=/tmp GOCACHE=/tmp/cache GOPATH=/tmp/go CGO_ENABLED=0 GOFLAGS=-mod=readonly GOPROXY=off GOTOOLCHAIN=local
@@ -52,25 +52,25 @@ COPY --from=openssl / /
 COPY --from=libzstd / /
 COPY --from=zlib / /
 COPY --from=jq / /
-# the backend compose's other stages (contrib/docker/backend): the pull, the push (busybox's tar
+# The backend compose's other stages (contrib/docker/backend): the pull, the push (site-data.json
 # over ssh, contrib/ccs-push), the backups
 COPY --from=git / /
 COPY --from=openssh / /
 COPY ccs-back.sh /opt/ccs-bash/
-# (not images.sh: the backend sends site-data.json alone, the web server makes the site's images)
+# Not images.sh: the backend sends only site-data.json, and the web server makes the site's images
 COPY lib/common.sh lib/proposals.sh lib/frontmatter.awk lib/gitlab.sh lib/wallet.sh lib/mirror.sh lib/site-data.sh lib/site.jq /opt/ccs-bash/lib/
 COPY contrib/docker/backend/step /opt/ccs-bash/contrib/docker/backend/step
 COPY contrib/ccs-watch /opt/ccs-bash/contrib/ccs-watch
 COPY --from=ccs-check /tmp/ccs-check /usr/local/bin/ccs-check
 COPY contrib/ccs-push /opt/ccs-bash/contrib/ccs-push
-# run by hand when the CCS moves to a new wallet (docs/handover.md, "Retiring a wallet")
+# Run by hand when the CCS moves to a new wallet (docs/handover.md, "Retiring a wallet")
 COPY contrib/retire-wallet /opt/ccs-bash/contrib/retire-wallet
 
-# Drop headers, static libraries and manuals, fix our files' modes (whatever the umask),
-# give every file the commit's time. And only the programs something here runs: of git, git
-# itself (it runs its commands itself) and its https transport; of openssh, ssh (no sshd, agent
-# or keys tools); none of the packages' other tools. (git's commands are hard links to git in
-# StageX's, which COPY would make into copies: 17 MB each, 2.8 GB in all.)
+# Drop headers, static libraries and manuals, fix our files' modes (whatever the umask), and
+# give every file the commit's time. Keep only programs something here runs: git itself (it runs
+# its own commands) and its https transport; ssh from openssh (no sshd, agent or key tools);
+# none of the packages' other tools. (In StageX, git's commands are hard links to git; COPY
+# would turn them into copies of 17 MB each, 2.8 GB in all.)
 FROM toolchain AS fix
 ARG SOURCE_DATE_EPOCH
 COPY --from=tree / /rootfs/
@@ -93,7 +93,7 @@ RUN cd /rootfs \
 FROM scratch AS image
 COPY --from=fix /rootfs/ /
 ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-# only a default: the compose runs each stage as its own user (contrib/docker/backend/compose.yml)
+# Only a default: the compose runs each stage as its own user (contrib/docker/backend/compose.yml)
 USER 10001:10001
 ENTRYPOINT ["/opt/ccs-bash/ccs-back.sh"]
 CMD ["/etc/ccs/ccs.conf"]

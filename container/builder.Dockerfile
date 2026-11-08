@@ -1,6 +1,6 @@
-# The builder: StageX's BuildKit, run by build.sh as a buildx builder (docker-container
-# driver) instead of the host Docker's, so the build tool is pinned and signed too.
-# Only COPY, so nothing runs while the host's Docker makes it.
+# The builder: StageX's BuildKit, run by build.sh as a buildx builder (docker-container driver)
+# instead of the host Docker's, so the build tool is pinned and signed too.
+# Only COPY, so nothing runs while the host's Docker builds it.
 FROM scratch
 COPY --from=filesystem / /
 COPY --from=musl / /
