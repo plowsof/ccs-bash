@@ -159,20 +159,24 @@ idea_file_reads() {
 }
 
 # Print the "Ideas" list for ccs-front: open MRs adding a proposal that is not merged yet, and
-# whose file reads as a proposal, with their 👍/👎 counts (null if they couldn't be read: the
-# idea still shows).
+# whose file reads as a proposal, with their 👍/👎 counts (if they couldn't be read, the last
+# run's, from OUTPUT_DIR's proposals.json: a slow GitLab drops some reads most runs; null if there
+# are none either: the idea still shows).
 # Anyone can open MRs, as many as they like: only the IDEAS_MAX (100) most recently updated are
 # looked at, and what an MR at a commit adds, and whether its file reads, is kept in IDEAS_CACHE
 # ("iid<TAB>commit<TAB>file<TAB>0 reads|1 doesn't|- no proposal", when set: ccs-back.sh's main sets
 # it), so each is fetched once, not every run. Unset (the tests): everything is fetched.
 ideas() {
-    local mrs iid file sha why rc keep=() votes='{}' v max=${IDEAS_MAX:-100} cached='' fresh='' hit
+    local mrs iid file sha why rc keep=() votes='{}' v max=${IDEAS_MAX:-100} cached='' fresh='' hit last
     [[ $max =~ ^[0-9]+$ ]] || max=100
     mrs=$(gitlab_mrs opened "$max") || return 1
     if (($(jq length <<<"$mrs") > max)); then
         log "warning: more than $max open MRs, only the $max most recently updated are looked at for ideas"
     fi
     [[ -n ${IDEAS_CACHE:-} && -f $IDEAS_CACHE ]] && cached=$(cat "$IDEAS_CACHE")
+    # the last run's counts, by the number its link ends in
+    last=$(jq -c '[.[0].proposals[] | (."gitlab-url" | strings | capture("/(?<i>[0-9]+)$").i) as $i | {key: $i, value: {upvotes, downvotes}}]
+        | from_entries' "${OUTPUT_DIR:-/nonexistent}/proposals.json" 2> /dev/null) && [[ $last ]] || last='{}'
     while IFS=$'\t' read -r iid sha; do
         hit=''
         [[ $iid =~ ^[0-9]+$ && $sha =~ ^[0-9A-Za-z._-]{1,64}$ ]] && hit=$(awk -F '\t' -v i="$iid" -v c="$sha" '$1 == i && $2 == c { print; exit }' <<<"$cached")
@@ -206,10 +210,10 @@ ideas() {
         # the votes of each idea shown, read on its own: gitlab.com's MR list, read without a
         # token, has 0 for every MR (2026-10-28; read on its own, its real counts)
         if forgejo; then
-            v=$(forgejo_votes "$iid") || { log "warning: could not read the reactions on PR #$iid"; v=null; }
+            v=$(forgejo_votes "$iid") || { log "warning: could not read the reactions on PR #$iid, the last run's kept"; v=$(jq -c --arg i "$iid" '.[$i]' <<<"$last"); }
         else
             if ! v=$(gitlab_get "merge_requests/$iid") || ! v=$(jq -c '{upvotes, downvotes}' <<<"$v"); then
-                log "warning: could not read the votes on MR !$iid"; v=null
+                log "warning: could not read the votes on MR !$iid, the last run's kept"; v=$(jq -c --arg i "$iid" '.[$i]' <<<"$last")
             fi
         fi
         votes=$(jq -c --arg i "$iid" --argjson v "$v" '.[$i] = $v' <<<"$votes")
