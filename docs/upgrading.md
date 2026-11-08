@@ -4,6 +4,12 @@ Steps a release needs **once**, on top of [deploying a set](deploying.md).
 Newest first. Upgrading across several releases: do each step listed between the running release
 and the new one, oldest first. A release not listed needs none.
 
+## ccs-bash v0.2.58: new ideas in the feed
+
+The backend sends each idea's opening time (`created-at` in site-data.json), and the gate's
+vendored ccs-front-bash lists the 10 newest ideas in the feed. Update the web server first, as
+usual: its gate takes a push with or without `created-at`. Ideas without one aren't in the feed.
+
 ## ccs-bash v0.2.56: ccs-watch checks every image on the live pages
 
 ccs-watch compares each image a page shows, byte for byte, with the design release's files, the

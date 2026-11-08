@@ -58,6 +58,9 @@ func TestCheck(t *testing.T) {
 		"ideas left out": {r(`,
     "ideas": [{"name": "An idea &amp; more", "gitlab-url": "https://repo.example/ccs/-/merge_requests/9", "author": "erin", "date": "October 1, 2026", "upvotes": 5, "downvotes": null}]`, ``), false},
 		"something after it":               {good + "{}", false},
+		"an idea's created-at":             {r(`"date": "October 1, 2026",`, `"date": "October 1, 2026", "created-at": "2026-10-01T12:34:56Z",`), true},
+		"a created-at that isn't UTC":      {r(`"date": "October 1, 2026",`, `"date": "October 1, 2026", "created-at": "2026-10-01 12:34:56",`), false},
+		"a created-at that isn't a string": {r(`"date": "October 1, 2026",`, `"date": "October 1, 2026", "created-at": 1,`), false},
 		"no such proposal":                 {r(`"r.md"`, `"x.md"`), false},
 		"funds of no proposal":             {r(`"q.md": {"amount"`, `"x.md": {"amount"`), false},
 		"index 0 (the main address)":       {r(`"subaddr_index": 3`, `"subaddr_index": 0`), false},
@@ -137,6 +140,13 @@ func TestClean(t *testing.T) {
 		if !strings.Contains(string(out), k) {
 			t.Errorf("no %s in %s", k, out)
 		}
+	} // An idea without created-at stays without it (no null), and one with it keeps it
+	if strings.Contains(string(out), "created-at") {
+		t.Errorf("created-at written for an idea that had none: %s", out)
+	}
+	with := strings.Replace(good, `"date": "October 1, 2026",`, `"date": "October 1, 2026", "created-at": "2026-10-01T12:34:56Z",`, 1)
+	if out, why := c.Clean([]byte(with)); why != "" || !strings.Contains(string(out), `"created-at": "2026-10-01T12:34:56Z"`) {
+		t.Errorf("created-at not kept: %q %s", why, out)
 	}
 }
 

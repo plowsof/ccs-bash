@@ -53,6 +53,7 @@ type ideaEntry struct {
 	GitlabURL *string `json:"gitlab-url"`
 	Author    *string `json:"author"`
 	Date      *string `json:"date"`
+	CreatedAt *string `json:"created-at,omitempty"`
 	Upvotes   *int64  `json:"upvotes"`
 	Downvotes *int64  `json:"downvotes"`
 }
@@ -81,7 +82,7 @@ func names(ks ...string) *shape {
 var dataShape = &shape{fields: map[string]*shape{
 	"state": {each: names("gitlab_url", "subaddr_index", "funding_required_date", "funded_date")},
 	"funds": {each: names("amount", "raised", "pending", "count", "percentage", "needed")},
-	"ideas": {each: names("name", "gitlab-url", "author", "date", "upvotes", "downvotes")},
+	"ideas": {each: names("name", "gitlab-url", "author", "date", "created-at", "upvotes", "downvotes")},
 }}
 
 // exact checks that the next value dec reads has each key once, spelled exactly as s names it.
@@ -437,6 +438,9 @@ func (c *Checker) check(d *siteData) string {
 			return n + ": a link that isn't a merge request of the proposals repository"
 		case !dateRx.MatchString(*x.Date):
 			return n + ": a date that isn't one"
+		case x.CreatedAt != nil && !utcRx.MatchString(*x.CreatedAt):
+			// Optional, so a gate updated first still takes an older backend's push
+			return n + ": a created-at that isn't a UTC time"
 		case x.Upvotes != nil && *x.Upvotes < 0, x.Downvotes != nil && *x.Downvotes < 0:
 			return n + ": a vote count below 0"
 		}
