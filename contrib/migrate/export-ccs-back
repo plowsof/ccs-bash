@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# export-ccs-back DATABASE OUT [CCS_BACK_DIR]: moving from ccs-back (handover step 2), take from its
-# database what ccs-bash needs, into the folder OUT, and nothing else. Only SELECTs: the database is
-# not changed. MYSQL is how to reach it (default "mysql"; for example "mysql -u ccs -p", or
-# "docker exec -i <db container> mysql -u root -p<password>"). Writes:
+# export-ccs-back DATABASE OUT [CCS_BACK_DIR]: when moving from ccs-back (handover step 2), copy
+# what ccs-bash needs from its database into the folder OUT, and nothing else.
+# Only SELECTs: the database is not changed. MYSQL is the command to reach it (default "mysql";
+# e.g. "mysql -u ccs -p" or "docker exec -i <db container> mysql -u root -p<password>"). Writes:
 #   OUT/proposals.csv          the projects table as ccs-bash's state: "file","link",index,"address",
-#                              "funding since" (ccs-back's funding_required_date when it has one,
-#                              stored as UTC), in ccs-back's order; checked: one row a file, no index
-#                              or address twice, each address 95 characters
+#                              "funding since" (ccs-back's funding_required_date if set, as UTC),
+#                              in ccs-back's order. Checked: one row per file, no index or address
+#                              twice, each address 95 characters
 #   OUT/ccs-back-deposits.tsv  the deposits table, for compare-deposits (via check-migration)
 #   OUT/ccs-back-proposals.json, OUT/ccs-back-completed-proposals.json, with CCS_BACK_DIR (ccs-back's
 #                              checkout): what its site showed, for check-migration to compare
-# Then: install OUT/proposals.csv as /var/lib/ccs/state/proposals.csv (owner ccs), run ccs-bash once,
-# and check-migration OUT.
+# Then install OUT/proposals.csv as /var/lib/ccs/state/proposals.csv (owner ccs), run ccs-bash
+# once, and run check-migration OUT.
 set -euo pipefail
 export LC_ALL=C
 db=${1:?DATABASE} out=${2:?OUT} back=${3:-}
@@ -23,12 +23,12 @@ has_date=$(q "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema
 if [[ $has_date == 1 ]]; then
     date="IFNULL(DATE_FORMAT(funding_required_date, '%Y-%m-%dT%H:%i:%sZ'), '')"
 else
-    date="''"   # upstream ccs-back: no funding-required date (proposals funded after the switch get one)
+    date="''"   # upstream ccs-back has no funding-required date; proposals funded after the switch get one
 fi
 q "SELECT filename, IFNULL(gitlab_url, ''), IFNULL(subaddr_index, ''), IFNULL(address, ''), $date FROM projects ORDER BY id" \
     | jq -rR 'split("\t") | @csv' > "$out/proposals.csv.new"
 q "SELECT tx_id, subaddr_index, amount, block_received FROM deposits" > "$out/ccs-back-deposits.tsv"
-# the state as ccs-bash reads it (lib/proposals.sh's load_state): checked before it is used
+# Check the state the way ccs-bash reads it (lib/proposals.sh's load_state) before it is used
 bad=$(jq -rR -s '
     def csvrow: [("," + .) | match(",(\"(?:[^\"]|\"\")*\"|[^,]*)"; "g") | (.captures[0].string // "")
                  | if startswith("\"") then .[1:-1] | gsub("\"\""; "\"") else . end];

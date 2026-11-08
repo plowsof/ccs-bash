@@ -1,9 +1,10 @@
-# monero-wallet-rpc for the backend's compose (contrib/docker/backend): getmonero.org's own
-# release binary, the one image that isn't StageX (monero isn't packaged there, and the release is
-# built for glibc). Its archive is checked against hashes.txt (kept here, as getmonero.org signed
-# it), whose signature must be binaryFate's key, by fingerprint, as the monero repository has it
-# at the release's tag. Only monero-wallet-rpc goes into the image; it runs as a numeric user.
-# A new release: its hashes.txt here, MONERO_VERSION and MONERO_SHA256 below.
+# monero-wallet-rpc for the backend's compose (contrib/docker/backend), from getmonero.org's
+# release binary. This is the only image not built on StageX: monero isn't packaged there, and
+# the release binary needs glibc.
+# The archive is checked against hashes.txt, kept here as getmonero.org signed it. The signature
+# must be binaryFate's key, by fingerprint, as the monero repository has it at the release tag.
+# Only monero-wallet-rpc goes into the image, and it runs as a numeric user.
+# For a new release: update hashes.txt here, and MONERO_VERSION and MONERO_SHA256 below.
 
 ARG MONERO_VERSION=v0.18.5.4
 ARG MONERO_SHA256=ba2928962c101b609434bf8c1b43ad59ebe96c5525977284ca599d8bf0f02d10
@@ -27,6 +28,6 @@ RUN set -e; cd /check; export GNUPGHOME=/check/gpg; mkdir -m 700 "$GNUPGHOME" \
 FROM debian@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3
 COPY --from=check /out/ /
 COPY --chmod=755 ccs-notify /usr/local/bin/ccs-notify
-# only a default: compose runs it as the host's wallet user
+# Only a default: compose runs it as the host's wallet user
 USER 10003:10003
 ENTRYPOINT ["/usr/local/bin/monero-wallet-rpc"]

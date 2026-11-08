@@ -1,60 +1,60 @@
 #!/usr/bin/env bash
-# ccs COMMAND: looking at the backend, by the names of ccs-back's artisan commands (so what a CCS
-# maintainer typed there works here, and says it as ccs-back did; docs/troubleshooting.md,
-# "Looking"). As root on the backend compose's host, installed as /usr/local/bin/ccs. Only
-# proposal:process changes anything (it starts a run).
+# ccs COMMAND: inspect the backend, using the old ccs-back's artisan command names.
+# So what a CCS maintainer typed there works here, with similar output.
+# See docs/troubleshooting.md, "Looking". Run as root on the backend's host; installed as
+# /usr/local/bin/ccs. Only proposal:process changes anything: it starts a run.
 #
-#   ccs proposal:process          a run at once (the compose's next one, started now): its lines
-#   ccs proposal:update           each open MR looked at: "Idea MR #N 'title': file", or
+#   ccs proposal:process          start a run now and print its output
+#   ccs proposal:update           list each open MR: "Idea MR #N 'title': file" or
 #                                 "Skipping MR #N: why"
-#   ccs generate:addresses [F.md] which proposal has which subaddress (proposals.csv)
+#   ccs generate:addresses [F.md] show which proposal has which subaddress (proposals.csv)
 #   ccs wallet:notify [N]         the last N (20) donations, 'Donation to "file" address: …
-#                                 amount: … txid: …', and the funding-required proposals' totals
-#   ccs deposit:list [F.md]       every deposit as JSON, ccs-back's names (tx_id, amount,
-#                                 subaddr_index, block_received): the live wallet's and each
-#                                 retired one's
-#   ccs log [N]                   the errors and warnings of the last N runs (3), once each, with
-#                                 what troubleshooting.md says of them
-#   ccs status                    the compose, the last run, the wallet, the forge, the backup, the
-#                                 web server, the releases
-#   ccs config:check              every file setup needs (contrib/examples/backend): there, as
-#                                 setup makes it, filled in, agreeing, and answering
+#                                 amount: … txid: …', then the Funding Required totals
+#   ccs deposit:list [F.md]       every deposit as JSON with ccs-back's names (tx_id, amount,
+#                                 subaddr_index, block_received), from the live wallet and
+#                                 each retired one
+#   ccs log [N]                   errors and warnings of the last N runs (3), each once, with
+#                                 what troubleshooting.md says about them
+#   ccs status                    the compose, the last run, the wallet, the forge, the backup,
+#                                 the web server, the releases
+#   ccs config:check              check every file setup creates (contrib/examples/backend):
+#                                 present, filled in, consistent, and answering
 #
-# It reads the state as ccs, its owner (root never opens a file another account controls: it
-# could be a link to any file), prints no password or key, and changes nothing else.
+# It reads the state as ccs, the owner. Root never opens a file another account controls,
+# since it could be a symlink to any file. It prints no password or key.
 set -euo pipefail
 export LC_ALL=C.UTF-8
 CONFIG=${CCS_CONFIG:-/etc/ccs/ccs.conf}
 DOCS=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../docs
 as_ccs=(runuser -u ccs --)
-[[ ${CCS_AS:-} != none ]] || as_ccs=()   # (the tests: no ccs user)
+[[ ${CCS_AS:-} != none ]] || as_ccs=()   # tests: no ccs user
 
 die() { echo "ccs: $*" >&2; exit 1; }
-# conf KEY DEFAULT: one key of the config, as written (a sourced file: read here, not run)
+# conf KEY DEFAULT: print one config key as written. The file is read, not sourced.
 conf() { local v; v=$(sed -n "s/^$1=//p" "$CONFIG" 2> /dev/null | tail -n 1); v=${v%\"}; v=${v#\"}; printf '%s' "${v:-$2}"; }
 STATE_DIR=$(conf STATE_DIR /var/lib/ccs/state)
 OUTPUT_DIR=$(conf OUTPUT_DIR /var/lib/ccs/out)
 PROPOSALS_DIR=$(conf PROPOSALS_DIR /var/lib/ccs/proposals)
 read_ccs() { "${as_ccs[@]}" cat -- "$1"; }
-# the backend compose (docs/docker.md): its run folder
+# The backend compose's run folder (docs/docker.md)
 RUN_DIR=${CCS_RUN_DIR:-/var/lib/ccs/run}
-# the log: journald's (journalctl -t ccs), its last lines copied to a file here. CCS_LOG: a file
-# instead (the tests)
+# The log comes from journald (journalctl -t ccs); its last lines are copied to a file here.
+# CCS_LOG: use a file instead (tests).
 LOG=${CCS_LOG:-} LOG_NAME=''
 journal() { journalctl -q -o cat -t ccs "$@" > "$LOG" 2> /dev/null || true; }
 if [[ -z $LOG ]]; then
     LOG=$(mktemp) LOG_NAME="the journal's last lines (journalctl -t ccs)"; trap 'rm -f "$LOG"' EXIT
     journal -n 20000
 fi
-# a compose service's container: SERVICE
+# Print the container of compose service SERVICE
 container() { docker ps -q --filter label=com.docker.compose.project=backend --filter "label=com.docker.compose.service=$1" | head -n 1; }
 stage_num() { local v; v=$(cat "$RUN_DIR/$1/${2:-done}" 2> /dev/null) || v=0; [[ $v =~ ^[0-9]+$ ]] && echo "$v" || echo 0; }
-# a run going now: the compose's pull past its push
+# True if a run is going now
 running() {
     (($(stage_num pull) > $(stage_num push))) || (($(stage_num pull started) > $(stat -c %Y "$RUN_DIR/push/done" 2> /dev/null || echo 0)))
 }
 
-# the state as JSON: {"file.md": {index, address, since, url}}
+# Print the state as JSON: {"file.md": {index, address, since, url}}
 state_json() {
     read_ccs "$STATE_DIR/proposals.csv" | jq -R -s '
         def csvrow: [("," + .) | match(",(\"(?:[^\"]|\"\")*\"|[^,]*)"; "g") | (.captures[0].string // "")
@@ -63,9 +63,9 @@ state_json() {
 }
 xmr() { jq -r '. / 1e12 | . * 1e4 | floor / 1e4 | tostring'; }
 
-# "FROM TO": the lines of the last N runs that have ended, by "== run <time>" (the pull stage
-# writes it at each start); a run going now is left out (it hasn't said everything yet). A log
-# from before the markers: its last 400 lines
+# Print "FROM TO": the log lines of the last N finished runs. Runs are split by "== run <time>",
+# which the pull stage writes at each start. A run still going is left out.
+# For a log older than these markers, print its last 400 lines.
 runs_range() {
     local n=$1 total marks to
     total=$(wc -l < "$LOG")
@@ -76,7 +76,7 @@ runs_range() {
     echo "$(tail -n "$n" <<<"$marks" | head -n 1) $to"
 }
 
-# the rows of troubleshooting.md's tables whose first cell names a message: {re, where, says}
+# Print troubleshooting.md's table rows whose first cell names a log message: {re, where, says}
 hints() {
     [[ -f $DOCS/troubleshooting.md ]] || { echo '[]'; return; }
     jq -R -s '
@@ -86,17 +86,17 @@ hints() {
             if $l | startswith("## ") then .where = ($l | ltrimstr("## "))
             elif $l | test("^\\| `") then
                 ($l | ltrimstr("| ") | rtrimstr(" |") | split(" | ")) as $c | .where as $w
-                # (11 characters at least of the message itself: not "could not …", nor placeholders only)
+                # Needs at least 11 characters of real message text, not just "could not …" or placeholders.
                 | .rows += [$c[0] | [scan("`([^`]+)`") | .[0]] | .[] | select(gsub("<[^>]*>|…|\\b[NH]\\b|[ :.,()]"; "") | length >= 11)
                     | {re: (re_escape | gsub("…"; ".*") | gsub("<[^>]*>"; ".*") | gsub("\\b[NH]\\b"; "[0-9]+")),
                        lit: (gsub("<[^>]*>|…"; "") | length), where: $w, says: ($c[1:] | map(unlink) | join("; "))}]
             else . end)
-        # the most particular first: "could not fetch ideas from GitLab" before "could not …"
+        # Most specific first: "could not fetch ideas from GitLab" before "could not …"
         | .rows | sort_by(-.lit)' "$DOCS/troubleshooting.md"
 }
 
-# the compose's: a line on the pull's "now" pipe; this run is the one that starts after it, and
-# its lines are printed once its push is done (10 minutes at most)
+# Start a run: write a line to the pull stage's "now" pipe. The run that starts next is ours.
+# Its lines are printed once its push is done (10 minutes at most).
 compose_process() {
     local started before n at t0
     started=$(stage_num pull started) before=$(stage_num pull) t0=$(date +%s)
@@ -108,7 +108,7 @@ compose_process() {
     n=$(stage_num pull)
     for _ in $(seq 600); do (($(stage_num push) >= n)) && break; sleep 1; done
     (($(stage_num push) >= n)) || die "run $n isn't done after 10 minutes: look at the compose (ccs status, docker compose logs)"
-    # (the journal's: its lines since, up to the next run's start, if that has begun)
+    # Journal lines since then, up to the next run's start if that has begun
     if [[ -z ${CCS_LOG:-} ]]; then journal --since "@$t0"; awk '/^== run / { m++ } m == 1' "$LOG" > "$LOG.run" && mv "$LOG.run" "$LOG"; at=1; fi
     tail -n +"${at:-1}" "$LOG" | grep -vE '^\s*$|^(skipping|ignoring) ' || true
     echo "(run $n of the compose; $(tail -n +"${at:-1}" "$LOG" | grep -cE '^(skipping|ignoring) ' || true) proposal files skipped or ignored: ccs log shows why)"
@@ -116,11 +116,11 @@ compose_process() {
 
 cmd_process() { compose_process; }
 
-# as ccs-back's proposal:update printed them: "Idea MR #N 'title': file", "Skipping MR #N: why"
+# Print like ccs-back's proposal:update: "Idea MR #N 'title': file", "Skipping MR #N: why"
 cmd_ideas() {
     local cache=$STATE_DIR/ideas.cache iid file rc titles
     "${as_ccs[@]}" test -s "$cache" || { echo "(no MR looked at yet: no run since the cache was emptied)"; return; }
-    # the ideas the site shows, by MR number: "N<TAB>title"
+    # The ideas the site shows, by MR number: "N<TAB>title"
     titles=$(read_ccs "$OUTPUT_DIR/proposals.json" | jq -r '.. | objects | select(has("upvotes") and has("gitlab-url"))
         | "\(."gitlab-url" | capture("(?<n>[0-9]+)$").n)\t\(.name)"')
     while IFS=$'\t' read -r iid _ file rc; do
@@ -141,9 +141,9 @@ cmd_addresses() {
           "(\($all | map(select(.value.index == null)) | length) without a subaddress: not funding required yet, retired, or never)"'
 }
 
-# as ccs-back's wallet:notify printed them: 'Donation to "file" address: A amount: X txid: T', the
-# last N (20) the live wallet's deposits.csv has (the confirmed ones a run kept); then the
-# funding-required proposals' totals
+# Print like ccs-back's wallet:notify: 'Donation to "file" address: A amount: X txid: T'.
+# Shows the last N (20) deposits in the live wallet's deposits.csv (confirmed ones a run cached),
+# then the Funding Required totals.
 cmd_notify() {
     local n=${1:-20} st
     [[ $n =~ ^[0-9]+$ ]] || die "wallet:notify N: a number"
@@ -158,8 +158,8 @@ cmd_notify() {
         | "  \(.filename): \(.raised_amount) of \(.target_amount) XMR raised, \(.contributions) donation(s), \(.percentage_funded)%" end'
 }
 
-# as ccs-back's deposit:list: every deposit as JSON, its table's names (tx_id, amount in atomic
-# units, subaddr_index, block_received), and which wallet and proposal it is
+# Print like ccs-back's deposit:list: every deposit as JSON with its table's names (tx_id,
+# amount in atomic units, subaddr_index, block_received), plus its wallet and proposal.
 cmd_deposits() {
     local st f
     st=$(state_json)
@@ -179,7 +179,7 @@ cmd_log() {
     [[ $n =~ ^[0-9]+$ && $n -gt 0 ]] || die "log N: a number"
     read -r from to <<<"$(runs_range "$n")"
     echo "The errors and warnings of the last $n run(s), lines $from to $to of ${LOG_NAME:-$LOG} (each once, the last time it was said):"
-    # (and the gate's reason for each file it held back: "ccs-gate:   <file>: <why>")
+    # Also the gate's reason for each file it held back: "ccs-gate:   <file>: <why>"
     sed -n "${from},${to}p" "$LOG" | grep -iE 'error|warning|fail|refus|held back|alert|could not|can.t |cannot|denied|timed out|not ok|stop|^ccs-gate:   ' \
         | grep -vE 'ccs-watch: the [0-9]+ pages on .* every address the wallet.s|^(skipping|ignoring) ' \
         | jq -R -s -r --argjson h "$(hints)" '
@@ -189,8 +189,8 @@ cmd_log() {
             | "\($e.line)\(if $e.n > 1 then "  (×\($e.n))" else "" end)",
               (if $m then "    ↳ \($m.where): \($m.says | .[0:300])" else empty end)' \
         | grep . || echo "  (none)"
-    # the proposal files a run leaves out (troubleshooting.md, "A proposal isn't on the site"):
-    # the same each run, so once, at the end
+    # Proposal files a run leaves out (troubleshooting.md, "A proposal isn't on the site").
+    # They repeat every run, so print them once, at the end.
     echo "Proposal files left out (not on the site):"
     sed -n "${from},${to}p" "$LOG" | grep -E '^(skipping|ignoring) ' | sort -u | sed 's/^/  /' | grep . || echo "  (none)"
 }
@@ -198,7 +198,7 @@ cmd_log() {
 cmd_status() {
     local last at failed f
     age() { local t; t=$("${as_ccs[@]}" stat -c %Y "$1" 2> /dev/null) || { echo "never"; return; }; echo "$(( ($(date +%s) - t) / 60 )) min ago"; }
-    # each service: running or not, and its healthcheck's last word
+    # Each service: running or not, and its last healthcheck result
     f=$(docker ps -a --filter label=com.docker.compose.project=backend --format '{{.Label "com.docker.compose.service"}} {{.State}} {{.Status}}' 2> /dev/null \
             | grep -v '^init ' | sed -E 's/^([^ ]+ [^ ]+) .*\((healthy|unhealthy|health: starting)\).*/\1 \2/; t; s/^([^ ]+ [^ ]+) .*/\1/' | sort | paste -sd ',' - | sed 's/,/, /g') || f=''
     echo "the compose: ${f:-not running}$(running && echo ", a run going now")"
@@ -209,7 +209,7 @@ cmd_status() {
         failed=$(sed -n "${f},${last}p" "$LOG" | grep -o 'this run failed (.*' | tail -n 1 || true)
         echo "the last run (ended): $(sed -n "${f}s/^== run //p" "$LOG") UTC, ${failed:-ok}"
     else
-        # (a log from before "== run": a failed run ends with its "this run failed", after its pages line)
+        # For a log from before "== run" markers: a failed run ends with "this run failed"
         last=$(grep -E 'ccs-watch: (this run failed|the [0-9]+ pages on)' "$LOG" | tail -n 1)
         if [[ $last == *"this run failed"* ]]; then echo "the last run: ${last#*ccs-watch: }"; else echo "the last run: ok (${last:0:19})"; fi
     fi
@@ -222,12 +222,12 @@ cmd_status() {
     echo "the wallet: $(wallet_line)"
     echo "the releases: the compose's images: $(docker ps --filter label=com.docker.compose.project=backend --format '{{.Label "com.docker.compose.service"}}={{.Image}}' 2> /dev/null | sort -u -t= -k2,2 | sed 's/sha256:\(.\{12\}\).*/\1/' | paste -sd ' ' -)"
 }
-# the wallet's height and the node's, the wallet's main address (its config's login, not shown)
+# Print the wallet's and the node's heights and the wallet's main address. The login is never shown.
 wallet_line() {
     local url user pass h a
     url=$(conf RPC_URL http://127.0.0.1:18082/json_rpc) user=$(conf RPC_USER '') pass=$(conf RPC_PASSWORD '')
-    # (the login on stdin, not in a command line other users could see; the compose's wallet
-    # asked from ccs-bash's container, the one that can reach it)
+    # The login goes on stdin, not the command line where other users could see it.
+    # Ask from ccs-bash's container, which can reach the compose's wallet.
     local in c
     c=$(container ccs-bash) || c=''
     [[ $c ]] || { echo "not asked: the compose's ccs-bash isn't running (the wallet answers only it)"; return; }
@@ -238,30 +238,30 @@ wallet_line() {
     echo "${a:0:6}…${a: -4} at height $h$( [[ $a == "$(conf WALLET_ADDRESS '')" ]] || echo ", NOT the config's WALLET_ADDRESS")"
 }
 
-# config:check: every file the backend needs (contrib/examples/backend), as setup makes it, and
-# whether its parts agree and answer. Reads only; never prints a password, key or alert URL.
-# CCS_CHECK_ROOT: the files under another folder, CCS_CHECK_OFFLINE=1: nothing asked (the tests)
-# shellcheck disable=SC2015  # (ok, bad and warn always succeed: A && ok || bad is if-then-else)
+# config:check: check every file the backend needs (contrib/examples/backend), as setup creates
+# them, and whether they agree and answer. Read only. Never prints a password, key or alert URL.
+# Tests: CCS_CHECK_ROOT reads the files under another folder; CCS_CHECK_OFFLINE=1 asks nothing.
+# shellcheck disable=SC2015  # ok, bad and warn always succeed, so A && ok || bad is if-then-else
 cmd_check() {
     local root=${CCS_CHECK_ROOT:-} cdir=${CCS_COMPOSE_DIR:-} fails=0 warns=0
-    # the compose's folder: the running one's (Docker's label), else the setup's
+    # The compose folder: the running one's (from Docker's label), else the setup's
     [[ $cdir || $root ]] || cdir=$(docker ps --filter label=com.docker.compose.project=backend --format '{{.Label "com.docker.compose.project.working_dir"}}' 2> /dev/null | head -n 1)
     cdir=${cdir:-/opt/ccs-bash/contrib/docker/backend}
     local env wconf aconf url port host hostmode='' f v
     ok() { echo "ok   $*"; }
     bad() { echo "FAIL $*"; fails=$((fails + 1)); }
     warn() { echo "warn $*"; warns=$((warns + 1)); }
-    # kv FILE KEY: KEY's value in FILE (KEY=value lines; quotes dropped), the last one
+    # kv FILE KEY: print the last value of KEY in FILE (KEY=value lines, quotes dropped)
     kv() { local v; v=$(sed -n "s/^$2=//p" "$root$1" 2> /dev/null | tail -n 1); v=${v%\"}; v=${v#\"}; printf '%s' "$v"; }
-    # file PATH OWNER GROUP MODE: there, owned as setup makes it, its mode no looser than MODE
-    # (a stricter one is fine), no <placeholder> left
+    # file PATH OWNER GROUP MODE: check PATH exists with this owner, a mode no looser than MODE
+    # (stricter is fine), and no <placeholder> left in it.
     file() {
         local p=$root$1 o g m n r=0
         [[ -e $p ]] || { bad "$1: missing (contrib/examples/backend$1)"; return 1; }
         read -r o g m <<<"$(stat -c '%U %G %a' "$p")"
         if [[ $CCS_AS != none && "$o $g" != "$2 $3" ]]; then bad "$1: owned by $o:$g, not $2:$3"; r=1; fi
         if ((8#$m & ~8#$4)); then bad "$1: mode $m, looser than $4"; r=1; fi
-        # (the keys named, never their values; a folder has none)
+        # Name the keys, never their values. A folder has none.
         [[ -f $p ]] || return "$r"
         n=$(grep -vE '^\s*#' "$p" | grep -cE '<[^>]+>|=change-me$|^WALLET_ADDRESS=4\.\.\.$' || true)
         if ((n)); then bad "$1: $n line(s) still to fill in ($(grep -vE '^\s*#' "$p" | grep -E '<[^>]+>|=change-me$|=4\.\.\.$' | cut -d= -f1 | sort -u | paste -sd ' ' -))"; r=1; fi
@@ -269,8 +269,8 @@ cmd_check() {
     }
     CCS_AS=${CCS_AS:-}
     env=/${cdir#/}/.env wconf=/etc/ccs-wallet/wallet-rpc.conf aconf=/etc/ccs/alert.conf
-    # the compose's users own what the host setup's ccs does: the push key (ccs-push), the backup
-    # key (ccs-send), alert.conf and ccs-watch's state (ccs-watch)
+    # The compose's users own these, not the host's ccs: the push key (ccs-push), the backup
+    # key (ccs-send), alert.conf and ccs-watch's state (ccs-watch).
     local pkeys=/var/lib/ccs/.ssh pu=ccs bu=ccs wu=ccs
     [[ -e $root$env ]] && pkeys=/etc/ccs/push pu=ccs-push bu=ccs-send wu=ccs-watch
     echo "== the files"
@@ -304,7 +304,7 @@ cmd_check() {
     elif [[ $v =~ ^[9A][1-9A-HJ-NP-Za-km-z]{94}$ ]]; then warn "WALLET_ADDRESS: a testnet address"
     else bad "WALLET_ADDRESS: not a main address (95 characters, 4...)"; fi
     if [[ -e $root$env ]]; then
-        # (none: the compose's default, 18082)
+        # Unset: the compose's default, 18082
         v=$(kv "$env" WALLET_PORT)
         [[ ${v:-18082} == "${port:-x}" ]] \
             && ok ".env's WALLET_PORT is the wallet's port (its healthcheck)" || bad ".env's WALLET_PORT (${v:-unset: 18082}) isn't rpc-bind-port ($port): the wallet never shows healthy, ccs-bash never starts"
@@ -313,7 +313,7 @@ cmd_check() {
             [[ $host == 127.0.0.1 || $host == localhost ]] && ok "RPC_URL on 127.0.0.1 (compose.host.yml)" || bad "RPC_URL: with compose.host.yml, http://127.0.0.1:$port/json_rpc"
         else
             [[ $host == wallet-rpc ]] && ok "RPC_URL: wallet-rpc, on the compose's wallet network" || bad "RPC_URL: http://wallet-rpc:$port/json_rpc (or compose.host.yml)"
-            # what a container can't reach on this machine's 127.0.0.1
+            # A container can't reach this machine's 127.0.0.1
             [[ $(kv $wconf daemon-address) == 127.0.0.1:* || $(kv $wconf daemon-address) == localhost:* ]] \
                 && bad "daemon-address on 127.0.0.1: the wallet's container can't reach it (monerod here: host.docker.internal:18089, its restricted RPC where containers reach it, docs/handover.md 1)"
             grep -qE '^(ALERT_URL|WATCH_PROXY)=.*(127\.0\.0\.1|localhost)' "$root$aconf" 2> /dev/null \
@@ -333,7 +333,7 @@ cmd_check() {
     rq() { printf 'user = "%s:%s"\n' "$user" "$pass" | "${in[@]}" curl -fsS -m 20 --digest -K - "$url" -d "{\"jsonrpc\":\"2.0\",\"id\":\"0\",\"method\":\"$1\"$2}"; }
     if a=$(rq get_address ',"params":{"account_index":0}' | jq -er .result.address); then
         [[ $a == "$(kv /etc/ccs/ccs.conf WALLET_ADDRESS)" ]] && ok "the wallet answers, with WALLET_ADDRESS" || bad "the wallet answers with another address than WALLET_ADDRESS"
-        # view-only: asking for its spend key must fail (the answer is never printed)
+        # View-only: asking for the spend key must fail. The answer is never printed.
         k=$(rq query_key ',"params":{"key_type":"spend_key"}' | jq -r '.result.key // empty' 2> /dev/null || true)
         if [[ -z $k ]]; then ok "the wallet is view-only"
         elif [[ $(kv /etc/ccs/ccs.conf WALLET_ADDRESS) == [9A]* ]]; then warn "the wallet can spend (a testnet wallet: allowed)"
@@ -348,7 +348,7 @@ cmd_check() {
         local p name
         for who in CCS_PUSH:$pkeys/known_hosts CCS_BACKUP:/etc/ccs/backup/known_hosts; do
             v=$(kv "$env" "${who%%:*}") kh=${who#*:} host=${v#*@} p=$(kv "$env" "${who%%:*}_PORT") p=${p:-22}
-            # (known_hosts names a host on another port than 22 as [host]:port)
+            # known_hosts writes a host on a port other than 22 as [host]:port
             name=$host; [[ $p == 22 ]] || name="[$host]:$p"
             if timeout 10 bash -c ": > /dev/tcp/$host/$p" 2> /dev/null; then ok "${who%%:*}: $host answers on $p"; else bad "${who%%:*}: $host doesn't answer on $p"; fi
             ssh-keygen -F "$name" -f "$kh" > /dev/null 2>&1 && ok "${who%%:*}: $name's host key in $kh" || bad "${who%%:*}: no host key for $name in $kh"
@@ -357,8 +357,8 @@ cmd_check() {
         v=CCS_BASH_IMAGE id=$(kv "$env" CCS_BASH_IMAGE); id=${id#sha256:}
         if ! docker image inspect "sha256:$id" > /dev/null 2>&1; then bad ".env's $v: no such image here"
         elif grep -rqs --include='*SHA256SUMS*' "^$id " "$sigs"; then ok ".env's $v: attested in ccs-sigs (contrib/release/verify checks by whom)"
-        # (a testnet deploying its own builds, each rebuilt here and checked against its release
-        # notes' ID, unsigned: CCS_UNATTESTED=1 in .env; never on mainnet)
+        # A testnet that deploys its own unsigned builds sets CCS_UNATTESTED=1 in .env. Each build
+        # is still rebuilt here and checked against its release notes' ID. Never on mainnet.
         elif [[ $(kv "$env" CCS_UNATTESTED) == 1 ]]; then warn ".env's $v: in no attestation (CCS_UNATTESTED=1: a testnet's own release)"
         else bad ".env's $v: in no attestation in $sigs (a dev build?)"; fi
         docker image inspect "$(kv "$env" WALLET_IMAGE)" > /dev/null 2>&1 && ok ".env's WALLET_IMAGE is here" || bad ".env's WALLET_IMAGE: no such image here"
