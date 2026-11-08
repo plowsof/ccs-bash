@@ -1,11 +1,11 @@
-# ccs-bash config: /etc/ccs/ccs.conf (or a path given to ccs-back.sh). Sourced by bash:
-# keep it root:ccs 640, and give each key once (a later line, even empty, wins).
+# ccs-bash config: /etc/ccs/ccs.conf, or a path given to ccs-back.sh. Bash sources it.
+# Keep it root:ccs 640. Set each key once: a later line wins, even an empty one.
 
 # monero-wallet-rpc running a view-only wallet, bound to localhost.
 # User and password must not contain double quotes or backslashes.
 RPC_URL=http://127.0.0.1:18082/json_rpc
-# The wallet's main address: a run stops if the wallet has another, so a swapped wallet is
-# caught. ccs-bash refuses to run if it can write this file.
+# The wallet's main address. A run stops if the wallet has a different one, so a swapped
+# wallet is caught. ccs-bash refuses to run if it can write this file.
 WALLET_ADDRESS=4...
 RPC_USER=ccs
 RPC_PASSWORD=change-me
@@ -27,20 +27,20 @@ OUTPUT_DIR=/var/lib/ccs/out
 # Confirmations before a donation is counted. 0 also counts txes in the pool.
 MIN_CONFIRMATIONS=10
 
-# A run that takes longer than this many seconds (a forge or wallet that never answers) is
-# stopped, and its lock freed. Optional, default 900.
+# Stop a run that takes longer than this many seconds, and free its lock. For a forge or
+# wallet that never answers. Optional, default 900.
 #RUN_SECONDS=900
 
-# Ideas: at most this many open MRs, the most recently updated, are looked at each run (anyone
-# can open them). Optional, default 100.
+# Ideas: look at most at this many open MRs each run, the most recently updated.
+# Anyone can open MRs. Optional, default 100.
 #IDEAS_MAX=100
 
-# Only the merge requests to this branch, for the ideas and the merged-MR links. Optional; a
-# repository whose other branches take others' (a test instance's) needs it.
+# Only use MRs to this branch, for the ideas and the merged-MR links. Optional.
+# Needed when other branches of the repository take other MRs, as on a test instance.
 #TARGET_BRANCH=master
 
-# A mirror: this CCS shown beside another on the same wallet (ccs.getmonero.org's), to compare
-# them. Each proposal's address comes from that site's /projects, matched by title and author:
-# the mirror never hands out a subaddress of its own. A proposal whose address isn't this
-# wallet's (an earlier wallet's) shows that site's raised amount and contributions. Optional.
+# Mirror mode: run beside another CCS on the same wallet (ccs.getmonero.org's) to compare them.
+# Each proposal's address comes from that site's /projects, matched by title and author.
+# The mirror never hands out a subaddress of its own. A proposal whose address belongs to an
+# earlier wallet shows that site's raised amount and contributions. Optional.
 #MIRROR_URL=https://ccs.getmonero.org/projects/

@@ -1,31 +1,32 @@
 # shellcheck shell=bash
-# A mirror (MIRROR_URL in ccs.conf): this CCS shown beside another that runs on the same wallet
-# (ccs.getmonero.org's ccs-back), for a while, to compare. Its /projects ({"data": [{title,
-# author, address, raised_amount, contributions, ...}]}, no file names) gives each proposal's
-# address, matched by title and author: the mirror never hands out a subaddress of its own, so a
-# donation made through it is credited where the other site credits it. The totals are this
-# CCS's own: this wallet's deposits, and an earlier wallet's from its retired record (CCS1's:
-# RETIRED_DIR, as after a switch of wallets); only a proposal in neither (an address of a wallet
-# before those, or none) shows the feed's raised amount and contributions (HISTORIC, written
-# each run). A funding-required
-# proposal the feed has no address for yet isn't on the site (ccs-front-bash shows none without
-# one): it comes once the other site has given it one.
+# Mirror mode (MIRROR_URL in ccs.conf): run beside another CCS that uses the same wallet
+# (ccs.getmonero.org's ccs-back), for a while, to compare the two.
+# The other site's /projects feed gives each proposal's address: {"data": [{title, author,
+# address, raised_amount, contributions, ...}]}. It has no file names, so proposals are
+# matched by title and author.
+# The mirror never hands out a subaddress of its own. A donation through it is credited
+# where the other site credits it.
+# Totals are counted here: this wallet's deposits, plus an earlier wallet's from its retired
+# record (CCS1's, in RETIRED_DIR). Only a proposal found in neither shows the feed's raised
+# amount and contribution count (written to HISTORIC each run).
+# A Funding Required proposal with no address in the feed yet stays off the site, since
+# ccs-front-bash can't show it without one. It appears once the other site gives it one.
 
-# the key a proposal is matched by: its title and author, spaces at either end dropped and HTML's
-# entities read (ccs.getmonero.org's feed writes "&" as "&amp;", the front matter as "&"); when the
-# feed has more than one of those (a proposal of the same name each quarter), its date too, as the
-# feed writes it ("February 14, 2017")
+# The key a proposal is matched by: title and author, trimmed, with HTML entities decoded
+# (the feed writes "&" as "&amp;", the front matter as "&").
+# When the feed has several with the same key (a proposal of the same name each quarter),
+# the date is added, written as the feed writes it ("February 14, 2017").
 MIRROR_TEXT='tostring | gsub("&lt;"; "<") | gsub("&gt;"; ">") | gsub("&quot;"; "\"") | gsub("&#39;|&#x27;|&apos;"; "\u0027") | gsub("&amp;"; "&") | gsub("^\\s+|\\s+$"; "")'
 MIRROR_KEY="((.title // \"\" | $MIRROR_TEXT) + \"\\u001f\" + (.author // \"\" | $MIRROR_TEXT))"
 
-# mirror_load: MIRROR_URL's projects as WORK/mirror.json, {key: {address, atomic, count}} ({dup: N}
-# for a key N of them share; with the date too, {dup: N, cands: [...]}, which mirror_assign tells
-# apart by the wallet's label)
+# mirror_load: save MIRROR_URL's projects as WORK/mirror.json: {key: {address, atomic, count}}.
+# A key shared by N proposals becomes {dup: N}. If the date doesn't separate them either, it is
+# {dup: N, cands: [...]}, and mirror_assign picks one by the wallet's label.
 mirror_load() {
-    # (16 MB at most: ccs.getmonero.org's is about 100 KB, and jq reads it whole)
+    # 16 MB at most: ccs.getmonero.org's is about 100 KB, and jq reads it whole.
     curl -fsS --max-time 60 --max-filesize 16777216 "$MIRROR_URL" > "$WORK/mirror.raw" || { log "error: could not fetch MIRROR_URL ($MIRROR_URL), or over 16 MB"; return 1; }
-    # (the raised amount in piconero from its decimal number: exact to a piconero below 9007 XMR,
-    # the feed's own precision far coarser)
+    # Convert the raised amount to piconero. Exact below 9007 XMR, and the feed itself is far
+    # less precise than that.
     jq -c "(.data // .) | if type == \"array\" then . else error(\"not a list of projects\") end
         | map({key: $MIRROR_KEY, date: (.date // \"\" | tostring), address: (.address // \"\"),
                atomic: ((.raised_amount // 0 | tonumber) * 1000000000000 | round | tostring), count: (.contributions // 0)})
@@ -33,39 +34,42 @@ mirror_load() {
         | (group_by(.key + \"\\u001f\" + .date) | map({key: (.[0].key + \"\\u001f\" + .[0].date), value: (if length == 1 then .[0] | del(.key, .date) else {dup: length, cands: map(del(.key, .date))} end)}) | from_entries) as \$dated
         | \$one + \$dated" \
         "$WORK/mirror.raw" > "$WORK/mirror.json" 2> "$WORK/mirror.err" \
-        || { local why=''; IFS= read -r -N 200 why < "$WORK/mirror.err" || true   # (its first 200 characters: busybox's head has no -c)
+        || { local why=''; IFS= read -r -N 200 why < "$WORK/mirror.err" || true   # first 200 characters: busybox's head has no -c
              log "error: MIRROR_URL's answer isn't a list of projects: $why"; return 1; }
 }
 
-# mirror_assign: in place of assign_addresses. Each proposal the state has no address for gets
-# the feed's, if it is this wallet's (wallet-rpc's get_address_index: its index); one whose feed
-# address is another wallet's, or has none, gets the feed's totals as history. A proposal shown
-# with one address here and another in the feed stops the run: never a donation to an address
-# the other site credits elsewhere. Never the main address (index 0: payout change lands there,
-# and it counts for no proposal), one past any signed list, or one another proposal here has.
+# mirror_assign: used instead of assign_addresses in mirror mode.
+# A proposal with no address in the state gets the feed's address, if it belongs to this wallet
+# (wallet-rpc's get_address_index gives its index).
+# If the feed's address belongs to another wallet, or there is none, the proposal gets the
+# feed's totals as history instead.
+# A proposal with one address here and a different one in the feed stops the run. We must never
+# show an address the other site credits to a different proposal.
+# Never used: the main address (index 0: payout change lands there and counts for no proposal),
+# an index past any signed list, or an index another proposal here already has.
 mirror_assign() {
     local file key dated many m addr have res err idx other n hist=$WORK/historic.tsv
     : > "$hist"
-    # the proposals a retired record already has: theirs, never the feed's on top
+    # Proposals already in a retired record use that record, never the feed's totals on top.
     local -A retired=()
     while IFS= read -r file; do retired[$file]=1; done < <(awk -F, 'FNR > 1 && $6 != "" { print $6 }' "${RETIRED_DIR:-/nonexistent}"/*.csv 2> /dev/null)
     while IFS=$'\t' read -r file key dated many; do
         if ((many > 1)); then
-            # several here of that title and author (a series): only the feed's one of this date.
-            # The one of that name alone would do while the feed has one, but the feed may not list
-            # the newest yet: it would get an older one's address
+            # Several proposals here share this title and author (a series). Match by date too.
+            # Matching by name alone would work while the feed has only one, but the feed may not
+            # list the newest yet, and it would get an older one's address.
             m=''
             [[ $dated ]] && m=$(jq -c --arg k "$key"$'\x1f'"$dated" '.[$k] // empty' "$WORK/mirror.json")
             [[ $m ]] || continue
         else
             m=$(jq -c --arg k "$key" '.[$k] // empty' "$WORK/mirror.json")
             [[ $m ]] || continue
-            # several of that title and author in the feed: the one of this date, if just one
+            # Several in the feed share this title and author: take the one with this date, if unique.
             if jq -e '.dup' <<<"$m" > /dev/null && [[ $dated ]]; then
                 m=$(jq -c --arg k "$key"$'\x1f'"$dated" '.[$k] // {dup: 2}' "$WORK/mirror.json")
             fi
         fi
-        # several of that title, author and day too: the one the wallet's label names
+        # Still several with the same date: take the one the wallet's label names.
         if jq -e '.cands' <<<"$m" > /dev/null; then m=$(mirror_pick "$file" "$m"); [[ $m ]] || m='{"dup": 2}'; fi
         if jq -e '.dup' <<<"$m" > /dev/null; then
             log "warning: MIRROR_URL has more than one proposal with the title and author of $file, and of its date, and the wallet's labels name none of them: none matched"
@@ -73,7 +77,7 @@ mirror_assign() {
         fi
         addr=$(jq -r .address <<<"$m")
         have=$(jq -r --arg f "$file" '.[$f].address // ""' "$WORK/state.json")
-        : > "$WORK/rpc.err" # this proposal's answer only (none at all for one the feed has no address for)
+        : > "$WORK/rpc.err" # this proposal's error only (none when the feed has no address for it)
         if [[ $addr =~ ^[0-9A-Za-z]{95}$ ]] && res=$(rpc get_address_index "$(jq -nc --arg a "$addr" '{address: $a}')" 2> "$WORK/rpc.err") \
             && [[ $(jq -r '.index.major' <<<"$res") == 0 ]]; then
             idx=$(jq -r '.index.minor' <<<"$res")
@@ -91,8 +95,8 @@ mirror_assign() {
                 log "error: MIRROR_URL gives $file subaddress $idx, which $other has here: not used"
                 continue
             fi
-            # created first: the wallet answers get_address_index for any subaddress it scans
-            # for, but labels only those it has created (the other site's newest, often not yet)
+            # Create it first. The wallet answers get_address_index for any subaddress it scans,
+            # but can only label ones it has created (often not yet the other site's newest).
             n=$(rpc get_address '{"account_index": 0}' | jq '.addresses | length') || return 1
             while ((n <= idx)); do
                 rpc create_address '{"account_index": 0}' > /dev/null || return 1
@@ -103,8 +107,8 @@ mirror_assign() {
             log "$file: subaddress $idx $addr (MIRROR_URL's)"
             continue
         fi
-        # not this wallet's address: wallet-rpc says so (an earlier wallet's), or it has none.
-        # Anything else (the wallet not answering) stops the run, not taken for history
+        # Not this wallet's address (wallet-rpc says so: an earlier wallet's), or no address.
+        # Any other error, such as the wallet not answering, stops the run instead.
         err=$(< "$WORK/rpc.err")
         if [[ $addr =~ ^[0-9A-Za-z]{95}$ && $err != *"belong"* ]]; then
             [[ $have ]] && continue
@@ -117,9 +121,10 @@ mirror_assign() {
     mv "$hist" "$HISTORIC"
 }
 
-# mirror_pick FILE M: of M's candidates (the feed's proposals of one title, author and day), the
-# one whose address FILE already has here, else the one whose subaddress the wallet labels FILE
-# (an earlier mirror's labels, or ccs-back's where it used the file's name): if just one
+# mirror_pick FILE M: pick one of M's candidates (feed proposals with the same title, author and day).
+# Prefer the one whose address FILE already has here. Otherwise the one whose subaddress the
+# wallet labels FILE (labels from an earlier mirror, or the old ccs-back's file names).
+# Prints it only if exactly one matches.
 mirror_pick() {
     local have c a res idx label pick='' n=0
     have=$(jq -r --arg f "$1" '.[$f].address // ""' "$WORK/state.json")
@@ -141,8 +146,8 @@ mirror_pick() {
     return 0
 }
 
-# mirror_hide: a funding-required proposal with no address, not on the site until the feed has
-# one (each run, the feed answering or not)
+# mirror_hide: keep Funding Required proposals with no address off the site until the feed
+# gives them one. Runs every time, whether the feed answered or not.
 mirror_hide() {
     local skip file
     skip=$(jq -r --slurpfile s "$WORK/state.json" '.[] | select(.layout == "fr" and ($s[0][.file].address // null) == null) | .file' "$WORK/props.json")
@@ -153,7 +158,8 @@ mirror_hide() {
     fi
 }
 
-# historic_totals: "file<TAB>atomic<TAB>count" (HISTORIC, mirror_assign's), for proposal_funds
+# historic_totals: print HISTORIC's "file<TAB>atomic<TAB>count" lines (written by mirror_assign).
+# Used by proposal_funds.
 historic_totals() {
     [[ -n ${HISTORIC:-} && -f $HISTORIC ]] || return 0
     awk -F'\t' -v num='^[0-9]+$' 'NF == 3 && $2 ~ num && $3 ~ num' "$HISTORIC"

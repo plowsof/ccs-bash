@@ -2,23 +2,24 @@
 # monero-wallet-rpc (view-only wallet): subaddresses for proposals and donation totals.
 # Everything uses account 0. Functions return non-zero on failure, see gitlab.sh.
 
-# rpc METHOD [PARAMS_JSON]: print the "result" of a JSON-RPC call. The login goes through a
-# curl config on a pipe (not in `ps`); digest only with a login (else an empty probe is sent).
+# rpc METHOD [PARAMS_JSON]: print the "result" of a JSON-RPC call.
+# The login is passed in a curl config on a pipe, so it never shows in `ps`.
+# Digest auth is set only with a login; otherwise curl would send an empty probe.
 rpc() {
     local body res
     body=$(jq -nc --arg m "$1" --argjson p "${2:-"{}"}" '{jsonrpc: "2.0", id: "0", method: $m, params: $p}') || return 1
     res=$(curl -fsS --max-time 60 \
         -K <([[ -z $RPC_USER ]] || printf 'digest\nuser = "%s:%s"\n' "$RPC_USER" "$RPC_PASSWORD") \
         -H 'Content-Type: application/json' -d "$body" "$RPC_URL") || return 1
-    # RPC_QUOTE=1: every "amount" made a string before jq reads it, which keeps the digits (jq's
-    # doubles can't hold one above 2^53, 9007.2 XMR: one such donation would stop every run)
+    # RPC_QUOTE=1: turn every "amount" into a string before jq reads it, to keep all digits.
+    # jq's doubles can't hold amounts above 2^53 (9007.2 XMR). One such donation would stop every run.
     [[ -z ${RPC_QUOTE:-} ]] || res=$(sed -E 's/"amount": *([0-9]+)/"amount": "\1"/g' <<<"$res") || return 1
     jq -e '.result // error("rpc '"$1"': \(.error.message // "no result")")' <<<"$res"
 }
 
-# The wallet's main address must be WALLET_ADDRESS (root's config, unlike the state file
-# ccs-bash can write), and every subaddress in the state must be the one we published.
-# A restored wallet only knows index 0: create the missing ones. Another wallet stops the run.
+# Check this is the right wallet. Its main address must be WALLET_ADDRESS, from root's config
+# (ccs-bash can write the state file but not the config). Every subaddress in the state must match.
+# A restored wallet only knows index 0, so create the missing ones. A different wallet stops the run.
 check_wallet_addresses() {
     local max have addrs
     max=$(jq '[.[].subaddr_index | numbers] | max // 0' "$WORK/state.json")
@@ -26,8 +27,8 @@ check_wallet_addresses() {
     [[ $(jq -r .address <<<"$addrs") == "$WALLET_ADDRESS" ]] \
         || die "the wallet's main address is not WALLET_ADDRESS from the config (wrong wallet?)"
     have=$(jq '.addresses | length' <<<"$addrs")
-    # (a damaged or forged state's huge index would have this create subaddresses one at a time,
-    # for days; no signed list comes near it)
+    # A damaged or forged state with a huge index would create subaddresses one by one for days.
+    # No signed list comes near this limit.
     ((max <= 100000)) || die "proposals.csv has subaddress index $max, past any signed list (100000): a damaged state file? (restore it)"
     while ((have <= max)); do
         rpc create_address '{"account_index": 0}' > /dev/null || return 1
@@ -39,9 +40,9 @@ check_wallet_addresses() {
         | [$state[0] | to_entries[] | select(.value.address)
            | select($wallet[.value.subaddr_index | tostring] != .value.address)] | length == 0' <<<"$addrs" > /dev/null \
         || die "wallet subaddresses do not match $STATE_DIR/proposals.csv (wrong wallet?)"
-    # and given to the proposal the wallet's label says (assign_addresses labels each with its
-    # file): a state with two proposals' subaddresses swapped has only the wallet's addresses,
-    # but would show each proposal the other's address and donations
+    # Each subaddress must belong to the proposal named in its wallet label (assign_addresses
+    # sets the label to the file name). A state with two proposals' subaddresses swapped passes
+    # the check above, but would show each proposal the other's address and donations.
     local swapped
     swapped=$(jq -r --slurpfile state "$WORK/state.json" '
         (.addresses | map({key: (.address_index | tostring), value: (.label // "")}) | from_entries) as $labels
@@ -49,8 +50,9 @@ check_wallet_addresses() {
            | ($labels[.value.subaddr_index | tostring] // "") as $l | select($l != "" and $l != .key)
            | "\(.value.subaddr_index) (labelled \($l), given to \(.key))"] | join(", ")' <<<"$addrs") || return 1
     [[ -z $swapped ]] || die "subaddresses given to another proposal than the wallet's label says: $swapped (swapped or edited $STATE_DIR/proposals.csv? a renamed proposal: label_address it with its new file, docs/troubleshooting.md)"
-    # each with its proposal's file as its label, as assign_addresses gives new ones: a wallet from
-    # ccs-back, or restored, has none, and check_known_subaddresses tells handed-out ones by it
+    # Label any unlabelled subaddress with its proposal's file, as assign_addresses does for new ones.
+    # Wallets from the old ccs-back, or restored ones, have no labels.
+    # check_known_subaddresses relies on labels to tell which subaddresses were handed out.
     jq -r --slurpfile state "$WORK/state.json" '
         (.addresses | map({key: (.address_index | tostring), value: (.label // "")}) | from_entries) as $labels
         | $state[0] | to_entries[] | select(.value.subaddr_index != null and ($labels[.value.subaddr_index | tostring] // "") == "")
@@ -59,12 +61,12 @@ check_wallet_addresses() {
         done || return 1
 }
 
-# A new subaddress for every fr proposal without one (after check_wallet_addresses): the one
-# after the state's highest, not create_address's next. A donation to a subaddress past the last
-# created one (the list publishes them all, anyone can send) makes the wallet count every one up
-# to it as created, so create_address would hand out the one after it: a dust payment to the
-# list's last address would use the whole list up. One already there is used if it has no label
-# (assign_addresses gave it none: never handed out).
+# Give a new subaddress to every Funding Required proposal without one. Runs after
+# check_wallet_addresses. Uses the index after the state's highest, not create_address's next.
+# Why: the list publishes every address, so anyone can send to one. A donation to a subaddress
+# past the last created one makes the wallet treat all up to it as created. Then create_address
+# would skip ahead, and a dust payment to the list's last address would use up the whole list.
+# An existing subaddress is reused if it has no label, since that means it was never handed out.
 assign_addresses() {
     local file res idx addr max n
     while IFS= read -r file; do
@@ -82,20 +84,21 @@ assign_addresses() {
             idx=$(jq -r .address_index <<<"$res")
             addr=$(jq -r .address <<<"$res")
             [[ $idx =~ ^$NUM$ ]] || die "unexpected create_address result: $res"
-            # just above every index in the state, or two proposals could share an address
+            # Must be just above every index in the state, or two proposals could share an address.
             ((idx == max + 1)) || die "create_address gave subaddress $idx, but the state already goes up to $max"
         fi
         [[ $addr =~ ^[0-9A-Za-z]{95}$ ]] || die "unexpected address for subaddress $idx: $res"
         state_update --arg f "$file" --argjson i "$idx" --arg a "$addr" '.[$f] += {subaddr_index: $i, address: $a}'
         log "$file: subaddress $idx $addr"
-        # Deposits it had before it was handed out (the next one is easy to guess, the list
-        # publishes it: someone's dust) aren't this proposal's: dropped from this run's totals, and
-        # those in blocks up to the wallet's last one from every later run's (ASSIGNED:
-        # "index<TAB>height"). Kept for every subaddress handed out, not only one this run's
-        # totals have deposits at: they lack those still time-locked, and those at a subaddress
-        # past the ones the wallet counts as created (a wallet made from its keys still scans the
-        # default lookahead's 200, whatever set_subaddress_lookahead says). The height is the last
-        # block's (get_height is one more): a donation in the next block is the proposal's.
+        # Deposits that arrived before the subaddress was handed out don't belong to this proposal.
+        # (The next address is public on the list, so anyone can send dust to it early.)
+        # Drop them from this run's totals, and record "index<TAB>height" in ASSIGNED so later
+        # runs skip deposits up to that height too.
+        # Record it for every subaddress handed out, even with no deposits in this run's totals:
+        # those totals miss time-locked deposits, and deposits past the wallet's created range
+        # (a wallet made from keys still scans 200 ahead, whatever set_subaddress_lookahead says).
+        # The height is the last block's (get_height returns one more), so a donation in the next
+        # block counts for the proposal.
         if [[ -n ${ASSIGNED:-} ]]; then
             local h
             h=$(rpc get_height | jq -r .height) || return 1
@@ -110,21 +113,23 @@ assign_addresses() {
         .[] | select(.layout == "fr") | .file | select($state[0][.] and $state[0][.].address == null)' "$WORK/props.json")
 }
 
-# Money is added and converted only in bash, as 64-bit atomic units: exact to 9.2M XMR.
+# Money is added and converted only in bash, as 64-bit atomic units. Exact up to 9.2M XMR.
 # jq's doubles round sums above ~9007 XMR and turn /1e12 into 1.23449999...
 
-# A number read from the state or the wallet, before bash arithmetic: no leading zero (bash reads
-# 010 as octal 8, and 09 stops the run) and at most 18 digits (bash wraps at 2^63: a "checked"
-# time of 2^64 + now would read as now, and skip the recount for good)
+# Pattern for numbers from the state or the wallet, checked before bash arithmetic.
+# No leading zero: bash reads 010 as octal 8, and 09 is an error.
+# At most 18 digits: bash wraps at 2^63, so a "checked" time of 2^64 + now would read as now
+# and skip the recount for good.
 NUM='(0|[1-9][0-9]{0,17})'
 
-# Atomic units -> XMR, cut (not rounded) to 4 decimals, never more than there is: 99999960000000 -> 99.9999.
+# Atomic units -> XMR, truncated (not rounded) to 4 decimals, so never more than is there.
+# 99999960000000 -> 99.9999.
 xmr4() {
     printf '%d.%04d' $(($1 / 1000000000000)) $(($1 % 1000000000000 / 100000000))
 }
 
-# Same without trailing zeros (14.0000 -> 14), for JSON numbers: the only form jq 1.6 and
-# 1.7 print alike.
+# Same without trailing zeros (14.0000 -> 14), for JSON numbers.
+# This is the only form that jq 1.6 and 1.7 print the same way.
 xmr4_number() {
     local x
     x=$(xmr4 "$1")
@@ -132,7 +137,7 @@ xmr4_number() {
     printf '%s' "${x%.}"
 }
 
-# XMR as written in a proposal ("240.12021", "85") -> atomic units, from the text.
+# XMR as written in a proposal ("240.12021", "85") -> atomic units, converted from the text.
 to_atomic() {
     local whole=${1%%.*} frac=
     [[ $1 == *.* ]] && frac=${1#*.}
@@ -141,31 +146,32 @@ to_atomic() {
 }
 
 # Print donations per subaddress in atomic units: index TAB confirmed TAB pending TAB count.
-# Confirmed at MIN_CONFIRMATIONS, pending before (pool too). A time-locked one counts once its
-# lock has passed (a block height below 500,000,000, else a time), and not at all before.
+# Confirmed means at least MIN_CONFIRMATIONS; anything newer, or in the pool, is pending.
+# A time-locked deposit counts only once its lock has passed. The lock is a block height
+# if below 500,000,000, otherwise a unix time.
 #
-# The deposits are kept in STATE_DIR/deposits.csv (DEPOSITS), a cache: deleted, the next run
-# makes it again from the wallet. A deposit goes in once its block is DEPOSITS_FINAL (30, and at
-# least MIN_CONFIRMATIONS) deep; each run then asks the wallet only for what came after ("final")
-# and the pool, so its cost doesn't grow with every donation ever made (anyone can send dust).
+# Deposits are cached in STATE_DIR/deposits.csv (DEPOSITS). If deleted, the next run rebuilds it.
+# A deposit is cached once its block is DEPOSITS_FINAL deep (30, and at least MIN_CONFIRMATIONS).
+# Each run then asks the wallet only for newer blocks and the pool. This keeps runs fast however
+# many donations there are (anyone can send dust).
 #   # final <height> checked <unix time>
-#   <height>,<txid>,<subaddress>,<amount>,<unlock_time>       one a (tx, subaddress), atomic units
-# Once a day (or with no file) everything is fetched and compared: deposits the wallet knows that
-# the file lacks are added; ones the file has that the wallet lacks stop the run (a reorg deeper
-# than that, or a wallet rescanning: the site keeps its last totals). A wallet below the file's
-# height (rescanning, restored) stops it too: never a total lower than the wallet once knew.
+#   <height>,<txid>,<subaddress>,<amount>,<unlock_time>       one line per (tx, subaddress), atomic units
+# Once a day, or with no file, everything is fetched and compared. Deposits the wallet has but the
+# file lacks are added. Deposits the file has but the wallet lacks stop the run: a deep reorg or a
+# rescanning wallet. The site then keeps its last totals. A wallet below the file's height
+# (rescanning, restored) also stops the run, so a total never drops below what was once known.
 donation_totals() {
     local file=${DEPOSITS:-} n indexes wh depth final kept='' H=0 T=0 now full=1 params transfers new=''
     local kind height txid idx amount unlock confs i h
     local -A confirmed=() pending=() count=() since=()
-    # (a subaddress handed out after deposits had reached it: those up to its height aren't counted)
+    # Subaddresses handed out after deposits reached them: deposits up to that height don't count.
     if [[ -n ${ASSIGNED:-} && -s $ASSIGNED ]]; then
         while IFS=$'\t' read -r i h; do
             [[ $i =~ ^$NUM$ && $h =~ ^$NUM$ ]] || die "$ASSIGNED: a line that isn't 'index<TAB>height' (delete it: deposits from before a subaddress was handed out then count)"
             since[$i]=$h
         done < "$ASSIGNED"
     fi
-    # subaddresses 1+, never 0: it receives other things (payout change looks incoming)
+    # Subaddresses 1 and up only. Index 0 receives other things (payout change looks incoming).
     n=$(rpc get_address '{"account_index": 0}' | jq '.addresses | length') || return 1
     ((n > 1)) || return 0
     indexes=$(jq -nc --argjson n "$n" '[range(1; $n)]')
@@ -186,8 +192,8 @@ donation_totals() {
             die "$file: a line that isn't a deposit (delete it: the next run makes it again)"
         fi
         ((wh >= H)) || die "the wallet is at height $wh, below the $H its kept deposits go to: rescanning or restored? (the site keeps its last totals until it has caught up)"
-        # (a "checked" time in the future, from a clock gone wrong or a forged file, would skip the
-        # recount for good: recounted in full then)
+        # A "checked" time in the future (bad clock, forged file) would skip the recount forever.
+        # Do a full recount instead.
         ((T <= now && now - T < 86400)) && full=''
         ((T <= now)) || log "warning: $file was checked in the future ($T): a full recount"
     fi
@@ -197,18 +203,18 @@ donation_totals() {
         params="{\"in\": true, \"pool\": true, \"account_index\": 0, \"subaddr_indices\": $indexes, \"filter_by_height\": true, \"min_height\": $H}"
     fi
     transfers=$(RPC_QUOTE=1 rpc get_transfers "$params") || return 1
-    # kind height txid subaddress amount unlock_time confirmations; jq only passes amounts
-    # through, as strings (RPC_QUOTE), checked as numbers below; an unlock_time past 18
-    # digits (anyone can send one: up to 2^64 - 1, locked for good) is the largest 18-digit time,
-    # still locked, not a number bash would wrap negative (unlocked)
+    # One line per transfer: kind height txid subaddress amount unlock_time confirmations.
+    # jq passes amounts through as strings (RPC_QUOTE); they are checked as numbers below.
+    # Anyone can send an unlock_time up to 2^64 - 1 (locked forever). One over 18 digits becomes
+    # the largest 18-digit value: still locked. Otherwise bash would wrap it negative (unlocked).
     transfers=$(jq -r '
         ((.in // []) | map(. + {kind: "in"})) + ((.pool // []) | map(. + {kind: "pool"}))
         | unique_by([.txid, .subaddr_index.minor])
         | .[]
         | if (.amount | type) == "string" or .amount <= 9007199254740992 then . else error("amount \(.amount) is too large for jq to read exactly") end
         | "\(.kind) \(.height // 0) \(.txid) \(.subaddr_index.minor) \(.amount) \(if (.unlock_time // 0) >= 1e18 then "999999999999999999" else (.unlock_time // 0) end) \(.confirmations // 0)"' <<<"$transfers") || return 1
-    # every field checked before bash arithmetic (a subscript can run commands), and the txid
-    # before it goes in the file
+    # Check every field before bash arithmetic (an array subscript can run commands),
+    # and check the txid before it goes into the file.
     while read -r kind height txid idx amount unlock confs; do
         [[ -n $kind ]] || continue
         [[ $kind =~ ^(in|pool)$ && $height =~ ^$NUM$ && $txid =~ ^[0-9a-f]{64}$ && $idx =~ ^$NUM$ && $amount =~ ^$NUM$ \
@@ -216,7 +222,7 @@ donation_totals() {
             || die "unexpected transfer from wallet: '$kind $height $txid $idx $amount $unlock $confs'"
     done <<<"$transfers"
     if [[ $full && -n $kept ]]; then
-        # everything compared, up to the file's height: the wallet must know every kept deposit
+        # Full compare up to the file's height: the wallet must know every cached deposit.
         local wallet missing extra
         wallet=$(awk -v h="$H" '$1 == "in" && $2 > 0 && $2 <= h { print $2 "," $3 "," $4 "," $5 "," $6 }' <<<"$transfers")
         missing=$(only_in "$kept" "$wallet" | grep -c . || true)
@@ -227,9 +233,9 @@ donation_totals() {
             kept=$(printf '%s\n%s\n' "$kept" "$extra" | sort_deposits)
         fi
     fi
-    # deposits now final: into the file, and its height up to final
+    # Add deposits that are now final to the file, and raise its height to final.
     new=$(awk -v lo="$H" -v hi="$final" -v full="$full" '$1 == "in" && $2 > 0 && $2 <= hi && (full != "" ? $2 > 0 : $2 > lo) { print $2 "," $3 "," $4 "," $5 "," $6 }' <<<"$transfers")
-    [[ $full && -n $kept ]] && new=$(awk -F, -v h="$H" '$1 > h' <<<"$new")   # (those up to H were compared above)
+    [[ $full && -n $kept ]] && new=$(awk -F, -v h="$H" '$1 > h' <<<"$new")   # those up to H were handled by the compare above
     if [[ -n $file ]]; then
         local all
         all=$(printf '%s\n%s\n' "$kept" "$new" | sort_deposits)
@@ -239,7 +245,7 @@ donation_totals() {
     else
         kept=$(printf '%s\n%s\n' "$kept" "$new" | grep . || true)
     fi
-    # the totals: the kept deposits, then what isn't final yet (and the pool)
+    # Totals: the cached deposits, then the ones not final yet, and the pool.
     while IFS=, read -r height txid idx amount unlock; do
         [[ -n $height ]] || continue
         [[ $height =~ ^$NUM$ && $txid =~ ^[0-9a-f]{64}$ && $idx =~ ^$NUM$ && $amount =~ ^$NUM$ && $unlock =~ ^$NUM$ ]] \
@@ -251,7 +257,7 @@ donation_totals() {
     done <<<"$kept"
     while read -r kind height txid idx amount unlock confs; do
         [[ -n $kind ]] || continue
-        if [[ $kind == in ]] && ((height > 0 && height <= final)); then continue; fi   # kept, counted above
+        if [[ $kind == in ]] && ((height > 0 && height <= final)); then continue; fi   # cached, counted above
         [[ -n ${since[$idx]:-} ]] && ((height > 0 && height <= since[$idx])) && continue
         locked "$unlock" && continue
         if ((confs >= MIN_CONFIRMATIONS)); then
@@ -266,30 +272,31 @@ donation_totals() {
     done
 }
 
-# only_in A B: the lines of A that B lacks (the image has no comm or sort)
+# only_in A B: print the lines of A that are not in B. (The image has no comm or sort.)
 only_in() {
     awk 'NR == FNR { b[$0] = 1; next } $0 != "" && !($0 in b)' <(printf '%s\n' "$2") <(printf '%s\n' "$1")
 }
 
-# Deposit lines on stdin, once each, by height, txid, subaddress (jq: the image has no sort;
-# the amounts stay text)
+# Sort deposit lines on stdin by height, txid, subaddress, without duplicates.
+# Uses jq because the image has no sort. Amounts stay text.
 sort_deposits() {
     jq -R -r -s 'split("\n") | map(select(. != "")) | unique
         | sort_by(split(",") | [(.[0] | tonumber), .[1], (.[2] | tonumber)]) | .[]'
 }
 
-# locked UNLOCK_TIME: still time-locked (a block height below 500,000,000, else a unix time), with
-# the wallet at height wh and the time now (donation_totals')
+# locked UNLOCK_TIME: true if still time-locked. Below 500,000,000 it is a block height, else a
+# unix time. Compares with the wallet height wh and the time now, both set by donation_totals.
 locked() {
     (($1 == 0)) && return 1
     if (($1 < 500000000)); then ((wh < $1)); else ((now < $1)); fi
 }
 
-# Stop if donations sit at a subaddress this wallet gave a proposal (assign_addresses labels each
-# with its file) that the state doesn't have (lost, emptied or swapped state; going on would hand
-# out new addresses). Runs before new ones are made. One with no label was never handed out: the
-# signed list publishes them, so anyone can send to one, which mustn't stop every run; it is
-# logged, and counted for no proposal.
+# Stop if a subaddress that was handed out has donations but is missing from the state.
+# (Handed out means it has a label: assign_addresses labels each with its file.)
+# That means the state was lost, emptied or swapped, and going on would hand out new addresses.
+# Runs before new addresses are made.
+# A subaddress with no label was never handed out. The signed list publishes it, so anyone can
+# send to it, and that must not stop every run. It is logged and counted for no proposal.
 check_known_subaddresses() {
     local unknown labelled
     unknown=$(cut -f1 "$WORK/totals.tsv" | jq -c -R -s --slurpfile state "$WORK/state.json" '
@@ -298,8 +305,8 @@ check_known_subaddresses() {
     [[ $unknown != '[]' ]] || return 0
     labelled=$(rpc get_address "{\"account_index\": 0, \"address_index\": $unknown}" \
         | jq -r '[.addresses[] | select((.label // "") != "") | .address_index] | join(" ")') || return 1
-    # (a mirror's state is made from the other site's feed, whose proposals it may not all match:
-    # the labels are that site's, or an earlier mirror's, so a warning, not a lost state file)
+    # In mirror mode the state comes from the other site's feed, and may not match every
+    # proposal. The labels are that site's, so this is a warning, not a lost state file.
     if [[ $labelled && ${MIRROR_URL:-} ]]; then
         log "warning: donations at subaddress $labelled, which this wallet gave a proposal that MIRROR_URL matches none of here: not shown"
         return 0
@@ -308,15 +315,17 @@ check_known_subaddresses() {
     log "warning: donations at subaddress $(jq -r 'join(" ")' <<<"$unknown"), which no proposal was given (no label): someone sent to an address of the wallet's that isn't on the site; not counted"
 }
 
-# Print each proposal's donations to the wallets the CCS used before this one, file TAB atomic units
-# TAB count, from RETIRED_DIR (STATE_DIR/retired), one file per retired wallet, written once by
-# contrib/retire-wallet and changed only by hand, to rename a proposal (state, backed up: the old
-# wallet may be gone):
+# Print each proposal's donations to wallets the CCS used before this one:
+# file TAB atomic units TAB count.
+# Read from RETIRED_DIR (STATE_DIR/retired), one file per retired wallet. contrib/retire-wallet
+# writes each file once. Edit by hand only to rename a proposal. It is state, so back it up:
+# the old wallet may be gone.
 #   # retired <name> wallet <main address, or ccs-back-database> height <h> time <unix time>
 #   <height>,<txid>,<subaddress>,<amount>,<unlock_time>,<proposal file>
-# No addresses: nothing in it can reach a page. A deposit still time-locked when its wallet was
-# retired counts once its lock has passed: a time, or a height taken as two minutes a block from
-# then (the old wallet isn't asked again). Every field checked before bash arithmetic.
+# It holds no addresses, so nothing in it can reach a page.
+# A deposit still time-locked at retirement counts once its lock passes. A height lock is turned
+# into a time at two minutes per block, since the old wallet isn't asked again.
+# Every field is checked before bash arithmetic.
 retired_totals() {
     local f head w h t height txid idx amount unlock file now est n=$NUM
     local -A sum=() cnt=() seen=()
@@ -330,7 +339,7 @@ retired_totals() {
             || die "$f: not a retired wallet's file (restore it from the backup machine)"
         w=${BASH_REMATCH[1]} h=${BASH_REMATCH[2]} t=${BASH_REMATCH[3]}
         while IFS=, read -r height txid idx amount unlock file; do
-            # (numbers as NUM: no leading zero, at most 18 digits)
+            # Numbers must match NUM: no leading zero, at most 18 digits.
             [[ $height =~ ^$n$ && $txid =~ ^[0-9a-f]{64}$ && $idx =~ ^$n$ && $amount =~ ^$n$ \
                 && $unlock =~ ^$n$ && $file == *.md && $file != */* && $file != *[[:cntrl:]]* \
                 && ! $file =~ [1-9A-HJ-NP-Za-km-z]{90} ]] \
@@ -339,7 +348,7 @@ retired_totals() {
                 if ((unlock < 500000000)); then est=$((t + (unlock > h ? unlock - h : 0) * 120)); else est=$unlock; fi
                 ((now >= est)) || continue
             fi
-            # a deposit in two records of one wallet (retire-wallet --again's NAME-2 and NAME): once
+            # Count a deposit once, even if two records of one wallet have it (retire-wallet --again).
             [[ ! ${seen[$w,$txid,$idx]:-} ]] || continue
             seen[$w,$txid,$idx]=1
             sum[$file]=$((${sum[$file]:-0} + amount))
@@ -349,21 +358,21 @@ retired_totals() {
     for file in "${!sum[@]}"; do printf '%s\t%s\t%s\n' "$file" "${sum[$file]}" "${cnt[$file]}"; done
 }
 
-# Print {"file.md": {amount, raised, pending, count, percentage, needed}}, ready to show: amount and
-# raised "0.0000" strings, pending a number (ccs-front compares it with 0), percentage
-# rounded down (100% means really reached).
+# Print {"file.md": {amount, raised, pending, count, percentage, needed}}, ready to display.
+# amount and raised are "0.0000" strings. pending is a number (ccs-front compares it with 0).
+# percentage is rounded down, so 100% means the goal was really reached.
 proposal_funds() {
     local idx c p n file amount target raised pct need
     local -A conf=() pend=() cnt=() rconf=() rcnt=() hconf=() hcnt=()
     while IFS=$'\t' read -r idx c p n; do
         conf[$idx]=$c pend[$idx]=$p cnt[$idx]=$n
     done < "$WORK/totals.tsv"
-    # donations to wallets the CCS used before this one, per proposal file
+    # Donations to earlier CCS wallets, per proposal file
     retired_totals > "$WORK/retired.tsv" || return 1
     while IFS=$'\t' read -r file c n; do
         rconf[$file]=$c rcnt[$file]=$n
     done < "$WORK/retired.tsv"
-    # a mirror's: the other site's totals for proposals this wallet can't see (lib/mirror.sh)
+    # Mirror mode: the other site's totals for proposals this wallet can't see (lib/mirror.sh)
     while IFS=$'\t' read -r file c n; do
         hconf[$file]=$c hcnt[$file]=$n
     done < <(historic_totals)
@@ -375,8 +384,8 @@ proposal_funds() {
             pct=0
             ((target > 0)) && pct=$((raised * 100 / target))
             ((pct > 100)) && pct=100
-            # what would fund it: the goal less what is raised and pending (pending counts within
-            # MIN_CONFIRMATIONS), rounded up to 0.0001 so that sending it reaches the goal; none, 0
+            # Amount needed: the goal minus raised and pending. Rounded up to 0.0001 so that
+            # sending it reaches the goal. 0 if nothing more is needed.
             need=$((target - raised - ${pend[$idx]:-0}))
             ((need > 0)) || need=0
             need=$(((need + 99999999) / 100000000 * 100000000))

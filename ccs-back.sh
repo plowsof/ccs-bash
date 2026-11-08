@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# ccs-back.sh [CONFIG]: one run. Reads the proposals, GitLab and a view-only wallet, writes
-# the JSON into OUTPUT_DIR (ccs-front's _data). Only STATE_DIR/proposals.csv is state, which
-# nothing can make again; beside it two caches, each made again when deleted: deposits.csv (the
-# wallet's deposits 30 blocks deep, so a run asks only for newer ones) and ideas.cache.
+# ccs-back.sh [CONFIG]: one run.
+# Reads the proposals, GitLab and a view-only wallet. Writes JSON into OUTPUT_DIR.
+# STATE_DIR/proposals.csv is the only real state: nothing can rebuild it.
+# The other files in STATE_DIR are caches. Delete one and the next run rebuilds it.
+# deposits.csv holds deposits 30 blocks deep, so each run asks the wallet only for newer ones.
 set -euo pipefail
 export LC_ALL=C TZ=UTC
 
@@ -20,9 +21,9 @@ source "$CCS_LIB/mirror.sh"
 # shellcheck source=lib/site-data.sh
 source "$CCS_LIB/site-data.sh"
 
-# New proposals: remember their merged MR, and when funding started if already fr.
-# GitLab down: tried again next run, and only once this run (a fresh install has hundreds of new
-# proposals, and each lookup would wait for curl's timeout).
+# Record each new proposal: its merged MR, and its funding start date if it is in Funding Required.
+# If GitLab fails, stop looking up for this run and try again next run.
+# (A fresh install has hundreds of new proposals. Each failed lookup waits for curl's timeout.)
 record_new_proposals() {
     local file layout url waiting=0
     while IFS=$'\t' read -r file layout; do
@@ -44,9 +45,9 @@ record_new_proposals() {
     fi
 }
 
-# record_funded: when a proposal in Funding Required was first seen with its goal raised (confirmed
-# donations), as the state's funded_date: the feed's "fully funded". Only from Funding Required, and
-# only once: a proposal funded before this was recorded, or first seen past it, has none.
+# record_funded: set funded_date when a Funding Required proposal first reaches its goal.
+# The feed shows this date as "fully funded". It is set once and never changed.
+# A proposal that was already funded when first seen gets no date.
 record_funded() {
     local new
     new=$(jq -c --slurpfile funds "$WORK/funds.json" --slurpfile state "$WORK/state.json" \
@@ -57,17 +58,17 @@ record_funded() {
     log "fully funded: $(jq -r 'join(", ")' <<<"$new")"
 }
 
-# GitLab down: keep the last run's Ideas.
+# GitLab is down: reuse the last run's ideas.
 previous_ideas() {
     jq '.[0].proposals' "$OUTPUT_DIR/proposals.json" 2> /dev/null || echo '[]'
 }
 
 build_site() {
     site_json
-    # site-data.json: what only this run knows, site.jq's inputs but the front matter (which the
-    # web server reads from the repository itself): each proposal's subaddress index (not its
-    # address: the signed list's line), merge request and dates, its funds, the ideas. The web
-    # server checks it (ccs-check pages) and builds the site from it
+    # site-data.json holds what only this run knows: each proposal's subaddress index, MR link,
+    # dates and funds, plus the ideas. It holds no addresses: those come from the signed list.
+    # The web server reads the front matter from the repository itself.
+    # The web server checks this file and builds the site from it.
     atomic_write "$OUTPUT_DIR/site-data.json" jq -n --indent 4 \
         --slurpfile props "$WORK/props.json" --slurpfile state "$WORK/state.json" \
         --slurpfile funds "$WORK/funds.json" --slurpfile ideas "$WORK/ideas.json" '
@@ -78,11 +79,11 @@ build_site() {
            ideas: $ideas[0]}'
 }
 
-# A proposal's raised total never goes down from what the last run published (OUTPUT_DIR/projects.json):
-# a wallet or a retired wallet's record missing, or a state row cleared by hand, would otherwise show
-# less. The run stops and the site keeps its last totals. A decrease that is meant: the file
-# STATE_DIR/allow-lower, for one run (it is removed then). Raised only: a donation count can drop
-# when a pending tx leaves the pool.
+# A proposal's raised total must never go down from the last run's (OUTPUT_DIR/projects.json).
+# A drop usually means a missing wallet, a missing retired wallet record, or a state row cleared
+# by hand. Then the run stops and the site keeps its last totals.
+# To allow a real drop for one run, create STATE_DIR/allow-lower. The run removes it.
+# Only the raised amount is checked. The donation count can drop when a pending tx leaves the pool.
 check_never_lower() {
     local lower
     [[ -f $OUTPUT_DIR/projects.json ]] || return 0
@@ -91,7 +92,7 @@ check_never_lower() {
         | select(($p.raised_amount | tonumber) > ($n.raised | tonumber))
         | "\(.filename): \($p.raised_amount) before, \($n.raised) now"' "$OUTPUT_DIR/projects.json") || return 1
     if [[ -z $lower ]]; then
-        # (not needed this run: gone all the same, or it would let a later drop through unseen)
+        # Not needed this run. Remove it anyway, so it can't let a later drop through.
         [[ ! -f $STATE_DIR/allow-lower ]] || { log "allow-lower: no total went down, removed"; rm -f "$STATE_DIR/allow-lower"; }
         return 0
     fi
@@ -103,9 +104,9 @@ check_never_lower() {
     die "would show less raised than before ($(grep -c . <<<"$lower") proposals: ${lower//$'\n'/; }): a wallet or a retired wallet's record missing? The site keeps its last totals (docs/troubleshooting.md)"
 }
 
-# stop_under PID SKIP: TERM every process under PID but SKIP and what is under it: the whole
-# tree read first, then parents before their children, so none starts another child in between
-# (read from /proc: the image has no pkill)
+# stop_under PID SKIP: send TERM to every process under PID, except SKIP and its children.
+# Read the whole tree first, then stop parents before children, so none can start a new child.
+# Reads /proc because the image has no pkill.
 stop_under() {
     local f s p pp tree=() todo=("$1") at
     local -A kids=()
@@ -134,19 +135,20 @@ main() {
     exec 9> "$STATE_DIR/lock"
     flock -n 9 || { log "another run is still going, skipping"; exit 0; }
     WORK=$(mktemp -d)
-    # A run that hangs (a forge or wallet that never answers, a huge state) is stopped after
-    # RUN_SECONDS (config, default 900), and its lock with it: the runs after it would otherwise
-    # skip ("still going") for good, and the push of the last good site hide that (it goes on)
+    # Stop a run that hangs after RUN_SECONDS (default 900), for example a forge or wallet that
+    # never answers. Otherwise it keeps the lock, every later run skips, and nobody notices
+    # because the push keeps sending the last good site.
     local max=${RUN_SECONDS:-900}
     [[ $max =~ ^[1-9][0-9]{0,5}$ ]] || max=900
     trap 'exit 1' TERM
-    # (the watchdog doesn't keep the lock open, takes its sleep with it when the run ends, and
-    # then stops what the run waits on: bash runs its TERM trap only once that has ended)
+    # The watchdog closes the lock and kills its sleep when the run ends.
+    # On timeout it also stops what the run is waiting on.
+    # Bash runs the TERM trap only after that ends.
     (exec 9>&-; sleep "$max" & s=$!; trap 'kill "$s" 2> /dev/null; exit 0' TERM
      wait "$s" || exit 0
-     log "error: the run took over ${max}s: stopped"   # (here: the run may end before its trap)
+     log "error: the run took over ${max}s: stopped"   # logged here: the run may end before its trap runs
      { kill -TERM $$; stop_under $$ "$BASHPID"; } 2> /dev/null) &
-    WATCHDOG=$!   # (a global: the EXIT trap runs after main has returned)
+    WATCHDOG=$!   # global: the EXIT trap runs after main returns
     trap 'kill "${WATCHDOG:-}" 2> /dev/null; rm -rf "$WORK"' EXIT
 
     read_proposals "$PROPOSALS_DIR" > "$WORK/props.json"
@@ -156,8 +158,8 @@ main() {
     check_known_subaddresses
     record_new_proposals
     if [[ ${MIRROR_URL:-} ]]; then
-        # a mirror: the other site's addresses, never one of its own (lib/mirror.sh); its feed
-        # not answering, the addresses and history as they were
+        # Mirror mode: use the other site's addresses, never our own (lib/mirror.sh).
+        # If its feed doesn't answer, keep the addresses and history from before.
         if mirror_load; then mirror_assign; else log "warning: MIRROR_URL not answering: no new addresses this run"; fi
         mirror_hide
     else
@@ -166,7 +168,7 @@ main() {
     proposal_funds > "$WORK/funds.json"
     check_never_lower
     record_funded
-    # STATE_DIR/forge-ok: when GitLab last answered (ccs-watch --run alerts when that's long ago)
+    # forge-ok records when GitLab last answered. ccs-watch alerts when that was too long ago.
     if ideas > "$WORK/ideas.json"; then
         touch "$STATE_DIR/forge-ok"
     else

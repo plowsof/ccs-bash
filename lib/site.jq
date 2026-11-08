@@ -1,22 +1,22 @@
-# Builds the files ccs-front-bash reads, the old ccs-back's layout:
+# Builds the files ccs-front-bash reads, in the old ccs-back's layout:
 #   $out == "proposals": [Ideas, Funding Required, Work in Progress]
 #   $out == "completed-proposals": [Completed Proposals]
 #   $out == "projects":  every proposal, in the order first seen (the /projects API)
 # Inputs (--slurpfile, each wrapped in an array): props, state, funds, ideas.
-# Amounts arrive ready to show (lib/wallet.sh): no money arithmetic in jq's doubles.
+# Amounts arrive as display text (lib/wallet.sh). No money arithmetic in jq: it uses doubles.
 
 $props[0] as $props | $state[0] as $state | $funds[0] as $funds
 
-# Links on the site: only plain https urls (not javascript: and the like), HTML-escaped.
+# Links on the site: only plain https URLs (no javascript: and the like), HTML-escaped.
 | def link: if type == "string" and test("^https://[^\\s\"'<>\\\\]+$") then @html else null end;
 
-  # As Liquid's `escape` (@html writes ' as &apos;): ccs-front matches its escaped file
-  # name against this (docs/setup.md step 4).
+  # Escape like Liquid's `escape` (@html writes ' as &apos;). ccs-front matches its escaped
+  # file name against this (docs/setup.md step 4).
   def liquid_escape: gsub("&"; "&amp;") | gsub("<"; "&lt;") | gsub(">"; "&gt;") | gsub("\""; "&quot;") | gsub("'"; "&#39;");
 
-  # Bidi controls go from what a page shows: they can show an address's halves in another order
-  # than written, so the web server's gate refuses them (a merged proposal's title with one would
-  # stop its page updating).
+  # Remove bidi controls from page text. They can display an address's halves in a different
+  # order than written, so the web server's gate refuses them. Without this, one in a merged
+  # proposal's title would stop its page from updating.
   def nobidi: gsub("[\u202a-\u202e\u2066-\u2069]"; "");
 
   def proposal:
@@ -35,12 +35,12 @@ $props[0] as $props | $state[0] as $state | $funds[0] as $funds
         amount: $f.amount,
         "amount-funded": $f.raised,
         "amount-pending": $f.pending,
-        # what would fund it now, pending counted, rounded up ("0.0000": nothing more needed)
+        # Amount still needed, counting pending donations, rounded up ("0.0000": fully funded)
         "amount-needed": $f.needed,
         author: (.author | nobidi | @html),
         date: (if .ts > 0 then .ts | strftime("%B %-d, %Y") else null end),
         "funding-required-date": ($s.funding_required_date | if . then fromdate | strftime("%B %-d, %Y") else null end),
-        # (the feed's: when it went to Funding Required, and when its goal was raised; UTC)
+        # For the feed: when it entered Funding Required, and when it was fully funded (UTC)
         "funding-required-at": $s.funding_required_date,
         "funded-at": $s.funded_date,
         tags: (.tags | map(nobidi | @html))
@@ -57,15 +57,15 @@ $props[0] as $props | $state[0] as $state | $funds[0] as $funds
         contributions: $f.count,
         date: (if .ts > 0 then .ts | strftime("%B %-d, %Y") else null end),
         percentage_funded: $f.percentage,
-        # numbers, as ccs-back's /projects has them (its readers add them up), from the exact
-        # 4-decimal text, its trailing zeros dropped first (every jq then prints the same digits:
-        # 1.8 keeps a number's text as written, 1.6 prints the shortest)
+        # Numbers, as the old ccs-back's /projects had them (readers add them up).
+        # Made from the exact 4-decimal text with trailing zeros dropped first, so every jq
+        # version prints the same digits (1.8 keeps the text as written, 1.6 prints the shortest).
         raised_amount: ($f.raised | xmr_number),
         state: {fr: "FUNDING-REQUIRED", wip: "WORK-IN-PROGRESS", cp: "COMPLETED"}[.layout],
         target_amount: ($f.amount | xmr_number),
         title: (.title | @html),
         filename: .file,
-        # the proposal's merge request, wherever the proposals are (GitLab, Forgejo): as the site's own
+        # The proposal's MR link, on whatever forge hosts the proposals (GitLab, Forgejo)
         gitlab_url: ((.gitlab_url // $state[.file].gitlab_url) | link)
       };
 
