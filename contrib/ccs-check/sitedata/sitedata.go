@@ -1,13 +1,20 @@
-// Package sitedata: site-data.json, the backend's whole push: what only it knows, the inputs of
-// ccs-bash's lib/site.jq but what the web server reads from the proposals repository itself (the
-// front matter, each proposal's merge request): each proposal's subaddress index and dates, its
-// funds, the ideas. The web server builds the site (ccs-gate-build) from what passes here, as Go
-// writes it again (Clean), never from the bytes pushed: every key once and byte for byte as
-// ccs-bash writes it, no other key, each value of its kind: an index the signed list has, never 0
-// (the wallet's main address) nor two proposals' one, and for a proposal the live site has given
-// an address (the gate's pins, and its projects.json) that address, whatever the push; amounts as
-// ccs-bash's xmr4 writes them; an idea's name and author plain text with no address in it, its
-// link a merge request of the proposals repository.
+// Package sitedata checks site-data.json, the backend's whole push.
+//
+// It holds what only the backend knows: each proposal's subaddress index, dates and funds, and
+// the ideas. (The web server reads the front matter and MR links from the proposals repository
+// itself.)
+//
+// The web server builds the site (ccs-gate-build) from the version Clean re-writes, never from
+// the pushed bytes. The rules:
+//   - every key appears once, spelled exactly as ccs-bash writes it, and no other keys;
+//   - each value has the right type;
+//   - an index is on the signed list, is never 0 (the wallet's main address), and is not shared
+//     by two proposals;
+//   - a proposal the live site already gave an address (the gate's pins, its projects.json)
+//     keeps that address, whatever the push says;
+//   - amounts are formatted as ccs-bash's xmr4 writes them;
+//   - an idea's name and author are plain text with no address in them, and its link is an MR
+//     of the proposals repository.
 package sitedata
 
 import (
@@ -56,7 +63,7 @@ type siteData struct {
 	Ideas []*ideaEntry           `json:"ideas"`
 }
 
-// shape: what may be at a place in site-data.json, to read its keys by (exact)
+// shape describes what may appear at each place in site-data.json, so keys can be checked exactly
 type shape struct {
 	fields map[string]*shape // an object of these keys (each nil: a value, no object or array)
 	each   *shape            // an object of any keys (file.md), or an array: each of its values
@@ -70,17 +77,17 @@ func names(ks ...string) *shape {
 	return &shape{fields: m}
 }
 
-// the keys as ccs-bash writes them (siteData's json tags)
+// The keys as ccs-bash writes them (siteData's json tags)
 var dataShape = &shape{fields: map[string]*shape{
 	"state": {each: names("gitlab_url", "subaddr_index", "funding_required_date", "funded_date")},
 	"funds": {each: names("amount", "raised", "pending", "count", "percentage", "needed")},
 	"ideas": {each: names("name", "gitlab-url", "author", "date", "upvotes", "downvotes")},
 }}
 
-// exact: the value dec reads next has each key once in its object, and byte for byte one s
-// names. Go's decoder takes "STATE" or "Subaddr_Index" for "state" or "subaddr_index", and the
-// last of a key written twice; jq, which builds the site, reads only the exact key: one
-// site-data.json would be two (review 12's H-1). A value's kind is Decode's to check.
+// exact checks that the next value dec reads has each key once, spelled exactly as s names it.
+// Go's decoder accepts "STATE" or "Subaddr_Index" for "state" or "subaddr_index", and takes the
+// last of a duplicate key. jq, which builds the site, reads only the exact key. Without this
+// check, one site-data.json could mean two different things. Value types are checked by Decode.
 func exact(dec *json.Decoder, s *shape) error {
 	t, err := dec.Token()
 	if err != nil {
@@ -130,19 +137,19 @@ func exact(dec *json.Decoder, s *shape) error {
 	return err
 }
 
-// Max: a larger site-data.json is not read (the real one, 316 proposals, is about 100 kB)
+// Max is the largest site-data.json read (the real one, 316 proposals, is about 100 kB)
 const Max = 4 << 20
 
 var (
 	xmr4Rx    = regexp.MustCompile(`^[0-9]{1,7}\.[0-9]{4}$`)
 	pendingRx = regexp.MustCompile(`^[0-9]{1,7}(\.[0-9]{1,4})?$`)
 	utcRx     = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$`)
-	// an idea's date, as ccs-bash writes it ("October 1, 2026"), or none
+	// An idea's date, as ccs-bash writes it ("October 1, 2026"), or none
 	dateRx = regexp.MustCompile(`^((January|February|March|April|May|June|July|August|September|October|November|December) [1-9][0-9]?, [0-9]{4})?$`)
 	ents   = []string{"&amp;", "&lt;", "&gt;", "&quot;", "&#39;", "&apos;"}
 )
 
-// Checker: what site-data.json is checked against
+// Checker holds what site-data.json is checked against
 type Checker struct {
 	index     map[string]string // the signed list's addresses, by index
 	proposals map[string]bool   // the proposals (file.md) in the repository's commits fetched
@@ -150,12 +157,14 @@ type Checker struct {
 	link      *regexp.Regexp    // a merge request of the proposals repository
 }
 
-// New: from the signed list ("index address" lines), the proposals in the repository (a file of
-// their names, file.md, one a line), HOSTS (where the repository is: host/path, space-separated),
-// the live site (its projects.json: the addresses its proposals have; "": none) and PINS (the
-// gate's own record of them, "file.md address" lines, each kept from when the proposal first had
-// it: a push hiding a proposal from projects.json doesn't let its address go; it wins over
-// projects.json; "", or no file: none)
+// New builds a Checker from:
+//   - the signed list ("index address" lines);
+//   - the proposals in the repository (a file of names, file.md, one per line);
+//   - HOSTS, where the repository is (host/path, space-separated);
+//   - the live site's projects.json, with the addresses its proposals have ("" for none);
+//   - PINS, the gate's own record ("file.md address" lines), kept from when each proposal first
+//     had its address. A push that hides a proposal from projects.json can't release its
+//     address. PINS wins over projects.json. "" or a missing file means none.
 func New(list, proposals, hosts, live, pins string) (*Checker, error) {
 	c := &Checker{index: map[string]string{}, proposals: map[string]bool{}, pins: map[string]string{}}
 	b, err := os.ReadFile(list)
@@ -207,8 +216,8 @@ func New(list, proposals, hosts, live, pins string) (*Checker, error) {
 	return c, nil
 }
 
-// addresses: each proposal's (filename) address in the projects.json in dir, as the gate built it
-// (none if it can't be read: then every proposal is new to the site)
+// addresses returns each proposal's address (by filename) from the projects.json in dir, as the
+// gate built it. None if it can't be read; then every proposal is new to the site.
 func addresses(dir string) map[string]string {
 	m := map[string]string{}
 	b, err := os.ReadFile(dir + "/projects.json")
@@ -227,9 +236,9 @@ func addresses(dir string) map[string]string {
 	return m
 }
 
-// text: escaped text as ccs-bash writes an idea's name and author (jq @html): no markup, no bidi
-// controls, at most 1000 characters (an entity one), and no run of 90 characters that could be
-// an address's (base58, or any not ASCII, which could stand for one)
+// text checks an idea's name or author, escaped as ccs-bash writes it (jq @html): no markup,
+// no bidi controls, at most 1000 characters (an entity counts as one), and no run of 90
+// characters that could be an address (base58, or any non-ASCII, which could stand in for one).
 func text(s string) bool {
 	if !utf8.ValidString(s) {
 		return false
@@ -267,13 +276,14 @@ func text(s string) bool {
 	return true
 }
 
-// a character of an address, or one that could stand for one (any not ASCII)
+// A character of an address, or one that could stand in for one (any non-ASCII)
 func isRun(r rune) bool {
 	return r > 0x7f || r >= '1' && r <= '9' || r >= 'A' && r <= 'Z' && r != 'I' && r != 'O' || r >= 'a' && r <= 'z' && r != 'l'
 }
 
-// address: whether s (an idea's name or author) has an address, as the gate's scan reads the
-// site's JSON: in groups, a character not ASCII dropped or a space, or drawn as an ASCII one
+// address reports whether s (an idea's name or author) contains an address, read the way the
+// gate's scan reads the site's JSON: in groups, with non-ASCII characters dropped, read as a
+// space, or read as the ASCII letter they look like.
 func address(s string) bool {
 	c, out := addr.New(), map[string]bool{}
 	c.Start()
@@ -297,8 +307,8 @@ func address(s string) bool {
 	return len(out) > 0
 }
 
-// read: b as siteData, strictly: UTF-8, each key once and exactly as ccs-bash writes it, no
-// unknown key, nothing after it
+// read parses b as siteData strictly: valid UTF-8, each key once and spelled exactly as
+// ccs-bash writes it, no unknown keys, nothing after it.
 func read(b []byte) (*siteData, error) {
 	if !utf8.Valid(b) {
 		return nil, errors.New("not UTF-8")
@@ -324,15 +334,15 @@ func read(b []byte) (*siteData, error) {
 	return &d, nil
 }
 
-// Check: "" if site-data.json (its bytes b) passes, else why not
+// Check returns "" if site-data.json (bytes b) passes, else the reason it fails.
 func (c *Checker) Check(b []byte) string {
 	_, why := c.Clean(b)
 	return why
 }
 
-// Clean: site-data.json (its bytes b) as Check read it, written again (each key as ccs-bash
-// writes it, once, nothing else): what the site is built from and the live site has, never b
-// itself; or why it fails
+// Clean returns site-data.json (bytes b) as Check parsed it, written again (each key once, as
+// ccs-bash writes it, nothing else), or the reason it fails. The site is built from this, never
+// from b itself.
 func (c *Checker) Clean(b []byte) ([]byte, string) {
 	if len(b) > Max {
 		return nil, "a site-data.json over 4 MB"
@@ -386,8 +396,8 @@ func (c *Checker) check(d *siteData) string {
 			return f + ": another subaddress than the live site has for it"
 		}
 	}
-	// (a pin of a proposal no longer in the repository holds nothing: a renamed one's address goes
-	// with it)
+	// A pin for a proposal no longer in the repository holds nothing, so a renamed proposal's
+	// address goes with it.
 	for f, a := range c.pins {
 		if !c.proposals[f] {
 			continue

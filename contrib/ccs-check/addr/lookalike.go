@@ -5,9 +5,9 @@ import (
 	"unicode"
 )
 
-// the letters and digits not ASCII that are drawn as ASCII ones (Unicode's confusables, TR39, for
-// Latin letters and digits: Cyrillic, Greek, Armenian, Latin's own extensions, the letterlike
-// symbols): a reader copying an address by eye types the ASCII one
+// Non-ASCII letters and digits that look like ASCII ones (Unicode's confusables, TR39, for Latin
+// letters and digits): Cyrillic, Greek, Armenian, Latin extensions, letterlike symbols.
+// A reader copying an address by eye would type the ASCII one.
 var lookalikes = map[rune]byte{
 	// Cyrillic
 	'А': 'A', 'В': 'B', 'Е': 'E', 'К': 'K', 'М': 'M', 'Н': 'H', 'О': 'O', 'Р': 'P', 'С': 'C', 'Т': 'T',
@@ -21,7 +21,7 @@ var lookalikes = map[rune]byte{
 	'κ': 'k', 'ρ': 'p', 'υ': 'u', 'χ': 'x', 'ϲ': 'c', 'ϳ': 'j', 'γ': 'y', 'ϱ': 'p', 'ϸ': 'p',
 	// Armenian
 	'օ': 'o', 'ս': 'u', 'հ': 'h', 'ո': 'n', 'զ': 'q', 'ց': 'g', 'ա': 'w', 'Ս': 'U', 'Օ': 'O', 'Տ': 'S',
-	// Latin's own, and the letterlike symbols
+	// Latin extensions, and the letterlike symbols
 	'ı': 'i', 'ȷ': 'j', 'ɑ': 'a', 'ɩ': 'i', 'ɪ': 'i', 'ʏ': 'y', 'ᴀ': 'A', 'ᴄ': 'c', 'ᴏ': 'o', 'ᴠ': 'v',
 	'ᴡ': 'w', 'ᴢ': 'z', 'ꜱ': 's', 'ƽ': '5', 'Ƽ': '5', 'Ʒ': '3', 'ȝ': '3',
 	'ℂ': 'C', 'ℊ': 'g', 'ℋ': 'H', 'ℌ': 'H', 'ℍ': 'H', 'ℎ': 'h', 'ℐ': 'I', 'ℑ': 'I', 'ℒ': 'L', 'ℓ': 'l',
@@ -31,9 +31,9 @@ var lookalikes = map[rune]byte{
 	'ⅹ': 'x',
 }
 
-// Lookalike: the ASCII letter or digit r is drawn as, or 0: the table above, the full-width
-// letters and digits (U+FF10-FF5A) and the mathematical ones (U+1D400-1D6A3, U+1D7CE-1D7FF), each
-// set A to Z, a to z (or 0 to 9) in order
+// Lookalike returns the ASCII letter or digit that r looks like, or 0.
+// Uses the table above, the full-width letters and digits (U+FF10-FF5A) and the mathematical ones
+// (U+1D400-1D6A3, U+1D7CE-1D7FF). Each of those sets runs A to Z, a to z (or 0 to 9) in order.
 func Lookalike(r rune) byte {
 	switch {
 	case r >= 0xff10 && r <= 0xff19, r >= 0xff21 && r <= 0xff3a, r >= 0xff41 && r <= 0xff5a:
@@ -50,9 +50,9 @@ func Lookalike(r rune) byte {
 	return lookalikes[r]
 }
 
-// Lookalikes: t as a reader copying it by eye reads it: each character drawn as an ASCII one
-// (Lookalike) that one, one that isn't drawn at all (a format character: a zero-width space, a
-// soft hyphen) dropped, any other not ASCII a space; and whether any was drawn as ASCII
+// Lookalikes returns t as a reader copying it by eye would read it, and whether any character
+// looked like ASCII. Each look-alike becomes its ASCII character (Lookalike). Invisible format
+// characters (zero-width space, soft hyphen) are dropped. Any other non-ASCII becomes a space.
 func Lookalikes(t string) (string, bool) {
 	var b strings.Builder
 	any := false
@@ -71,6 +71,6 @@ func Lookalikes(t string) (string, bool) {
 	return b.String(), any
 }
 
-// Bidi: a bidi control (U+202A-202E, U+2066-2069), which can show the text after it in another
-// order than it is written: an address reversed, in groups, shown the right way round
+// Bidi reports a bidi control (U+202A-202E, U+2066-2069). It can display the text after it in a
+// different order than written, so an address written reversed, in groups, shows the right way round.
 func Bidi(r rune) bool { return r >= 0x202a && r <= 0x202e || r >= 0x2066 && r <= 0x2069 }

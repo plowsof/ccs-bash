@@ -1,45 +1,56 @@
 #!/bin/bash
-# ccs-receive: the web server's gate (docs/two-machines.md, "The gate"). The backend's push key runs
-# only this (command= in authorized_keys). The push is site-data.json alone (contrib/ccs-push: the
-# file on ssh's stdin, taken by Go, ccs-check receive): what only the backend knows, each proposal's subaddress
-# index, dates and funds, and the ideas. The gate checks it (ccs-check data: every value of its
-# kind, each index the signed list's and the one the live site has for its proposal), then builds
-# the site itself (ccs-gate-build: ccs-bash's site.jq and the vendored ccs-front-bash) from it,
-# the proposals repository fetched here (each proposal's text, front matter, images and merge
-# request), the design (design/vX.Y.Z/, installed here by hand) and the signed list (its QR
-# codes too, subaddresses.txt.qr/), and checks what it built (ccs-check gate):
-#   - every Monero address in the pages and JSON one of the wallet's (the signed list and its
-#     .pin, installed here by hand) or in the allowed file, none in the feed, and no data: image
-#     nor NUL byte at all: the backstop for an address in a proposal's own text;
-#   - every QR code, qr/<address>.png, exactly the list's file of that address (its sum in the
-#     list's .qr.sha256, pinned in its .pin).
-# The site is built from site-data.json as ccs-check data read it, written again by it (never the
-# bytes pushed: what another reader would read of them differently can't reach the site), and
-# each proposal keeps the address the live site first gave it (/var/lib/ccs-gate/pins: a push
-# can't let one go; a person can, troubleshooting.md). The site goes live (ccs-check copy
-# --delete: what the build no longer has goes too), but a file that fails: that one is taken off
-# the site, and IRC is told (alert.conf), as it is of any page leaving the site. More than
-# CCS_GATE_REMOVE (3) pages leaving the site within a day (failed, or proposals gone from the
-# repository: a branch emptied, a forge answering wrong, a backend hiding them): none of the
-# build that would add to them goes live, and IRC is told: a person decides (troubleshooting.md:
-# the file /var/lib/ccs-gate/allow-remove lets them go, for one build). A site-data.json that fails, a
-# build that fails, or a list, QR codes' sums, design or repository missing: nothing goes live,
-# the live site stays. The backend is told on stderr; exit 0, or 1, and, when the site-data.json it
-# sent is the live site's (built from it, or already), "took <its sha256>" on stdout, which
-# ccs-push keeps as its record (review 12's I-3: not exit 0 alone). Needs bash, busybox's applets
-# (container/gate-busybox-applets), curl, git, jq, ccs-gate-build and ccs-check (contrib/ccs-check:
-# the checks in Go, one static binary: it also receives the push, and copies the site live).
-# Root-owned, 755.
+# ccs-receive: the web server's gate (docs/two-machines.md, "The gate").
+# The backend's push key can run only this (command= in authorized_keys).
+#
+# The push is site-data.json alone, sent on ssh's stdin by contrib/ccs-push and received by
+# ccs-check receive. It holds what only the backend knows: each proposal's subaddress index,
+# dates and funds, and the ideas.
+#
+# Steps:
+# 1. Check site-data.json (ccs-check data): every value has the right type, each index is on
+#    the signed list, and matches the address the live site already has for that proposal.
+# 2. Build the site here (ccs-gate-build: ccs-bash's site.jq and the vendored ccs-front-bash).
+#    Inputs: the checked data, the proposals repository fetched here (text, front matter, images,
+#    MR links), the design (design/vX.Y.Z/, installed by hand) and the signed list with its QR
+#    codes (subaddresses.txt.qr/).
+# 3. Check what was built (ccs-check gate):
+#    - every Monero address in the pages and JSON is the wallet's (the signed list and its .pin,
+#      installed by hand) or in the allowed file. None in the feed. No data: images and no NUL
+#      bytes anywhere. This is the backstop for an address in a proposal's own text.
+#    - every QR code, qr/<address>.png, is exactly the list's file for that address (its sum is
+#      in the list's .qr.sha256, pinned by the .pin).
+# 4. Copy the site live (ccs-check copy --delete: files the build no longer has go too).
+#
+# The site is built from site-data.json as ccs-check data parsed and re-wrote it, never from the
+# pushed bytes. So bytes another parser would read differently can't reach the site.
+# Each proposal keeps the address the live site first gave it (/var/lib/ccs-gate/pins). A push
+# can't change that; a person can (troubleshooting.md).
+# A file that fails the checks is taken off the site, and IRC is told (alert.conf). IRC is also
+# told about any page leaving the site.
+# If more than CCS_GATE_REMOVE (3) pages would leave the site within a day (failed checks, or
+# proposals gone from the repository: an emptied branch, a broken forge, a backend hiding them),
+# nothing from that build goes live and IRC is told. A person decides: the file
+# /var/lib/ccs-gate/allow-remove lets them go for one build (troubleshooting.md).
+# If site-data.json or the build fails, or the list, QR sums, design or repository is missing,
+# nothing goes live and the live site stays.
+#
+# The backend is told why on stderr. Exits 0 or 1. When the site-data.json sent is now what the
+# live site was built from, prints "took <its sha256>" on stdout; ccs-push records that rather
+# than trusting exit 0 alone.
+# Needs bash, busybox's applets (container/gate-busybox-applets), curl, git, jq, ccs-gate-build
+# and ccs-check (contrib/ccs-check: the checks in Go, one static binary that also receives the
+# push and copies the site live). Owned by root, 755.
 set -euo pipefail
-# (no home of the account's: git, curl and bash read no config from there, whatever passwd says)
+# No home for the account, so git, curl and bash read no config from there, whatever passwd says
 export LC_ALL=C HOME=/nonexistent GIT_CONFIG_NOSYSTEM=1
 staging=/var/lib/ccs-staging live=/var/lib/ccs-data conf=/etc/ccs-gate state=/var/lib/ccs-gate
 
-# The reason goes to the web server's journal (and /var/log/ccs-gate.log, if ccs-data may write
-# it), and to the backend (stderr, its ssh channel).
-# alert KEY MESSAGE: also to IRC (/etc/ccs-gate/alert.conf: ALERT_URL, SITE_URL), at most once an
-# hour per KEY: a taken-over backend retrying every two minutes mustn't flood the channel. Here
-# is where a bad push is seen even when the backend is the one lying. Sets sent=1 when it posts.
+# say: messages go to the web server's journal, to /var/log/ccs-gate.log if ccs-data may write
+# it, and to the backend on stderr (its ssh channel).
+# alert KEY MESSAGE: also post to IRC (/etc/ccs-gate/alert.conf: ALERT_URL, SITE_URL), at most
+# once an hour per KEY, so a taken-over backend retrying every two minutes can't flood the channel.
+# This is where a bad push gets noticed even when the backend is the one lying.
+# Sets sent=1 when it posts.
 alert() {
     local url='' site='' k v stamp=$state/alert-${1//[^A-Za-z0-9._-]/_}
     sent=''
@@ -51,42 +62,41 @@ alert() {
     if [[ -f $stamp && $(($(date +%s) - $(stat -c %Y "$stamp"))) -lt 3600 ]]; then return 0; fi
     touch "$stamp" 2> /dev/null || true
     sent=1
-    # no whole address in the channel, whatever a reason quotes (a file's name, a page's): a run of
-    # 20 base58 characters or more shortened as the address alerts are (review 10's L-1), the
-    # message 500 characters at most
+    # Never post a whole address, whatever the reason quotes (a file or page name). Shorten any
+    # run of 20+ base58 characters as address alerts are, and cap the message at 500 characters.
     local msg
     msg=$(sed -E 's/([1-9A-HJ-NP-Za-km-z]{6})[1-9A-HJ-NP-Za-km-z]{10,}([1-9A-HJ-NP-Za-km-z]{4})/\1…\2/g' <<<"$2" | head -c 500)
     curl -fsS --max-time 10 --data-binary "[${blue}CCS-watch${off}] ${msg//@SITE@/${site:-}}" -H 'Content-Type: text/plain' "$url" > /dev/null 2>&1 \
         || say "could not send the alert"
 }
 
-blue=$'\x0312' red=$'\x0304' off=$'\x03'   # IRC colours, as ccs-watch's
+blue=$'\x0312' red=$'\x0304' off=$'\x03'   # IRC colours, same as ccs-watch
 
 say() {
     logger -t ccs-gate -- "$*" 2> /dev/null || true
-    printf '%s %s\n' "$(date -u '+%F %T')" "$*" 2> /dev/null >> /var/log/ccs-gate.log || true   # 2> first: it also hides a log it can't open
-    # stderr is the backend's ssh channel: if the backend hung up, writing to it kills the writer
-    # (SIGPIPE), so a subshell writes it, and the gate goes on to alert
+    printf '%s %s\n' "$(date -u '+%F %T')" "$*" 2> /dev/null >> /var/log/ccs-gate.log || true   # 2> first, so it also hides a log it can't open
+    # stderr is the backend's ssh channel. If the backend hung up, writing to it kills the writer
+    # (SIGPIPE), so a subshell writes it and the gate carries on to alert.
     (printf 'ccs-gate: %s\n' "$*" >&2) || true
 }
 
-# refuse WHY KEY [WHY_FOR_IRC]: nothing goes live (the live site stays as it is)
+# refuse WHY KEY [WHY_FOR_IRC]: stop; nothing goes live and the live site stays as it is
 refuse() {
     say "refused the push: $1"
     alert "$2" "the web server refuses every push: ${3:-$1}"
     exit 1
 }
 
-# fetch: the proposals repository (/etc/ccs-gate/proposals.conf: PROPOSALS_GIT, its URL;
-# PROPOSALS_BRANCH, default master), fetched each push, all of its history (about 3 MB: each
-# proposal's merge request is read from it). Reviewed and merged: what a page says a proposal
-# says, and the images it shows, come from here, not from the backend. Can't be fetched
-# (disroot's Forgejo breaks off now and then): the last fetch is used, and said so. Sets hosts:
-# where a link to a merge request may go: under the repository's own address (host and path: the
-# forge's other users' pages are anyone's), and proposals.conf's LINK_HOSTS (the old forge's
-# repository, host/path); and mrs, where each proposal's merge request is (MERGE_REQUESTS:
-# https://host, the forge whose "See merge request <project>!N" its merge commits end with;
-# none: no links), linked only for a project hosts names (MERGE_REQUESTS' host and that path).
+# fetch: fetch the proposals repository on each push, with its full history (about 3 MB; each
+# proposal's MR link is read from it). Config in /etc/ccs-gate/proposals.conf: PROPOSALS_GIT
+# (its URL) and PROPOSALS_BRANCH (default master).
+# A proposal's text and images come from here, reviewed and merged, not from the backend.
+# If the fetch fails (disroot's Forgejo drops out now and then), the last fetch is used and logged.
+# Sets hosts: where an MR link may point. That is the repository's own address (host and path;
+# other projects on the same forge belong to anyone) plus proposals.conf's LINK_HOSTS (the old
+# forge's repository, host/path).
+# Sets mrs: MERGE_REQUESTS, https://host of the forge whose merge commits end with "See merge
+# request <project>!N". Unset means no links. Links are made only for projects in hosts.
 git=$state/proposals.git hosts='' mrs=''
 fetch() {
     local url='' branch=master k v h deepen=()
@@ -102,7 +112,7 @@ fetch() {
         hosts="$h $hosts"
     fi
     [[ -d $git ]] || git init -q --bare "$git" || return 1
-    # (fetched two commits deep before: all of it now)
+    # Older versions fetched two commits deep; fetch everything now
     [[ $(git -C "$git" rev-parse --is-shallow-repository 2> /dev/null) != true ]] || deepen=(--unshallow)
     if GIT_TERMINAL_PROMPT=0 timeout 120 git -C "$git" fetch -q --no-tags "${deepen[@]}" "$url" "+refs/heads/$branch:refs/heads/ccs" 2> /dev/null; then
         forge_up
@@ -113,13 +123,14 @@ fetch() {
     git -C "$git" rev-parse -q --verify refs/heads/ccs > /dev/null
 }
 
-# forge_down: no good fetch ($state/fetch-ok, from forge_up: git rewrites FETCH_HEAD even when a
-# fetch fails) for FORGE_HOURS (alert.conf, default 6) is an alert: a proposal merged or changed
-# since can't go live. Once an hour while it lasts; forge_up says when it answers again. No
-# fetch-ok yet: nothing known.
+# forge_down: alert when there has been no good fetch for FORGE_HOURS (alert.conf, default 6),
+# since then a newly merged or changed proposal can't go live. Alerts once an hour while it
+# lasts; forge_up reports when it answers again.
+# Uses $state/fetch-ok (touched by forge_up), not FETCH_HEAD, which git rewrites even when a
+# fetch fails. No fetch-ok yet means nothing is known.
 forge_down() {
     local hours t
-    # (|| true: no alert.conf, which is optional, mustn't end the gate: set -e and pipefail)
+    # || true: alert.conf is optional, and its absence mustn't end the gate (set -e, pipefail)
     hours=$(sed -n 's/^FORGE_HOURS=\([1-9][0-9]*\)$/\1/p' "$conf/alert.conf" 2> /dev/null | tail -n 1 || true)
     hours=${hours:-6}
     t=$(stat -c %Y "$state/fetch-ok" 2> /dev/null) || return 0
@@ -135,14 +146,15 @@ forge_up() {
     alert forge-ok "the web server fetches the proposals repository again @ @SITE@"
 }
 
-# ccs-receive --heartbeat, from a timer every 5 minutes as ccs-data (the backend's key can't pass
-# arguments: its command= is fixed). Each push that arrives is the backend's heartbeat, every
-# 2 minutes. None for HEARTBEAT_MINUTES (alert.conf, default 15) is an alert: the backend is off, its
-# cron stopped, its key or network broken, which nothing on the backend can report itself. Not
-# without a first push (nothing known yet), not while this machine has been up less than that (no
-# push could arrive while it was down), and only on the second late check in a row, so pushes
-# resuming after this machine's own network outage come first. Then once an hour at most, and a
-# line when pushes arrive again.
+# ccs-receive --heartbeat: run by a timer every 5 minutes as ccs-data. (The backend's key can't
+# pass arguments: its command= is fixed.)
+# Every push is the backend's heartbeat, every 2 minutes. No push for HEARTBEAT_MINUTES
+# (alert.conf, default 15) alerts: the backend is off, its loop stopped, or its key or network
+# broke. Nothing on the backend could report that itself.
+# No alert before the first push (nothing known yet), or while this machine has been up for less
+# than that (no push could arrive while it was down). Only the second late check in a row
+# alerts, so pushes resuming after this machine's own network outage arrive first.
+# Then at most once an hour, and a message when pushes arrive again.
 heartbeat() {
     local d=$state minutes age up
     minutes=$(sed -n 's/^HEARTBEAT_MINUTES=\([1-9][0-9]*\)$/\1/p' "$conf/alert.conf" 2> /dev/null | tail -n 1 || true)
@@ -168,32 +180,31 @@ heartbeat() {
 
 if [[ ${1:-} == --heartbeat ]]; then heartbeat; exit 0; fi
 
-# One push at a time: two at once would share the staging folder, and one could change it after
-# the other's checks, before its copy into the live site.
+# One push at a time. Two at once would share the staging folder, and one could change it after
+# the other's checks but before its copy into the live site.
 exec 8> "$state/lock"
-# (flock on the open file: the lock outlives flock, as long as fd 8 is open; busybox's has no -w)
+# flock on the open fd 8: the lock lasts as long as fd 8 is open. (busybox's flock has no -w.)
 if ! timeout 600 flock 8; then
     say "refused the push: another one is still going after 10 minutes"
     alert lock "a push has been checked for over 10 minutes: the pushes after it are refused (the heartbeat would only say none arrived); look at what the gate is doing"
     exit 1
 fi
 
-# (before the push is received: ccs-check receives it too)
+# Check ccs-check before receiving the push, since ccs-check is what receives it
 if ! command -v ccs-check > /dev/null || ! ccs-check --check > /dev/null 2>&1; then
     refuse "it has no ccs-check (contrib/ccs-check: the release's, its sha256 attested) to check the push with" ccs-check
 fi
-# only the backend's push (contrib/ccs-push asks for "receive"), nothing else: a shell, scp,
-# rsync or anything a stolen key asks for is refused before anything is read
+# Only the backend's push (contrib/ccs-push asks for "receive"). A shell, scp, rsync or anything
+# else a stolen key asks for is refused before anything is read.
 if [[ ${SSH_ORIGINAL_COMMAND:-receive} != receive ]]; then
     say "refused: not a push (the key asked for something else)"
     exit 1
 fi
-# staging empty each time: the push in push/, the site built in site/
+# Empty staging each time: the push goes in push/, the built site in site/
 find "$staging" -mindepth 1 -delete
 mkdir "$staging/push"
-# the push: site-data.json on stdin, or nothing (the heartbeat), taken by Go (ccs-check receive,
-# contrib/ccs-check/push): over 4 MB, or not a JSON object, is refused, and so is one not received
-# in 5 minutes
+# Receive the push with ccs-check receive (contrib/ccs-check/push): site-data.json on stdin, or
+# nothing (the heartbeat). Refused if over 4 MB, not a JSON object, or not received in 5 minutes.
 if ! why=$(timeout 300 ccs-check receive "$staging/push" 2>&1); then
     why=${why#ccs-check receive: refused: }
     say "refused the push: ${why:-it was not received in time}"
@@ -201,30 +212,30 @@ if ! why=$(timeout 300 ccs-check receive "$staging/push" 2>&1); then
     exit 1
 fi
 touch "$state/last-push" 2> /dev/null || true   # the backend's heartbeat (--heartbeat)
-# (none sent: it didn't change, and the live site's is built from)
+# Nothing sent means it didn't change: build from the live site's copy
 data=$staging/push/site-data.json took_sum=''
 if [[ -f $data ]]; then took_sum=$(sha256sum < "$data" | cut -c1-64); else data=$live/site-data.json; fi
-# took: the backend told the site-data.json it sent is the live site's (a subshell: it may have
-# hung up, as say's stderr)
+# took: tell the backend that the site-data.json it sent is what the live site is built from.
+# In a subshell, since the backend may have hung up (as for say's stderr).
 took() { [[ ! $took_sum ]] || (printf 'took %s\n' "$took_sum") 2> /dev/null || true; }
 
-# the list and its pin, as ccs-front-bash has them (tools/sign-subaddresses.sh: "sha256 <hex>")
+# The signed list must match its .pin ("sha256 <hex>", from ccs-front-bash's tools/sign-subaddresses.sh)
 list=$conf/subaddresses.txt
 [[ -f $list && $(sha256sum < "$list" | cut -d' ' -f1) == "$(sed -n 's/^sha256 *//p' "$list.pin" 2> /dev/null)" ]] \
     || refuse "$list is not the list $list.pin names" list "its signed list isn't the one its .pin names"
-# and it has addresses (each line's second word): a pinned empty list would leave the gate
-# nothing to hold an address against (review 11's I-1)
+# The list must hold addresses (each line's second word). A pinned empty list would leave the
+# gate nothing to check addresses against.
 awk '$2 ~ /^[1-9A-HJ-NP-Za-km-z]+$/ && length($2) == 95 { n++ } END { exit !n }' "$list" \
     || refuse "$list has no addresses" list "its signed list has no addresses"
-# its QR codes' sums (tools/make-qr.sh), the .pin's qr line: what a qr/<address>.png must be;
-# the QR codes themselves, the list's files (installed beside it, subaddresses.txt.qr/)
+# The QR codes' sums (tools/make-qr.sh) must match the .pin's qr line; each qr/<address>.png
+# must match them. The QR code files are installed beside the list in subaddresses.txt.qr/.
 [[ -f $list.qr.sha256 && $(sha256sum < "$list.qr.sha256" | cut -d' ' -f1) == "$(sed -n 's/^qr *//p' "$list.pin" 2> /dev/null)" ]] \
     || refuse "$list.qr.sha256 is not the QR codes' sums $list.pin names (its qr line)" qrsums "its signed list's QR codes' sums aren't the ones its .pin names"
 [[ -d $list.qr ]] || refuse "it has no $list.qr/ (the signed list's QR codes)" qr
 command -v git > /dev/null || refuse "it has no git to read the proposals repository with" git
 command -v ccs-gate-build > /dev/null || refuse "it has no ccs-gate-build (in the gate's image) to build the site with" build-missing
-# the design's newest release (design/vX.Y.Z/, its release zip unpacked: a v0.1.25-rc1/, or a
-# build of no release left there, isn't one)
+# The design's newest release: design/vX.Y.Z/, an unpacked release zip. A v0.1.25-rc1/, or a
+# build that isn't a release, doesn't count.
 design=$(for d in "$conf"/design/v*/; do d=${d%/}; if [[ $d =~ /v[0-9]+\.[0-9]+\.[0-9]+$ && -f $d/parts/proposal-fr.html ]]; then echo "$d"; fi; done \
     | awk -F/v '{ split($NF, n, "."); k = (n[1] * 1000 + n[2]) * 1000 + n[3]; if (k >= m) { m = k; d = $0 } } END { print d }')
 [[ $design ]] || refuse "it has no $conf/design/<release>/ (the design's release zip, unpacked: v0.1.29, say)" designs
@@ -234,11 +245,11 @@ onion=$(tr -d ' \n' 2> /dev/null < "$conf/onion") || onion=''
 [[ $onion =~ ^[a-z2-7]{56}\.onion$ ]] || onion=
 site=$(sed -n 's/^SITE_URL=//p' "$conf/alert.conf" 2> /dev/null | tail -n 1 || true)
 
-# site-data.json: every value of its kind (ccs-check data), checked against the repository's
-# proposals (its last two commits: the backend's checkout may be one behind or ahead) and the
-# addresses the live site has given them (the pins, and its projects.json); written again as it
-# was read, $checked, what the site is built from (and what tells whether it changed: the live
-# site's copy, built from when the push has none, is that too)
+# Check site-data.json (ccs-check data): every value has the right type, and it is checked
+# against the repository's proposals (its last two commits, since the backend's checkout may be
+# one behind or ahead) and the addresses the live site already gave them (pins, projects.json).
+# It is re-written as parsed to $checked. The site is built from that, and it also tells whether
+# anything changed. (With no push, the live site's copy is used the same way.)
 props=$staging/proposals checked=$staging/data.json pins=$state/pins
 for rev in refs/heads/ccs refs/heads/ccs~1; do
     git -C "$git" rev-parse -q --verify "$rev^{commit}" > /dev/null || continue
@@ -250,9 +261,9 @@ if ! why=$(timeout 60 ccs-check data "$data" "$list" "$props" "$hosts" "$live" "
     exit 1
 fi
 
-# Built again only when what it's built from changed (site-data.json as checked, the list, its QR
-# codes, allowed, the design, the repository's commit, this gate), and once a day whatever
-# happens: the live site is the last build that went live, and the same inputs build the same site.
+# Rebuild only when an input changed (checked site-data.json, the list, its QR codes, allowed,
+# the design, the repository's commit, this gate), and once a day regardless.
+# The live site is the last build that went live, and the same inputs build the same site.
 inputs=$( {
     cat -- "${BASH_SOURCE[0]}" "$checked" "$list" "$list.pin" "$list.qr.sha256" "$conf/proposals.conf"
     cat -- "$conf/allowed" "$list.viewkey" "$conf/onion" 2> /dev/null || true
@@ -265,7 +276,7 @@ if [[ $inputs == "$(cat "$state/built-with" 2> /dev/null)" && $(find "$state/bui
     took; exit 0
 fi
 
-# the site, built here (ccs-gate-build: lib/site-data.sh's site_from_data and the vendored
+# Build the site here (ccs-gate-build: lib/site-data.sh's site_from_data and the vendored
 # ccs-front-bash)
 if ! DATA=$checked GIT=$git DESIGN=$design LIST=$list QR=$list.qr MRS=$mrs MR_REPOS=$hosts ONION=$onion SITE=${site%/} \
     timeout 600 ccs-gate-build "$staging/site" > "$staging/build.log" 2>&1; then
@@ -275,27 +286,28 @@ if ! DATA=$checked GIT=$git DESIGN=$design LIST=$list QR=$list.qr MRS=$mrs MR_RE
     exit 1
 fi
 
-# what it built, checked (ccs-check gate): every file that fails, "file<TAB>!reason" or
-# "file<TAB>address" (one neither the list's nor allowed); it can't say: none of it goes live
+# Check what was built (ccs-check gate). It prints each failing file as "file<TAB>!reason" or
+# "file<TAB>address" (an address neither on the list nor allowed). If it can't finish, nothing
+# goes live.
 if ! bad=$(timeout 900 ccs-check gate site="$staging/site" list="$list" allowed="$conf/allowed" 2> "$staging/gate.log"); then
     while IFS= read -r l; do say "  $l"; done < <(tail -n 5 "$staging/gate.log")
     refuse "its checks did not finish (ccs-check gate)" gate "its checks did not finish (ccs-check gate)"
 fi
-# a file that fails: out of the site, so the copy below takes its live copy off too
+# Remove failing files from the build, so the copy below removes their live copies too
 failed=$(cut -f1 <<<"$bad" | sed "s#^$staging/site/##" | sort -u)
 while IFS= read -r f; do [[ ! $f ]] || rm -f -- "$staging/site/$f"; done <<<"$failed"
-# the pages that would leave the site: those that failed, and the live proposal pages the build
-# hasn't (their proposals gone from the repository, or hidden)
+# Pages that would leave the site: those that failed, and live proposal pages the build lacks
+# (their proposals gone from the repository, or hidden)
 gone=$( {
     grep '\.html$' <<<"$failed" || true
     { find "$live/proposals" -name '*.html' -type f 2> /dev/null || true; } | while IFS= read -r f; do f=${f#"$live/"}; [[ -f $staging/site/$f ]] || echo "$f"; done
 } | sort -u)
-# and those that left it in the last day ($state/removed: "seconds page" lines), so a backend
-# hiding a few at each push is held as one hiding them all at once is
+# Add pages removed in the last day ($state/removed: "seconds page" lines), so a backend hiding
+# a few per push is stopped just like one hiding them all at once.
 now=$(date +%s)
 recent=$(awk -v t=$((now - 86400)) '$1 >= t { print $2 }' "$state/removed" 2> /dev/null || true)
 n=$(printf '%s\n%s\n' "$gone" "$recent" | sort -u | grep -c . || true)
-# (meant: $state/allow-remove, for one build: used up when it goes live)
+# A person allows it with $state/allow-remove, for one build: used up when it goes live
 if [[ $gone ]] && ((n > ${CCS_GATE_REMOVE:-3})) && [[ ! -f $state/allow-remove ]]; then
     say "$n pages would have left the site within a day (failed, or their proposals gone): more than ${CCS_GATE_REMOVE:-3}, so none of the new site goes live"
     while IFS= read -r f; do say "  $f"; done < <(head -n 10 <<<"$gone")
@@ -305,8 +317,8 @@ fi
 if [[ $bad ]]; then
     say "took $(grep -c . <<<"$failed") file(s) off the site, with an address that isn't the wallet's nor allowed, or not allowed here; the rest goes live"
     while IFS=$'\t' read -r file why; do say "  ${file#"$staging/site/"}: $why"; done < <(head -n 10 <<<"$bad")
-    # three alerts at most, one a file, of those not already sent this hour: a foreign address on
-    # a page first, then elsewhere, then the rest's (decoys sent once can't hide what comes after)
+    # At most three alerts, one per file, skipping any already sent this hour. Order: a foreign
+    # address on a page, then elsewhere, then the rest. (Decoys alerted once can't hide what follows.)
     k=0
     declare -A told=()
     while IFS=$'\t' read -r file why; do
@@ -322,8 +334,8 @@ if [[ $bad ]]; then
         [[ ! $sent ]] || k=$((k + 1))
     done < <(for x in '$2 !~ /^!/ && $1 ~ /\.html$/' '$2 !~ /^!/ && $1 !~ /\.html$/' '$2 ~ /^!/'; do awk -F '\t' "$x" <<<"$bad"; done)
 fi
-# a page leaving that didn't fail: IRC told too (three alerts at most, one a page an hour), as
-# a backend hiding a proposal mustn't do it unseen
+# Also tell IRC about pages leaving without failing (at most three, one per page per hour),
+# so a backend can't hide a proposal unseen.
 k=0
 while IFS= read -r f; do
     if [[ $f == proposals/* && -f $live/$f ]] && ! grep -qFx -- "$f" <<<"$failed"; then
@@ -335,9 +347,9 @@ while IFS= read -r f; do
     fi
 done <<<"$gone"
 
-# the site live: each file that changed written beside its live copy and renamed over it (644,
-# folders 755), and what the build no longer has removed. One that fails part-way (a disk full)
-# leaves the live site part old, part new: said, not left to the next push.
+# Put the site live: each changed file is written beside its live copy and renamed over it
+# (644, folders 755), and files the build no longer has are removed. A copy that fails part-way
+# (disk full) leaves the site part old, part new; that is reported, not left to the next push.
 ccs-check copy --delete "$staging/site" "$live" \
     || refuse "the copy into the live site failed part-way: the live site may be part old, part new" copy "the copy into the live site failed part-way (a disk full?): it may be part old, part new"
 if [[ -f $state/allow-remove ]]; then
@@ -346,8 +358,8 @@ elif [[ $gone ]]; then
     { awk -v t=$((now - 86400)) '$1 >= t' "$state/removed" 2> /dev/null || true; while IFS= read -r f; do echo "$now $f"; done <<<"$gone"; } > "$state/removed.new"
     mv -f "$state/removed.new" "$state/removed"
 fi
-# the pins: each proposal's address from when it first had one on the live site, never changed by
-# a push (ccs-check data holds a push to them); a person lets one go (troubleshooting.md)
+# Update the pins: each proposal keeps the address it first had on the live site. A push never
+# changes it (ccs-check data enforces this); a person can release one (troubleshooting.md).
 { cat -- "$pins" 2> /dev/null || true
   jq -r '.[] | select((.filename | type) == "string" and (.address | type) == "string") | "\(.filename) \(.address)"' "$live/projects.json" 2> /dev/null || true
 } | awk 'NF == 2 && !seen[$1]++' > "$pins.new" && mv -f "$pins.new" "$pins"

@@ -1,8 +1,9 @@
 #!/bin/bash
-# vendor-front-bash TAG | --check: vendor/ccs-front-bash, the ccs-front-bash release the gate's image
-# builds the site with, as that tag has it (ccs-front-bash.sh, lib/, LICENSE; RELEASE names the tag
-# and its commit). --check: the files are exactly the ones RELEASE names, at that commit (CI).
-# Needs git and network (it clones ccs-front-bash).
+# vendor-front-bash TAG | --check: copy ccs-front-bash at TAG into vendor/ccs-front-bash.
+# The gate's image builds the site with it. Copies ccs-front-bash.sh, lib/ and LICENSE;
+# RELEASE records the tag and its commit.
+# --check (CI): verify the files are exactly those of the commit RELEASE names.
+# Needs git and network access (it clones ccs-front-bash).
 set -euo pipefail
 here=$(dirname "$(readlink -f "$0")")
 v=$here/../vendor/ccs-front-bash

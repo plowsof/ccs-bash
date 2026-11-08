@@ -10,9 +10,9 @@ import (
 
 func init() { commands["gate"] = gateCmd }
 
-// gate KEY=VALUE...: the built site's files that may not go live (gate.Run), then "checked N
-// files" on stderr. Keys: site, list, allowed. Exit 2, nothing printed, if it couldn't decide:
-// then none of the site may go live.
+// gate KEY=VALUE...: print the built site's files that may not go live (gate.Run), then
+// "checked N files" on stderr. Keys: site, list, allowed. Exits 2 and prints nothing if it
+// couldn't decide; then none of the site may go live.
 func gateCmd(args []string) int {
 	kv := map[string]string{}
 	for _, a := range args {

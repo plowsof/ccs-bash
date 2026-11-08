@@ -10,13 +10,17 @@ import (
 
 func init() { commands["data"] = dataCmd }
 
-// data FILE LIST PROPOSALS HOSTS LIVE PINS OUT: whether site-data.json FILE passes
-// (sitedata.Check): exit 0, and OUT the data as it was checked, written again (sitedata.Clean:
-// what the site is built from); or 1 and why on stdout. PROPOSALS: a file of the repository's
-// proposals (file.md), one a line; HOSTS: where the repository is (host/path, space-separated);
-// LIVE: the live site ("": none); PINS: the gate's record of each proposal's address ("file.md
-// address" lines; no file: none yet). Exit 2 if the list, the proposals or the pins can't be read,
-// or OUT written.
+// data FILE LIST PROPOSALS HOSTS LIVE PINS OUT: check site-data.json FILE (sitedata.Check).
+// If it passes, exits 0 and writes the checked data to OUT (sitedata.Clean); the site is built
+// from that. Otherwise exits 1 with the reason on stdout.
+//
+//	PROPOSALS  a file of the repository's proposals (file.md), one per line
+//	HOSTS      where the repository is (host/path, space-separated)
+//	LIVE       the live site ("" for none)
+//	PINS       the gate's record of each proposal's address ("file.md address" lines; a missing
+//	           file means none yet)
+//
+// Exits 2 if the list, the proposals or the pins can't be read, or OUT can't be written.
 func dataCmd(args []string) int {
 	if len(args) != 7 {
 		fmt.Fprintln(os.Stderr, "usage: ccs-check data FILE LIST PROPOSALS HOSTS LIVE PINS OUT")
