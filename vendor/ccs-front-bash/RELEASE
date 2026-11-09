@@ -1,3 +1,3 @@
 # ccs-front-bash, the release the gate's image builds the site with (container/gate.Dockerfile): its
 # files here exactly as that tag has them (CI: vendor-check). Updated with contrib/vendor-front-bash TAG.
-v0.1.29 e4130c2a68ef6fe855dc45b6aab6c6864782ec81
+v0.1.29 f3dcb7b6ca40d343db9b53daf9cc8427989956d3
