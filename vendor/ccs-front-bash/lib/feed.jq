@@ -1,19 +1,19 @@
-# feed.xml, RSS 2.0 (feed in ccs-front-bash.sh). Items: a proposal put to Funding Required, one
-# fully funded (ccs-bash's funding-required-at and funded-at, UTC), and a new idea (its MR's
-# created-at, UTC; only the 10 newest, since anyone can open an MR). The 50 newest items in all.
-# $site: the site's address, https://host. Plain text only: a reader may show a title as HTML, so
-# a title's &lt; and &gt; become ‹ and › (the web server's gate refuses them). Its lines are
-# exactly the ones the gate checks.
+# feed.xml, in RSS 2.0.
+# Items: proposals put to Funding Required, fully funded ones, and new ideas.
+# Only the 10 newest ideas, since anyone can open an MR. 50 items in all.
+# $site is the site's address, https://host.
+# Plain text only. A reader may show a title as HTML, so &lt; and &gt; become ‹ and ›.
+# Its lines are exactly the ones the gate checks.
 include "common";
 
 def rfc822: fromdate | strftime("%a, %d %b %Y %H:%M:%S +0000");
 def plain: escaped | gsub("&lt;"; "‹") | gsub("&gt;"; "›");
-# a page's address in a link: its file name as it is (local-url is HTML-escaped), percent-encoded
-# (a space, # or ? in a name would break the link); nothing in it then needs escaping in XML
+# A page's link: its file name, unescaped, then percent-encoded.
+# A space, # or ? in a name would break the link. The result needs no XML escaping.
 def href: escaped | gsub("&quot;"; "\"") | gsub("&#39;|&apos;"; "'") | gsub("&lt;"; "<") | gsub("&gt;"; ">") | gsub("&amp;"; "&")
   | "/proposals/\(ltrimstr("/proposals/") | rtrimstr(".html") | @uri).html";
 
-# A new idea links to its MR on the forge (ccs-bash checks it is one of the proposals repository's)
+# A new idea links to its MR. ccs-bash checks the MR is in the proposals repository.
 def ideas: [$proposals[0][] | select(.stage == "Ideas") | .proposals[]
   | select((."created-at" // "") | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"))
   | select((."gitlab-url" // "") | test("^https://[^\\s\"'<>]+$"))]

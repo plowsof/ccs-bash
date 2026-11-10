@@ -1,19 +1,19 @@
 # awk -f markdown.awk A.md B.md ...: for each proposal, one JSON line:
 #   {"file": "A", "body": "<h1>…", "milestones": [[name, funds, done], …], "payouts": [[date, amount], …]}
-# body is the proposal's Markdown as HTML; milestones and payouts come from its front matter, as
-# written (done empty: not done). One run for every proposal: starting awk and jq once per page
-# would take longer than the work.
+# body is the Markdown as HTML. Milestones and payouts come from the front matter.
+# An empty done means not done. One run does every proposal, which is faster.
 #
-# Safe by construction: all text is HTML-escaped first, and the only tags in the output are the
-# ones written here. Raw HTML in a proposal shows as text; links must be https:, #anchor or
-# site-relative; images show as links (no requests to other sites), except a proposal's own images
-# ccs-bash copied (-v images=FILE: "images/<proposal>/<file><TAB><proposal>/<file>" lines): those
-# show, from the site's own images/. A strict subset: headings,
-# paragraphs, lists (nested by indentation), code, quotes, tables, rules, emphasis, links.
-# Anything else stays plain text. POSIX awk only (mawk, gawk, busybox).
+# All text is HTML-escaped first, and the only tags are the ones written here.
+# So raw HTML in a proposal shows as text.
+# Links must be https:, #anchor or site-relative.
+# Images show as links, so a page makes no requests to other sites.
+# The exception is the proposal's own images that ccs-bash copied (-v images=FILE).
+# Only a subset of Markdown: headings, paragraphs, lists, code, quotes, tables, rules,
+# emphasis and links. Anything else stays plain text.
+# POSIX awk only (mawk, gawk, busybox).
 
 BEGIN {
-    # the images the site has a copy of: plain addresses and file names only (ccs-front-bash.sh checks)
+    # The images the site has a copy of. ccs-front-bash.sh checks their names.
     if (images != "") while ((getline l < images) > 0) { split(l, kv, "\t"); if (kv[2] != "") copy[kv[1]] = kv[2] }
 }
 
@@ -56,8 +56,8 @@ function flushitem() {
     item = 0; split("", f)
 }
 
-# ---- the body: kept, then rendered once the file is read (reference links can be anywhere) ----
-# \001 and \002 mark held HTML below: a proposal can't bring its own.
+# ---- the body: rendered once the whole file is read, as reference links can be anywhere ----
+# \001 and \002 mark held HTML. A proposal can't bring its own.
 { sub(/\r$/, ""); gsub(/[\001\002]/, ""); lines[++n] = $0 }
 
 function finish(    i, l, label, u) {
@@ -92,7 +92,7 @@ function esc(s) {
     gsub(/"/, "\\&quot;", s); gsub(/'/, "\\&#39;", s)
     return s
 }
-# an entity written in the Markdown (&nbsp; &#8212;) is kept: it can't make a tag
+# Keep an entity like &nbsp; or &#8212;. It can't make a tag.
 function entities(s,    out) {
     out = ""
     while (match(s, /&amp;(#[0-9]+|#[xX][0-9a-fA-F]+|[A-Za-z][A-Za-z0-9]*);/)) {
@@ -115,8 +115,8 @@ function unhold(s,    out, j) {
     }
     return s
 }
-# u is already escaped. A site-relative one starts "/" and a plain character: not "//", "/\" or
-# an entity ("/&#47;"), which a browser reads as another site's address.
+# u is already escaped. A site-relative link starts with "/" and a plain character.
+# Not "//", "/\" or an entity like "/&#47;": a browser reads those as another site.
 function safeurl(u) {
     return u ~ /^https:\/\/[^ \001\002]+$/ || u ~ /^#[A-Za-z0-9_-]+$/ || (u ~ /^\/[A-Za-z0-9._~-][^ \001\002]*$/ && u !~ /\\/)
 }
@@ -124,7 +124,7 @@ function link(text, u, title) {
     if (!safeurl(u)) return text " (" u ")"
     return hold("<a href=\"" u "\">") text hold("</a>")
 }
-# **x**, *x*, ~~x~~: d the delimiter; "_" ones only between non-words, as Markdown does
+# **x**, *x*, ~~x~~ with d the delimiter. "_" works only between non-words, as in Markdown.
 function pairs(s, d, op, cl,    out, a, b, inner, pre, post) {
     out = ""
     while ((a = index(s, d)) > 0) {
@@ -142,19 +142,19 @@ function pairs(s, d, op, cl,    out, a, b, inner, pre, post) {
 }
 function inline(s,    out, a, b, t, u, lab, m) {
     s = entities(esc(s))
-    # escaped < > " ' are held, so they end a URL and never look like markup
+    # Hold escaped < > " ', so they end a URL and never look like markup.
     out = ""
     while (match(s, /&(lt|gt|quot|#39);/)) { out = out substr(s, 1, RSTART - 1) hold(substr(s, RSTART, RLENGTH)); s = substr(s, RSTART + RLENGTH) }
     s = out s
-    # code spans first: nothing inside them is formatting
+    # Code spans first. Nothing inside them is formatting.
     out = ""
     while ((a = index(s, "`")) > 0 && (b = index(substr(s, a + 1), "`")) > 0) {
         out = out substr(s, 1, a - 1) hold("<code>" substr(s, a + 1, b - 1) "</code>")
         s = substr(s, a + b + 1)
     }
     s = out s
-    # images become links: no requests to other sites from a proposal page; one the site has a
-    # copy of shows, from there
+    # Images become links, so the page makes no requests to other sites.
+    # An image the site has a copy of is shown from there.
     out = ""
     while (match(s, /!\[[^]]*\]\([^) ]+( [^)]*)?\)/)) {
         m = substr(s, RSTART, RLENGTH); t = substr(m, 3, index(m, "](") - 3); u = substr(m, index(m, "](") + 2); sub(/\)$/, "", u); sub(/ .*/, "", u)
@@ -212,7 +212,7 @@ function cells(l, tag,    k, c, out, x) {
     for (x = 1; x <= k; x++) out = out "<" tag ">" inline(trim(c[x])) "</" tag ">"
     return out "</tr>"
 }
-# a heading one level down (# is h2, ###### and below h6): the page's own h1 is the proposal's title
+# Headings go one level down: # is h2. The page's h1 is the proposal's title.
 function heading(l,    lv, t, id, idattr) {
     lv = match(l, /^#+/) ? RLENGTH : 1
     t = substr(l, lv + 1); sub(/ #+ *$/, "", t); t = trim(t)
