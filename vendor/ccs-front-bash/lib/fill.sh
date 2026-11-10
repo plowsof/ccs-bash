@@ -1,13 +1,13 @@
 # shellcheck shell=bash
-# Filling the original: <!-- ccs:name -->…<!-- /ccs:name --> regions in a page, {{slots}} in a part.
+# Fills the original's regions (<!-- ccs:name -->…<!-- /ccs:name -->) and slots ({{name}}).
 
 log() { local m=$*; printf '%s %s\n' "$(date -u '+%F %T')" "${m//[[:cntrl:]]/?}" >&2; }
 die() { log "error: $*"; exit 1; }
 
-# fill_page PAGE REGIONS: print PAGE with every region's content replaced by the file
-# REGIONS/<name>.html (spaces in the name as _). One pass, left to right: what is put in is
-# never searched for markers again. A region with no file, no end marker, a marker inside it,
-# or a name used twice in the page stops the run.
+# fill_page PAGE REGIONS
+# Prints PAGE with each region replaced by REGIONS/<name>.html (spaces in the name as _).
+# One pass, left to right, so inserted text is never searched again.
+# The run stops on a region with no file, no end marker, a marker inside it, or a repeated name.
 fill_page() {
     local page=$1 regions=$2 rest out='' name end frag seen=' '
     rest=$(cat "$page"; printf x)
