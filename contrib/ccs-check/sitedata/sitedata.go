@@ -298,8 +298,12 @@ func isRun(r rune) bool {
 
 // address reports whether s (an idea's name or author) contains an address, read the way the
 // gate's scan reads the site's JSON: in groups, with non-ASCII characters dropped, read as a
-// space, or read as the ASCII letter they look like.
+// space, or read as the ASCII letter they look like; or shows numbers out of order, or one
+// disguised in another script (addr.Reordered, addr.Disguised).
 func address(s string) bool {
+	if addr.Reordered(s) || addr.Disguised(s) {
+		return true
+	}
 	c, out := addr.New(), map[string]bool{}
 	c.Start()
 	for _, t := range addr.Readings(s) {

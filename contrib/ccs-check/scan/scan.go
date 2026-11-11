@@ -134,13 +134,16 @@ func unknown(d string) bool {
 	return false
 }
 
-// shown returns the text of page raw in the order a browser shows it (addr.Visual), if it has a
-// right-to-left letter, which puts the digits between two of them in another order. Tags are
-// removed and entities decoded first. Look-alikes become their ASCII letter or digit, invisible
-// format characters are dropped, and any other non-ASCII becomes \x01. "" if there's none.
-func shown(raw []byte) string {
-	t := tags.ReplaceAllString(string(raw), "")
-	t = entities.ReplaceAllStringFunc(t, func(e string) string {
+// Reordered and Disguised are the reasons text fails that could show an address a reader would
+// copy, though no reading finds one (addr.Reordered, addr.Disguised)
+const (
+	Reordered = "!right-to-left letters that show numbers in another order than they are written"
+	Disguised = "!text written like an address in groups, with letters of another script among them"
+)
+
+// text returns page raw's text: tags removed, entities decoded (one the scan can't read is \x01)
+func text(raw []byte) string {
+	return entities.ReplaceAllStringFunc(tags.ReplaceAllString(string(raw), ""), func(e string) string {
 		switch n := code(e); {
 		case n == '<' || n == '>':
 			return "-"
@@ -150,23 +153,16 @@ func shown(raw []byte) string {
 			return string(rune(n))
 		}
 	})
-	if !addr.RTL(t) {
-		return ""
+}
+
+// shape adds to out the reasons text t fails as a whole (Reordered, Disguised)
+func shape(t string, out map[string]bool) {
+	if addr.Reordered(t) {
+		out[Reordered] = true
 	}
-	return strings.Map(func(r rune) rune {
-		switch {
-		case r < 0x80:
-			if r < 0x20 && r != '\t' && r != '\n' && r != '\r' && r != '\f' || r == 0x7f {
-				return 1
-			}
-			return r
-		case addr.Lookalike(r) != 0:
-			return rune(addr.Lookalike(r))
-		case unicode.Is(unicode.Cf, r):
-			return -1
-		}
-		return 1
-	}, addr.Visual(t))
+	if addr.Disguised(t) {
+		out[Disguised] = true
+	}
 }
 
 // bidi reports a bidi control in raw (as UTF-8) or in d (raw as latin-1, entities still in it)
@@ -242,11 +238,7 @@ func Pages(files []string, w io.Writer) error {
 				break
 			}
 		}
-		if t := shown(raw); t != "" {
-			if err := both(c, qrs.ReplaceAllString(t, " "), out); err != nil {
-				out["!"+err.Error()] = true
-			}
-		}
+		shape(text(raw), out)
 		emit(w, f, out)
 	}
 	return nil
@@ -284,8 +276,9 @@ func emit(w io.Writer, f string, out map[string]bool) {
 
 // JSON scans each JSON file's strings as a reader gets them: \u escapes decoded, every key and
 // value, both copies of a duplicate key. Addresses are found as in pages' text: non-ASCII
-// dropped, again as a space, and as a reader copying by eye, each also in the order a browser
-// shows it (addr.Readings). A bidi control fails the file, as for a page. Reads the first 16 MB.
+// dropped, again as a space, and as a reader copying by eye (addr.Readings). A bidi control,
+// numbers shown out of order or an address disguised in another script fails the file, as for a
+// page. Reads the first 16 MB.
 func JSON(files []string, w io.Writer) error {
 	c := addr.New()
 	for _, f := range files {
@@ -312,6 +305,7 @@ func JSON(files []string, w io.Writer) error {
 				}
 				return r
 			}, s)
+			shape(s, out)
 			for _, t := range addr.Readings(s) {
 				if tooMany = c.Runs(t, out); tooMany != nil {
 					break
