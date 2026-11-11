@@ -64,15 +64,19 @@ alert() {
     sent=1
     # Never post a whole address, whatever the reason quotes (a file or page name). Shorten any
     # run of 20+ base58 characters as address alerts are, and cap the message at 500 characters.
-    local msg
-    msg=$(sed -E 's/([1-9A-HJ-NP-Za-km-z]{6})[1-9A-HJ-NP-Za-km-z]{10,}([1-9A-HJ-NP-Za-km-z]{4})/\1…\2/g' <<<"$2" | head -c 500)
-    curl -fsS --max-time 10 --data-binary "[${blue}CCS-watch${off}] ${msg//@SITE@/${site:-}}" -H 'Content-Type: text/plain' "$url" > /dev/null 2>&1 \
+    # Control characters become ?, IRC colour codes (\x03) aside: no line breaks or escapes from a
+    # name a backend chose.
+    local msg cntrl=$'\x01-\x02\x04-\x1f\x7f'
+    msg=$(sed -E 's/([1-9A-HJ-NP-Za-km-z]{6})[1-9A-HJ-NP-Za-km-z]{10,}([1-9A-HJ-NP-Za-km-z]{4})/\1…\2/g' <<<"${2//[$cntrl]/?}" | head -c 500)
+    curl -fsS --max-time 10 --data-binary "[${blue}CCS-watch${off}] ${msg//@SITE@/${site:-}}" -H 'Content-Type: text/plain' \
+        -K <(u=${url//\\/\\\\}; printf 'url = "%s"\n' "${u//\"/\\\"}") > /dev/null 2>&1 \
         || say "could not send the alert"
 }
 
 blue=$'\x0312' red=$'\x0304' off=$'\x03'   # IRC colours, same as ccs-watch
 
 say() {
+    set -- "${*//[[:cntrl:]]/?}"   # no line breaks or terminal escapes from a name a backend chose
     logger -t ccs-gate -- "$*" 2> /dev/null || true
     printf '%s %s\n' "$(date -u '+%F %T')" "$*" 2> /dev/null >> /var/log/ccs-gate.log || true   # 2> first, so it also hides a log it can't open
     # stderr is the backend's ssh channel. If the backend hung up, writing to it kills the writer
@@ -261,6 +265,18 @@ if ! why=$(timeout 60 ccs-check data "$data" "$list" "$props" "$hosts" "$live" "
     exit 1
 fi
 
+# A Funding Required proposal the backend sends no subaddress for stays off the site. The backend
+# gives a newly merged one its subaddress on its next run, so only one still off after
+# UNADDRESSED_MINUTES (alert.conf, default 30) alerts, at most once an hour. Otherwise a backend
+# could keep a new proposal off the site unseen. $state/unaddressed: "seconds file.md" lines, the
+# time each was first seen off, from the last build (below).
+minutes=$(sed -n 's/^UNADDRESSED_MINUTES=\([1-9][0-9]*\)$/\1/p' "$conf/alert.conf" 2> /dev/null | tail -n 1 || true)
+late=$(awk -v t=$(($(date +%s) - ${minutes:-30} * 60)) '$1 < t { print substr($0, index($0, " ") + 1) }' "$state/unaddressed" 2> /dev/null || true)
+if [[ $late ]]; then
+    say "Funding Required proposals with no subaddress from the backend, so not on the site, for over ${minutes:-30} minutes: $(head -n 5 <<<"$late" | tr '\n' ' ')"
+    alert unaddressed "$(grep -c . <<<"$late") Funding Required proposal(s) in the repository have had no subaddress from the backend for over ${minutes:-30} minutes, so they aren't on the site (one: ${late%%$'\n'*}) @ @SITE@"
+fi
+
 # Rebuild only when an input changed (checked site-data.json, the list, its QR codes, allowed,
 # the design, the repository's commit, this gate), and once a day regardless.
 # The live site is the last build that went live, and the same inputs build the same site.
@@ -360,9 +376,17 @@ elif [[ $gone ]]; then
 fi
 # Update the pins: each proposal keeps the address it first had on the live site. A push never
 # changes it (ccs-check data enforces this); a person can release one (troubleshooting.md).
+# "name address" lines: the address is after the last space, since a name can have spaces.
 { cat -- "$pins" 2> /dev/null || true
-  jq -r '.[] | select((.filename | type) == "string" and (.address | type) == "string") | "\(.filename) \(.address)"' "$live/projects.json" 2> /dev/null || true
-} | awk 'NF == 2 && !seen[$1]++' > "$pins.new" && mv -f "$pins.new" "$pins"
+  jq -r '.[] | select((.filename | type) == "string" and (.address | type) == "string") | "\(.filename) \(.address)" | select(test("\n") | not)' "$live/projects.json" 2> /dev/null || true
+} | awk 'match($0, / [^ ]+$/) && RSTART > 1 && !seen[substr($0, 1, RSTART - 1)]++' > "$pins.new" && mv -f "$pins.new" "$pins"
+# The Funding Required proposals this build left off for want of a subaddress, each with the time
+# it was first seen off (checked above, on each push)
+touch "$state/unaddressed"
+{ grep -a $'^unaddressed\t' "$staging/build.log" || true; } | cut -f2- | tr -d '\000-\011\013-\037\177' \
+    | awk -v now="$now" 'NR == FNR { t[substr($0, index($0, " ") + 1)] = $1; next }
+        $0 != "" { print ((($0 in t) ? t[$0] : now) " " $0) }' "$state/unaddressed" - 2> /dev/null > "$state/unaddressed.new" || true
+mv -f "$state/unaddressed.new" "$state/unaddressed"
 say "built the site from site-data.json (the design ${design##*/}, the proposals at $(git -C "$git" rev-parse --short refs/heads/ccs)): live"
 printf '%s\n' "$inputs" > "$state/built-with"
 took

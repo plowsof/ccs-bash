@@ -63,7 +63,22 @@ previous_ideas() {
     jq '.[0].proposals' "$OUTPUT_DIR/proposals.json" 2> /dev/null || echo '[]'
 }
 
+# Drop the ideas the web server's gate would refuse (ccs-check ideas: the gate's own check of an
+# idea's name and author). Anyone can open an MR, and one the gate refuses would hold back every
+# push. Without ccs-check (the tests, outside the image), they stay as they are.
+gate_ideas() {
+    local check=${CCS_CHECK-$(command -v ccs-check || true)} line
+    [[ $check ]] || return 0
+    if ! "$check" ideas < "$WORK/ideas.json" > "$WORK/ideas.checked" 2> "$WORK/ideas.err"; then
+        log "error: ccs-check ideas failed: $(head -c 200 "$WORK/ideas.err")"
+        return 1
+    fi
+    while IFS= read -r line; do log "warning: idea $line"; done < "$WORK/ideas.err"
+    mv -f "$WORK/ideas.checked" "$WORK/ideas.json"
+}
+
 build_site() {
+    gate_ideas
     site_json
     # site-data.json holds what only this run knows: each proposal's subaddress index, MR link,
     # dates and funds, plus the ideas. It holds no addresses: those come from the signed list.

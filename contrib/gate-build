@@ -34,10 +34,11 @@ mkdir -p "$t/proposals" "$t/data" "$t/work" "$t/list"
 git -C "$GIT" archive refs/heads/ccs | tar -x -C "$t/proposals"
 # Strip bidi controls from the proposals' text (ccs-check nobidi). They can display the text
 # after them in a different order than written. 36c3.md has one, pasted in with a number.
-shopt -s nullglob
-md=("$t"/proposals/*.md)
+# Only plain files, as read_proposals takes: a folder or a symlink named *.md is skipped there,
+# and must not stop the build here.
+md=()
+for f in "$t"/proposals/*.md; do if [[ -f $f && ! -L $f ]]; then md+=("$f"); fi; done
 ((${#md[@]} == 0)) || "${CCS_CHECK:-ccs-check}" nobidi "${md[@]}" > /dev/null
-shopt -u nullglob
 PROPOSALS_DIR=$t/proposals OUTPUT_DIR=$t/data WORK=$t/work
 links=''
 if [[ ${MRS:-} ]]; then links=$t/links.json && merge_requests "$GIT" "$MRS" "${MR_REPOS:-}" > "$links"; fi

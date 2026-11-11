@@ -27,6 +27,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"ccs-check/addr"
@@ -201,9 +202,10 @@ func New(list, proposals, hosts, live, pins string) (*Checker, error) {
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return nil, err
 		}
+		// The address is after the last space: a proposal's name can have spaces in it
 		for _, l := range strings.Split(string(b), "\n") {
-			if f := strings.Fields(l); len(f) == 2 && listed[f[1]] && c.pins[f[0]] == "" {
-				c.pins[f[0]] = f[1]
+			if i := strings.LastIndexByte(l, ' '); i > 0 && listed[l[i+1:]] && c.pins[l[:i]] == "" {
+				c.pins[l[:i]] = l[i+1:]
 			}
 		}
 	}
@@ -237,6 +239,18 @@ func addresses(dir string) map[string]string {
 	return m
 }
 
+// q quotes a proposal's name for a reason: the backend chose it, and the reason is logged and
+// sent to IRC
+func q(s string) string { return strconv.QuoteToASCII(s) }
+
+// utc reports whether s is a UTC time as ccs-bash writes them (2026-10-01T12:34:56Z): a real date
+// and time, which jq's fromdate reads, and not over a day ahead (a date far ahead would keep an
+// idea first in the feed for good).
+func utc(s string) bool {
+	t, err := time.Parse("2006-01-02T15:04:05Z", s)
+	return utcRx.MatchString(s) && err == nil && t.Before(time.Now().Add(24*time.Hour))
+}
+
 // text checks an idea's name or author, escaped as ccs-bash writes it (jq @html): no markup,
 // no bidi controls, at most 1000 characters (an entity counts as one), and no run of 90
 // characters that could be an address (base58, or any non-ASCII, which could stand in for one).
@@ -257,7 +271,7 @@ func text(s string) bool {
 			if w == 0 {
 				return false
 			}
-		} else if strings.ContainsRune("<>\"'", r) || r <= 0x1f || r == 0x7f || r >= 0x202a && r <= 0x202e || r >= 0x2066 && r <= 0x2069 {
+		} else if strings.ContainsRune("<>\"'", r) || r <= 0x1f || r == 0x7f || addr.Bidi(r) {
 			return false
 		}
 		if w == 1 || r > 0x7f {
@@ -288,19 +302,7 @@ func isRun(r rune) bool {
 func address(s string) bool {
 	c, out := addr.New(), map[string]bool{}
 	c.Start()
-	readings := []string{}
-	for _, repl := range []rune{-1, ' '} {
-		readings = append(readings, strings.Map(func(r rune) rune {
-			if r > 0x7f {
-				return repl
-			}
-			return r
-		}, s))
-	}
-	if t, drawn := addr.Lookalikes(s); drawn {
-		readings = append(readings, t)
-	}
-	for _, t := range readings {
+	for _, t := range addr.Readings(s) {
 		if c.Runs(t, out) != nil {
 			return true
 		}
@@ -370,31 +372,31 @@ func (c *Checker) check(d *siteData) string {
 	for f, s := range d.State {
 		switch {
 		case !c.proposals[f]:
-			return f + ": no proposal in the proposals repository"
+			return q(f) + ": no proposal in the proposals repository"
 		case s == nil:
-			return f + ": no state"
+			return q(f) + ": no state"
 		case s.GitlabURL != nil && !c.link.MatchString(*s.GitlabURL):
-			return f + ": a link that isn't a merge request of the proposals repository"
-		case s.FundingRequiredDate != nil && !utcRx.MatchString(*s.FundingRequiredDate),
-			s.FundedDate != nil && !utcRx.MatchString(*s.FundedDate):
-			return f + ": a date that isn't one (UTC, as ccs-bash writes them)"
+			return q(f) + ": a link that isn't a merge request of the proposals repository"
+		case s.FundingRequiredDate != nil && !utc(*s.FundingRequiredDate),
+			s.FundedDate != nil && !utc(*s.FundedDate):
+			return q(f) + ": a date that isn't one (UTC, as ccs-bash writes them)"
 		}
 		if s.SubaddrIndex == nil {
 			if c.pins[f] != "" {
-				return f + ": no subaddress, where the live site has given it one (the gate's pins)"
+				return q(f) + ": no subaddress, where the live site has given it one (the gate's pins)"
 			}
 			continue
 		}
 		a, ok := c.index[strconv.FormatInt(*s.SubaddrIndex, 10)]
 		switch {
 		case *s.SubaddrIndex <= 0 || !ok:
-			return f + ": a subaddress index the signed list hasn't (or the wallet's main address)"
+			return q(f) + ": a subaddress index the signed list hasn't (or the wallet's main address)"
 		case owners[a] != "":
-			return f + ": the subaddress " + owners[a] + " has"
+			return q(f) + ": the subaddress " + q(owners[a]) + " has"
 		}
 		owners[a] = f
 		if p, pin := c.pins[f]; pin && p != a {
-			return f + ": another subaddress than the live site has for it"
+			return q(f) + ": another subaddress than the live site has for it"
 		}
 	}
 	// A pin for a proposal no longer in the repository holds nothing, so a renamed proposal's
@@ -404,22 +406,22 @@ func (c *Checker) check(d *siteData) string {
 			continue
 		}
 		if o := owners[a]; o != "" && o != f {
-			return o + ": the subaddress " + f + " has on the live site"
+			return q(o) + ": the subaddress " + q(f) + " has on the live site"
 		}
 		if _, ok := d.State[f]; !ok {
-			return f + ": no state, where the live site has given it a subaddress (the gate's pins)"
+			return q(f) + ": no state, where the live site has given it a subaddress (the gate's pins)"
 		}
 	}
 	for f, x := range d.Funds {
 		switch {
 		case !c.proposals[f]:
-			return f + ": funds of no proposal in the proposals repository"
+			return q(f) + ": funds of no proposal in the proposals repository"
 		case x == nil || x.Amount == nil || x.Raised == nil || x.Needed == nil || x.Pending == nil || x.Count == nil || x.Percentage == nil:
-			return f + ": funds without all of amount, raised, pending, count, percentage, needed"
+			return q(f) + ": funds without all of amount, raised, pending, count, percentage, needed"
 		case !xmr4Rx.MatchString(*x.Amount) || !xmr4Rx.MatchString(*x.Raised) || !xmr4Rx.MatchString(*x.Needed) || !pendingRx.MatchString(string(*x.Pending)):
-			return f + ": an amount that isn't one as ccs-bash writes them"
+			return q(f) + ": an amount that isn't one as ccs-bash writes them"
 		case *x.Count < 0 || *x.Count > 1e9 || *x.Percentage < 0 || *x.Percentage > 100:
-			return f + ": a count or percentage out of range"
+			return q(f) + ": a count or percentage out of range"
 		}
 	}
 	if len(d.Ideas) > 1000 {
@@ -438,7 +440,7 @@ func (c *Checker) check(d *siteData) string {
 			return n + ": a link that isn't a merge request of the proposals repository"
 		case !dateRx.MatchString(*x.Date):
 			return n + ": a date that isn't one"
-		case x.CreatedAt != nil && !utcRx.MatchString(*x.CreatedAt):
+		case x.CreatedAt != nil && !utc(*x.CreatedAt):
 			// Optional, so a gate updated first still takes an older backend's push
 			return n + ": a created-at that isn't a UTC time"
 		case x.Upvotes != nil && *x.Upvotes < 0, x.Downvotes != nil && *x.Downvotes < 0:
@@ -446,4 +448,48 @@ func (c *Checker) check(d *siteData) string {
 		}
 	}
 	return ""
+}
+
+// Ideas returns the ideas in b (a JSON array of objects) without those the data check refuses
+// for their name or author (text, address), and for each one dropped, its link and why. The
+// backend runs it (ccs-check ideas) before it pushes, since anyone can open an MR: the gate
+// itself refuses the whole push for one such idea.
+func Ideas(b []byte) ([]byte, []string, error) {
+	var all []json.RawMessage
+	if err := json.Unmarshal(b, &all); err != nil {
+		return nil, nil, errors.New("the ideas aren't a JSON array")
+	}
+	kept := []json.RawMessage{}
+	var dropped []string
+	for _, raw := range all {
+		var x struct {
+			Name      *string `json:"name"`
+			Author    *string `json:"author"`
+			GitlabURL *string `json:"gitlab-url"`
+		}
+		if json.Unmarshal(raw, &x) != nil {
+			return nil, nil, errors.New("an idea that isn't a JSON object")
+		}
+		why := ""
+		switch {
+		case x.Name != nil && !text(*x.Name), x.Author != nil && !text(*x.Author):
+			why = "a name or author that isn't plain text"
+		case x.Name != nil && address(*x.Name), x.Author != nil && address(*x.Author):
+			why = "an address in its name or author"
+		}
+		if why == "" {
+			kept = append(kept, raw)
+			continue
+		}
+		link := "(no link)"
+		if x.GitlabURL != nil {
+			link = q(*x.GitlabURL)
+		}
+		dropped = append(dropped, link+": "+why)
+	}
+	var out bytes.Buffer
+	enc := json.NewEncoder(&out)
+	enc.SetEscapeHTML(false)
+	err := enc.Encode(kept)
+	return out.Bytes(), dropped, err
 }
