@@ -388,7 +388,7 @@ agreeing, answering) and changes nothing.
 | | `proposals.conf` | `PROPOSALS_GIT=https://repo.getmonero.org/monero-project/ccs-proposals.git`, `PROPOSALS_BRANCH=master`, `MERGE_REQUESTS=https://repo.getmonero.org` (each proposal's link: the merge request its merge commit names); `LINK_HOSTS`, other repositories an idea's link may be in, as host/path | 6 |
 | | `subaddresses.txt.viewkey` | the same as the backend's (the Verify page is then checked word for word) | 6 |
 | | `allowed` | the General Fund, `888tNkZrPN6JsEgekjMnABU4TBzc2Dt29EPAvkRxbANsAnjyPbb3iQ1YBRk1UXcdRsiKc9dhwMVgN5S9cQUiyoogDavup3H`, and any address a proposal's text quotes (the gate's log names it) | 6 |
-| | `alert.conf` | `ALERT_URL` (the bot), `SITE_URL=https://ccs.getmonero.org` (the feed's links) | 8 |
+| | `alert.conf` | `ALERT_URL` (the bot), `SITE_URL=https://ccs.getmonero.org` (the feed's links and the link card's image) | 8 |
 | | `onion` | optional: the site's onion address, one line (Tor's `/var/lib/tor/hidden_service/ccs/hostname`, [two machines](two-machines.md)); the only one the footer may show | 6 |
 | `/opt/ccs-bash/contrib/docker/web/.env` | `CCS_SITE_HOST`, `CCS_ACME_EMAIL`, `CCS_ONION` | `ccs.getmonero.org` (its DNS records the web server's), an address for Let's Encrypt, the onion | 6 |
 | | `snippets/ccs-headers.conf` | the security headers, as in two-machines (A+ on securityheaders.com) | 6 |
@@ -411,6 +411,12 @@ with them, each item a link to one of the site's proposal pages under its `alert
 The feed also lists the 10 newest ideas as "New idea: <title>", each linking to its merge request.
 It uses the time the merge request was opened (site-data.json's `created-at`). Anyone can open a
 merge request, so the cap keeps ideas from crowding out the funding items.
+
+### Link cards
+
+Every page has a link card for X, Mastodon, chat apps and others: `og:` and `twitter:` tags with
+its title, a line about it (a proposal's: its stage and funding) and one image, its address under
+`SITE_URL`. X shows only the image and the site's name; most others show the line too.
 
 **The backup machine:** the `ccs-backup` account, with the backend's key in
 `/etc/ssh/authorized_keys/ccs-backup` (step 7).
