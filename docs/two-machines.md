@@ -242,7 +242,7 @@ taken-over backend would bring both a list and the sums it is compared with).
 **The design**, the release zip the backend runs, unpacked:
 
 ```
-v=v0.1.29                                                            # the handover's releases table
+v=v0.1.31                                                            # the handover's releases table
 sha256sum ccs-front-hugo-$v.zip                                      # the attested one
 unzip -q ccs-front-hugo-$v.zip -d /etc/ccs-gate/design/$v
 ```
