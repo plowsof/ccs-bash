@@ -2,7 +2,8 @@
 # export-ccs-back DATABASE OUT [CCS_BACK_DIR]: when moving from ccs-back (handover step 2), copy
 # what ccs-bash needs from its database into the folder OUT, and nothing else.
 # Only SELECTs: the database is not changed. MYSQL is the command to reach it (default "mysql";
-# e.g. "mysql -u ccs -p" or "docker exec -i <db container> mysql -u root -p<password>"). Writes:
+# e.g. "mysql -u ccs -p", or "docker exec -i -e MYSQL_PWD <db container> mysql -u root" after
+# read -rs MYSQL_PWD; export MYSQL_PWD: never -p<password>, which other users can read in ps). Writes:
 #   OUT/proposals.csv          the projects table as ccs-bash's state: "file","link",index,"address",
 #                              "funding since" (ccs-back's funding_required_date if set, as UTC),
 #                              in ccs-back's order. Checked: one row per file, no index or address

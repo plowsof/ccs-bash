@@ -70,17 +70,25 @@ on mainnet: there, two people attest every set.
 ## 2. Build the images from those commits and compare
 
 The loop keeps running meanwhile. Build from the attested commit, not the tag: a tag can move,
-and the build runs as root. Use a clone of its own, so the running checkout stays as it is:
+and the build runs as root. Use a clone of its own, so the running checkout stays as it is.
+Paste the block whole: `set -e` stops it at the first step that fails, so if the commit can't be
+checked out (a mistyped commit, or history rewritten on GitHub), no other code is built as root.
+`C` is the commit `verify` printed, all 40 characters:
 
 ```
-W=/root/ccs/src-ccs-bash; rm -rf "$W"; git clone -q https://github.com/plowsof/ccs-bash "$W"
-git -C "$W" checkout -q <ccs-bash's commit>; git -C "$W" describe --tags     # the release
-(cd "$W" && container/build.sh ccs-bash:<release>)                         # the backend
-(cd "$W" && container/build.sh ccs-gate:<release> gate.Dockerfile)          # the web server's
-docker image inspect ccs-bash:<release> --format '{{.Id}}'                  # must be IDB
+( set -euo pipefail
+C=<ccs-bash's commit> W=/root/ccs/src-ccs-bash
+rm -rf "$W"; git clone -q https://github.com/plowsof/ccs-bash "$W"
+git -C "$W" checkout -q --detach "$C"
+[[ $(git -C "$W" rev-parse HEAD) == "$C" ]]
+git -C "$W" describe --tags                                       # the release
+cd "$W"
+container/build.sh ccs-bash:<release>                             # on the backend
+# container/build.sh ccs-gate:<release> gate.Dockerfile           # instead, on the web server
+docker image inspect ccs-bash:<release> --format '{{.Id}}' )      # must be IDB
 ```
 
-Any other ID: stop.
+Any other ID, or the block stopping early: stop.
 - **The gate's image** is built on the web server.
 - **The backend's image** is kept by a stopped container, so no cleanup removes it:
   `docker create --name ccs-bash-keep-<release> --network none "$IDB"`.
@@ -94,10 +102,15 @@ release needed is still in `container/sources/` (a download cache, not in git); 
 builds with the newest release in `design/` from its next push on: install it with the gate
 whose ccs-front-bash fills it (the handover's releases table). Nothing restarts.
 
+Paste it whole: a zip that isn't the attested one stops it before anything is unpacked.
+
 ```
-curl -fsSLo /tmp/d.zip https://github.com/plowsof/ccs-front-hugo/releases/download/<release>/ccs-front-hugo-<release>.zip
-echo "$ZIP  /tmp/d.zip" | sha256sum -c -
-unzip -q /tmp/d.zip -d /etc/ccs-gate/design/<release>.new && mv /etc/ccs-gate/design/<release>.new /etc/ccs-gate/design/<release>
+( set -euo pipefail
+d=$(mktemp -d); trap 'rm -rf "$d"' EXIT
+curl -fsSLo "$d/d.zip" https://github.com/plowsof/ccs-front-hugo/releases/download/<release>/ccs-front-hugo-<release>.zip
+echo "$ZIP  $d/d.zip" | sha256sum -c -
+unzip -q "$d/d.zip" -d /etc/ccs-gate/design/<release>.new
+mv /etc/ccs-gate/design/<release>.new /etc/ccs-gate/design/<release> )
 ```
 
 The old designs can stay (going back: move the new one out).
@@ -107,10 +120,13 @@ pages' images against (its design files, byte for byte), so that the old pages a
 pass while the gate moves over. Then the web server's steps above.
 
 ```
-curl -fsSLo /tmp/d.zip https://github.com/plowsof/ccs-front-hugo/releases/download/<release>/ccs-front-hugo-<release>.zip
-echo "$ZIP  /tmp/d.zip" | sha256sum -c - && rm -rf /tmp/d && unzip -q /tmp/d.zip -d /tmp/d
+( set -euo pipefail
+d=$(mktemp -d); trap 'rm -rf "$d"' EXIT
+curl -fsSLo "$d/d.zip" https://github.com/plowsof/ccs-front-hugo/releases/download/<release>/ccs-front-hugo-<release>.zip
+echo "$ZIP  $d/d.zip" | sha256sum -c -
+unzip -q "$d/d.zip" -d "$d/x"
 cp -a /etc/ccs-front/design.sha256 "$B/" 2> /dev/null || true
-(cd /tmp/d && find . -type f | sort | xargs -d '\n' sha256sum) >> /etc/ccs-front/design.sha256 && rm -rf /tmp/d /tmp/d.zip
+(cd "$d/x" && find . -type f | sort | xargs -d '\n' sha256sum) >> /etc/ccs-front/design.sha256 )
 ```
 
 Once the old design is gone from the web server, its lines can go: the file made again from the
@@ -119,9 +135,13 @@ new zip alone.
 **3b. A new gate:**
 
 ```
+( set -euo pipefail
 D=/opt/ccs-bash/contrib/docker/web; cp -a "$D/.env" "$B/"
-git -C /opt/ccs-bash fetch -q --tags && git -C /opt/ccs-bash checkout -q <ccs-bash's commit>
+git -C /opt/ccs-bash fetch -q --tags; git -C /opt/ccs-bash checkout -q --detach <ccs-bash's commit>
 sed -i "s|^CCS_GATE_IMAGE=.*|CCS_GATE_IMAGE=$IDG|" "$D/.env"
+cd "$D"; docker compose config -q; docker compose --profile init run --rm -T init; docker compose up -d
+docker compose ps )                  # gate, heartbeat, backup, www, tor: the new ID
+```|^CCS_GATE_IMAGE=.*|CCS_GATE_IMAGE=$IDG|" "$D/.env"
 cd "$D" && docker compose config -q && docker compose --profile init run --rm -T init && docker compose up -d
 docker compose ps                    # gate, heartbeat, backup, www, tor: the new ID
 ```
@@ -135,10 +155,13 @@ Wait until a run has pushed: `ccs status` shows no run going, or `/var/lib/ccs/r
 changes. Then at once:
 
 ```
+( set -euo pipefail
 D=/opt/ccs-bash/contrib/docker/backend; cp -a "$D/.env" "$B/"
 git -C /opt/ccs-bash rev-parse HEAD > "$B/commit"
-git -C /opt/ccs-bash fetch -q --tags && git -C /opt/ccs-bash checkout -q <ccs-bash's commit>
+git -C /opt/ccs-bash fetch -q --tags; git -C /opt/ccs-bash checkout -q --detach <ccs-bash's commit>
 sed -i "s|^CCS_BASH_IMAGE=.*|CCS_BASH_IMAGE=$IDB|" "$D/.env"
+cd "$D"; docker compose config -q; docker compose up -d )
+```|^CCS_BASH_IMAGE=.*|CCS_BASH_IMAGE=$IDB|" "$D/.env"
 cd "$D" && docker compose config -q && docker compose up -d
 ```
 

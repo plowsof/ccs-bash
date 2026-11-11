@@ -122,11 +122,12 @@ repository's `subaddresses/<wallet>/` (the same list, a third line `qr …`;
 [the signed list](signed-list.md)):
 
 ```
-git clone -q https://github.com/plowsof/ccs-front-bash && git -C ccs-front-bash checkout -q <its attested commit>
-git clone -q https://github.com/plowsof/ccs-bash && git -C ccs-bash checkout -q <its attested commit>
-install -d -m 700 l && cp ccs-bash/subaddresses/<wallet>/subaddresses.txt* l/
+( set -euo pipefail    # pasted whole: a commit that can't be checked out stops it
+git clone -q https://github.com/plowsof/ccs-front-bash; git -C ccs-front-bash checkout -q --detach <its attested commit>
+git clone -q https://github.com/plowsof/ccs-bash; git -C ccs-bash checkout -q --detach <its attested commit>
+install -d -m 700 l; cp ccs-bash/subaddresses/<wallet>/subaddresses.txt* l/
 ccs-front-bash/tools/make-qr.sh l/subaddresses.txt                    # .qr/ and .qr.sha256, about 30 s
-SIGNER_KEYS=<the signer's key> ccs-front-bash/tools/verify-subaddresses.sh l/subaddresses.txt <your list-signers> <WALLET_ADDRESS>
+SIGNER_KEYS=<the signer's key> ccs-front-bash/tools/verify-subaddresses.sh l/subaddresses.txt <your list-signers> <WALLET_ADDRESS> )
 ```
 
 OK: the new `.pin` and `.qr.sha256` go to `/etc/ccs-front/` and `/etc/ccs-gate/` (root, 644),
