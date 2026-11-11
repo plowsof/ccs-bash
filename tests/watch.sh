@@ -144,7 +144,11 @@ cp "$tmp/page.good" "$page"; rm -f "$tmp/state"/differs-*
 # image in the box, instead of its QR code or beside it.
 for c in "box|s/monero:$(addr 1)/monero:$(addr 2)/|the donation box isn't its proposal's address" "qr|qr|the donation box's QR code isn't the signed list's of its address" \
     "img|s#src=\"../qr/$(addr 1).png\"#src=\"../images/x.png\"#|the donation box shows another image than its address's QR code" \
-    "two|s#</details>#<img src=\"../images/x.png\"></details>#|the donation box shows another image than its address's QR code"; do
+    "two|s#</details>#<img src=\"../images/x.png\"></details>#|the donation box shows another image than its address's QR code" \
+    "decoy|s#<!-- ccs:donate -->#<template><!-- ccs:donate --><img src=\"../qr/$(addr 1).png\"><!-- /ccs:donate --></template><!-- ccs:donate -->#|the page hasn't one donation box" \
+    "another QR|s#<p class=\"address\">#<img src=\"../qr/$(addr 2).png\"><p class=\"address\">#|the page shows another list QR code than its address's" \
+    "picture|s#<img src=\"../qr/$(addr 1).png\">#<picture><source srcset=\"/x.png\"><img src=\"../qr/$(addr 1).png\"></picture>#|a tag the design never has" \
+    "split|s#<img src=\"../qr/$(addr 1).png\">#<img hidden src=\"../qr/$(addr 1).png\"><img\\nsrc=\"../images/x.png\">#|the donation box shows another image than its address's QR code"; do
     IFS='|' read -r what how why <<<"$c"
     : > "$tmp/bot.txt"; rm -f "$tmp/state"/alert-* "$tmp/state"/differs-*
     if [[ $what == qr ]]; then cp "$tmp/list.txt.qr/$(addr 2).png" "$tmp/remote/qr/$(addr 1).png"; else sed -i "$how" "$page"; fi
@@ -168,13 +172,15 @@ cp "$done" "$tmp/done.good"; cp "$tmp/remote/assets/fund-qr.png" "$tmp/fund.good
 for c in "an image the design hasn't, outside a box|sed -i 's#alt=\"\">#alt=\"\"><img src=\"../assets/x.png\">#' '$done'; echo x > '$tmp/remote/assets/x.png'|an image that isn't the design's (assets/x.png)" \
     "the General Fund's QR code changed|echo 'another address' > '$tmp/remote/assets/fund-qr.png'|an image that isn't the design's file (assets/fund-qr.png)" \
     "a proposal's image changed|echo 'a QR code' > '$tmp/remote/images/done/chart.png'|an image that isn't its proposal's, as the proposals repository has it (images/done/chart.png)" \
-    "a QR code that isn't one of the list's|echo x > '$tmp/remote/qr/x.png'; sed -i 's#alt=\"\">#alt=\"\"><img src=\"../qr/x.png\">#' '$done'|an image that isn't one of the signed list's QR codes (qr/x.png)"; do
+    "a QR code that isn't one of the list's|echo x > '$tmp/remote/qr/x.png'; sed -i 's#alt=\"\">#alt=\"\"><img src=\"../qr/x.png\">#' '$done'|an image that isn't one of the signed list's QR codes (qr/x.png)" \
+    "an image unquoted, on its own line|sed -i 's#alt=\"\">#alt=\"\"><img\\nsrc=../assets/x.png>#' '$done'; echo x > '$tmp/remote/assets/x.png'|an image that isn't the design's (assets/x.png)" \
+    "a stylesheet the design hasn't|sed -i 's#alt=\"\">#alt=\"\"><link rel=stylesheet href=../assets/x.css>#' '$done'; echo 'p::after{content:url(x.png)}' > '$tmp/remote/assets/x.css'|an image that isn't the design's (assets/x.css)"; do
     IFS='|' read -r what how why <<<"$c"
     eval "$how"
     for _ in $(seq 6); do watch || true; [[ $(alerts) == 0 ]] || break; done
     if [[ $(alerts) == 1 ]] && grep -qF "$why" "$tmp/bot.txt"; then ok "review 12 (L-2): $what: an alert"; else cat "$tmp/log" "$tmp/bot.txt"; fail "review 12 (L-2): $what"; fi
     cp "$tmp/page.good" "$page"; cp "$tmp/done.good" "$done"; cp "$tmp/fund.good" "$tmp/remote/assets/fund-qr.png"
-    cp "$tmp/props/images/done/chart.png" "$tmp/remote/images/done/"; rm -f "$tmp/remote/assets/x.png" "$tmp/remote/qr/x.png"
+    cp "$tmp/props/images/done/chart.png" "$tmp/remote/images/done/"; rm -f "$tmp/remote/assets/x.png" "$tmp/remote/assets/x.css" "$tmp/remote/qr/x.png"
     : > "$tmp/bot.txt"; rm -f "$tmp/state"/alert-* "$tmp/state"/differs-*
 done
 # An address on a page outside a box (a proposal's text, the footer): any that is neither on the
