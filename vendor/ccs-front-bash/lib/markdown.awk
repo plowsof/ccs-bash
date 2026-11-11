@@ -13,6 +13,15 @@
 # POSIX awk only (mawk, gawk, busybox).
 
 BEGIN {
+    # The named entities kept (entities)
+    split("amp lt gt quot apos AMP LT GT QUOT nbsp ndash mdash hellip lsquo rsquo ldquo rdquo laquo raquo middot bull copy reg trade deg rarr larr euro times", nm, " ")
+    for (i in nm) named[nm[i]] = 1
+    # The longest line and body rendered: past them, rendering slows down sharply
+    # (a line of 80,000 characters takes minutes). The longest proposal is 34 kB, its longest line
+    # 2,236 characters.
+    MAXLINE = 4000; MAXBODY = 100000
+    # UTF-8's continuation bytes (0x80-0xBF), to cut a line between two characters
+    for (i = 128; i < 192; i++) CONT = CONT sprintf("%c", i)
     # The images the site has a copy of. ccs-front-bash.sh checks their names.
     if (images != "") while ((getline l < images) > 0) { split(l, kv, "\t"); if (kv[2] != "") copy[kv[1]] = kv[2] }
 }
@@ -21,7 +30,7 @@ FNR == 1 {
     if (started) finish()
     started = 1
     name = FILENAME; sub(/.*\//, "", name); sub(/\.md$/, "", name)
-    fm = 0; n = 0; nph = 0; key = ""; item = 0; ms = ""; ps = ""
+    fm = 0; n = 0; nph = 0; size = 0; key = ""; item = 0; ms = ""; ps = ""
     split("", lines); split("", refs); split("", skip); split("", ph); split("", f)
     sub(/^\357\273\277/, "")
     if ($0 ~ /^---[ \t\r]*$/) { fm = 1; next }
@@ -58,7 +67,16 @@ function flushitem() {
 
 # ---- the body: rendered once the whole file is read, as reference links can be anywhere ----
 # \001 and \002 mark held HTML. A proposal can't bring its own.
-{ sub(/\r$/, ""); gsub(/[\001\002]/, ""); lines[++n] = $0 }
+{
+    sub(/\r$/, ""); gsub(/[\001\002]/, "")
+    if (size > MAXBODY) next
+    if ((size += length($0) + 1) > MAXBODY) { lines[++n] = ""; lines[++n] = "(The rest of this proposal is not shown: over " MAXBODY " characters.)"; next }
+    if (length($0) > MAXLINE) {   # cut between two UTF-8 characters, not inside one
+        k = MAXLINE; while (k > 0 && index(CONT, substr($0, k + 1, 1))) k--
+        $0 = substr($0, 1, k) " (line cut: over " MAXLINE " characters)"
+    }
+    lines[++n] = $0
+}
 
 function finish(    i, l, label, u) {
     for (i = 1; i <= n; i++)
@@ -92,15 +110,23 @@ function esc(s) {
     gsub(/"/, "\\&quot;", s); gsub(/'/, "\\&#39;", s)
     return s
 }
-# Keep an entity like &nbsp; or &#8212;. It can't make a tag.
-function entities(s,    out) {
+# Keep a numeric entity like &#8212;, or a named one the gate's scan reads (ccs-bash's
+# contrib/ccs-check/scan: the escapes and common punctuation). Any other name shows as written:
+# a browser knows over 2000, some of them letters that look like an address's (&Alpha;).
+# An entity can't make a tag.
+function entities(s,    out, e) {
     out = ""
     while (match(s, /&amp;(#[0-9]+|#[xX][0-9a-fA-F]+|[A-Za-z][A-Za-z0-9]*);/)) {
-        out = out substr(s, 1, RSTART - 1) "&" substr(s, RSTART + 5, RLENGTH - 5)
+        e = substr(s, RSTART + 5, RLENGTH - 6)
+        if (e ~ /^#/ || e in named) out = out substr(s, 1, RSTART - 1) "&" e ";"
+        else out = out substr(s, 1, RSTART + RLENGTH - 1)
         s = substr(s, RSTART + RLENGTH)
     }
     return out s
 }
+# An image's alt text: plain text, its code spans' text without the tags. Held whole with its
+# <img>, so the link steps after it never see it: a link there would end the attribute.
+function alttext(t) { t = unhold(t); gsub(/<[^>]*>/, "", t); return t }
 # a placeholder for finished HTML, so later steps don't touch it
 function hold(html) { ph[++nph] = html; return "\001" nph "\002" }
 function unhold(s,    out, j) {
@@ -158,8 +184,8 @@ function inline(s,    out, a, b, t, u, lab, m) {
     out = ""
     while (match(s, /!\[[^]]*\]\([^) ]+( [^)]*)?\)/)) {
         m = substr(s, RSTART, RLENGTH); t = substr(m, 3, index(m, "](") - 3); u = substr(m, index(m, "](") + 2); sub(/\)$/, "", u); sub(/ .*/, "", u)
-        out = out substr(s, 1, RSTART - 1) ((u in copy) ? hold("<img src=\"/images/" copy[u] "\" alt=\"") t hold("\" loading=\"lazy\">") : link("image" (t == "" ? "" : ": " t), u))
-        s = substr(s, RSTART + RLENGTH)
+        out = out substr(s, 1, RSTART - 1); s = substr(s, RSTART + RLENGTH)   # before alttext(), whose match() moves RSTART
+        out = out "" ((u in copy) ? hold("<img src=\"/images/" copy[u] "\" alt=\"" alttext(t) "\" loading=\"lazy\">") : link("image" (t == "" ? "" : ": " t), u))
     }
     s = out s
     # [text](url), [text][label], [text][]
