@@ -32,8 +32,9 @@ var lookalikes = map[rune]byte{
 }
 
 // Lookalike returns the ASCII letter or digit that r looks like, or 0.
-// Uses the table above, the full-width letters and digits (U+FF10-FF5A) and the mathematical ones
-// (U+1D400-1D6A3, U+1D7CE-1D7FF). Each of those sets runs A to Z, a to z (or 0 to 9) in order.
+// Uses the full-width letters and digits (U+FF10-FF5A), the mathematical ones (U+1D400-1D6A3,
+// U+1D7CE-1D7FF), the table above, then Unicode's confusables (confusables.go: Lisu, Cherokee,
+// mathematical Greek and more). Each of the first two sets runs A to Z, a to z (or 0 to 9) in order.
 func Lookalike(r rune) byte {
 	switch {
 	case r >= 0xff10 && r <= 0xff19, r >= 0xff21 && r <= 0xff3a, r >= 0xff41 && r <= 0xff5a:
@@ -47,7 +48,10 @@ func Lookalike(r rune) byte {
 	case r >= 0x1d7ce && r <= 0x1d7ff:
 		return '0' + byte((r-0x1d7ce)%10)
 	}
-	return lookalikes[r]
+	if l := lookalikes[r]; l != 0 {
+		return l
+	}
+	return confusables[r]
 }
 
 // Lookalikes returns t as a reader copying it by eye would read it, and whether any character
@@ -71,6 +75,27 @@ func Lookalikes(t string) (string, bool) {
 	return b.String(), any
 }
 
-// Bidi reports a bidi control (U+202A-202E, U+2066-2069). It can display the text after it in a
-// different order than written, so an address written reversed, in groups, shows the right way round.
-func Bidi(r rune) bool { return r >= 0x202a && r <= 0x202e || r >= 0x2066 && r <= 0x2069 }
+// Readings returns the ways a reader could read text s: non-ASCII dropped, as a space, and as a
+// reader copying by eye (Lookalikes). If s has a right-to-left letter, the same again for s in
+// the order a browser shows it (Visual).
+func Readings(s string) []string {
+	var out []string
+	from := []string{s}
+	if RTL(s) {
+		from = append(from, Visual(s))
+	}
+	for _, s := range from {
+		for _, repl := range []rune{-1, ' '} {
+			out = append(out, strings.Map(func(r rune) rune {
+				if r > 0x7f {
+					return repl
+				}
+				return r
+			}, s))
+		}
+		if t, drawn := Lookalikes(s); drawn {
+			out = append(out, t)
+		}
+	}
+	return out
+}

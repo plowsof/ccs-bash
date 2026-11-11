@@ -244,7 +244,7 @@ ideas() {
     # Only the ideas shown are checked. First, bidi controls are removed (they can display an
     # address's halves in a different order), control characters become spaces, and runs of
     # spaces become one, as a browser shows them.
-    local prep='def prep: gsub("[\u202a-\u202e\u2066-\u2069]"; "") | gsub("[\\x00-\\x1F\\x7F]"; " ") | gsub(" +"; " ")
+    local prep='def prep: gsub("[\u202a-\u202e\u2066-\u2069\u200e\u200f\u061c]"; "") | gsub("[\\x00-\\x1F\\x7F]"; " ") | gsub(" +"; " ")
             | gsub("(?<r>(?:[1-9A-HJ-NP-Za-km-z]|[^\\x00-\\x7F]){90,})"; .r | gsub("[^\\x20-\\x7E]"; "") | "\(.[0:6])…\(.[-4:])");
         def groups: "(?:[1-9A-HJ-NP-Za-km-z]|[^\\x00-\\x7F])(?:[\\x20-\\x2F\\x3A\\x3B\\x3D\\x3F\\x40\\x5B-\\x60\\x7B-\\x7E]{0,3}(?:[1-9A-HJ-NP-Za-km-z]|[^\\x00-\\x7F])){89,}";'
     local run joined w n shorten=() keccak=1 tried=0 budget=${IDEAS_CHECKS:-3000}

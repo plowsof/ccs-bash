@@ -185,7 +185,7 @@ repository it fetches, the design and the signed list installed here. Each push,
    split by up to three spaces or punctuation, `4A9b - xZq3`, `4A9b/xZq3`, or split between two
    elements a browser lays side by side, where its checksum says it is one), the JSON as JSON
    too; none in the feed; no `data:` image, no NUL byte, no bidi control (U+202A-202E,
-   U+2066-2069, as itself or an entity: it shows the text after it in another order than it is
+   U+2066-2069, U+200E, U+200F, U+061C, as itself or an entity: it shows the text after it in another order than it is
    written, an address written backwards the right way round: the build drops those in a
    proposal's text, so one here came another way). A file that needs more than 3000
    checksums or 20 s fails alone ("too many runs that could be addresses"). And every QR code,

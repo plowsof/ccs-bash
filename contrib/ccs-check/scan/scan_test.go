@@ -51,10 +51,10 @@ func TestPages(t *testing.T) {
 		"&lt;b&gt; is text":    {"<h1>" + fund[:47] + "&lt;b&gt;" + fund[47:] + "</h1>", ""},
 		"&lt; four times, not": {"<h1>" + fund[:47] + "&lt;&lt;&lt;&lt;" + fund[47:] + "</h1>", ""},
 		// A named entity without its ";", as a browser reads it: &shy is an invisible soft hyphen
-		"split by &shy":    {"<h1>" + fund[:47] + "&shy" + fund[47:] + "</h1>", fund + "\n"},
+		"split by &shy":    {"<h1>" + fund[:47] + "&shy" + fund[47:] + "</h1>", Unknown + "\n" + fund + "\n"},
 		"split by &AMP":    {"<h1>" + fund[:47] + "&AMP" + fund[47:] + "</h1>", fund + "\n"},
-		"&notin is &not":   {"<h1>" + fund[:47] + "&notin" + fund[47:] + "</h1>", ""},
-		"&shyx not a name": {"<h1>" + fund[:47] + "&shyx;" + fund[47:] + "</h1>", fund + "\n"},
+		"&notin is &not":   {"<h1>" + fund[:47] + "&notin" + fund[47:] + "</h1>", Unknown + "\n"},
+		"&shyx not a name": {"<h1>" + fund[:47] + "&shyx;" + fund[47:] + "</h1>", Unknown + "\n" + fund + "\n"},
 		// A bidi control (an address written backwards, displayed the right way round), raw or as an
 		// entity; and an address with look-alike letters (Cyrillic, full-width)
 		"U+202E":                {"<p>Send to \u202e" + reverse(grouped(fund, 5)) + "\u202c</p>", Bidi + "\n"},
@@ -66,6 +66,19 @@ func TestPages(t *testing.T) {
 		"&#x430;, grouped":      {"<p>" + strings.Replace(grouped(fund, 4), "a", "&#x430;", 1) + "</p>", fund + "\n"},
 		"full-width":            {"<p>" + strings.Replace(fund, "A", "Ａ", 2) + "</p>", fund + "\n"},
 		"Cyrillic words":        {"<p>Привет, мир: это предложение.</p>", ""},
+		// Right-to-left marks or letters around digits show them in another order than
+		// written; named entities and scripts the look-alike table missed
+		"&rlm; (a mark)":         {"<p>" + strings.Replace(grouped(fund, 4), "tN18 obc8", "tN&rlm;8 1&rlm;obc8", 1) + "</p>", Unknown + "\n"},
+		"&#x200F; (a mark)":      {"<p>" + strings.Replace(grouped(fund, 4), "tN18 obc8", "tN&#x200F;8 1&#x200F;obc8", 1) + "</p>", Bidi + "\n" + fund + "\n"},
+		"Hebrew letters":         {"<p>" + strings.Replace(grouped(fund, 4), "tN18 obc8", "tN\u05d08 1\u05d0obc8", 1) + "</p>", fund + "\n"},
+		"Hebrew, as entities":    {"<p>" + strings.Replace(grouped(fund, 4), "tN18 obc8", "tN&#x5D0;8 1&#1488;obc8", 1) + "</p>", fund + "\n"},
+		"Arabic, in a tag":       {"<p>" + strings.Replace(grouped(fund, 4), "tN18 obc8", "tN<b>\u06338</b> 1\u0633obc8", 1) + "</p>", fund + "\n"},
+		"Hebrew text, a date":    {"<p>\u05e9\u05dc\u05d5\u05dd 2026-11-11 \u05e9\u05dc\u05d5\u05dd</p>", ""},
+		"&Alpha;":                {"<p>" + strings.ReplaceAll(fund, "A", "&Alpha;") + "</p>", Unknown + "\n"},
+		"&nbsp; &mdash; &rsquo;": {"<p>a&nbsp;b &mdash; it&rsquo;s</p>", ""},
+		"Lisu A, grouped":        {"<p>" + strings.Replace(grouped(fund, 4), "A", "\ua4ee", 1) + "</p>", fund + "\n"},
+		"Cherokee A, grouped":    {"<p>" + strings.Replace(grouped(fund, 4), "A", "\u13aa", 1) + "</p>", fund + "\n"},
+		"math Greek A, grouped":  {"<p>" + strings.Replace(grouped(fund, 4), "A", "\U0001d6a8", 1) + "</p>", fund + "\n"},
 	} {
 		if got := run(t, pages, c.in); got != c.want {
 			t.Errorf("%s: %q", name, got)
@@ -103,6 +116,9 @@ func TestJSON(t *testing.T) {
 		"two values":            {`{} {}`, "!not JSON (UTF-8) that reads\n"},
 		"not UTF-8":             {"[\"\xff\"]", "!not JSON (UTF-8) that reads\n"},
 		"large number":          {`[1e400]`, ""},
+		"Hebrew letters":        {`["` + strings.Replace(grouped(fund, 4), "tN18 obc8", "tN\u05d08 1\u05d0obc8", 1) + `"]`, fund + "\n"},
+		"a mark":                {`["a\u200fb"]`, Bidi + "\n"},
+		"Lisu A, grouped":       {`["` + strings.Replace(grouped(fund, 4), "A", "\ua4ee", 1) + `"]`, fund + "\n"},
 	} {
 		if got := run(t, jsons, c.in); got != c.want {
 			t.Errorf("%s: %q", name, got)
@@ -117,7 +133,8 @@ func TestNobidi(t *testing.T) {
 		"leading to ‭505.963136971449 XMR": "leading to 505.963136971449 XMR",
 		"a &#x202E;b&#X202c; c &#8238;d":   "a b c d",
 		"&#x2067;x&#8294;":                 "x",
-		"no bidi: é, &amp;, &#x41;, ‏":     "no bidi: é, &amp;, &#x41;, ‏",
+		"no bidi: é, &amp;, &#x41;":        "no bidi: é, &amp;, &#x41;",
+		"marks: a\u200fb&#x200E;c&#1564;d": "marks: abcd",
 		"bad \xff bytes ‮ kept":            "bad \xff bytes  kept",
 	} {
 		if got := string(Nobidi([]byte(in))); got != want {

@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"ccs-check/addr"
@@ -46,10 +47,21 @@ var (
 	controls = regexp.MustCompile(`[\x00-\x08\x0b\x0e-\x1f\x7f]`)
 	entities = regexp.MustCompile(`&#[0-9]+;?|&#[xX][0-9A-Fa-f]+;?|&[A-Za-z][A-Za-z0-9]*;|&(?:` + legacy + `)`)
 	// A data: image of any type. The scheme matches in any case, as in a browser.
-	qrs   = regexp.MustCompile(`(?i)data:image/[A-Za-z0-9.+-]*[;,][A-Za-z0-9+/=;,.:%_-]*`)
-	tags  = regexp.MustCompile(`<[^>]*>`)
-	named = map[string]int{"amp": 38, "lt": 60, "gt": 62, "quot": 34, "apos": 39, "AMP": 38, "LT": 60, "GT": 62, "QUOT": 34}
+	qrs  = regexp.MustCompile(`(?i)data:image/[A-Za-z0-9.+-]*[;,][A-Za-z0-9+/=;,.:%_-]*`)
+	tags = regexp.MustCompile(`<[^>]*>`)
+	// The named entities the scan reads: the escapes, and the punctuation the design and
+	// proposals use. ccs-front-bash keeps only these in a proposal's text (it shows the rest as
+	// written). A page with any other name fails (Unknown): a browser knows over 2000, among
+	// them letters that look like an address's (&Alpha; is a Greek A).
+	named = map[string]int{"amp": 38, "lt": 60, "gt": 62, "quot": 34, "apos": 39, "AMP": 38, "LT": 60, "GT": 62, "QUOT": 34,
+		"nbsp": 0xa0, "ndash": 0x2013, "mdash": 0x2014, "hellip": 0x2026, "lsquo": 0x2018, "rsquo": 0x2019,
+		"ldquo": 0x201c, "rdquo": 0x201d, "laquo": 0xab, "raquo": 0xbb, "middot": 0xb7, "bull": 0x2022,
+		"copy": 0xa9, "reg": 0xae, "trade": 0x2122, "deg": 0xb0, "rarr": 0x2192, "larr": 0x2190, "euro": 0x20ac,
+		"times": 0xd7}
 )
+
+// Unknown is the reason a page fails that has a named entity the scan doesn't read (named)
+const Unknown = "!a named entity the scan doesn't read: it could be a letter that looks like an address's"
 
 // char maps an entity's character: printable ASCII stays itself, a space stays a space, a
 // look-alike becomes its ASCII letter or digit (addr.Lookalike: &#x430; is a Cyrillic a), and
@@ -110,7 +122,52 @@ func entity(e string) string {
 // Bidi is the reason a file with a bidi control fails, raw or as an entity. A browser displays the
 // text after it in a different order than written, so an address written backwards in groups
 // would read correctly on screen while the checks read it backwards.
-const Bidi = "!a bidi control (U+202A-202E or U+2066-2069): text shown in another order than it is written"
+const Bidi = "!a bidi control (U+202A-202E, U+2066-2069, U+200E, U+200F or U+061C): text shown in another order than it is written"
+
+// unknown reports a named entity in d that code can't read
+func unknown(d string) bool {
+	for _, e := range entities.FindAllString(d, -1) {
+		if e[1] != '#' && code(e) < 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// shown returns the text of page raw in the order a browser shows it (addr.Visual), if it has a
+// right-to-left letter, which puts the digits between two of them in another order. Tags are
+// removed and entities decoded first. Look-alikes become their ASCII letter or digit, invisible
+// format characters are dropped, and any other non-ASCII becomes \x01. "" if there's none.
+func shown(raw []byte) string {
+	t := tags.ReplaceAllString(string(raw), "")
+	t = entities.ReplaceAllStringFunc(t, func(e string) string {
+		switch n := code(e); {
+		case n == '<' || n == '>':
+			return "-"
+		case n < 0 || n > unicode.MaxRune:
+			return "\x01"
+		default:
+			return string(rune(n))
+		}
+	})
+	if !addr.RTL(t) {
+		return ""
+	}
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r < 0x80:
+			if r < 0x20 && r != '\t' && r != '\n' && r != '\r' && r != '\f' || r == 0x7f {
+				return 1
+			}
+			return r
+		case addr.Lookalike(r) != 0:
+			return rune(addr.Lookalike(r))
+		case unicode.Is(unicode.Cf, r):
+			return -1
+		}
+		return 1
+	}, addr.Visual(t))
+}
 
 // bidi reports a bidi control in raw (as UTF-8) or in d (raw as latin-1, entities still in it)
 // as an entity
@@ -164,6 +221,9 @@ func Pages(files []string, w io.Writer) error {
 		if bidi(raw, d) {
 			out[Bidi] = true
 		}
+		if unknown(d) {
+			out[Unknown] = true
+		}
 		readings := []string{d}
 		if t, drawn := addr.Lookalikes(string(raw)); drawn {
 			readings = append(readings, t)
@@ -180,6 +240,11 @@ func Pages(files []string, w io.Writer) error {
 			if err := both(c, t, out); err != nil {
 				out["!"+err.Error()] = true
 				break
+			}
+		}
+		if t := shown(raw); t != "" {
+			if err := both(c, qrs.ReplaceAllString(t, " "), out); err != nil {
+				out["!"+err.Error()] = true
 			}
 		}
 		emit(w, f, out)
@@ -219,8 +284,8 @@ func emit(w io.Writer, f string, out map[string]bool) {
 
 // JSON scans each JSON file's strings as a reader gets them: \u escapes decoded, every key and
 // value, both copies of a duplicate key. Addresses are found as in pages' text: non-ASCII
-// dropped, again as a space, and as a reader copying by eye (addr.Lookalikes).
-// A bidi control fails the file, as for a page. Reads the first 16 MB.
+// dropped, again as a space, and as a reader copying by eye, each also in the order a browser
+// shows it (addr.Readings). A bidi control fails the file, as for a page. Reads the first 16 MB.
 func JSON(files []string, w io.Writer) error {
 	c := addr.New()
 	for _, f := range files {
@@ -247,19 +312,7 @@ func JSON(files []string, w io.Writer) error {
 				}
 				return r
 			}, s)
-			readings := []string{}
-			for _, repl := range []rune{-1, ' '} {
-				readings = append(readings, strings.Map(func(r rune) rune {
-					if r > 0x7f {
-						return repl
-					}
-					return r
-				}, s))
-			}
-			if t, drawn := addr.Lookalikes(s); drawn {
-				readings = append(readings, t)
-			}
-			for _, t := range readings {
+			for _, t := range addr.Readings(s) {
 				if tooMany = c.Runs(t, out); tooMany != nil {
 					break
 				}
