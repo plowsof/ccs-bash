@@ -34,7 +34,7 @@ source "$CCS_LIB/proposals.sh"
 retire_main() {
 local again=''
 [[ ${1:-} != --again ]] || { again=1; shift; }
-local name=${1:?NAME (a-z, 0-9, -)} config=${2:?CONFIG} url=${3:-}
+local name=${1:?NAME (a-z, 0-9, -)} config=${2:?CONFIG} url=${3:-} assigned
 local live_url out label main height live n dup indexes deposits total base before k young f
 [[ $name =~ ^[a-z0-9-]+$ ]] || die "NAME: a-z, 0-9 and - only"
 # NAME-2, NAME-3...: the records --again writes for NAME
@@ -113,12 +113,25 @@ jq -r --argjson m "$MIN_CONFIRMATIONS" '
     | if (.amount | type) == "string" or .amount <= 9007199254740992 then . else error("amount \(.amount) is too large for jq to read exactly") end
     | "\(.height) \(.txid) \(.subaddr_index.minor) \(.amount) \(.unlock_time // 0)"' "$WORK/transfers" > "$WORK/in" \
     || die "could not read the wallet's transfers"
+# Deposits that reached a subaddress before it was handed out don't count, as in the live totals
+# (lib/wallet.sh, donation_totals): assigned.tsv's "index<TAB>height", the live wallet's, or the
+# one moved aside when NAME was retired live.
+assigned=/dev/null
+if [[ $live && -f $STATE_DIR/assigned.tsv ]]; then assigned=$STATE_DIR/assigned.tsv
+elif [[ $again && -f $STATE_DIR/assigned.tsv.retired-$name ]]; then assigned=$STATE_DIR/assigned.tsv.retired-$name; fi
 {
     printf '# retired %s wallet %s height %s time %s\n' "$label" "$main" "$height" "$(date +%s)"
-    awk -F'\t' 'NR == FNR { file[$1] = $2; next }
+    awk -F'\t' -v assigned="$assigned" 'BEGIN {
+            while ((getline l < assigned) > 0) {
+                if (split(l, a, "\t") != 2 || a[1] !~ /^[0-9]+$/ || a[2] !~ /^[0-9]+$/) { bad = 1; exit }
+                since[a[1]] = a[2] + 0
+            }
+        }
+        NR == FNR { file[$1] = $2; next }
         $1 !~ /^[0-9]+$/ || $2 !~ /^[0-9a-f]+$/ || length($2) != 64 || $3 !~ /^[0-9]+$/ || $4 !~ /^[0-9]+$/ || $5 !~ /^[0-9]+$/ { bad = 1; exit }
+        ($3 in since) && $1 + 0 <= since[$3] { next }
         ($3 in file) && file[$3] ~ /\.md$/ { print $1 "," $2 "," $3 "," $4 "," $5 "," file[$3] }
-        END { exit bad }' "$WORK/mine" FS=' ' "$WORK/in" || die "unexpected transfer from the wallet"
+        END { exit bad }' "$WORK/mine" FS=' ' "$WORK/in" || die "unexpected transfer from the wallet, or a line of $assigned that isn't 'index<TAB>height'"
 } > "$WORK/retired"
 if [[ $again ]]; then
     # Only deposits no record of NAME has yet (by txid and subaddress), each under the proposal

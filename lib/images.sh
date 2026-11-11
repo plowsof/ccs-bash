@@ -45,7 +45,7 @@ proposal_images() {
         stem=${f%.md}
         [[ $stem =~ ^[A-Za-z0-9._-]+$ ]] || continue   # only proposals with plain names get images
         while IFS= read -r a; do
-            [[ $a =~ ^images/$stem/[A-Za-z0-9._-]+\.(png|jpg|jpeg|gif)$ ]] || continue
+            [[ $a =~ ^images/"$stem"/[A-Za-z0-9._-]+\.(png|jpg|jpeg|gif)$ ]] || continue
             [[ -z ${keep[$a]:-} ]] || continue
             src=$PROPOSALS_DIR/$a
             # Check every step of the path, not only the last. A folder committed as a symlink

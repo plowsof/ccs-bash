@@ -157,7 +157,8 @@ $0 == "---" || $0 == "..." { state = 2; next }
     key = substr($0, 1, index($0, ":") - 1)
     val = substr($0, index($0, ":") + 1)
     sub(/^ +/, "", val)
-    if (key ~ /^(layout|title|author|date|amount|gitlab_url)$/) val = scalar(val)
+    # Control characters are dropped from a value: a reader sees none, and one breaks feed.xml
+    if (key ~ /^(layout|title|author|date|amount|gitlab_url)$/) { val = scalar(val); gsub(/[\001-\037\177]/, "", val) }
     # tags: a list below, or one tag on the same line. [] means none; other [a, b] lists aren't read.
     else if (key == "tags" && val != "" && val !~ /^\[\]( +#.*)?$/) tag(val)
     # Refuse a key given twice. YAML readers disagree on which one wins.
