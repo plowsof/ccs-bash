@@ -325,7 +325,7 @@ image_ok() {
     esac
 }
 
-# images FILE PAGE: print "" if every image the page shows (<img> src and srcset) and every
+# images FILE PAGE: print "" if every image the page shows (<img> and <source> src and srcset) and every
 # file its <link>s load (stylesheets, icons, fonts) is known, else what is wrong. PAGE is the
 # page's path on the site.
 # Known means byte for byte one of: a design file (by the release's sums), a QR code from the
@@ -334,13 +334,15 @@ image_ok() {
 # Nothing reads what an image shows. A picture of another address's QR code, anywhere on a
 # page, simply matches none of these files. Each image is fetched once per run.
 # Tags are read across lines, with any quoting. A tag the design never has, that could show an
-# image or hide one (picture, source, svg, object, template, style, script...), fails the page.
+# image or hide one (svg, object, template, style, script...), fails the page. The design's own
+# <picture> (the home page's art, in AVIF) is allowed: each of its <source>s is an image checked
+# as above.
 images() {
     local src p f why dir='' base flat
     [[ $2 == */* ]] && dir=${2%/*}
     flat=$(tr '\n\r\t\f' '    ' < "$1")
-    if grep -qiE '<(picture|source|svg|math|object|embed|video|audio|iframe|frame|frameset|image|template|style|script|canvas|applet|portal|noscript)([ />]|$)|<input [^>]*type *= *["'\'']?image' <<<"$flat"; then
-        echo "a tag the design never has, which could show or hide an image (picture, source, svg, object, template, style, script...)"; return
+    if grep -qiE '<(svg|math|object|embed|video|audio|iframe|frame|frameset|image|template|style|script|canvas|applet|portal|noscript)([ />]|$)|<input [^>]*type *= *["'\'']?image' <<<"$flat"; then
+        echo "a tag the design never has, which could show or hide an image (svg, object, template, style, script...)"; return
     fi
     # Honour <base href> as a browser does. The site's 404 page has <base href="&#47;">.
     base=$(grep -oiE '<base[^>]*href="[^"]*"' "$1" | head -n 1 | sed -E 's/.*href="//; s/"$//; s/&#0*47;|&#[xX]0*2[fF];/\//g' || true)
@@ -367,7 +369,7 @@ images() {
         why=$(image_ok "$p" "$f")
         if [[ $why ]]; then printf '%s\n' "$why" > "$f.bad"; printf '%s\n' "$why"; return; fi
         [[ ! -s $f ]] || : > "$f.ok"
-    done < <({ grep -oiE '<img[ /][^>]*>' <<<"$flat" | grep -oiE '[ /](src|srcset) *= *("[^"]*"|'\''[^'\'']*'\''|[^ >"'\'']+)' || true
+    done < <({ grep -oiE '<(img|source)[ /][^>]*>' <<<"$flat" | grep -oiE '[ /](src|srcset) *= *("[^"]*"|'\''[^'\'']*'\''|[^ >"'\'']+)' || true
                grep -oiE '<link[ /][^>]*>' <<<"$flat" | grep -iE '[ /]rel *= *["'\'']?[^>]*(stylesheet|icon|preload|manifest)' \
                    | grep -oiE '[ /]href *= *("[^"]*"|'\''[^'\'']*'\''|[^ >"'\'']+)' || true
              } | sed -E 's/^[ /]*[A-Za-z]+ *= *//; s/^["'\'']//; s/["'\'']$//' | tr ',' '\n' | awk '{ print $1 }')
@@ -424,7 +426,7 @@ boxed() {
     fi
     region=${region#*<!-- ccs:donate -->} region=${region%%<!-- /ccs:donate -->*}
     imgs=$(grep -oiE '<img[ /][^>]*>' <<<"$region" || true)
-    if [[ $(grep -c . <<<"$imgs" || true) != 1 || $imgs != *"qr/$2.png"* ]] || grep -qiE 'style|url\(|background|hidden' <<<"$region"; then
+    if [[ $(grep -c . <<<"$imgs" || true) != 1 || $imgs != *"qr/$2.png"* ]] || grep -qiE 'style|url\(|background|hidden|<picture|<source' <<<"$region"; then
         echo "the donation box shows another image than its address's QR code (qr/${2:0:6}…${2: -4}.png)"; return
     fi
     [[ -f $list.qr/$2.png ]] || return 0

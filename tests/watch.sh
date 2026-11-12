@@ -147,7 +147,7 @@ for c in "box|s/monero:$(addr 1)/monero:$(addr 2)/|the donation box isn't its pr
     "two|s#</details>#<img src=\"../images/x.png\"></details>#|the donation box shows another image than its address's QR code" \
     "decoy|s#<!-- ccs:donate -->#<template><!-- ccs:donate --><img src=\"../qr/$(addr 1).png\"><!-- /ccs:donate --></template><!-- ccs:donate -->#|the page hasn't one donation box" \
     "another QR|s#<p class=\"address\">#<img src=\"../qr/$(addr 2).png\"><p class=\"address\">#|the page shows another list QR code than its address's" \
-    "picture|s#<img src=\"../qr/$(addr 1).png\">#<picture><source srcset=\"/x.png\"><img src=\"../qr/$(addr 1).png\"></picture>#|a tag the design never has" \
+    "picture|s#<img src=\"../qr/$(addr 1).png\">#<picture><source srcset=\"/x.png\"><img src=\"../qr/$(addr 1).png\"></picture>#|the donation box shows another image than its address's QR code" \
     "split|s#<img src=\"../qr/$(addr 1).png\">#<img hidden src=\"../qr/$(addr 1).png\"><img\\nsrc=\"../images/x.png\">#|the donation box shows another image than its address's QR code"; do
     IFS='|' read -r what how why <<<"$c"
     : > "$tmp/bot.txt"; rm -f "$tmp/state"/alert-* "$tmp/state"/differs-*
@@ -173,6 +173,7 @@ for c in "an image the design hasn't, outside a box|sed -i 's#alt=\"\">#alt=\"\"
     "the General Fund's QR code changed|echo 'another address' > '$tmp/remote/assets/fund-qr.png'|an image that isn't the design's file (assets/fund-qr.png)" \
     "a proposal's image changed|echo 'a QR code' > '$tmp/remote/images/done/chart.png'|an image that isn't its proposal's, as the proposals repository has it (images/done/chart.png)" \
     "a QR code that isn't one of the list's|echo x > '$tmp/remote/qr/x.png'; sed -i 's#alt=\"\">#alt=\"\"><img src=\"../qr/x.png\">#' '$done'|an image that isn't one of the signed list's QR codes (qr/x.png)" \
+    "a <source> image the design hasn't|sed -i 's#alt=\"\">#alt=\"\"><picture><source type=image/avif srcset=\"../assets/x.png 380w\"><img src=\"../assets/fund-qr.png\"></picture>#' '$done'; echo x > '$tmp/remote/assets/x.png'|an image that isn't the design's (assets/x.png)" \
     "an image unquoted, on its own line|sed -i 's#alt=\"\">#alt=\"\"><img\\nsrc=../assets/x.png>#' '$done'; echo x > '$tmp/remote/assets/x.png'|an image that isn't the design's (assets/x.png)" \
     "a stylesheet the design hasn't|sed -i 's#alt=\"\">#alt=\"\"><link rel=stylesheet href=../assets/x.css>#' '$done'; echo 'p::after{content:url(x.png)}' > '$tmp/remote/assets/x.css'|an image that isn't the design's (assets/x.css)"; do
     IFS='|' read -r what how why <<<"$c"
@@ -183,6 +184,12 @@ for c in "an image the design hasn't, outside a box|sed -i 's#alt=\"\">#alt=\"\"
     cp "$tmp/props/images/done/chart.png" "$tmp/remote/images/done/"; rm -f "$tmp/remote/assets/x.png" "$tmp/remote/assets/x.css" "$tmp/remote/qr/x.png"
     : > "$tmp/bot.txt"; rm -f "$tmp/state"/alert-* "$tmp/state"/differs-*
 done
+# The design's own <picture> (the home page's art, in AVIF): its <source> images are the design's,
+# so no alert
+sed -i 's#alt="">#alt=""><picture><source type="image/avif" srcset="../assets/fund-qr.png 380w"><img src="../assets/fund-qr.png"></picture>#' "$done"
+for _ in $(seq 6); do watch || true; done
+if [[ $(alerts) == 0 ]]; then ok "the design's own <picture>, its <source> images the design's: no alert"; else cat "$tmp/log" "$tmp/bot.txt"; fail "the design's own <picture>"; fi
+cp "$tmp/done.good" "$done"; : > "$tmp/bot.txt"; rm -f "$tmp/state"/alert-* "$tmp/state"/differs-*
 # An address on a page outside a box (a proposal's text, the footer): any that is neither on the
 # list nor allowed alerts too
 echo "<p>or send to $(addr 7 B)</p>" >> "$tmp/remote/proposals/done.html"
