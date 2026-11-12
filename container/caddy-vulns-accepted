@@ -19,6 +19,7 @@ GO-2026-6608  MIME header parsing: request headers capped at 16 KB (max_header_s
 # s2 compression (gzip only) or openpgp
 GO-2026-6605  net/http client after a CONNECT (no proxying)
 GO-2026-6613  net/http after a CONNECT (no proxying)
+GO-2026-6859  MaxBytesReader (no request_body limit set, and file_server never reads a body)
 GO-2026-6599  html/template (no templates)
 GO-2026-6600  html/template (no templates)
 GO-2026-6860  x/net/html (no templates)
