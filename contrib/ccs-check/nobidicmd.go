@@ -12,9 +12,13 @@ func init() { commands["nobidi"] = nobidiCmd }
 
 // nobidi FILE...: remove bidi controls (scan.Nobidi). A file is rewritten (beside it, then renamed
 // over it) only if it had one, and its name printed. Exits 2 if a file can't be read or written.
+// Anything but a plain file (a folder, a symlink) is left as it is: the build skips those.
 // The gate's build runs this on the proposals' text before building the site.
 func nobidiCmd(args []string) int {
 	for _, f := range args {
+		if st, err := os.Lstat(f); err == nil && !st.Mode().IsRegular() {
+			continue
+		}
 		b, err := os.ReadFile(f)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "ccs-check nobidi:", err)

@@ -102,14 +102,19 @@ alert() {
     send "$ALERT_PREFIX $2" || log "could not send the alert to ALERT_URL"
 }
 
+# cfg KEY VALUE: a line of curl config (curl -K), VALUE quoted as curl reads it. Secrets (ALERT_URL,
+# a proxy's login) go to curl this way, on a pipe: on a command line, any user on the host could
+# read them (ps, /proc).
+cfg() { local v=${2//\\/\\\\}; v=${v//\"/\\\"}; printf '%s = "%s"\n' "$1" "$v"; }
+
 # send MESSAGE: post to ALERT_URL. As wmb's JSON when ALERT_TARGET is set, else plain text.
 # The password goes in the body, on stdin, never on a command line.
 send() {
     if [[ $ALERT_TARGET ]]; then
         jq -n --arg t "$ALERT_TARGET" --arg m "$1" --arg p "$ALERT_PASSWORD" '{Target: $t, IncomingMessage: {Message: $m, Password: $p}}' \
-            | curl -fsS --max-time 20 --data-binary @- -H 'Content-Type: application/json' "$ALERT_URL" > /dev/null
+            | curl -fsS --max-time 20 --data-binary @- -H 'Content-Type: application/json' -K <(cfg url "$ALERT_URL") > /dev/null
     else
-        curl -fsS --max-time 20 --data-binary "$1" -H 'Content-Type: text/plain' "$ALERT_URL" > /dev/null
+        curl -fsS --max-time 20 --data-binary "$1" -H 'Content-Type: text/plain' -K <(cfg url "$ALERT_URL") > /dev/null
     fi
 }
 
@@ -169,7 +174,7 @@ fetch() {
     # 16 MB at most, received or decompressed. The site's largest file is a few hundred KB.
     # An endless or compressed answer would otherwise fill /tmp, which is memory.
     # A bigger answer returns 3, like a wrong status.
-    out=$(curl -sS --max-time 60 --max-filesize "${WATCH_MAX_BYTES:-16777216}" ${proxy:+--proxy "$proxy"} --compressed -A "$ua" -H "Accept-Language: $lang" \
+    out=$(curl -sS --max-time 60 --max-filesize "${WATCH_MAX_BYTES:-16777216}" -K <([[ -z $proxy ]] || cfg proxy "$proxy") --compressed -A "$ua" -H "Accept-Language: $lang" \
         -H "Accept-Encoding: $enc" "${kind[@]}" -o "$2" -w '%{http_code}\t%{redirect_url}' "$1" 2> /dev/null) || rc=$?
     if ((rc == 63)); then code='with more than 16 MB' location=''; : > "$2"; return 3; fi
     if ((rc)); then code=000 location=''; else code=${out%%$'\t'*} location=${out#*$'\t'}; fi
@@ -320,15 +325,23 @@ image_ok() {
     esac
 }
 
-# images FILE PAGE: print "" if every image the page shows (<img> src and srcset) is known,
-# else what is wrong. PAGE is the page's path on the site.
+# images FILE PAGE: print "" if every image the page shows (<img> src and srcset) and every
+# file its <link>s load (stylesheets, icons, fonts) is known, else what is wrong. PAGE is the
+# page's path on the site.
 # Known means byte for byte one of: a design file (by the release's sums), a QR code from the
-# signed list, or a proposal's image from the proposals repository.
+# signed list, or a proposal's image from the proposals repository. A stylesheet must be the
+# design's too, so none can draw another image (content: url(...)).
 # Nothing reads what an image shows. A picture of another address's QR code, anywhere on a
 # page, simply matches none of these files. Each image is fetched once per run.
+# Tags are read across lines, with any quoting. A tag the design never has, that could show an
+# image or hide one (picture, source, svg, object, template, style, script...), fails the page.
 images() {
-    local src p f why dir='' base
+    local src p f why dir='' base flat
     [[ $2 == */* ]] && dir=${2%/*}
+    flat=$(tr '\n\r\t\f' '    ' < "$1")
+    if grep -qiE '<(picture|source|svg|math|object|embed|video|audio|iframe|frame|frameset|image|template|style|script|canvas|applet|portal|noscript)([ />]|$)|<input [^>]*type *= *["'\'']?image' <<<"$flat"; then
+        echo "a tag the design never has, which could show or hide an image (picture, source, svg, object, template, style, script...)"; return
+    fi
     # Honour <base href> as a browser does. The site's 404 page has <base href="&#47;">.
     base=$(grep -oiE '<base[^>]*href="[^"]*"' "$1" | head -n 1 | sed -E 's/.*href="//; s/"$//; s/&#0*47;|&#[xX]0*2[fF];/\//g' || true)
     case $base in
@@ -354,7 +367,10 @@ images() {
         why=$(image_ok "$p" "$f")
         if [[ $why ]]; then printf '%s\n' "$why" > "$f.bad"; printf '%s\n' "$why"; return; fi
         [[ ! -s $f ]] || : > "$f.ok"
-    done < <(grep -oiE '<img[^>]*>' "$1" | grep -oiE '(src|srcset)="[^"]*"' | sed -E 's/^[A-Za-z]+="//; s/"$//' | tr ',' '\n' | awk '{ print $1 }')
+    done < <({ grep -oiE '<img[ /][^>]*>' <<<"$flat" | grep -oiE '[ /](src|srcset) *= *("[^"]*"|'\''[^'\'']*'\''|[^ >"'\'']+)' || true
+               grep -oiE '<link[ /][^>]*>' <<<"$flat" | grep -iE '[ /]rel *= *["'\'']?[^>]*(stylesheet|icon|preload|manifest)' \
+                   | grep -oiE '[ /]href *= *("[^"]*"|'\''[^'\'']*'\''|[^ >"'\'']+)' || true
+             } | sed -E 's/^[ /]*[A-Za-z]+ *= *//; s/^["'\'']//; s/["'\'']$//' | tr ',' '\n' | awk '{ print $1 }')
 }
 
 # wrong FILE WANT [PAGE]: print "" if the page FILE is right, else what is wrong.
@@ -394,12 +410,21 @@ boxed() {
     # No box at all (a funded proposal shows "Funded" instead): no address to be wrong.
     [[ $box ]] || return 0
     [[ $box == "monero:$2" ]] || { echo "the donation box isn't its proposal's address (${2:0:6}…${2: -4})"; return; }
-    # The box is the design's ccs:donate part. It must have one image, qr/WANT.png, and no style
-    # that could draw another. (A box with the right link and text but another image used to pass.)
-    region=$(< "$1")
-    if [[ $region == *'<!-- ccs:donate -->'* ]]; then region=${region#*<!-- ccs:donate -->} region=${region%%<!-- /ccs:donate -->*}; else region=''; fi
-    imgs=$(grep -oE '<img[^>]*>' <<<"$region" || true)
-    if [[ $(grep -c . <<<"$imgs" || true) != 1 || $imgs != *"qr/$2.png\""* ]] || grep -qiE 'style|url\(|background' <<<"$region"; then
+    # The box is the design's ccs:donate part, once on the page. It must have one image,
+    # qr/WANT.png, and no style that could draw another. No other list QR code may be anywhere on
+    # the page: a decoy box elsewhere (hidden, in a <template>) can't hold the right one while the
+    # one shown has another proposal's. (A box with the right link and text but another image
+    # used to pass.) Tags are read across lines.
+    region=$(tr '\n\r\t\f' '    ' < "$1")
+    if [[ $(grep -o '<!-- ccs:donate -->' <<<"$region" | grep -c . || true) != 1 || $(grep -o '<!-- /ccs:donate -->' <<<"$region" | grep -c . || true) != 1 ]]; then
+        echo "the page hasn't one donation box (the design's ccs:donate part, once)"; return
+    fi
+    if grep -oE 'qr/[1-9A-HJ-NP-Za-km-z]{95}\.png' <<<"$region" | grep -qvxF "qr/$2.png"; then
+        echo "the page shows another list QR code than its address's (qr/${2:0:6}…${2: -4}.png)"; return
+    fi
+    region=${region#*<!-- ccs:donate -->} region=${region%%<!-- /ccs:donate -->*}
+    imgs=$(grep -oiE '<img[ /][^>]*>' <<<"$region" || true)
+    if [[ $(grep -c . <<<"$imgs" || true) != 1 || $imgs != *"qr/$2.png"* ]] || grep -qiE 'style|url\(|background|hidden' <<<"$region"; then
         echo "the donation box shows another image than its address's QR code (qr/${2:0:6}…${2: -4}.png)"; return
     fi
     [[ -f $list.qr/$2.png ]] || return 0

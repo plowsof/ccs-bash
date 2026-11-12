@@ -63,6 +63,10 @@ site_from_data() {
             + if $links == "" then {} else {gitlab_url: ($m[0][$f] // null)} end)) | from_entries' \
         > "$WORK/state.json" || return 1
     jq '.funds' "$data" > "$WORK/funds.json" && jq '.ideas' "$data" > "$WORK/ideas.json" || return 1
+    # Name each Funding Required proposal left off for want of an address, on stderr
+    # ("unaddressed<TAB>file.md"): the gate alerts when one stays off (contrib/ccs-receive).
+    jq -r --slurpfile s "$WORK/state.json" '.[] | select(.layout == "fr" and ($s[0][.file].address // null) == null)
+        | "unaddressed\t\(.file)"' "$WORK/props.json" >&2 || return 1
     jq --slurpfile s "$WORK/state.json" --arg repos " $repos " --arg held "${4+1}" '
         map(select(.layout != "fr" or ($s[0][.file].address // null) != null)
             | if $held == "" or .gitlab_url == null then .

@@ -17,7 +17,7 @@ $props[0] as $props | $state[0] as $state | $funds[0] as $funds
   # Remove bidi controls from page text. They can display an address's halves in a different
   # order than written, so the web server's gate refuses them. Without this, one in a merged
   # proposal's title would stop its page from updating.
-  def nobidi: gsub("[\u202a-\u202e\u2066-\u2069]"; "");
+  def nobidi: gsub("[\u202a-\u202e\u2066-\u2069\u200e\u200f\u061c]"; "");
 
   def proposal:
     ($state[.file] // {}) as $s
@@ -53,7 +53,7 @@ $props[0] as $props | $state[0] as $state | $funds[0] as $funds
     $funds[.file] as $f
     | {
         address: $state[.file].address,
-        author: (.author | @html),
+        author: (.author | nobidi | @html),
         contributions: $f.count,
         date: (if .ts > 0 then .ts | strftime("%B %-d, %Y") else null end),
         percentage_funded: $f.percentage,
@@ -63,7 +63,7 @@ $props[0] as $props | $state[0] as $state | $funds[0] as $funds
         raised_amount: ($f.raised | xmr_number),
         state: {fr: "FUNDING-REQUIRED", wip: "WORK-IN-PROGRESS", cp: "COMPLETED"}[.layout],
         target_amount: ($f.amount | xmr_number),
-        title: (.title | @html),
+        title: (.title | nobidi | @html),
         filename: .file,
         # The proposal's MR link, on whatever forge hosts the proposals (GitLab, Forgejo)
         gitlab_url: ((.gitlab_url // $state[.file].gitlab_url) | link)

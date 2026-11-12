@@ -1,6 +1,7 @@
 package addr
 
 import (
+	"regexp"
 	"strings"
 	"unicode"
 )
@@ -71,6 +72,61 @@ func Lookalikes(t string) (string, bool) {
 	return b.String(), any
 }
 
-// Bidi reports a bidi control (U+202A-202E, U+2066-2069). It can display the text after it in a
-// different order than written, so an address written reversed, in groups, shows the right way round.
-func Bidi(r rune) bool { return r >= 0x202a && r <= 0x202e || r >= 0x2066 && r <= 0x2069 }
+// Readings returns the ways a reader could read text s: non-ASCII dropped, as a space, and as a
+// reader copying by eye (Lookalikes).
+func Readings(s string) []string {
+	var out []string
+	for _, repl := range []rune{-1, ' '} {
+		out = append(out, strings.Map(func(r rune) rune {
+			if r > 0x7f {
+				return repl
+			}
+			return r
+		}, s))
+	}
+	if t, drawn := Lookalikes(s); drawn {
+		out = append(out, t)
+	}
+	return out
+}
+
+// A run written as an address in groups: base58 and ? (a letter or digit of another script),
+// split by 1 to 3 other characters (see groups)
+var disguised = regexp.MustCompile(`[1-9A-HJ-NP-Za-km-z?]+(?:[^0-9A-Za-z?]{1,3}[1-9A-HJ-NP-Za-km-z?]+)+`)
+
+// Disguised reports text written like an address in groups ("4A9b xZq3 ..."), 95 characters or
+// more once joined, with a few letters or digits of another script among them (at most one in
+// ten) and the digits and capitals an address has (5 and 15 at least). A reader copying it by
+// eye would type the ASCII ones those look like. No table of look-alikes can list every script
+// (Lisu, Cherokee, Carian, Warang Citi...), so such a run fails whatever its checksum.
+func Disguised(s string) bool {
+	t := strings.Map(func(r rune) rune {
+		switch {
+		case r == '?':
+			return '!'
+		case r > 0x7f && (unicode.IsLetter(r) || unicode.IsDigit(r)):
+			return '?'
+		}
+		return r
+	}, s)
+	for _, g := range disguised.FindAllString(t, -1) {
+		n, other, digits, caps := 0, 0, 0, 0
+		for i := 0; i < len(g); i++ {
+			switch c := g[i]; {
+			case c == '?':
+				other++
+			case c >= '1' && c <= '9':
+				digits++
+			case c >= 'A' && c <= 'Z':
+				caps++
+			case c < 'a' || c > 'z':
+				continue
+			}
+			n++
+		}
+		if n >= 95 && other >= 1 && other*10 <= n && digits >= 5 && caps >= 15 {
+			return true
+		}
+	}
+	return false
+}

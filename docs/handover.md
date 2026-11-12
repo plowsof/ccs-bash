@@ -122,7 +122,8 @@ far, so nothing is rescanned).
    `--password-file`). Start the service, and check (in Docker, its RPC isn't on the host:
    `ccs config:check` asks the same through ccs-bash's container):
    ```
-   rpc() { curl -s --digest -u 'ccs:<rpc password>' http://127.0.0.1:18082/json_rpc \
+   read -rsp 'rpc password: ' pw; echo   # kept off the command line, where other users could read it (ps)
+   rpc() { curl -s --digest -K <(printf 'user = "ccs:%s"\n' "$pw") http://127.0.0.1:18082/json_rpc \
        -d "{\"jsonrpc\":\"2.0\",\"id\":0,\"method\":\"$1\",\"params\":${2:-{\}}}"; }
    rpc get_address | jq -r .result.address                    # WALLET_ADDRESS
    rpc query_key '{"key_type":"spend_key"}' | jq -r .error.message   # "The wallet is watch-only. ..."

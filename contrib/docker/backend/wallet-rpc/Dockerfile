@@ -2,7 +2,9 @@
 # release binary. This is the only image not built on StageX: monero isn't packaged there, and
 # the release binary needs glibc.
 # The archive is checked against hashes.txt, kept here as getmonero.org signed it. The signature
-# must be binaryFate's key, by fingerprint, as the monero repository has it at the release tag.
+# must be binaryFate's key, by fingerprint, as the monero repository has it at the release tag,
+# and the only one. The sum is read from the text gpg checked (--decrypt), never from lines added
+# before or after the signed part.
 # Only monero-wallet-rpc goes into the image, and it runs as a numeric user.
 # For a new release: update hashes.txt here, and MONERO_VERSION and MONERO_SHA256 below.
 
@@ -20,8 +22,10 @@ ADD --checksum=sha256:${MONERO_SHA256} \
 COPY hashes.txt /check/hashes.txt
 RUN set -e; cd /check; export GNUPGHOME=/check/gpg; mkdir -m 700 "$GNUPGHOME" \
     && gpg -q --import binaryfate.asc \
-    && gpg --status-fd 1 --verify hashes.txt 2> /dev/null | grep -q '^\[GNUPG:\] VALIDSIG 81AC591FE9C4B65C5806AFC3F0AF4D462A0BDF92 ' \
-    && grep -qx "${MONERO_SHA256}  monero-linux-x64-${MONERO_VERSION}.tar.bz2" hashes.txt \
+    && gpg --status-fd 3 --decrypt hashes.txt 3> status > signed.txt 2> /dev/null \
+    && grep -q '^\[GNUPG:\] VALIDSIG 81AC591FE9C4B65C5806AFC3F0AF4D462A0BDF92 ' status \
+    && [ "$(grep -c '^\[GNUPG:\] NEWSIG' status)" = 1 ] \
+    && grep -qx "${MONERO_SHA256}  monero-linux-x64-${MONERO_VERSION}.tar.bz2" signed.txt \
     && echo "${MONERO_SHA256}  monero.tar.bz2" | sha256sum -c - \
     && tar -xjf monero.tar.bz2 && install -D -m 755 monero-x86_64-linux-gnu-${MONERO_VERSION}/monero-wallet-rpc /out/usr/local/bin/monero-wallet-rpc
 

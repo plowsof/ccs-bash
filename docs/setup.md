@@ -45,8 +45,11 @@ apt install git jq curl gpg openssh-client
 2. **Accounts, folders, config, the proposals:**
 
    ```
-   git clone https://github.com/plowsof/ccs-bash /opt/ccs-bash
-   git -C /opt/ccs-bash checkout <commit>    # the one contrib/release/verify prints for the release you run (the handover, "Deploying a set", 1-2): not the tag, which can move; not master
+   # <commit>: the one contrib/release/verify prints for the release you run (the handover,
+   # "Deploying a set", 1-2), all 40 characters: not the tag, which can move; not master.
+   # It must print OK. Anything else: stop, and remove /opt/ccs-bash.
+   git clone -q https://github.com/plowsof/ccs-bash /opt/ccs-bash && git -C /opt/ccs-bash checkout -q --detach <commit> \
+       && [[ $(git -C /opt/ccs-bash rev-parse HEAD) == <commit> ]] && echo OK
    useradd --system --home-dir /var/lib/ccs --shell /usr/sbin/nologin ccs
    useradd --system --no-create-home --shell /usr/sbin/nologin ccs-git   # owns the proposals checkout
    install -d -m 755 /var/lib/ccs

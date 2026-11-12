@@ -870,13 +870,16 @@ if dep retire && bash -c 'source "$1/../contrib/retire-wallet" && source "$1/stu
 else echo "FAIL retire-wallet: a wallet still receiving"; cat "$rw/retire.out"; status=1; fi
 jq --argjson m 10 '.pool = [] | .in |= map(select(.confirmations >= $m))' "${TEST_TRANSFERS:-$FIXTURES/rpc/get_transfers.json}" > "$TEST_TMP/quiet.json"
 rm -rf "$rw"
+# Subaddress 1 handed out at 3099901 (assigned.tsv): its deposit at that height counts neither in
+# the live totals nor in the record, so the totals stay the same after retiring
+mkdir -p "$rw/state" && printf '1\t3099901\n' > "$rw/state/assigned.tsv"
 if dep retire TEST_TRANSFERS="$TEST_TMP/quiet.json" && cp "$rw/out/projects.json" "$TEST_TMP/retire-before.json" && before=$(jq -c 'map({filename, raised_amount, contributions})' "$rw/out/projects.json") \
     && TEST_TRANSFERS="$TEST_TMP/quiet.json" bash -c 'source "$1/../contrib/retire-wallet" && source "$1/stubs.sh" && retire_main old "$2"' _ "$here" "$rw/ccs.conf" > "$rw/retire.out" 2>&1; then
     r=$rw/state/retired/old.csv
     if [[ $(awk 'NR == 1' "$r") =~ ^#\ retired\ old\ wallet\ 8[0-9]{94}\ height\ [0-9]+\ time\ [0-9]+$ ]] \
         && ! grep -qE '[0-9A-Za-z]{95}' <(awk 'NR > 1' "$r") \
         && ! grep -qE ',[0-9]+,"[0-9A-Za-z]{95}",' "$rw/state/proposals.csv" \
-        && [[ -f $rw/state/deposits.csv.retired-old && ! -e $rw/state/deposits.csv ]]; then
+        && [[ -f $rw/state/deposits.csv.retired-old && ! -e $rw/state/deposits.csv ]] && ! grep -q '^3099901,' "$r"; then
         # The new wallet: nothing received yet, subaddresses start from 1 again
         echo '{"in": [], "pool": []}' > "$TEST_TMP/no-transfers.json"; echo 1 > "$TEST_TMP/wallet-count"; : > "$TEST_TMP/wallet-labels"
         if dep retire TEST_TRANSFERS="$TEST_TMP/no-transfers.json" \
