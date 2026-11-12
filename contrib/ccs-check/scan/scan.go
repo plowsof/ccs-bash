@@ -14,7 +14,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 
 	"ccs-check/addr"
@@ -63,9 +62,8 @@ var (
 // Unknown is the reason a page fails that has a named entity the scan doesn't read (named)
 const Unknown = "!a named entity the scan doesn't read: it could be a letter that looks like an address's"
 
-// char maps an entity's character: printable ASCII stays itself, a space stays a space, a
-// look-alike becomes its ASCII letter or digit (addr.Lookalike: &#x430; is a Cyrillic a), and
-// anything else becomes \x01 (read both ways).
+// char maps an entity's character: printable ASCII stays itself, a space stays a space, and
+// anything else becomes \x01 (dropped).
 // A < or > written as an entity is text a browser shows, never markup. It is read as punctuation,
 // so an address's groups on either side of it still join.
 func char(n int) string {
@@ -77,9 +75,6 @@ func char(n int) string {
 	}
 	if n == 9 || n == 10 || n == 12 || n == 13 || n == 32 {
 		return " "
-	}
-	if l := addr.Lookalike(rune(n)); l != 0 {
-		return string(rune(l))
 	}
 	return "\x01"
 }
@@ -134,37 +129,6 @@ func unknown(d string) bool {
 	return false
 }
 
-// Reordered and Disguised are the reasons text fails that could show an address a reader would
-// copy, though no reading finds one (addr.Reordered, addr.Disguised)
-const (
-	Reordered = "!right-to-left letters that show numbers in another order than they are written"
-	Disguised = "!text written like an address in groups, with letters of another script among them"
-)
-
-// text returns page raw's text: tags removed, entities decoded (one the scan can't read is \x01)
-func text(raw []byte) string {
-	return entities.ReplaceAllStringFunc(tags.ReplaceAllString(string(raw), ""), func(e string) string {
-		switch n := code(e); {
-		case n == '<' || n == '>':
-			return "-"
-		case n < 0 || n > unicode.MaxRune:
-			return "\x01"
-		default:
-			return string(rune(n))
-		}
-	})
-}
-
-// shape adds to out the reasons text t fails as a whole (Reordered, Disguised)
-func shape(t string, out map[string]bool) {
-	if addr.Reordered(t) {
-		out[Reordered] = true
-	}
-	if addr.Disguised(t) {
-		out[Disguised] = true
-	}
-}
-
 // bidi reports a bidi control in raw (as UTF-8) or in d (raw as latin-1, entities still in it)
 // as an entity
 func bidi(raw []byte, d string) bool {
@@ -182,10 +146,10 @@ func bidi(raw []byte, d string) bool {
 // Pages scans a page, feed or JSON file as text, read as bytes.
 // It must start like a page or JSON (<, [ or {), otherwise a browser might show it as an image.
 // It must have no bidi control.
-// Non-ASCII bytes and control characters are read twice: dropped, and as a space.
-// Entities are decoded as a browser does (&#56; is 8).
-// If a character looks like an ASCII letter or digit (a Cyrillic а, a full-width Ａ), the text is
-// read a third time, as a reader copying it by eye would (addr.Lookalikes).
+// Entities are decoded as a browser does (&#56; is 8), then non-ASCII characters and control
+// characters are dropped. Letters of another script that look like an address's (a Cyrillic а)
+// aren't read as ASCII: the ideas are ASCII only (sitedata), and a merged proposal's text is the
+// maintainers' to review.
 func Pages(files []string, w io.Writer) error {
 	c, max := addr.New(), Max()
 	for _, f := range files {
@@ -220,47 +184,27 @@ func Pages(files []string, w io.Writer) error {
 		if unknown(d) {
 			out[Unknown] = true
 		}
-		readings := []string{d}
-		if t, drawn := addr.Lookalikes(string(raw)); drawn {
-			readings = append(readings, t)
-		}
 		c.Start()
-		for i, t := range readings {
-			t = entities.ReplaceAllStringFunc(controls.ReplaceAllString(t, "\x01"), entity)
-			if i == 0 {
-				for _, m := range qrs.FindAllString(t, -1) {
-					fmt.Fprintf(w, "%s\t?qr\t%s\n", f, m)
-				}
-			}
-			t = qrs.ReplaceAllString(t, " ")
-			if err := both(c, t, out); err != nil {
-				out["!"+err.Error()] = true
-				break
-			}
+		t := entities.ReplaceAllStringFunc(controls.ReplaceAllString(d, "\x01"), entity)
+		for _, m := range qrs.FindAllString(t, -1) {
+			fmt.Fprintf(w, "%s\t?qr\t%s\n", f, m)
 		}
-		shape(text(raw), out)
+		if err := both(c, strings.ReplaceAll(qrs.ReplaceAllString(t, " "), "\x01", ""), out); err != nil {
+			out["!"+err.Error()] = true
+		}
 		emit(w, f, out)
 	}
 	return nil
 }
 
-// both finds the addresses in t, read with each \x01 dropped and as a space. Then again in t as a
-// browser lays it out, with tags removed, checksum only. (An address split across two elements
-// side by side, such as two tag labels or a tag and its count, forms one run there.)
-// On ErrTooMany, keeps what was found before it.
+// both finds the addresses in t, then again in t as a browser lays it out, with tags removed,
+// checksum only. (An address split across two elements side by side, such as two tag labels or
+// a tag and its count, forms one run there.) On ErrTooMany, keeps what was found before it.
 func both(c *addr.Checker, t string, out map[string]bool) error {
-	for _, v := range []string{strings.ReplaceAll(t, "\x01", ""), strings.ReplaceAll(t, "\x01", " ")} {
-		if err := c.Runs(v, out); err != nil {
-			return err
-		}
+	if err := c.Runs(t, out); err != nil {
+		return err
 	}
-	shown := tags.ReplaceAllString(t, "")
-	for _, v := range []string{strings.ReplaceAll(shown, "\x01", ""), strings.ReplaceAll(shown, "\x01", " ")} {
-		if err := c.Checked(v, out); err != nil {
-			return err
-		}
-	}
-	return nil
+	return c.Checked(tags.ReplaceAllString(t, ""), out)
 }
 
 func emit(w io.Writer, f string, out map[string]bool) {
@@ -276,9 +220,7 @@ func emit(w io.Writer, f string, out map[string]bool) {
 
 // JSON scans each JSON file's strings as a reader gets them: \u escapes decoded, every key and
 // value, both copies of a duplicate key. Addresses are found as in pages' text: non-ASCII
-// dropped, again as a space, and as a reader copying by eye (addr.Readings). A bidi control,
-// numbers shown out of order or an address disguised in another script fails the file, as for a
-// page. Reads the first 16 MB.
+// dropped. A bidi control fails the file, as for a page. Reads the first 16 MB.
 func JSON(files []string, w io.Writer) error {
 	c := addr.New()
 	for _, f := range files {
@@ -300,18 +242,12 @@ func JSON(files []string, w io.Writer) error {
 					return ' '
 				case r == '<' || r == '>':
 					return '-' // punctuation to a reader, like a page's &lt;
-				case r < 0x20 || r == 0x7f:
+				case r < 0x20 || r >= 0x7f:
 					return -1
 				}
 				return r
 			}, s)
-			shape(s, out)
-			for _, t := range addr.Readings(s) {
-				if tooMany = c.Runs(t, out); tooMany != nil {
-					break
-				}
-			}
-			if tooMany != nil {
+			if tooMany = c.Runs(s, out); tooMany != nil {
 				break
 			}
 		}

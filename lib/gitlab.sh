@@ -232,21 +232,22 @@ ideas() {
 
     # Anyone can open an MR, so an idea's title or author must never show a whole address.
     # (The web server's gate applies the same rules and would hold back every page listing it.)
-    # Shorten to its first 6 and last 4 characters, as alerts show addresses:
-    # - any run of 90+ characters that are each base58 or non-ASCII. This catches addresses
-    #   padded or split by invisible characters, or drawn with look-alikes (a mathematical 9,
-    #   a fullwidth or Cyrillic A). Any non-ASCII counts, since jq's Unicode tables miss some.
+    # First, they are made printable ASCII, as the gate requires: invisible format characters
+    # (zero-width spaces, direction marks) are dropped, control characters become spaces, and any
+    # other character "?" (so no letter of another script can stand in for an address's, and
+    # nothing shows in another order). Runs of spaces become one, as a browser
+    # shows them. Then an address is shortened to its first 6 and last 4 characters, as alerts
+    # show addresses:
+    # - any run of 90+ base58 characters;
     # - a run split into groups by up to three non-address characters ("4A9b xZq3",
     #   "4A9b - xZq3", "4A9b/xZq3") that holds a valid address when joined (is_address).
     #   Without openssl's Keccak every such run is shortened, even a long title of plain words.
     #   After IDEAS_CHECKS (3000) checks in one run, the rest are shortened unchecked, so titles
     #   built to look like addresses everywhere can't make the run take minutes.
-    # Only the ideas shown are checked. First, bidi controls are removed (they can display an
-    # address's halves in a different order), control characters become spaces, and runs of
-    # spaces become one, as a browser shows them.
-    local prep='def prep: gsub("[\u202a-\u202e\u2066-\u2069\u200e\u200f\u061c]"; "") | gsub("[\\x00-\\x1F\\x7F]"; " ") | gsub(" +"; " ")
-            | gsub("(?<r>(?:[1-9A-HJ-NP-Za-km-z]|[^\\x00-\\x7F]){90,})"; .r | gsub("[^\\x20-\\x7E]"; "") | "\(.[0:6])…\(.[-4:])");
-        def groups: "(?:[1-9A-HJ-NP-Za-km-z]|[^\\x00-\\x7F])(?:[\\x20-\\x2F\\x3A\\x3B\\x3D\\x3F\\x40\\x5B-\\x60\\x7B-\\x7E]{0,3}(?:[1-9A-HJ-NP-Za-km-z]|[^\\x00-\\x7F])){89,}";'
+    # Only the ideas shown are checked.
+    local prep='def prep: gsub("\\p{Cf}"; "") | gsub("[\\x00-\\x1F\\x7F]"; " ") | gsub("[^\\x00-\\x7F]"; "?") | gsub(" +"; " ")
+            | gsub("(?<r>[1-9A-HJ-NP-Za-km-z]{90,})"; .r | "\(.[0:6])...\(.[-4:])");
+        def groups: "[1-9A-HJ-NP-Za-km-z](?:[\\x20-\\x2F\\x3A\\x3B\\x3D\\x3F\\x40\\x5B-\\x60\\x7B-\\x7E]{0,3}[1-9A-HJ-NP-Za-km-z]){89,}";'
     local run joined w n shorten=() keccak=1 tried=0 budget=${IDEAS_CHECKS:-3000}
     [[ $budget =~ ^[0-9]{1,6}$ ]] || budget=3000
     printf '' | openssl dgst -keccak-256 > /dev/null 2>&1 || keccak=''
@@ -265,7 +266,7 @@ ideas() {
     ((tried <= budget)) || log "warning: idea titles with more than $budget places that could hold an address: the rest shortened unchecked"
     jq --argjson keep "$(printf '%s\n' "${keep[@]}" | jq -s .)" --argjson votes "$votes" \
         --argjson shorten "$(printf '%s\n' "${shorten[@]}" | jq -R . | jq -s 'map(select(. != ""))')" "$prep"'
-        def noaddress: prep | gsub("(?<r>" + groups + ")"; if .r | IN($shorten[]) then .r | gsub("[^\\x20-\\x7E]"; "") | "\(.[0:6])…\(.[-4:])" else .r end);
+        def noaddress: prep | gsub("(?<r>" + groups + ")"; if .r | IN($shorten[]) then .r | "\(.[0:6])...\(.[-4:])" else .r end);
         map(select(.iid | IN($keep[])) | $votes[.iid | tostring] as $v | {
             name: (.title | sub("^\\s+"; "") | sub("\\s+$"; "") | noaddress | @html),
             "gitlab-url": (.web_url | if type == "string" and test("^https://[^\\s\"\\x27<>\\\\]+$") then @html else null end),

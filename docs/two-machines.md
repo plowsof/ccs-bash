@@ -162,9 +162,9 @@ repository it fetches, the design and the signed list installed here. Each push,
    give it another address next time, nor give its address to another proposal, while the
    proposal is in the repository: a renamed one's goes with it; a person lets one go:
    [troubleshooting](troubleshooting.md#a-proposals-page-isnt-updating-old-text-old-totals)); amounts and dates as ccs-bash writes them; an idea's name and
-   author plain text (escaped, 1000 characters at most, no bidi controls, no run of 90 characters
-   each base58 or not ASCII: no address, padded, split by invisible characters or drawn with
-   look-alikes, and no address in groups either, read as step 5 reads one), its link a merge
+   author plain printable ASCII text (escaped, 1000 characters at most: no letter of another
+   script can stand in for an address's, no run of 90 base58 characters, and no address in
+   groups either, read as step 5 reads one), its link a merge
    request of the proposals repository itself (its address, host and path, and `LINK_HOSTS`: not
    another repository on its forge, which anyone can make). One that fails is held back: the live
    site stays as it is, and IRC is told. One that passes is written again as it was read, and

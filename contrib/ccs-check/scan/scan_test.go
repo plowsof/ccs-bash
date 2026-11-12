@@ -56,29 +56,17 @@ func TestPages(t *testing.T) {
 		"&notin is &not":   {"<h1>" + fund[:47] + "&notin" + fund[47:] + "</h1>", Unknown + "\n"},
 		"&shyx not a name": {"<h1>" + fund[:47] + "&shyx;" + fund[47:] + "</h1>", Unknown + "\n" + fund + "\n"},
 		// A bidi control (an address written backwards, displayed the right way round), raw or as an
-		// entity; and an address with look-alike letters (Cyrillic, full-width)
+		// entity. Letters of another script that look like an address's aren't read as ASCII: the
+		// ideas are ASCII only, and a merged proposal's text is the maintainers' to review.
 		"U+202E":                {"<p>Send to \u202e" + reverse(grouped(fund, 5)) + "\u202c</p>", Bidi + "\n"},
 		"&#x202E;":              {"<p>Send to &#x202E;" + reverse(grouped(fund, 5)) + "&#x202C;</p>", Bidi + "\n"},
 		"&#8238;":               {"<p>&#8238;x</p>", Bidi + "\n"},
 		"&#x2067; (an isolate)": {"<p>&#X02067;x</p>", Bidi + "\n"},
-		"a Cyrillic а":          {"<p>" + strings.Replace(fund, "a", "а", 1) + "</p>", fund + "\n"},
-		"a Cyrillic а, grouped": {"<p>" + strings.Replace(grouped(fund, 4), "a", "а", 1) + "</p>", Disguised + "\n" + fund + "\n"},
-		"&#x430;, grouped":      {"<p>" + strings.Replace(grouped(fund, 4), "a", "&#x430;", 1) + "</p>", Disguised + "\n" + fund + "\n"},
-		"full-width":            {"<p>" + strings.Replace(fund, "A", "Ａ", 2) + "</p>", fund + "\n"},
-		"Cyrillic words":        {"<p>Привет, мир: это предложение.</p>", ""},
-		// Right-to-left marks or letters around digits show them in another order than
-		// written; named entities and scripts the look-alike table missed
+		// Right-to-left marks fail the page; so does a named entity the scan doesn't read
 		"&rlm; (a mark)":         {"<p>" + strings.Replace(grouped(fund, 4), "tN18 obc8", "tN&rlm;8 1&rlm;obc8", 1) + "</p>", Unknown + "\n"},
 		"&#x200F; (a mark)":      {"<p>" + strings.Replace(grouped(fund, 4), "tN18 obc8", "tN&#x200F;8 1&#x200F;obc8", 1) + "</p>", Bidi + "\n"},
-		"Hebrew letters":         {"<p>" + strings.Replace(grouped(fund, 4), "tN18 obc8", "tN\u05d08 1\u05d0obc8", 1) + "</p>", Reordered + "\n" + Disguised + "\n"},
-		"Hebrew, as entities":    {"<p>" + strings.Replace(grouped(fund, 4), "tN18 obc8", "tN&#x5D0;8 1&#1488;obc8", 1) + "</p>", Reordered + "\n" + Disguised + "\n"},
-		"Arabic, in a tag":       {"<p>" + strings.Replace(grouped(fund, 4), "tN18 obc8", "tN<b>\u06338</b> 1\u0633obc8", 1) + "</p>", Reordered + "\n" + Disguised + "\n"},
-		"Hebrew text, a date":    {"<p>\u05e9\u05dc\u05d5\u05dd 2026-11-11 \u05e9\u05dc\u05d5\u05dd</p>", ""},
 		"&Alpha;":                {"<p>" + strings.ReplaceAll(fund, "A", "&Alpha;") + "</p>", Unknown + "\n"},
 		"&nbsp; &mdash; &rsquo;": {"<p>a&nbsp;b &mdash; it&rsquo;s</p>", ""},
-		"Lisu A, grouped":        {"<p>" + strings.Replace(grouped(fund, 4), "A", "\ua4ee", 1) + "</p>", Disguised + "\n"},
-		"Cherokee A, grouped":    {"<p>" + strings.Replace(grouped(fund, 4), "A", "\u13aa", 1) + "</p>", Disguised + "\n"},
-		"math Greek A, grouped":  {"<p>" + strings.Replace(grouped(fund, 4), "A", "\U0001d6a8", 1) + "</p>", Disguised + "\n"},
 	} {
 		if got := run(t, pages, c.in); got != c.want {
 			t.Errorf("%s: %q", name, got)
@@ -105,20 +93,17 @@ func reverse(s string) string {
 
 func TestJSON(t *testing.T) {
 	for name, c := range map[string]struct{ in, want string }{
-		"a bidi control":        {`["a\u202eb"]`, Bidi + "\n"},
-		"a Cyrillic а, grouped": {`["` + strings.Replace(grouped(fund, 4), "a", "а", 1) + `"]`, Disguised + "\n" + fund + "\n"},
-		"a key twice":           {`{"a": "x", "a": "` + fund + `"}`, fund + "\n"},
-		"split by <":            {`["` + fund[:47] + ` < ` + fund[47:] + `"]`, fund + "\n"},
-		"split by \\u003e":      {`["` + fund[:47] + `\u003e` + fund[47:] + `"]`, fund + "\n"},
-		"escaped":               {`["` + strings.Join(strings.Split(fund, ""), `\u0000`) + `"]`, fund + "\n"},
-		"not JSON":              {`{"a": 1,}`, "!not JSON (UTF-8) that reads\n"},
-		"empty":                 {``, "!not JSON (UTF-8) that reads\n"},
-		"two values":            {`{} {}`, "!not JSON (UTF-8) that reads\n"},
-		"not UTF-8":             {"[\"\xff\"]", "!not JSON (UTF-8) that reads\n"},
-		"large number":          {`[1e400]`, ""},
-		"Hebrew letters":        {`["` + strings.Replace(grouped(fund, 4), "tN18 obc8", "tN\u05d08 1\u05d0obc8", 1) + `"]`, Reordered + "\n" + Disguised + "\n"},
-		"a mark":                {`["a\u200fb"]`, Bidi + "\n"},
-		"Lisu A, grouped":       {`["` + strings.Replace(grouped(fund, 4), "A", "\ua4ee", 1) + `"]`, Disguised + "\n"},
+		"a bidi control":   {`["a\u202eb"]`, Bidi + "\n"},
+		"a key twice":      {`{"a": "x", "a": "` + fund + `"}`, fund + "\n"},
+		"split by <":       {`["` + fund[:47] + ` < ` + fund[47:] + `"]`, fund + "\n"},
+		"split by \\u003e": {`["` + fund[:47] + `\u003e` + fund[47:] + `"]`, fund + "\n"},
+		"escaped":          {`["` + strings.Join(strings.Split(fund, ""), `\u0000`) + `"]`, fund + "\n"},
+		"not JSON":         {`{"a": 1,}`, "!not JSON (UTF-8) that reads\n"},
+		"empty":            {``, "!not JSON (UTF-8) that reads\n"},
+		"two values":       {`{} {}`, "!not JSON (UTF-8) that reads\n"},
+		"not UTF-8":        {"[\"\xff\"]", "!not JSON (UTF-8) that reads\n"},
+		"large number":     {`[1e400]`, ""},
+		"a mark":           {`["a\u200fb"]`, Bidi + "\n"},
 	} {
 		if got := run(t, jsons, c.in); got != c.want {
 			t.Errorf("%s: %q", name, got)

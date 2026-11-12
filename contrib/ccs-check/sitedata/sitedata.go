@@ -251,9 +251,10 @@ func utc(s string) bool {
 	return utcRx.MatchString(s) && err == nil && t.Before(time.Now().Add(24*time.Hour))
 }
 
-// text checks an idea's name or author, escaped as ccs-bash writes it (jq @html): no markup,
-// no bidi controls, at most 1000 characters (an entity counts as one), and no run of 90
-// characters that could be an address (base58, or any non-ASCII, which could stand in for one).
+// text checks an idea's name or author, escaped as ccs-bash writes it (jq @html): printable
+// ASCII only (anyone can open an MR: no letter of another script can stand in for an address's,
+// and nothing shows in another order), no markup, at most 1000 characters (an entity counts as
+// one), and no run of 90 characters that could be an address.
 func text(s string) bool {
 	if !utf8.ValidString(s) {
 		return false
@@ -271,10 +272,10 @@ func text(s string) bool {
 			if w == 0 {
 				return false
 			}
-		} else if strings.ContainsRune("<>\"'", r) || r <= 0x1f || r == 0x7f || addr.Bidi(r) {
+		} else if strings.ContainsRune("<>\"'", r) || r <= 0x1f || r >= 0x7f {
 			return false
 		}
-		if w == 1 || r > 0x7f {
+		if w == 1 {
 			if isRun(r) {
 				run++
 			} else {
@@ -291,27 +292,17 @@ func text(s string) bool {
 	return true
 }
 
-// A character of an address, or one that could stand in for one (any non-ASCII)
+// A character of an address
 func isRun(r rune) bool {
-	return r > 0x7f || r >= '1' && r <= '9' || r >= 'A' && r <= 'Z' && r != 'I' && r != 'O' || r >= 'a' && r <= 'z' && r != 'l'
+	return r >= '1' && r <= '9' || r >= 'A' && r <= 'Z' && r != 'I' && r != 'O' || r >= 'a' && r <= 'z' && r != 'l'
 }
 
-// address reports whether s (an idea's name or author) contains an address, read the way the
-// gate's scan reads the site's JSON: in groups, with non-ASCII characters dropped, read as a
-// space, or read as the ASCII letter they look like; or shows numbers out of order, or one
-// disguised in another script (addr.Reordered, addr.Disguised).
+// address reports whether s (an idea's name or author, ASCII: text) contains an address, read
+// the way the gate's scan reads the site's JSON: whole, or in groups.
 func address(s string) bool {
-	if addr.Reordered(s) || addr.Disguised(s) {
-		return true
-	}
 	c, out := addr.New(), map[string]bool{}
 	c.Start()
-	for _, t := range addr.Readings(s) {
-		if c.Runs(t, out) != nil {
-			return true
-		}
-	}
-	return len(out) > 0
+	return c.Runs(s, out) != nil || len(out) > 0
 }
 
 // read parses b as siteData strictly: valid UTF-8, each key once and spelled exactly as
@@ -437,9 +428,9 @@ func (c *Checker) check(d *siteData) string {
 		case x == nil || x.Name == nil || x.GitlabURL == nil || x.Author == nil || x.Date == nil:
 			return n + ": without all of name, gitlab-url, author, date"
 		case !text(*x.Name) || !text(*x.Author):
-			return n + ": a name or author that isn't plain text (escaped, no bidi controls, no run of 90 that could be an address)"
+			return n + ": a name or author that isn't plain ASCII text (escaped, no run of 90 that could be an address)"
 		case address(*x.Name) || address(*x.Author):
-			return n + ": an address in its name or author (in groups, or in letters drawn as an address's)"
+			return n + ": an address in its name or author (whole, or in groups)"
 		case !c.link.MatchString(*x.GitlabURL):
 			return n + ": a link that isn't a merge request of the proposals repository"
 		case !dateRx.MatchString(*x.Date):
@@ -477,7 +468,7 @@ func Ideas(b []byte) ([]byte, []string, error) {
 		why := ""
 		switch {
 		case x.Name != nil && !text(*x.Name), x.Author != nil && !text(*x.Author):
-			why = "a name or author that isn't plain text"
+			why = "a name or author that isn't plain ASCII text"
 		case x.Name != nil && address(*x.Name), x.Author != nil && address(*x.Author):
 			why = "an address in its name or author"
 		}
