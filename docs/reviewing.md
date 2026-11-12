@@ -102,8 +102,8 @@ wallet-rpc shares.
   `images/<its name>/`. `ideas`: open MRs whose file reads as a proposal, the `IDEAS_MAX` (100) most recently updated,
   what each adds at its commit, and whether its file reads, kept in `STATE_DIR/ideas.cache`
   (anyone can open MRs: each is fetched once, not every run); title and author
-  HTML-escaped, bidi controls dropped, any run of 90 or more characters each base58 or not ASCII
-  (invisible characters, look-alike letters) shortened, as the gate's `TEXT` rule (an MR title can't carry an address to the gate), links
+  made printable ASCII (invisible characters dropped, any other character not ASCII `?`), HTML-escaped,
+  any run of 90 or more base58 characters shortened, as the gate's `TEXT` rule (an MR title can't carry an address to the gate), links
   `https:` only; its file 1 MB at most.
 - [`lib/images.sh`](../lib/images.sh): copies the images a proposal's Markdown shows from
   `images/<proposal>/` (plain files, PNG, JPEG or GIF by their first bytes, 2 MB at most) and writes

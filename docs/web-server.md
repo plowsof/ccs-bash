@@ -16,8 +16,7 @@ setting it up: [the web server in Docker](docker.md#the-web-server-in-docker).
 ## What it guarantees, and what not
 
 Every address on the site, as text or link, however written or split (entities, groups, markup),
-with letters drawn as an address's (the Cyrillic, Greek, full-width and mathematical ones:
-`addr/lookalike.go`), is one of the signed list's (the wallet's 15,000 subaddresses, signed by a
+is one of the signed list's (the wallet's 15,000 subaddresses, signed by a
 Core Team member) or in `allowed` (the General Fund), and no page has a bidi control that could
 show one in another order than it is written; every page is the design's, filled by the gate
 itself; a proposal's text, milestones, payouts, images and merge request are what the proposals
@@ -109,7 +108,7 @@ About 3,900 lines, this repository's own and the ccs-front-bash release it vendo
 | File | Lines | What it is |
 |---|---|---|
 | [`contrib/ccs-receive`](../contrib/ccs-receive) | 350 | the gate: takes only `receive`, receives `site-data.json` alone, fetches the proposals repository, checks the data (`ccs-check data`, which writes what the site is built from), builds the site (`ccs-gate-build`), runs `ccs-check gate` on it, copies it live but what failed, alerts (each page leaving too); the pins and the day's removals; the heartbeat |
-| [`contrib/ccs-check/`](../contrib/ccs-check) (Go, tests aside) | 1,730 | `data` (`sitedata/sitedata.go`: `site-data.json`, each key exactly as ccs-bash writes it, each value of its kind, each index the list's and its proposal's, the pins), `gate` (`gate/gate.go`: which built files go live), `receive` and `copy` (`push/push.go`: the push's one file, 4 MB at most; the copy into the live site), `scan` (`scan/scan.go`, `addr/addr.go`, `addr/lookalike.go`, `addr/bidi.go`: every address, by Monero's checksum, in look-alike letters too; no bidi control, no numbers a browser shows out of order, no address disguised in another script) |
+| [`contrib/ccs-check/`](../contrib/ccs-check) (Go, tests aside) | 1,730 | `data` (`sitedata/sitedata.go`: `site-data.json`, each key exactly as ccs-bash writes it, each value of its kind, each index the list's and its proposal's, the pins), `gate` (`gate/gate.go`: which built files go live), `receive` and `copy` (`push/push.go`: the push's one file, 4 MB at most; the copy into the live site), `scan` (`scan/scan.go`, `addr/addr.go`, `addr/bidi.go`: every address, by Monero's checksum; no bidi control) |
 | `contrib/ccs-check/build.sh` | 71 | how it is built and tested (StageX's Go, no network) |
 | [`container/gate.Dockerfile`](../container/gate.Dockerfile) | 132 | what goes in the image, Tor built from its source among it |
 | [`contrib/docker/web/`](../contrib/docker/web) (`compose.yml`, `sshd_config`, `init`, `env.example`, `Caddyfile`, `torrc`) | 353 | how it runs: one user each, the forced command, read-only, sshd's three capabilities, limits; what Caddy serves and how, the onion |

@@ -358,7 +358,8 @@ got=$(
 )
 if [[ $got == https://example.org/mr/11 ]]; then echo "ok   one unreadable MR leaves only that one out of the ideas"; else echo "FAIL one unreadable MR: ideas were '$got'"; status=1; fi
 # Anyone can open an MR, so an address in its title is shortened, also when invisible characters
-# (a left-to-right mark, a zero-width space) split it. Words around it stay.
+# (a left-to-right mark, a zero-width space) split it. Words around it stay, with any character
+# that isn't printable ASCII as ? (the gate takes ASCII only).
 addr=44AFFq5kSiGBoZ4NMDwYtN18obc8AemS33DBLWs3H7otXft3XjrpDtQGv7SqSsaBYBb98uNbr2VBBEt7f2wfn3RVGQBEP3A
 fx=$(mktemp -d); cp -r "$FIXTURES/." "$fx"
 jq --arg t "Pay naïve me: ${addr:0:30}"$'\xe2\x80\x8e'"${addr:30:30}"$'\xe2\x80\x8b'"${addr:60}!" 'map(if .iid == 11 then .title = $t else . end)' \
@@ -368,13 +369,13 @@ got=$(
     source "$here/stubs.sh"
     WORK=$(mktemp -d) FIXTURES=$fx PROPOSALS_DIR=$here/fixtures/proposals ideas 2> /dev/null | jq -r '.[] | select(."gitlab-url" | endswith("/11")) | .name'
 )
-if [[ $got == 'Pay naïve me: 44AFFq…EP3A!' ]]; then echo "ok   an address in an idea's title is shortened, invisible characters in it or not"; else echo "FAIL an address in an idea's title: '$got'"; status=1; fi
+if [[ $got == 'Pay na?ve me: 44AFFq...EP3A!' ]]; then echo "ok   an address in an idea's title is shortened, invisible characters in it or not; other characters are ?"; else echo "FAIL an address in an idea's title: '$got'"; status=1; fi
 # ... and when written with other characters (the web server's gate holds back the same):
 # - its halves in bidi embeddings, displayed in a different order than written;
 # - mathematical letters and digits;
 # - Cyrillic letters for some of its own;
 # - groups of four, split by spaces or dashes.
-# The result has no bidi control, and no run of 90 characters that are each base58 or non-ASCII.
+# The result is printable ASCII, with no run of 90 characters that are each base58.
 # The groups are shortened. (The bidi halves, shown without their controls, read in the wrong
 # order, so they hold no address.)
 for how in bidi math cyrillic groups dashes; do
@@ -393,7 +394,7 @@ for how in bidi math cyrillic groups dashes; do
     )
     if [[ $got == Pay* || $got == Moved* ]] && jq -en --arg s "$got" '$s | (test("[\u202a-\u202e\u2066-\u2069]")
         or test("(?:[1-9A-HJ-NP-Za-km-z]|[^\\x00-\\x7F]){90}")) | not' > /dev/null \
-        && [[ $how != groups && $how != dashes || $got == *…* ]]; then
+        && [[ $how != groups && $how != dashes || $got == *...* ]] && [[ $got != *[![:print:]]* ]]; then
         echo "ok   an address in an idea's title, drawn with other characters ($how), is shortened or broken up"
     else
         echo "FAIL an address in an idea's title ($how): '$got'"; status=1
@@ -410,7 +411,7 @@ for sep in ' - ' ', ' ' | ' '/'; do
         source "$here/stubs.sh"
         WORK=$(mktemp -d) FIXTURES=$fx PROPOSALS_DIR=$here/fixtures/proposals ideas 2> /dev/null | jq -r '.[] | select(."gitlab-url" | endswith("/11")) | .name'
     )
-    if [[ $got == *…* ]]; then echo "ok   review 5: an address in groups split by '$sep' in an idea's title is shortened"
+    if [[ $got == *...* ]]; then echo "ok   review 5: an address in groups split by '$sep' in an idea's title is shortened"
     else echo "FAIL review 5: an address in groups split by '$sep' in an idea's title stays whole: '${got:0:60}…'"; status=1; fi
 done
 # Cost: anyone can open MRs titled "AAAA AAAA ..." (255 characters). Every 95- and
@@ -448,7 +449,7 @@ if printf '' | openssl dgst -keccak-256 > /dev/null 2>&1; then
     else
         echo "FAIL a long title of plain words: '$got'"; status=1
     fi
-elif [[ $got == 'Keep r…ears' ]] && grep -q 'openssl has no Keccak-256' "$fx/ideas.log"; then
+elif [[ $got == 'Keep r...ears' ]] && grep -q 'openssl has no Keccak-256' "$fx/ideas.log"; then
     echo "ok   a long title of plain words, without openssl's Keccak: shortened, and said so"
 else
     echo "FAIL a long title of plain words, no Keccak: '$got'"; status=1
