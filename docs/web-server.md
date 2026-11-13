@@ -103,18 +103,18 @@ patched (`govulncheck` in CI, for Go itself).
 
 ## The code to read
 
-About 3,900 lines, this repository's own and the ccs-front-bash release it vendors:
+About 4,400 lines, this repository's own and the ccs-front-bash release it vendors:
 
 | File | Lines | What it is |
 |---|---|---|
-| [`contrib/ccs-receive`](../contrib/ccs-receive) | 350 | the gate: takes only `receive`, receives `site-data.json` alone, fetches the proposals repository, checks the data (`ccs-check data`, which writes what the site is built from), builds the site (`ccs-gate-build`), runs `ccs-check gate` on it, copies it live but what failed, alerts (each page leaving too); the pins and the day's removals; the heartbeat |
-| [`contrib/ccs-check/`](../contrib/ccs-check) (Go, tests aside) | 1,730 | `data` (`sitedata/sitedata.go`: `site-data.json`, each key exactly as ccs-bash writes it, each value of its kind, each index the list's and its proposal's, the pins), `gate` (`gate/gate.go`: which built files go live), `receive` and `copy` (`push/push.go`: the push's one file, 4 MB at most; the copy into the live site), `scan` (`scan/scan.go`, `addr/addr.go`, `addr/bidi.go`: every address, by Monero's checksum; no bidi control) |
+| [`contrib/ccs-receive`](../contrib/ccs-receive) | 392 | the gate: takes only `receive`, receives `site-data.json` alone, fetches the proposals repository, checks the data (`ccs-check data`, which writes what the site is built from), builds the site (`ccs-gate-build`), runs `ccs-check gate` on it, copies it live but what failed, alerts (each page leaving too); the pins and the day's removals; the heartbeat |
+| [`contrib/ccs-check/`](../contrib/ccs-check) (Go, tests aside) | 1,751 | `data` (`sitedata/sitedata.go`: `site-data.json`, each key exactly as ccs-bash writes it, each value of its kind, each index the list's and its proposal's, the pins), `gate` (`gate/gate.go`: which built files go live), `receive` and `copy` (`push/push.go`: the push's one file, 4 MB at most; the copy into the live site), `scan` (`scan/scan.go`, `addr/addr.go`, `addr/bidi.go`, `scan/nobidi.go`: every address, by Monero's checksum; no bidi control, no unknown named entity) |
 | `contrib/ccs-check/build.sh` | 71 | how it is built and tested (StageX's Go, no network) |
-| [`container/gate.Dockerfile`](../container/gate.Dockerfile) | 132 | what goes in the image, Tor built from its source among it |
-| [`contrib/docker/web/`](../contrib/docker/web) (`compose.yml`, `sshd_config`, `init`, `env.example`, `Caddyfile`, `torrc`) | 353 | how it runs: one user each, the forced command, read-only, sshd's three capabilities, limits; what Caddy serves and how, the onion |
-| `container/build.sh`, `verify-images.sh`, `fetch.sh`, `verify.sh` | 206 | the build: the pins' signatures and sums checked |
-| [`contrib/gate-build`](../contrib/gate-build), with ccs-bash's [`lib/site-data.sh`](../lib/site-data.sh), [`site.jq`](../lib/site.jq), [`proposals.sh`](../lib/proposals.sh), [`images.sh`](../lib/images.sh), [`common.sh`](../lib/common.sh), [`frontmatter.awk`](../lib/frontmatter.awk) | 580 | the site built here, with ccs-bash's own steps: the proposals' front matter and images from the repository fetched here, each one's merge request from its merge commits (`merge_requests`), each address the signed list's line of its index |
-| [`vendor/ccs-front-bash/`](../vendor/ccs-front-bash) | 817 | the ccs-front-bash release that fills the design (`lib/markdown.awk`: a proposal's text, escaped first; `RELEASE`: its tag and commit; CI checks the copy is that commit's, `contrib/vendor-front-bash --check`) |
+| [`container/gate.Dockerfile`](../container/gate.Dockerfile) | 135 | what goes in the image, Tor built from its source among it |
+| [`contrib/docker/web/`](../contrib/docker/web) (`compose.yml`, `sshd_config`, `init`, `env.example`, `Caddyfile`, `torrc`) | 360 | how it runs: one user each, the forced command, read-only, sshd's three capabilities, limits; what Caddy serves and how, the onion |
+| `container/build.sh`, `verify-images.sh`, `fetch.sh`, `verify.sh` | 208 | the build: the pins' signatures and sums checked |
+| [`contrib/gate-build`](../contrib/gate-build), with ccs-bash's [`lib/site-data.sh`](../lib/site-data.sh), [`site.jq`](../lib/site.jq), [`proposals.sh`](../lib/proposals.sh), [`images.sh`](../lib/images.sh), [`common.sh`](../lib/common.sh), [`frontmatter.awk`](../lib/frontmatter.awk) | 600 | the site built here, with ccs-bash's own steps: the proposals' front matter and images from the repository fetched here, each one's merge request from its merge commits (`merge_requests`), each address the signed list's line of its index |
+| [`vendor/ccs-front-bash/`](../vendor/ccs-front-bash) | 871 | the ccs-front-bash release that fills the design (`lib/markdown.awk`: a proposal's text, escaped first; `RELEASE`: its tag and commit; CI checks the copy is that commit's, `contrib/vendor-front-bash --check`) |
 
 And what the site is built with, from the other repository: ccs-front-hugo's **design** (its
 release zip: the pages, the parts they are filled with, the stylesheets and images; installed by

@@ -4,8 +4,9 @@
 believe the backend: the backend sends only `site-data.json` (each proposal's subaddress index,
 dates and funds, the ideas), checked there, and every page is made there from copies the backend
 never sends. So the backend, its code and its machine can stay untrusted; a taken-over backend can
-stop the site updating, or show wrong totals, not put a foreign address on it. What runs on the
-web server, by version, the code to read (about 3,900 lines, its build files included) and what
+stop the site updating, show wrong totals or keep a new proposal off it (the gate alerts), not
+put a foreign address on it. What runs on the
+web server, by version, the code to read (about 4,400 lines, its build files included) and what
 is installed there by hand: [the web server](web-server.md).
 
 **Why the web server fetches the proposals repository itself.** A proposal's page is mostly its
@@ -143,7 +144,11 @@ list, writes the site.
   touch it; a proposal's own `\001` and `\002` are dropped). Links: `https:`, `#anchor`, or
   site-relative (`/` and a plain character: never `//`, `/\` or an entity, which a browser reads as
   another site). Images: only the proposal's copied ones, any other
-  is a link.
+  is a link; an image's alt text is plain text (`alttext`: held HTML undone and its tags dropped, the text
+  escaped already), so nothing in it can open an attribute. Entities: numeric ones and the scan's
+  short list of names kept (`entities`), any other shown as written. A line over `MAXLINE` (4000)
+  is cut between two UTF-8 characters, and the text stops at `MAXBODY` (100,000), so no proposal
+  makes the build slow.
 
 ### Push, watcher, backup
 
@@ -190,19 +195,27 @@ list, writes the site.
   - `fetch` (bash): the proposals repository, all its history (the last fetch if it can't);
   - `ccs-check data` (contrib/ccs-check/sitedata): `site-data.json` read strictly
     (`encoding/json`, no unknown key), each value of its kind; each index the list's, not 0, one
-    proposal's only, the live site's for it (`projects.json`'s addresses: `pins`); an idea's name
-    and author plain text (`text`: no markup, no bidi control, no run of 90 that could be an
-    address), its link a merge request of the repository. One that fails: nothing goes live,
-    IRC told;
+    proposal's only, the live site's for it (`projects.json`'s addresses: `pins`, the address
+    after a line's last space); each date a real UTC time, at most a day ahead (`utc`); an idea's
+    name and author plain text (`text`: printable ASCII only, so no letter of another script and
+    no bidi control, no markup, at most 1000 characters, no run of 90 that could be an address),
+    its link a merge request of the repository. One that fails: nothing goes live, IRC told;
   - `ccs-gate-build` ([`contrib/gate-build`](../contrib/gate-build)): the repository's newest
     commit unpacked (`git archive`), each proposal's merge request from the merge commit that
     added it (`merge_requests`, `lib/site-data.sh`), `site_from_data` (ccs-bash's own
     `read_proposals`, `proposal_images`, `site.jq`; each address the list's line of its index; a
-    Funding Required proposal without one left off), then the vendored ccs-front-bash with the
-    newest design, the list and its QR codes. One that fails: nothing goes live, IRC told;
+    Funding Required proposal without one left off, and named on the build's log:
+    `$state/unaddressed` keeps since when, and one off for over `UNADDRESSED_MINUTES` (30)
+    alerts, at most once an hour, so a backend can't keep a new proposal off the site unseen),
+    then the vendored ccs-front-bash with the newest design, the list and its QR codes. One that
+    fails: nothing goes live, IRC told;
   - `ccs-check gate` (contrib/ccs-check/gate) over what was built: `ccs-check scan` (one pass):
     every address in pages, JSON and the feed (which may have none) as written (entities
-    decoded, a non-ASCII or control character read both as nothing and as a space; in groups split
+    decoded as a browser does, numeric ones and the few names the design and proposals use: any
+    other name fails the file, `Unknown`, as a bidi control does, raw or as an entity, `Bidi`;
+    then non-ASCII and control characters dropped, read once: a letter of another script that
+    looks like an address's isn't read as one, which is why the ideas, anyone's text, are ASCII
+    only, and a merged proposal's text is the maintainers' to review; in groups split
     by up to three spaces or punctuation, or between elements side by side (the text with its tags
     dropped), by its checksum: `addr`, a budget of checksums and time a file), the JSON as JSON
     too (`ccs-check json`, its strings read the same way); no `data:` image, no NUL byte; pages
@@ -234,7 +247,7 @@ key; its `.pin` (sha256 and key) is what each machine trusts, installed by hand 
 | 4. Its QR code is the list's | ccs-front-bash `tools/make-qr.sh`, `verify-subaddresses.sh`; `ccs-front-bash.sh` `qr_codes` | made with the list (`qrencode -s 10 "monero:<address>"`), their sums pinned in its `.pin` (`qr`), each remade when the list is checked; the run copies the address's file, its sum the pinned one; ccs-bash's own QR codes are never used | the run stops |
 | 5. The page holds them | ccs-front-bash `lib/pages.jq`, the donation box | the donation box gets that address and that QR code, else the run stops | the run stops |
 | 6. The web server's list is the pinned one | `contrib/ccs-receive`, once the push is received, before anything is built | the gate's own copy (installed by hand) is the one its `.pin` names, and so are its QR codes' sums | every push refused, IRC told |
-| 7. Every address on every page is on the list | `ccs-check gate`'s `scans` (`ccs-check scan`, `json`) | every 95- or 106-character address in a page or JSON, as written (entities read, a non-ASCII character as nothing and as a space, in groups or across elements by its checksum), is a line of the list or in `allowed`; the feed has none | that file off the site, IRC told |
+| 7. Every address on every page is on the list | `ccs-check gate`'s `scans` (`ccs-check scan`, `json`) | every 95- or 106-character address in a page or JSON, as written (entities read, an unknown named entity or a bidi control failing the file, non-ASCII characters dropped, in groups or across elements by its checksum), is a line of the list or in `allowed`; the feed has none | that file off the site, IRC told |
 | 8. Every QR code is of a listed address | `ccs-check gate` (`Run`, `scans`) | every `qr/<address>.png` is that address's file of the list's, byte for byte (its sum in `.qr.sha256`); no `data:` image; never made or decoded | that file off the site |
 | 9. Addresses only where the design puts them | the build itself (`ccs-gate-build`) | a page is the design filled by ccs-front-bash on the web server: a donation box's address is the list's line of its proposal's index, never text the backend sent | (by construction) |
 | 10. What is live has only the list's addresses | `contrib/ccs-watch` (`wrong`) | the live donation pages (and others at random): every address the list's or allowed, each box its proposal's, its QR code the list's file; a live address not on the list is named in the alert | IRC told |

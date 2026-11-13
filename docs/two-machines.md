@@ -179,9 +179,9 @@ repository it fetches, the design and the signed list installed here. Each push,
    `markdown.awk`. A build that fails: the live site stays as it is, and IRC is told;
 5. checks **what it built** (`ccs-check gate`): every address (95 or 106 base58 characters) in its
    pages, JSON and feed against the signed list and `allowed`, as written (tags and attributes
-   too, entities decoded, a non-ASCII character read both as nothing and as a space, and a letter
-   drawn as an address's, Cyrillic, Greek, full-width or mathematical, read a third time as that
-   letter; one in groups
+   too, entities decoded, an unknown named entity failing the file, non-ASCII characters dropped:
+   a letter of another script drawn as an address's isn't read as one, so the ideas, anyone's
+   text, are ASCII only; one in groups
    split by up to three spaces or punctuation, `4A9b - xZq3`, `4A9b/xZq3`, or split between two
    elements a browser lays side by side, where its checksum says it is one), the JSON as JSON
    too; none in the feed; no `data:` image, no NUL byte, no bidi control (U+202A-202E,
